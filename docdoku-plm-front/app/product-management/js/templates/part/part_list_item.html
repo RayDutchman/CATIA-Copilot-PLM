@@ -1,0 +1,27 @@
+<td> {{^model.isLocked}}
+    <a href="#" class="parthandle fa fa-bars"></a>
+    {{/model.isLocked}}
+</td>
+<td><input type="checkbox"/></td>
+<td class="modification_notification">
+    {{#model.hasUnreadModificationNotifications}}
+    <i class="fa fa-exclamation"></i>
+    {{/model.hasUnreadModificationNotifications}}
+</td>
+
+<!--Content will be inserted here-->
+
+<td class="part-revision-share">
+    <i class="fa fa-globe" title="{{i18n.PUBLISH}}"></i>
+</td>
+<td class="part-attached-files">
+    {{#model.hasLastIterationAttachedFiles}}
+    <i class="fa fa-paperclip" title="{{i18n.ATTACHED_FILES}}"></i>
+    {{/model.hasLastIterationAttachedFiles}}
+</td>
+<td>
+    {{#model.isLastIterationAssembly}}
+    <a target="_blank" href="{{model.getVisualizationUrl}}" title="{{i18n.VISUALIZE_ASSEMBLY}}"><i
+        class="fa fa-video-camera"></i></a>
+    {{/model.isLastIterationAssembly}}
+</td>

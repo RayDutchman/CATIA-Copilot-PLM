@@ -1,0 +1,60 @@
+### runner script
+FROM fabric8/java-alpine-openjdk8-jre AS runner_script_provider
+
+### real image
+FROM openjdk:8-jre
+
+ENV JAVA_OPTIONS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+ENV AB_ENABLED=jmx_exporter
+ENV IFCCONVERT_URL=https://github.com/IfcOpenShell/IfcOpenShell/releases/download/v0.5.0-preview2/IfcConvert-master-9ad68db-linux64.zip
+ENV MESHCONV_URL=http://www.patrickmin.com/meshconv/linux64/meshconv
+ENV DECIMATER_URL https://github.com/docdoku/docdoku-plm-openmesh-decimater/raw/master/builds/decimater-linux-64.zip
+
+USER root
+
+# Install deps packages
+RUN \
+ apt-get update -qqy && apt-get install -qqy --no-install-recommends \
+ freecad  \
+ assimp-utils
+
+# Run filesystem changes + download other deps
+RUN \
+ mkdir /deployments && \
+ mkdir /data && \
+ mkdir /data/vault && \
+ mkdir /data/conversions && \
+ mkdir -p /opt/ifcconvert && \
+ mkdir -p /opt/meshconv && \
+ mkdir -p /opt/decimater && \
+ wget --quiet -O /opt/ifcconvert.zip ${IFCCONVERT_URL} && \
+ wget --quiet -O /opt/meshconv/meshconv ${MESHCONV_URL} && \
+ wget --quiet -O /opt/decimater.zip ${DECIMATER_URL} && \
+ unzip -qq /opt/ifcconvert.zip -d /opt/ifcconvert && \
+ unzip -qq /opt/decimater.zip -d /opt/ && \
+ chmod +x /opt/meshconv/meshconv && \
+ rm /opt/decimater.zip && \
+ rm /opt/ifcconvert.zip
+
+COPY conversion-service/target/lib/* /deployments/lib/
+COPY conversion-service/target/*-runner.jar /deployments/app.jar
+
+RUN mkdir /home/1001 && \
+  groupadd -g 1001 1001 \
+  && useradd -u 1001 -M -s /bin/bash 1001 -g root -d /home/1001 \
+  && chown -R 1001 /deployments \
+  && chmod -R 777 /deployments \
+  && chown -R 1001:root /deployments \
+  && chown -R 1001 /data \
+  && chown -R 1001 /opt \
+  && chmod -R 777 /data \
+  && chown -R 1001:root /data \
+  && chown -R 1001:root /home/1001
+
+USER 1001
+
+COPY --from=runner_script_provider /deployments/run-java.sh /deployments
+VOLUME ["/data/vault", "/data/conversions"]
+EXPOSE 8080
+
+ENTRYPOINT [ "/deployments/run-java.sh" ]
