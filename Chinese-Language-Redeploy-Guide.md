@@ -16,68 +16,74 @@ services:
     image: docdoku/docdoku-plm-server:2.6.2
 ```
 
-这些镜像是打包好的，**不会自动感知本地代码变化**。要让以下修改生效，需要重新构建镜像：
-
-- 前端：新增的 `nls/zh/` 中文翻译文件
-- 后端：`LocalStrings_zh.properties` 中文异常消息，以及 `pdfbox2-layout` 版本修复（`1.0.0` → `1.0.1`）
-
-有两种方案，按需选择：
+这些镜像是打包好的，**不会自动感知本地代码变化**。要让中文支持完整生效，需要重新构建后端镜像（方案 B）。
 
 ---
 
-## 方案 A：快速方案 —— 卷挂载（仅前端中文，无需编译）
+## ⚠️ 重要：方案 A 的真实作用范围
 
-此方案通过 Docker 卷挂载，将本地 `nls/` 目录直接注入前端容器，覆盖镜像内的文件。**不需要安装 Node.js / Maven / JDK**，几分钟内生效。
+### 语言下拉框中"中文"选项从何而来？
 
-> ⚠️ 局限：后端异常消息（权限错误等）因为编译进了 JAR，仍会显示英文。如需后端也显示中文，请用方案 B。
+Account → Edit account 页面的 **Language 下拉框**，选项列表由**后端 REST API `/languages`** 返回。
+预构建的 `docdoku/docdoku-plm-server:2.6.2` DockerHub 镜像**不包含** `zh` 支持，所以即使完成方案 A，下拉框里**仍然没有中文选项**。
 
-### 第一步：拉取最新代码
+### 方案 A 能做什么？
+
+方案 A 通过卷挂载，将本地 `nls/zh/` 翻译文件注入前端容器。它解决的是：**当账户语言已经设置为 `zh` 时，界面能够显示中文文字**。但如果后端不支持 `zh`，账户语言就无法通过 UI 设置为 `zh`，所以：
+
+| 需求 | 方案 A | 方案 B |
+|------|--------|--------|
+| 界面文字翻译成中文 | ✅ | ✅ |
+| Language 下拉框出现"中文"选项 | ❌ | ✅ |
+| 注册账号时可以选择中文 | ❌ | ✅ |
+| 账户保存语言偏好为中文 | ❌ | ✅ |
+| 后端异常消息显示中文 | ❌ | ✅ |
+
+**结论：如果您看到"没有中文选项"，请直接跳到[方案 B](#方案-b完整重建--从源码构建后端镜像推荐)。**
+
+---
+
+## 方案 A：卷挂载（无需编译，仅作辅助）
+
+> 适用场景：已通过方案 B 让后端支持 zh，想避免重建前端镜像时，用此方案注入最新翻译文件。
+
+`docker-compose.yml` 已默认包含以下卷挂载配置，无需手动修改：
+
+```yaml
+  front:
+    volumes:
+      - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
+      - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+```
+
+只需拉取最新代码并重启前端容器即可：
 
 ```bash
 cd /path/to/CATIA-Copilot-PLM
 git pull
-```
 
-### 第二步：修改 docker-compose.yml
-
-打开 `docdoku-plm-docker/docker-compose.yml`，在 `front` 服务的 `volumes` 下**新增一行**：
-
-```yaml
-  front:
-    image: docdoku/docdoku-plm-front:2.6.2
-    networks:
-      - network
-    ports:
-      - 8000:80
-    volumes:
-      - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
-      # 新增下面这一行，挂载中文翻译文件
-      - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
-```
-
-> `../docdoku-plm-front/app/js/localization/nls` 是相对于 `docdoku-plm-docker/` 目录的路径。
-> 如果您的目录结构不同，请替换为绝对路径。
-
-### 第三步：重新创建前端容器
-
-```bash
 cd docdoku-plm-docker
-
-# 仅重建 front 服务（不影响其他容器和数据）
 docker compose up --force-recreate --no-deps -d front
 ```
 
-### 第四步：验证
+### 临时体验中文界面（浏览器控制台快捷方式）
 
-打开浏览器访问 [http://localhost:8000](http://localhost:8000)，登录后进入
-**Account → Edit account → Language**，选择 **中文** 并保存，刷新页面即可全程中文显示。
+如果您只想临时看到中文界面，可以在浏览器开发者工具控制台（F12 → Console）运行以下命令，**无需修改账户设置**：
+
+```javascript
+localStorage.setItem('locale', 'zh');
+location.reload();
+```
+
+> 注意：此方法仅影响当前浏览器，不会保存到账户设置，刷新后需要重新执行。
 
 ---
 
 ## 方案 B：完整重建 —— 从源码构建后端镜像（推荐）
 
-此方案重新编译后端并打包 Docker 镜像，包含：
+此方案重新编译后端并打包 Docker 镜像，是让"中文"出现在 Language 下拉框的**唯一正确方式**，包含：
 
+- **`zh` 被加入后端支持的语言列表**（`PropertiesLoader.java`）
 - 中文异常消息（`LocalStrings_zh.properties`）
 - `pdfbox2-layout` 版本修复（已升至 `1.0.1`，可正常解析依赖）
 
@@ -150,7 +156,8 @@ docker compose up --force-recreate --no-deps -d back
 docker compose logs -f back
 ```
 
-启动完成后访问 [http://localhost:8000](http://localhost:8000)，语言切换方式同方案 A。
+启动完成后访问 [http://localhost:8000](http://localhost:8000)，登录后进入
+**Account → Edit account → Language**，下拉框中应出现 **中文** 选项，选择并保存，刷新页面即可全程中文显示。
 
 ---
 
@@ -219,7 +226,7 @@ docker volume rm docdoku-plm-server-volume
 
 ## 语言切换操作步骤
 
-1. 打开浏览器，访问系统首页
+1. 打开浏览器，访问系统首页（默认 [http://localhost:8000](http://localhost:8000)）
 2. 登录账号
 3. 点击右上角用户头像 → **Account（账户）**
 4. 找到 **Language（语言）** 下拉框，选择 **中文**
@@ -234,7 +241,8 @@ docker volume rm docdoku-plm-server-volume
 
 | 现象 | 原因 | 解决方法 |
 |------|------|----------|
+| Language 下拉框没有"中文"选项 | 后端预构建镜像不支持 zh | **使用方案 B** 从源码重建后端镜像 |
 | `pdfbox2-layout:jar:1.0.0` 找不到 | 旧版本 `1.0.0` 未在 JitPack 发布 | 已修复，拉取最新代码后重新构建 |
 | `docker build` 提示找不到 EAR | Maven 构建未完成或失败 | 检查 `docdoku-plm-server-ear/target/` 目录是否存在 `.ear` 文件 |
-| 容器启动后语言列表无中文 | 前端镜像未更新 | 使用方案 A 挂载卷，或用方案 C 重建前端镜像 |
+| 选了中文但界面仍显示英文 | 前端翻译文件未更新 | 确认 docker-compose.yml 中 nls 卷挂载已生效（方案 A） |
 | `docker compose up` 仍使用旧镜像 | Docker 镜像缓存 | 使用 `--force-recreate` 参数强制重建容器 |

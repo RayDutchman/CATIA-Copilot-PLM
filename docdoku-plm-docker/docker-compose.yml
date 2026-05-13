@@ -18,6 +18,12 @@ services:
       - 8000:80
     volumes:
       - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
+      # Mount Chinese (zh) NLS translation files so the UI displays in Chinese
+      # once the account language is set to zh.  The language *option* in the
+      # account-settings dropdown requires the backend to return "zh" — rebuild
+      # the backend image (Method B in Chinese-Language-Redeploy-Guide.md) for
+      # that.
+      - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
 
   back:
     image: docdoku/docdoku-plm-server:2.6.2
