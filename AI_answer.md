@@ -458,10 +458,41 @@ mvn clean package -DskipTests
 
 ---
 
+## 修复 2：版本号需带 `v` 前缀
+
+更换为 JitPack 仓库后，`1.0.0` 仍无法解析：
+
+```
+Could not find artifact com.github.ralfstuckert.pdfbox-layout:pdfbox2-layout:jar:1.0.0
+in jitpack.io (https://jitpack.io)
+```
+
+**根本原因**：JitPack 使用 **git tag 名称**作为 Maven 版本号。该项目在 GitHub 上的发布 tag 是 `v1.0.0`（带 `v` 前缀），而 pom 中使用的是 `1.0.0`，两者不匹配，JitPack 找不到对应版本。
+
+**修复**：在 `docdoku-plm-server/pom.xml` 的 `dependencyManagement` 中将版本从 `1.0.0` 改为 `v1.0.0`：
+
+```xml
+<dependency>
+    <groupId>com.github.ralfstuckert.pdfbox-layout</groupId>
+    <artifactId>pdfbox2-layout</artifactId>
+    <version>v1.0.0</version>   <!-- must match git tag exactly -->
+</dependency>
+```
+
+以上修改已提交到仓库，`git pull` 后重新执行：
+
+```bash
+cd docdoku-plm-server
+mvn clean package -DskipTests
+```
+
+---
+
 ## Maven 构建 ERROR 修复汇总（全部）
 
 | 模块 | 错误类型 | 根因 | 修复 |
 |------|---------|------|------|
 | `docdoku-plm-server-core` | `cannot find symbol: class XmlTransient` | JDK 11 删除 JAXB | 添加 `javax.xml.bind:jaxb-api:2.3.1` 依赖 |
 | `docdoku-plm-server-ext` | `package javax.rmi does not exist` | JDK 11 删除 CORBA（JEP 320） | 删除 import，改用 `type.cast(o)` |
-| `docdoku-plm-server-office-doc` | `Could not find artifact pdfbox2-layout:1.0.0` | MuleSoft Nexus 不含 JitPack artifact | 将仓库改为 `https://jitpack.io` |
+| `docdoku-plm-server-office-doc` | `Could not find artifact pdfbox2-layout:1.0.0` in MuleSoft | MuleSoft Nexus 不含 JitPack artifact | 将仓库改为 `https://jitpack.io` |
+| `docdoku-plm-server-office-doc` | `Could not find artifact pdfbox2-layout:1.0.0` in JitPack | JitPack 版本号必须与 git tag 完全一致 | 版本改为 `v1.0.0` |
