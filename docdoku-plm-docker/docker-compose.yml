@@ -18,7 +18,6 @@ services:
       - 8000:80
     volumes:
       - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
-      - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
 
   back:
     image: docdoku/docdoku-plm-server:2.6.2
