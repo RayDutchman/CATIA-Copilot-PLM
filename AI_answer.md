@@ -83,3 +83,71 @@
 4. 用刚注册的账号登录即可
 
 > **关于 `#recovery` 页面**：这是密码找回/重置页面，不是普通登录入口。正常登录应该在首页直接输入账号密码，或点击 **Login** 按钮。
+
+---
+
+# 语言下拉菜单中没有中文选项的根本原因及解决方案
+
+## 根本原因
+
+语言下拉菜单的选项由**后端 Java API**（`GET /api/languages` → `PropertiesLoader.SUPPORTED_LANGUAGES[]`，编译进后端 JAR）控制，**不是**前端 NLS 翻译文件控制的。
+
+前端 Mustache 模板只负责为已存在的选项添加标签，无法注入新的选项。因此，只挂载前端翻译文件（方案 A）对下拉菜单没有任何效果。
+
+---
+
+## 解决方案 X（最简单 — nginx 拦截 `/languages` 接口，无需重建镜像）
+
+### 第 1 步：新建 `docdoku-plm-docker/proxy/languages.json`
+
+```json
+["fr", "en", "ru", "zh"]
+```
+
+### 第 2 步：修改 `docdoku-plm-docker/proxy/nginx.conf`
+
+在 `/api` location 之前添加精确匹配规则，拦截 `/languages` 请求并返回静态 JSON：
+
+```nginx
+location = /docdoku-plm-server-rest/api/languages {
+    default_type application/json;
+    alias /etc/nginx/conf.d/languages.json;
+}
+```
+
+### 第 3 步：修改 `docker-compose.yml`（`ssl-proxy` 服务），挂载该文件
+
+```yaml
+volumes:
+  - ./proxy/ssl:/etc/nginx/ssl
+  - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf
+  - ./proxy/languages.json:/etc/nginx/conf.d/languages.json   # 新增
+```
+
+### 第 4 步：重启 nginx 容器
+
+```bash
+docker compose up --force-recreate --no-deps -d ssl-proxy
+```
+
+> ⚠️ **前提**：必须通过 `https://docdokuplm.local:9000`（即走 nginx ssl-proxy）访问，而非直接访问 `http://localhost:8000` 的 front 容器。如果直接访问 front 容器，nginx 不在请求路径上，此方案无效，需使用下面的方案 B。
+
+---
+
+## 解决方案 B（最彻底 — 重建后端镜像）
+
+本仓库的 `PropertiesLoader.java` 已经包含 `"zh"`，直接重新构建即可：
+
+```bash
+# 在仓库根目录
+cd docdoku-plm-server
+mvn clean package -DskipTests
+
+# 重建 Docker 镜像
+docker build -t docdoku-plm-server:zh-local .
+
+# 修改 docker-compose.yml 中 back 服务的 image 指向新镜像
+# image: docdoku-plm-server:zh-local
+
+docker compose up --force-recreate --no-deps -d back
+```
