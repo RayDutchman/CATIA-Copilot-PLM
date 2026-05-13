@@ -151,3 +151,79 @@ docker build -t docdoku-plm-server:zh-local .
 
 docker compose up --force-recreate --no-deps -d back
 ```
+
+---
+
+# 解决方案 X 和方案 B 卡住的排查指南
+
+## 问题一：`https://docdokuplm.local:9000` 无法访问
+
+这是 SSL 代理方案（ssl-proxy 服务），需要**三个前置步骤**全部完成才能访问，缺一不可：
+
+### 第一步：配置 hosts 文件
+```bash
+# Linux/macOS
+echo "127.0.0.1 docdokuplm.local" | sudo tee -a /etc/hosts
+
+# Windows（以管理员身份运行 PowerShell）
+Add-Content C:\Windows\System32\drivers\etc\hosts "127.0.0.1 docdokuplm.local"
+```
+
+### 第二步：浏览器信任自签名根证书
+将 `docdoku-plm-docker/proxy/ssl/rootCA.pem` 导入浏览器的"受信任的根证书颁发机构"：
+- **Chrome/Edge**：设置 → 隐私和安全 → 安全 → 管理证书 → 受信任的根证书颁发机构 → 导入
+- **Firefox**：设置 → 隐私与安全 → 证书 → 查看证书 → 证书颁发机构 → 导入
+
+### 第三步：修改 docker-compose.yml + back.env
+在 `docdoku-plm-docker/docker-compose.yml` 的 `front` 服务，将 `front.json` 改为 `front-ssl.json`：
+```yaml
+volumes:
+  - ./env/front-ssl.json:/usr/share/nginx/html/webapp.properties.json
+```
+
+在 `docdoku-plm-docker/env/back.env` 中修改：
+```
+DOCDOKU_PLM_CODEBASE=https://docdokuplm.local:9000
+```
+
+然后重建容器：
+```bash
+cd docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d front back
+```
+
+> ⚠️ **重要**：如果只是为了让中文生效，**完全不需要走 SSL 方案**。直接用 `http://localhost:8000` 访问即可（即方案A，卷挂载）。
+
+---
+
+## 问题二：`mvn clean package -DskipTests` 报 ERROR
+
+没有具体报错信息难以精确判断，但该项目**最常见的 Maven 构建失败原因**如下：
+
+### 常见原因 1：Java 版本不对（最高发）
+该项目需要 **JDK 11**，用 JDK 17+ 会报编译错误：
+```bash
+java -version  # 确认是否是 11.x
+```
+如果不是，切换方法：
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y openjdk-11-jdk
+sudo update-alternatives --set java /usr/lib/jvm/java-11-openjdk-amd64/bin/java
+export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+```
+
+### 常见原因 2：Elasticsearch Maven 仓库网络超时
+`pom.xml` 中配置了 `https://artifacts.elastic.co/maven`，网络受限时会超时：
+```bash
+# 加上重试参数
+mvn clean package -DskipTests -Dmaven.wagon.http.retryHandler.count=3
+```
+
+### 常见原因 3：Maven 版本过低
+需要 Maven **3.8.x**：
+```bash
+mvn --version  # 确认版本
+```
+
+**建议优先选方案A（nginx 拦截）**——不需要 Node.js、Maven、JDK，是最简单的让中文下拉选项生效的方法。请把 `mvn` 的具体报错信息贴出来，可以进一步精确定位。
