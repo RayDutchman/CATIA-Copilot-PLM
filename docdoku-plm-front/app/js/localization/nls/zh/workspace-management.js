@@ -80,5 +80,12 @@ define({
     AUTHORIZATION_ENDPOINT: '授权端点',
     SIGNING_KEYS: '签名密钥',
     SET_NEW_ADMIN: '设置新管理员',
-    SET_NEW_WORKSPACE_ADMIN_SUBTITLE: '为工作区设置新管理员'
+    SET_NEW_WORKSPACE_ADMIN_SUBTITLE: '为工作区设置新管理员',
+    ACTIVE_USERS: '活跃用户',
+    INACTIVE_USERS: '已禁用用户',
+    ACTIVE_GROUPS: '活跃用户组',
+    INACTIVE_GROUPS: '已禁用用户组',
+    CHART_AXIS_DAYS_NUMBER: '天',
+    CHART_AXIS_DOCUMENTS_NUMBER: '文档',
+    CHART_AXIS_PARTS_NUMBER: '零件'
 });

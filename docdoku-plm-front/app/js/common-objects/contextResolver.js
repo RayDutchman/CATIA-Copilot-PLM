@@ -142,11 +142,10 @@ define([
                 App.config.timeZone = account.timeZone;
                 App.config.admin = account.admin;
 
-                if (window.localStorage.locale === 'unset') {
-                    window.localStorage.locale = account.language || 'en';
+                var accountLocale = account.language || 'en';
+                if (window.localStorage.locale !== accountLocale) {
+                    window.localStorage.locale = accountLocale;
                     window.location.reload();
-                } else {
-                    window.localStorage.locale = account.language || 'en';
                 }
 
                 return account;
