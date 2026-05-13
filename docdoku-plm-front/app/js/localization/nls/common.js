@@ -740,10 +740,12 @@ define({
         LANGUAGES: {
             fr: 'French',
             en: 'English',
-            ru: 'Russian'
+            ru: 'Russian',
+            zh: '中文'
         }
     },
     'es': true,
     'fr': true,
-    'ru': true
+    'ru': true,
+    'zh': true
 });

@@ -57,5 +57,6 @@ define({
     },
     'fr': true,
     'es': true,
-    'ru': true
+    'ru': true,
+    'zh': true
 });
