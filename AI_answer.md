@@ -610,3 +610,158 @@ mvn clean package -DskipTests
 | `docdoku-plm-server-ext` | `package javax.rmi does not exist` | JDK 11 删除 CORBA（JEP 320） | 删除 import，改用 `type.cast(o)` |
 | `docdoku-plm-server-office-doc` | `Could not find artifact pdfbox2-layout:1.0.0` in MuleSoft | MuleSoft Nexus 不含 JitPack artifact | 将仓库改为 `https://jitpack.io` |
 | `docdoku-plm-server-office-doc` | `Could not find artifact pdfbox2-layout:1.0.0` in JitPack | JitPack 版本号必须与 git tag 完全一致 | 版本改为 `v1.0.0` |
+
+---
+
+# 前端技术栈迁移计划（2026-05-13 新增）
+
+## 替换对照表
+
+| 原技术 | 替代品 | 说明 |
+|--------|--------|------|
+| Backbone.js | React | 组件化、单向数据流、虚拟DOM |
+| RequireJS | Vite | 原生ES模块、极快开发服务器 |
+| Less | Sass | 更强逻辑控制、更成熟生态 |
+| Grunt | Vite | 同一工具兼替构建与模块加载 |
+| Bower | npm | 统一前后端依赖管理 |
+| WebGL / Three.js | Three.js（保留） | 持续活跃更新，支持WebGPU |
+| WebRTC | WebRTC（保留） | 浏览器底层标准，配合Mediasoup |
+
+## 当前代码规模
+
+- Backbone Views/Models/Collections：403 个 JS 文件
+- Mustache HTML 模板：313 个文件
+- Less 样式文件：125 个
+- 应用模块：account-management、change-management、document-management、organization-management、product-management、product-structure、workspace-management、visualization（Three.js/WebGL）、WebRTC
+
+## 五阶段迁移计划
+
+### 阶段一：基础设施替换（Bower→npm，Grunt/RequireJS→Vite）
+
+不改任何业务代码，只换工具链，让项目能用新工具跑起来。
+
+1. 删除 `bower.json`、`.bowerrc`，把 `bower_components` 中所有依赖迁移到 `package.json`（npm）
+2. 删除 `Gruntfile.js` 及所有 `grunt-*` devDependencies
+3. 新建 `vite.config.js`，配置多页面入口、`@` 别名、Less 插件（过渡期暂留）、API 代理
+4. 将所有 `define([...], function(...){})` 的 RequireJS 模块语法批量转换为 ES Module（可用 codemod 脚本辅助）
+5. 将 `requirejs-i18n` 的语言包机制替换为 Vite 的 `import.meta.glob` 动态导入
+6. 更新 `package.json` scripts：`dev` → `vite`，`build` → `vite build`
+7. 更新 Docker 构建文件，去掉 `bower install`，改为 `npm ci && npm run build`
+
+**验收标准**：`npm run dev` 启动后，至少一个模块页面可在浏览器中正常打开。
+
+### 阶段二：Less → Sass
+
+1. 安装 `sass`，卸载 `less`/`vite-plugin-less`
+2. 将 125 个 `.less` 文件批量重命名为 `.scss`
+3. 批量处理语法差异：`@color` → `$color`、namespace mixin → `@use`/`@forward`
+4. 更新 `vite.config.js` 中 CSS 预处理器配置为 `sass`
+5. 逐模块检查编译输出，修复差异
+
+**验收标准**：`npm run build` 无 CSS 报错，页面样式与迁移前视觉一致。
+
+### 阶段三：引入 React（渐进式，Backbone 共存）
+
+1. 安装 `react`、`react-dom`、`@vitejs/plugin-react`
+2. 新建 `app/js/react/` 目录作为 React 组件根目录
+3. 迁移顺序（从简到繁）：
+   - **第 1 批**：`download`、`organization-management`
+   - **第 2 批**：`account-management`、`workspace-management`、`change-management`
+   - **第 3 批**：`document-management`、`product-management`、`product-structure`
+   - **第 4 批**：`visualization`（Three.js）、WebRTC 协作模块
+4. 迁移策略：Backbone Model/Collection → React 状态（useState/useReducer 或 Zustand）；Backbone View → React 函数组件；Mustache 模板 → JSX；Backbone Router → React Router v6；Backbone.sync → fetch/axios 服务层
+
+**验收标准**：每批模块迁移完成后功能与迁移前完全等价，Backbone 代码占比逐批下降至 0。
+
+### 阶段四：Three.js 现代化（visualization 模块）
+
+1. 将 Three.js 从 r90 升级到当前稳定版（r170+）
+2. 修复 Breaking Changes（材质、几何体 API、渲染器参数）
+3. 封装为 React 组件（可选配合 `@react-three/fiber`）
+4. WebRTC 部分封装为 React Hook（`useWebRTC`），服务端 SFU 配置单独处理
+
+### 阶段五：收尾与质量保障
+
+1. 删除所有残余 Backbone、RequireJS、Bower、Grunt 相关代码和依赖
+2. 升级 Bootstrap 2 → Bootstrap 5（或 Tailwind CSS）
+3. 补充单元测试（Vitest + React Testing Library，替代 CasperJS/PhantomJS）
+4. 补充 E2E 测试（Playwright）
+5. 更新 README，记录新的开发/构建命令
+
+**依赖顺序**：阶段一（工具链）→ 阶段二（Less→Sass）→ 阶段三（Backbone→React，分批）→ 阶段四（Three.js）→ 阶段五（收尾）
+
+---
+
+# 前端替换后的用户体验提升分析（2026-05-13 新增）
+
+## 一、页面响应速度
+
+| 改进点 | 原因 |
+|--------|------|
+| **首屏加载更快** | Vite 生产构建使用 Rollup 做 Tree-shaking，死代码零打包；RequireJS 所有模块串行加载，Vite 原生 ES 模块并行加载 |
+| **开发热更新毫秒级** | Vite HMR（热模块替换）仅更新变动模块，不刷新整页；Grunt+LiveReload 是全页刷新，延迟秒级 |
+| **Bundle 体积更小** | npm + Tree-shaking 只打包实际用到的代码；Bower 打包整个库 |
+
+## 二、交互流畅度
+
+| 改进点 | 原因 |
+|--------|------|
+| **UI 更新无闪烁** | React 虚拟 DOM diff 算法只更新真正变化的 DOM 节点；Backbone View 通常 re-render 整个模板，产生闪烁 |
+| **状态管理更可预测** | React 单向数据流让 UI 状态变化路径清晰；Backbone 双向绑定在复杂场景易出现状态不同步 bug |
+| **动画/过渡更顺滑** | React 配合 Framer Motion 等库可轻松实现 GPU 加速动画；Backbone 需要手动操作 DOM |
+
+## 三、3D 可视化（Three.js 升级）
+
+| 改进点 | 原因 |
+|--------|------|
+| **WebGPU 支持** | Three.js r170+ 原生支持 WebGPU 渲染器，在支持的设备上渲染性能提升 3-5 倍 |
+| **更多材质与后处理效果** | 新版 Three.js 材质系统、后处理管线（EffectComposer）更完善 |
+| **内存泄漏减少** | 新版 Three.js 修复了大量几何体/材质未释放的内存泄漏问题 |
+
+## 四、协作与实时功能（WebRTC + Mediasoup）
+
+| 改进点 | 原因 |
+|--------|------|
+| **多人同时在线编辑** | Mediasoup SFU 架构支持数十路视频/数据流，原生 WebRTC mesh 架构超过 4 人即卡顿 |
+| **网络自适应码率** | Mediasoup 支持 Simulcast，弱网自动降低分辨率，不中断连接 |
+
+## 五、可维护性带来的间接体验提升
+
+- **Bug 修复更快**：React 组件化让定位问题范围缩小，开发者能更快修复影响用户的 bug
+- **新功能上线更快**：Vite 开发环境启动 <1 秒（原 Grunt 冷启动约 30-60 秒），开发效率提升
+- **样式一致性更好**：Sass 变量/Mixin 统一管理，减少各模块 UI 风格不一致的情况
+
+---
+
+# 一次改好的概率评估（2026-05-13 新增）
+
+## 整体结论
+
+**整体一次全部完成的概率：极低（< 5%）**
+
+但如果按阶段拆分，每个阶段一次成功的概率差异较大：
+
+## 逐阶段评估
+
+| 阶段 | 一次成功概率 | 主要风险 |
+|------|------------|---------|
+| 阶段一：工具链替换 | **40-60%** | RequireJS→ESM 的 codemod 转换不完整（循环依赖、动态 require、条件 require）；bower 某些库在 npm 无等价包或版本差异大 |
+| 阶段二：Less→Sass | **70-80%** | 语法差异较小，批量替换 `@→$` 覆盖大部分情况；风险在于嵌套 namespace mixin 和 `@import` 路径差异 |
+| 阶段三：Backbone→React（每批） | **20-40%（每批）** | 403 个 Backbone 文件涉及大量业务逻辑；Backbone.sync 的自定义 HTTP 行为、Events 总线的跨模块通信最难一次迁移正确 |
+| 阶段四：Three.js 升级 | **50-70%** | Three.js r90→r170 有明确的 Migration Guide，Breaking Changes 可枚举；风险在于项目对旧 API 的深度使用程度 |
+| 阶段五：收尾 | **80-90%** | 主要是删除旧代码和补测试，风险最低 |
+
+## 为什么整体一次成功概率低
+
+1. **规模巨大**：403 JS 文件 + 313 模板 + 125 样式，任意一个文件出错都可能导致功能异常
+2. **隐式依赖多**：RequireJS 的模块加载顺序、Backbone Events 的全局总线、`requirejs-i18n` 的语言包加载时机，这些都是"运行时才能发现"的问题，静态分析无法完全覆盖
+3. **测试覆盖低**：现有测试使用 CasperJS/PhantomJS（均已停止维护），实际覆盖率不高，迁移后无法充分验证
+4. **浏览器兼容性**：WebGPU 等新特性仅部分浏览器支持，需要 fallback 逻辑
+
+## 建议的降险策略
+
+1. **分支隔离**：每个阶段在独立 feature branch 开发，通过 PR review 后再合并
+2. **模块级验收**：阶段三每迁移一个模块即在 staging 环境验收，不等全部模块迁移完再测
+3. **Feature Flag**：新旧实现并存，通过配置开关切换，出问题秒级回滚
+4. **补测试先行**：在阶段三开始前，先用 Playwright 为现有功能补充 E2E 快照测试，作为迁移的回归基准
+5. **从最小模块入手**：`download` 模块逻辑最简单，先完整跑通一个模块的迁移流程，验证方法论后再规模化
