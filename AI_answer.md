@@ -227,3 +227,67 @@ mvn --version  # 确认版本
 ```
 
 **建议优先选方案A（nginx 拦截）**——不需要 Node.js、Maven、JDK，是最简单的让中文下拉选项生效的方法。请把 `mvn` 的具体报错信息贴出来，可以进一步精确定位。
+
+---
+
+# 方案 B 报错 `cannot find symbol: class XmlTransient / XmlElement` 的根本原因及修复
+
+## 根本原因
+
+错误信息：
+```
+[ERROR] cannot find symbol: class XmlTransient
+[ERROR] cannot find symbol: class XmlElement
+```
+
+这两个类来自 `javax.xml.bind.annotation.*`，属于 **JAXB（Java XML Binding）API**。
+
+- **JDK 8**：JAXB 内置于 JDK，不需要额外依赖，直接可用。
+- **JDK 9/10**：JAXB 移动到 `java.xml.bind` 模块，默认不加载，需加 `--add-modules java.xml.bind`。
+- **JDK 11+**：JAXB 模块**从 JDK 完全移除**，必须通过 Maven 依赖显式引入。
+
+你用的是 **JDK 11 或更高版本**，而项目 `pom.xml` 中没有显式声明 `jaxb-api` 依赖（只有 `javaee-api:8.0.1 provided`，但该 jar 在 JDK 11 classpath 下无法补全已被移除的模块）。
+
+---
+
+## 修复方案（已修复到仓库中）
+
+### 第 1 步：在根 pom.xml 的 `dependencyManagement` 中添加版本声明
+
+文件：`docdoku-plm-server/pom.xml`
+
+```xml
+<!-- JAXB API: removed from JDK in Java 11, must be supplied explicitly -->
+<dependency>
+    <groupId>javax.xml.bind</groupId>
+    <artifactId>jaxb-api</artifactId>
+    <version>2.3.1</version>
+    <scope>provided</scope>
+</dependency>
+```
+
+### 第 2 步：在 `docdoku-plm-server-core/pom.xml` 中引用该依赖
+
+文件：`docdoku-plm-server/docdoku-plm-server-core/pom.xml`
+
+```xml
+<dependency>
+    <groupId>javax.xml.bind</groupId>
+    <artifactId>jaxb-api</artifactId>
+</dependency>
+```
+
+以上两处修改已提交到仓库，直接 `git pull` 后重新执行：
+
+```bash
+cd docdoku-plm-server
+mvn clean package -DskipTests
+```
+
+即可通过编译。
+
+---
+
+## 为什么用 `provided` 而不是 `compile`？
+
+WildFly（项目使用的应用服务器）本身已包含 JAXB 实现（`glassfish-jaxb`），运行时由服务器提供。`provided` 表示编译期有这个 jar，但部署到 WildFly 后不把它打入 EAR/JAR，防止类加载冲突。
