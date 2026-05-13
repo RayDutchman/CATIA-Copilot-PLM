@@ -109,6 +109,23 @@ cd /path/to/CATIA-Copilot-PLM
 git pull
 ```
 
+### 第零步：构建基础镜像（首次构建必须）
+
+`docker/Dockerfile` 依赖 `docdoku/docdoku-plm-server-base:2.6.2` 作为基础镜像。该镜像是 DocDoku 公司的私有镜像，**无法从 Docker Hub 公开拉取**（会报 `pull access denied` 错误）。
+
+仓库内已提供构建该基础镜像所需的 Dockerfile，执行一次即可：
+
+```bash
+# 仍在 docdoku-plm-server/ 目录下执行
+docker build \
+  -f docker/payara/Dockerfile \
+  -t docdoku/docdoku-plm-server-base:2.6.2 \
+  docker/payara/
+```
+
+> ⏱ 此步骤需要下载 Payara 镜像及安装 LibreOffice，首次约 5–20 分钟。
+> 构建完成后无需重复执行（除非清空了本地 Docker 镜像缓存）。
+
 ### 第二步：Maven 构建后端
 
 ```bash
@@ -137,8 +154,8 @@ docker build \
   .
 ```
 
-> 说明：`docker/Dockerfile` 使用 DockerHub 上已有的 `docdoku/docdoku-plm-server-base:2.6.2`
-> 作为基础镜像（无需手动构建 payara 层），只把本地编译好的 EAR 复制进去。
+> 说明：`docker/Dockerfile` 使用第零步中本地构建的 `docdoku/docdoku-plm-server-base:2.6.2`
+> 作为基础镜像，只把本地编译好的 EAR 复制进去。
 
 ### 第四步：重启后端容器
 
@@ -244,6 +261,7 @@ docker volume rm docdoku-plm-server-volume
 | Language 下拉框没有"中文"选项 | 后端预构建镜像不支持 zh | **使用方案 B** 从源码重建后端镜像 |
 | `pdfbox2-layout:jar:1.0.0` 找不到 | 旧版本 `1.0.0` 未在 JitPack 发布 | 已修复，拉取最新代码后重新构建 |
 | `mvn` 报 `Cannot access defaults field of Properties` | `maven-war-plugin:2.2` 与 JDK 17+ 不兼容 | 已修复（`pluginManagement` 中已固定为 `3.3.2`），拉取最新代码后重新构建 |
+| `docker build` 报 `pull access denied` for `docdoku-plm-server-base` | 该基础镜像是私有镜像，无法从 Docker Hub 拉取 | 先执行**第零步**，用 `docker/payara/Dockerfile` 在本地构建基础镜像 |
 | `docker build` 提示找不到 EAR | Maven 构建未完成或失败 | 检查 `docdoku-plm-server-ear/target/` 目录是否存在 `.ear` 文件 |
 | 选了中文但界面仍显示英文 | 前端翻译文件未更新 | 确认 docker-compose.yml 中 nls 卷挂载已生效（方案 A） |
 | `docker compose up` 仍使用旧镜像 | Docker 镜像缓存 | 使用 `--force-recreate` 参数强制重建容器 |
