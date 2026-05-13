@@ -1,2 +1,13 @@
 .idea/
 
+docdoku-plm-server/docdoku-plm-server-core/target/classes/com/docdoku/plm/server/core/i18n/LocalStrings_en.properties
+docdoku-plm-server/docdoku-plm-server-core/target/classes/com/docdoku/plm/server/core/i18n/LocalStrings_fr.properties
+docdoku-plm-server/docdoku-plm-server-core/target/classes/com/docdoku/plm/server/core/i18n/LocalStrings_ru.properties
+docdoku-plm-server/docdoku-plm-server-core/target/classes/com/docdoku/plm/server/core/i18n/LocalStrings_zh.properties
+docdoku-plm-server/docdoku-plm-server-core/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
+docdoku-plm-server/docdoku-plm-server-core/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst
+docdoku-plm-server/docdoku-plm-server-i18n/target/docdoku-plm-server-i18n-2.6.2.jar
+docdoku-plm-server/docdoku-plm-server-i18n/target/classes/com/docdoku/plm/server/i18n/PropertiesLoader.class
+docdoku-plm-server/docdoku-plm-server-i18n/target/maven-archiver/pom.properties
+docdoku-plm-server/docdoku-plm-server-i18n/target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
+docdoku-plm-server/docdoku-plm-server-i18n/target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst
