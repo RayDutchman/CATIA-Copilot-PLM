@@ -410,3 +410,58 @@ mvn clean package -DskipTests
 |------|---------|------|---------|
 | `docdoku-plm-server-core` | `javax.xml.bind.*`（JAXB） | JDK 11 移除 `java.xml.bind` 模块 | 添加 Maven 依赖 `javax.xml.bind:jaxb-api:2.3.1`（scope=provided） |
 | `docdoku-plm-server-ext` | `javax.rmi.PortableRemoteObject` | JDK 11 移除 `java.corba` 模块（JEP 320） | 移除 import，改用 `type.cast(o)` |
+
+---
+
+# 方案 B 报错 `Could not find artifact pdfbox2-layout:1.0.0` 的根本原因及修复
+
+## 根本原因
+
+错误信息：
+```
+Could not find artifact com.github.ralfstuckert.pdfbox-layout:pdfbox2-layout:jar:1.0.0
+in mulesoft-releases (https://repository.mulesoft.org/nexus/content/repositories/public/)
+```
+
+`pdfbox2-layout` 是托管在 **GitHub** 上的开源项目（https://github.com/ralfstuckert/pdfbox-layout），其发布的 Maven artifact 通过 **JitPack** 分发，**不在 MuleSoft Nexus** 仓库中。MuleSoft Nexus 公共仓库本质上是 Nexus 代理，只聚合了部分仓库，不包含 JitPack 上的 GitHub 项目制品。
+
+---
+
+## 修复方案（已修复到仓库中）
+
+文件：`docdoku-plm-server/docdoku-plm-server-office-doc/pom.xml`
+
+**将**：
+```xml
+<repository>
+    <id>mulesoft-releases</id>
+    <name>MuleSoft Repository</name>
+    <url>https://repository.mulesoft.org/nexus/content/repositories/public/</url>
+</repository>
+```
+
+**改为**：
+```xml
+<repository>
+    <id>jitpack.io</id>
+    <name>JitPack Repository</name>
+    <url>https://jitpack.io</url>
+</repository>
+```
+
+以上修改已提交到仓库，直接 `git pull` 后重新执行：
+
+```bash
+cd docdoku-plm-server
+mvn clean package -DskipTests
+```
+
+---
+
+## Maven 构建 ERROR 修复汇总（全部）
+
+| 模块 | 错误类型 | 根因 | 修复 |
+|------|---------|------|------|
+| `docdoku-plm-server-core` | `cannot find symbol: class XmlTransient` | JDK 11 删除 JAXB | 添加 `javax.xml.bind:jaxb-api:2.3.1` 依赖 |
+| `docdoku-plm-server-ext` | `package javax.rmi does not exist` | JDK 11 删除 CORBA（JEP 320） | 删除 import，改用 `type.cast(o)` |
+| `docdoku-plm-server-office-doc` | `Could not find artifact pdfbox2-layout:1.0.0` | MuleSoft Nexus 不含 JitPack artifact | 将仓库改为 `https://jitpack.io` |
