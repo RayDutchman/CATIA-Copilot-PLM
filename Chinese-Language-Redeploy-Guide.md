@@ -9,8 +9,11 @@
 当前 `docker-compose.yml` 使用的是 DockerHub 上预构建的镜像：
 
 ```yaml
-front: image: docdoku/docdoku-plm-front:2.6.2
-back:  image: docdoku/docdoku-plm-server:2.6.2
+services:
+  front:
+    image: docdoku/docdoku-plm-front:2.6.2
+  back:
+    image: docdoku/docdoku-plm-server:2.6.2
 ```
 
 这些镜像是打包好的，**不会自动感知本地代码变化**。要让中文翻译生效，需要让容器使用到新添加的 `nls/zh/` 文件以及更新后的后端 `.properties` 文件。
@@ -64,7 +67,7 @@ docker compose up --force-recreate --no-deps -d front
 
 ### 第四步：验证
 
-打开浏览器访问 [http://localhost:8080](http://localhost:8080)（或您配置的端口），登录后进入 **Account → Edit account**，在 **Language** 下拉菜单中即可看到 **中文** 选项。选择后保存，刷新页面即可全程中文显示。
+打开浏览器访问 [http://localhost:8000](http://localhost:8000)（或您配置的端口），登录后进入 **Account → Edit account**，在 **Language** 下拉菜单中即可看到 **中文** 选项。选择后保存，刷新页面即可全程中文显示。
 
 ---
 
@@ -166,7 +169,7 @@ docker compose ps
 docker compose logs -f back
 ```
 
-启动完成后访问 [http://localhost:8080](http://localhost:8080)，语言切换方式同方案 A。
+启动完成后访问 [http://localhost:8000](http://localhost:8000)，语言切换方式同方案 A。
 
 ---
 
