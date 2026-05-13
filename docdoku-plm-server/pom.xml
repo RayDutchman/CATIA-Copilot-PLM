@@ -154,7 +154,7 @@
             <dependency>
                 <groupId>com.github.ralfstuckert.pdfbox-layout</groupId>
                 <artifactId>pdfbox2-layout</artifactId>
-                <version>1.0.0</version>
+                <version>v1.0.0</version>
             </dependency>
 
             <!-- Test -->
