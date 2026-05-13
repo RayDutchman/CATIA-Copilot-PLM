@@ -765,3 +765,91 @@ mvn clean package -DskipTests
 3. **Feature Flag**：新旧实现并存，通过配置开关切换，出问题秒级回滚
 4. **补测试先行**：在阶段三开始前，先用 Playwright 为现有功能补充 E2E 快照测试，作为迁移的回归基准
 5. **从最小模块入手**：`download` 模块逻辑最简单，先完整跑通一个模块的迁移流程，验证方法论后再规模化
+
+---
+
+# docdoku-plm-sample-data 使用说明（2026-05-13 新增）
+
+## 模块用途
+
+`docdoku-plm-sample-data` 是一个独立的 Java 命令行工具，通过调用 DocDokuPLM REST API，向已运行的 DocDokuPLM 服务器批量导入示例数据，包括：
+- 10 个测试用户账号（rob、joe、steve 等）
+- 多个用户组（Group1~Group5）
+- 示例工作区（Workspace）
+- 示例文档（.docx、.xlsx、.ods、.odt、.txt）
+- 示例零件（BassBoat 系列 .obj/.mtl 3D 模型、dodgeengine.obj）
+- 示例工作流（Workflow）、变更管理数据等
+
+## 前提条件
+
+1. **DocDokuPLM 服务器已启动**，可通过浏览器访问（默认 `http://localhost:8080`）
+2. **已安装 Java 8+** 和 **Maven 3.x**
+3. 已有一个 DocDokuPLM 管理员账号（或准备新建的账号名/密码）
+
+## 使用步骤
+
+### Linux / macOS
+
+```bash
+# 进入模块目录
+cd docdoku-plm-sample-data
+
+# 运行加载脚本（会自动先 mvn build 再执行）
+./loadSample.sh -u <用户名> -p <密码> -h <服务器URL> [-w <工作区ID>]
+```
+
+**示例：**
+```bash
+./loadSample.sh -u admin -p changeit -h http://localhost:8080
+```
+
+### Windows
+
+```bat
+cd docdoku-plm-sample-data
+loadSample.bat -u admin -p changeit -h http://localhost:8080
+```
+
+### 参数说明
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `-u` / `--user` | ✅ | 账号名（不存在会自动创建） |
+| `-p` / `--password` | ✅ | 账号密码 |
+| `-h` / `--host` | ✅ | 服务器地址，如 `http://localhost:8080` |
+| `-w` / `--workspace` | ❌ | 工作区 ID（不填则自动生成） |
+
+## 手动构建并运行（不用脚本）
+
+```bash
+cd docdoku-plm-sample-data
+
+# 构建 jar 并复制依赖
+mvn clean install
+mvn dependency:copy-dependencies
+
+# 运行
+java -classpath "target/docdoku-plm-sample-data.jar:target/dependency/*" \
+  com.docdoku.loaders.Main \
+  -u admin -p changeit -h http://localhost:8080
+```
+
+## 加载内容一览
+
+脚本运行后会依次创建：
+1. 调用者账号及 10 个测试用户
+2. 5 个用户组，并将测试用户分配进去
+3. 一个工作区，并授权上述用户和用户组
+4. 多个文档模板、文档（含附件文件）
+5. 多个零件（含 BassBoat 3D 装配体和发动机模型）
+6. 产品结构（Product Structure）
+7. 工作流模板及变更管理数据（ECR/ECN/ECO）
+
+## 常见问题
+
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| `Connection refused` | 服务器未启动或端口不对 | 确认 `http://localhost:8080` 可访问 |
+| `401 Unauthorized` | 账号密码错误或账号不存在 | 检查 `-u`/`-p` 参数；首次运行会自动创建账号 |
+| `maven: command not found` | 未安装 Maven | `apt install maven` 或从官网下载 |
+| `BUILD FAILURE` (API 版本) | `docdoku-api-java` SNAPSHOT 依赖找不到 | 需要先在同一本地仓库 `mvn install` 对应的 API 模块 |
