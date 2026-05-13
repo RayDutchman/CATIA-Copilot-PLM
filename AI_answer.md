@@ -1,3 +1,117 @@
+# 中文语言切换问题修复说明（2026-05-13 新增）
+
+## 问题描述
+
+在 localhost:8080 页面将语言切换为中文（zh）后，大部分界面内容仍然显示为英语，未能正确切换为汉语。
+
+---
+
+## 根本原因分析
+
+经过代码分析，发现存在以下几个问题：
+
+### 问题一：语言切换后页面不自动重载（主要原因）
+
+**文件：** `docdoku-plm-front/app/js/common-objects/contextResolver.js`
+
+原代码逻辑：
+```js
+if (window.localStorage.locale === 'unset') {
+    window.localStorage.locale = account.language || 'en';
+    window.location.reload();  // 只有 locale === 'unset' 才重载
+} else {
+    window.localStorage.locale = account.language || 'en';  // 静默更新，不重载
+}
+```
+
+**问题：** `requirejs-i18n` 插件在页面加载时一次性读取 `localStorage.locale` 来决定加载哪个语言包。如果语言包已经以英文加载，后续只更新 `localStorage.locale` 而不重载页面，界面语言不会变化。
+
+只有当 `locale === 'unset'` 时才会重载，但以下两种情况不会触发重载：
+- **新用户注册**：`localStorage.locale` 为 `null`，账号语言为 `zh`，不满足 `=== 'unset'` 条件
+- **旧会话**：浏览器缓存的 locale 与账号语言不一致时，也不会重载
+
+**修复方案：** 将条件改为"任意不匹配时都重载"：
+```js
+var accountLocale = account.language || 'en';
+if (window.localStorage.locale !== accountLocale) {
+    window.localStorage.locale = accountLocale;
+    window.location.reload();
+}
+```
+
+---
+
+### 问题二：中文语言包缺失 7 个键
+
+**文件：** `docdoku-plm-front/app/js/localization/nls/zh/workspace-management.js`
+
+仪表盘（Dashboard）页面所需的以下键在中文语言包中缺失，导致这些内容显示为空或英文：
+
+| 键名 | 中文翻译 |
+|------|---------|
+| `ACTIVE_USERS` | 活跃用户 |
+| `INACTIVE_USERS` | 已禁用用户 |
+| `ACTIVE_GROUPS` | 活跃用户组 |
+| `INACTIVE_GROUPS` | 已禁用用户组 |
+| `CHART_AXIS_DAYS_NUMBER` | 天 |
+| `CHART_AXIS_DOCUMENTS_NUMBER` | 文档 |
+| `CHART_AXIS_PARTS_NUMBER` | 零件 |
+
+---
+
+### 问题三：HTML 模板中存在硬编码英文字符串
+
+以下模板文件中含有直接写死的英文文本，未使用 i18n 变量，因此无论切换到任何语言都不会翻译：
+
+| 文件 | 硬编码内容 | 修复方式 |
+|------|-----------|---------|
+| `account-management/js/templates/edit-account-auth.html` | `Validate`（按钮文字） | 改为 `{{i18n.CONFIRM}}` |
+| `workspace-management/js/templates/workspace-creation.html` | `Description`（标签和占位符） | 改为 `{{i18n.DESCRIPTION}}` |
+| `js/common-objects/templates/linked/linked_change_items.html` | `Low` / `Medium` / `High` / `Emergency`（优先级标签） | 新增 i18n 键并替换 |
+
+---
+
+## 修改的文件列表
+
+1. **`docdoku-plm-front/app/js/common-objects/contextResolver.js`**  
+   修复 locale 不匹配时不重载页面的 bug
+
+2. **`docdoku-plm-front/app/js/localization/nls/zh/workspace-management.js`**  
+   补充 7 个缺失的中文翻译键
+
+3. **`docdoku-plm-front/app/account-management/js/templates/edit-account-auth.html`**  
+   将硬编码 `Validate` 替换为 `{{i18n.CONFIRM}}`
+
+4. **`docdoku-plm-front/app/workspace-management/js/templates/workspace-creation.html`**  
+   将硬编码 `Description` 替换为 `{{i18n.DESCRIPTION}}`
+
+5. **`docdoku-plm-front/app/js/common-objects/templates/linked/linked_change_items.html`**  
+   将硬编码 `Low/Medium/High/Emergency` 替换为 i18n 模板变量
+
+6. **`docdoku-plm-front/app/js/localization/nls/common.js`**（根语言文件）  
+   新增 `CHANGE_ITEM_PRIORITY_LOW/MEDIUM/HIGH/EMERGENCY` 键（英文默认值）
+
+7. **`docdoku-plm-front/app/js/localization/nls/fr/common.js`**  
+   新增法语翻译：`Basse / Moyenne / Haute / Urgence`
+
+8. **`docdoku-plm-front/app/js/localization/nls/ru/common.js`**  
+   新增俄语翻译：`Низкий / Средний / Высокий / Экстренный`
+
+9. **`docdoku-plm-front/app/js/localization/nls/zh/common.js`**  
+   新增中文翻译：`低 / 中 / 高 / 紧急`
+
+---
+
+## 修复效果
+
+修复后，以下情形均可正确切换到中文界面：
+- 新用户注册时选择中文语言后，登录跳转页面自动以中文显示
+- 已有账号修改语言为中文，刷新页面后全界面显示中文
+- 工作区仪表盘（Dashboard）的图表轴标签和用户统计标签显示中文
+- 账号认证弹窗的确认按钮、工作区创建表单的描述字段、变更项优先级标签均显示中文
+
+---
+
 # 关于 localhost:8080 中文切换及中文支持
 
 ## 在哪里切换语言？
