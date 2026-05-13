@@ -34,9 +34,9 @@ import javax.security.auth.message.callback.CallerPrincipalCallback;
 import javax.security.auth.message.callback.GroupPrincipalCallback;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.xml.bind.DatatypeConverter;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -63,7 +63,7 @@ public class BasicHeaderSAM extends CustomSAM {
         String authorization = request.getHeader("Authorization");
         String[] splitAuthorization = authorization.split(" ");
 
-        byte[] decoded = DatatypeConverter.parseBase64Binary(splitAuthorization[1]);
+        byte[] decoded = Base64.getDecoder().decode(splitAuthorization[1]);
 
         String credentials;
 
