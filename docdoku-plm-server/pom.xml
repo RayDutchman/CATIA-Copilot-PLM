@@ -305,6 +305,13 @@
                         <ejbVersion>3.1</ejbVersion>
                     </configuration>
                 </plugin>
+                <!-- maven-war-plugin 2.x is incompatible with JDK 17+.
+                     Pin to 3.3.2 which works on JDK 11 and 17. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>3.3.2</version>
+                </plugin>
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>

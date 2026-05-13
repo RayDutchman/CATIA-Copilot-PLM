@@ -243,6 +243,7 @@ docker volume rm docdoku-plm-server-volume
 |------|------|----------|
 | Language 下拉框没有"中文"选项 | 后端预构建镜像不支持 zh | **使用方案 B** 从源码重建后端镜像 |
 | `pdfbox2-layout:jar:1.0.0` 找不到 | 旧版本 `1.0.0` 未在 JitPack 发布 | 已修复，拉取最新代码后重新构建 |
+| `mvn` 报 `Cannot access defaults field of Properties` | `maven-war-plugin:2.2` 与 JDK 17+ 不兼容 | 已修复（`pluginManagement` 中已固定为 `3.3.2`），拉取最新代码后重新构建 |
 | `docker build` 提示找不到 EAR | Maven 构建未完成或失败 | 检查 `docdoku-plm-server-ear/target/` 目录是否存在 `.ear` 文件 |
 | 选了中文但界面仍显示英文 | 前端翻译文件未更新 | 确认 docker-compose.yml 中 nls 卷挂载已生效（方案 A） |
 | `docker compose up` 仍使用旧镜像 | Docker 镜像缓存 | 使用 `--force-recreate` 参数强制重建容器 |
