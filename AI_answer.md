@@ -291,3 +291,122 @@ mvn clean package -DskipTests
 ## 为什么用 `provided` 而不是 `compile`？
 
 WildFly（项目使用的应用服务器）本身已包含 JAXB 实现（`glassfish-jaxb`），运行时由服务器提供。`provided` 表示编译期有这个 jar，但部署到 WildFly 后不把它打入 EAR/JAR，防止类加载冲突。
+
+---
+
+# 方案 X（nginx 拦截）操作后设置里仍然没有中文的根本原因
+
+## 根本原因：前端 API 请求完全绕过了 nginx
+
+`docker-compose.yml` 将 `env/front.json` 挂载为前端的 `webapp.properties.json`：
+
+```yaml
+volumes:
+  - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
+```
+
+`front.json` 内容为：
+
+```json
+{"server": {"ssl": false, "domain": "localhost", "port": 8001, ...}}
+```
+
+前端 JS（`contextResolver.js`）读取该配置后，将 `apiEndPoint` 设置为：
+
+```
+http://localhost:8001/docdoku-plm-server-rest/api
+```
+
+即 `GET /languages` 的请求直接发往**后端 WildFly 容器的 8001 端口**，**完全不经过 nginx ssl-proxy**。因此在 `nginx.conf` 中加的拦截规则永远不会被执行。
+
+---
+
+## 让方案 X 真正生效的完整步骤
+
+必须同时修改 `front.json`，让前端的 API 请求也经过 nginx（9000 端口），nginx 才能拦截到 `/languages`。
+
+### 第 1 步：修改 `docdoku-plm-docker/env/front.json`
+
+```json
+{
+    "server": {
+        "ssl": true,
+        "domain": "localhost",
+        "port": 9000,
+        "contextPath": "/docdoku-plm-server-rest",
+        "wsDomain": "localhost"
+    },
+    "contextPath": "/",
+    "preferLoginWith": false
+}
+```
+
+> ⚠️ 改成 `ssl: true` + 端口 9000，所有 API 请求将走 `https://localhost:9000/...`，nginx 才会参与路由。
+
+### 第 2 步：在 `proxy/nginx.conf` 中添加精确拦截（已在方案 X 中描述）
+
+### 第 3 步：在 `docker-compose.yml` ssl-proxy 服务中挂载 `languages.json`（已在方案 X 中描述）
+
+### 第 4 步：重启 front 和 ssl-proxy（两个都要，因为 `front.json` 变了）
+
+```bash
+docker compose up --force-recreate --no-deps -d front ssl-proxy
+```
+
+> ⚠️ 浏览器访问时必须接受自签名证书（首次访问 `https://localhost:9000` 时点"继续访问"）。
+
+---
+
+# 方案 B 报错 `package javax.rmi does not exist` 的根本原因及修复
+
+## 根本原因
+
+错误信息：
+```
+[ERROR] package javax.rmi does not exist
+[ERROR] cannot find symbol: variable PortableRemoteObject
+```
+
+`javax.rmi.PortableRemoteObject` 来自 **CORBA/RMI-IIOP API**。
+
+- **JDK 8**：CORBA 内置于 JDK，直接可用。
+- **JDK 9/10**：CORBA 移至独立模块 `java.corba`，默认不加载。
+- **JDK 11+**：CORBA 模块**完全从 JDK 移除**（JEP 320），`javax.rmi` 包不再存在。
+
+`BeanLocator.java` 中原来用 `PortableRemoteObject.narrow(o, type)` 做类型转换，这是 RMI-IIOP 远程访问的用法。在现代 WildFly 中进行本地 JNDI 查询时，不需要经过 CORBA 层，直接类型转换即可。
+
+---
+
+## 修复方案（已修复到仓库中）
+
+文件：`docdoku-plm-server/docdoku-plm-server-ext/src/main/java/com/docdoku/plm/server/BeanLocator.java`
+
+**删除** `import javax.rmi.PortableRemoteObject;`
+
+**将**：
+```java
+result.add((T) PortableRemoteObject.narrow(o, type));
+```
+
+**改为**：
+```java
+result.add(type.cast(o));
+```
+
+`type.cast(o)` 是 Java 反射的安全类型转换，等价于强转但无 unchecked 警告，对本地 JNDI 查询完全够用。
+
+以上修改已提交到仓库，直接 `git pull` 后重新执行：
+
+```bash
+cd docdoku-plm-server
+mvn clean package -DskipTests
+```
+
+---
+
+## 已知 JDK 11 兼容性修复汇总
+
+| 模块 | 缺失 API | 原因 | 修复方式 |
+|------|---------|------|---------|
+| `docdoku-plm-server-core` | `javax.xml.bind.*`（JAXB） | JDK 11 移除 `java.xml.bind` 模块 | 添加 Maven 依赖 `javax.xml.bind:jaxb-api:2.3.1`（scope=provided） |
+| `docdoku-plm-server-ext` | `javax.rmi.PortableRemoteObject` | JDK 11 移除 `java.corba` 模块（JEP 320） | 移除 import，改用 `type.cast(o)` |

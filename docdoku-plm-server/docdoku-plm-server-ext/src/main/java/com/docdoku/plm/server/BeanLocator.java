@@ -20,7 +20,6 @@
 package com.docdoku.plm.server;
 
 import javax.naming.*;
-import javax.rmi.PortableRemoteObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
@@ -83,7 +82,7 @@ public class BeanLocator {
                     if (ncp.getName().contains("!" + type.getCanonicalName())) {
                         // bean reference
                         LOGGER.info("EJB found: " + ncp.getName());
-                        result.add((T) PortableRemoteObject.narrow(o, type));
+                        result.add(type.cast(o));
                     } else if (Context.class.isAssignableFrom(o.getClass())) {
                         // sub-context
                         result.addAll(search(type, (Context) o));
