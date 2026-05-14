@@ -738,6 +738,7 @@ define({
     LANGUAGES: {
         fr: 'Français',
         en: 'Anglais',
-        ru: 'Russe'
+        ru: 'Russe',
+        zh: '中文（简体）'
     }
 });

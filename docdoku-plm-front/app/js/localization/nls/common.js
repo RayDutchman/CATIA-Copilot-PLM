@@ -745,7 +745,7 @@ define({
             fr: 'French',
             en: 'English',
             ru: 'Russian',
-            zh: '中文'
+            zh: '中文（简体）'
         }
     },
     'es': true,
