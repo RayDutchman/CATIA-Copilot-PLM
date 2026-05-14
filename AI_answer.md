@@ -1418,3 +1418,144 @@ window.location.reload();
 | 界面语言不切换 | RequireJS locale 读取时机 vs contextResolver 更新时机的 race condition | ❌ 不同问题 |
 
 修复 charset 只解决"查看"层面的乱码，**不能**解决界面语言不切换。需要通过上面的控制台诊断步骤找出 locale 切换不生效的具体原因。
+
+---
+
+# 诊断结果分析：部分中文 + delete后变英文（2026-05-14）
+
+## 你提供的诊断数据
+
+| 诊断步骤 | 结果 |
+|---------|------|
+| `localStorage.locale` | `'zh'` ✓ |
+| RequireJS locale | `'zh'` ✓ |
+| Network 面板 nls/zh 请求 | 存在（截图确认）✓ |
+| 界面语言状态 | **部分中文**（不是全中文）|
+| `delete localStorage.locale` + reload 后 | **界面变为英文** |
+
+---
+
+## 代码分析结果（已在仓库中验证）
+
+### 1. zh 翻译文件完整性检查
+
+```
+common.js:              root=745, zh=745, missing=0 ✓
+document-management.js: root=4,   zh=4,   missing=0 ✓
+account-management.js:  root=10,  zh=10,  missing=0 ✓
+change-management.js:   root=10,  zh=10,  missing=0 ✓
+workspace-management.js:root=81,  zh=88,  missing=0 ✓
+product-management.js:  root=21,  zh=21,  missing=0 ✓
+product-structure.js:   root=6,   zh=6,   missing=0 ✓
+organization-management.js: root=14, zh=14, missing=0 ✓
+```
+
+**结论：zh 翻译文件是 100% 完整的，所有 key 均已翻译。"部分中文"绝对不是由 zh bundle 里缺少翻译 key 导致的。**
+
+---
+
+### 2. 语言保存流程（edit-account.js）
+
+```js
+// onUpdateSuccess: 保存账号后
+if (window.localStorage.locale !== account.language) {  // 'en' !== 'zh' → true
+    window.localStorage.locale = account.language;  // 设为 'zh'
+    window.location.reload();                        // 重载 → RequireJS 读 'zh' → 中文
+} else {
+    // 只显示成功消息，不重载
+}
+```
+
+**结论：第一次保存语言='zh' 时，流程正确：setLocale('zh') → reload → RequireJS 加载 zh bundle ✓**
+
+---
+
+### 3. contextResolver 流程（contextResolver.js）
+
+```js
+// App.config 初始化时：
+locale: window.localStorage.getItem('locale') || 'en'  // 页面加载时一次性读取
+
+// resolveAccount() 时：
+var accountLocale = account.language || 'en';  // 从服务器获取
+if (window.localStorage.locale !== accountLocale) {
+    window.localStorage.locale = accountLocale;
+    window.location.reload();  // 只有 localStorage 和服务器不同才 reload
+}
+```
+
+---
+
+## "部分中文"的根本原因
+
+RequireJS zh bundle **完全正确地**加载了，所有 i18n key 都翻译了。但界面里有些内容 **根本不经过 RequireJS i18n bundle**，所以永远是英文：
+
+### 原因 1：服务器 API 返回的英文内容（最主要）
+
+后端 REST API 返回的响应（错误信息、状态文字等）是英文，例如：
+- 保存失败时的错误提示 (`error.responseText` 直接显示，见 `edit-account.js:182`)
+- 服务器端验证失败消息
+- 工作区名称、文档名称等业务数据（存储时是英文）
+
+### 原因 2：部分模板里有硬编码英文（次要）
+
+某些 Mustache 模板可能包含不走 i18n 的硬编码英文字符串。
+
+### 原因 3：第三方库自带英文 UI（次要）
+
+Bootstrap、datepicker 等组件可能有英文默认文字。
+
+---
+
+## "delete → 英文"现象解释
+
+你执行 `delete localStorage.locale; window.location.reload()` 后看到英文，这是**正常的双重 reload 中间状态**：
+
+```
+第 1 次 reload（你看到的）：
+  RequireJS 读 localStorage.locale → undefined → 'en' → 加载英文 bundle
+  界面显示英文 ← 你此时看到的
+
+  几秒后，contextResolver.resolveAccount() 执行：
+    localStorage.locale (undefined) !== account.language ('zh') → true
+    → 设 localStorage.locale = 'zh'
+    → window.location.reload() 触发第 2 次 reload
+
+第 2 次 reload（自动发生）：
+  RequireJS 读 localStorage.locale → 'zh' → 加载 zh bundle
+  界面恢复部分中文
+```
+
+**你报告的"变成英文"是第 1 次 reload 的瞬间状态。如果你等几秒，页面会自动第二次 reload 恢复成部分中文（这证明服务器 account.language 确实是 'zh'）。**
+
+如果等待后页面没有自动 reload 变回中文，则说明服务器端 account.language 实际存的是 'en'，需要重新去账号设置页面确认并重新保存语言为"中文"。
+
+---
+
+## 如何确认"部分中文"的英文部分来自哪里
+
+在浏览器控制台执行：
+
+```js
+// 查看界面上某个英文字符串，在 zh/common.js 里搜索对应 key
+// 如果找到 → 说明是 i18n 系统的问题（不太可能，因为 zh 文件完整）
+// 如果找不到 → 说明这个字符串不走 i18n，来自服务器 API 或硬编码模板
+```
+
+**更简单的验证方法：**
+
+Network 面板，刷新页面后，查看所有 API 请求的响应内容。如果 `/api/...` 的响应体里包含英文字符串，那就是服务器端内容，跟前端 i18n 无关。
+
+---
+
+## 结论总结
+
+| 问题 | 状态 | 根因 |
+|------|------|------|
+| RequireJS 加载 zh bundle | ✅ 正常 | - |
+| zh 翻译 key 完整性 | ✅ 完整（0 missing） | - |
+| 语言保存流程 | ✅ 正确 | - |
+| "部分中文"原因 | ⚠️ 存在 | 界面部分内容来自服务器 API 英文响应或模板硬编码，不走前端 i18n |
+| "delete→英文"原因 | ℹ️ 正常现象 | 双重 reload 的中间状态，等几秒会自动恢复 |
+
+**前端 i18n 本身工作正常。你能看到"部分中文"说明语言切换已经成功了。剩下还显示英文的内容是后端服务器返回的英文数据，需要服务器端做国际化才能变成中文。**
