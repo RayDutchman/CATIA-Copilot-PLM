@@ -1977,3 +1977,59 @@ docker-compose up -d
 ```
 
 这样可以确保没有残留容器干扰，且不会丢失数据库中的数据。
+
+---
+
+# loadSample.sh 依赖下载失败排查（2026-05-14 新增）
+
+你这个报错的核心是：
+
+```text
+Could not find artifact com.docdoku.plm:docdoku-plm-api-java:jar:2.6.2 in central
+```
+
+## 根因
+
+`docdoku-plm-sample-data` 依赖 `com.docdoku.plm:docdoku-plm-api-java:2.6.2`，但这个包**不是发布在 Maven Central 的公共包**，而是当前仓库里的本地模块：
+
+- `docdoku-plm-api/docdoku-plm-api-java`
+
+所以直接在 `docdoku-plm-sample-data` 下跑 `./loadSample.sh`，Maven 只能去 Central 找，最终失败。
+
+## 解决办法（推荐）
+
+先把本仓库里的 API 模块安装到你本机 Maven 本地仓库，再运行 sample-data：
+
+```bash
+# 1) 在仓库根目录执行：先安装 API 相关模块到本地 ~/.m2
+cd /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM
+mvn -f docdoku-plm-api/pom.xml -DskipTests install
+
+# 2) 再运行 sample-data
+cd docdoku-plm-sample-data
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+
+如果你只想最小化构建范围，也可用：
+
+```bash
+mvn -f docdoku-plm-api/pom.xml -pl docdoku-plm-api-base,docdoku-plm-api-java -am -DskipTests install
+```
+
+## 额外提醒
+
+1. `-h` 要指向后端端口（你的环境是 `http://localhost:8001`），这点你已经是对的。  
+2. 若仍失败，先确认 Java 版本（建议 JDK 8）与 Maven 可用：  
+   ```bash
+   java -version
+   mvn -version
+   ```
+3. 若本地缓存过坏包，可清理后重试：  
+   ```bash
+   rm -rf ~/.m2/repository/com/docdoku/plm/docdoku-plm-api-java
+   rm -rf ~/.m2/repository/com/docdoku/plm/docdoku-plm-api-base
+   ```
+
+## 一句话结论
+
+这不是你命令参数写错，而是**缺少本地安装 `docdoku-plm-api-java` 依赖**；先安装 `docdoku-plm-api` 模块，再跑 `loadSample.sh` 就可以。
