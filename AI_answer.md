@@ -1,3 +1,146 @@
+# 中文切换失败的深度分析（2026-05-14 新增）
+
+## 结论摘要
+
+法语（fr）切换成功、中文（zh）切换不成功，根本原因是**多层缺失**的叠加——不是单一问题。下面按层次逐一剖析。
+
+---
+
+## 第一层：后端预构建镜像不支持 `zh`（核心阻断）
+
+`docdoku-plm-docker/docker-compose.yml` 使用的是 DockerHub 上的预构建镜像：
+
+```yaml
+back:
+  image: docdoku/docdoku-plm-server:2.6.2
+```
+
+该镜像打包时，`PropertiesLoader.java` 中的 `SUPPORTED_LANGUAGES` 数组**只有** `["fr", "en", "ru"]`——没有 `zh`：
+
+```java
+// docdoku-plm-server-i18n/src/main/java/com/docdoku/plm/server/i18n/PropertiesLoader.java
+private static final String[] SUPPORTED_LANGUAGES = {"fr", "en", "ru", "zh"};
+// ↑ 这是本仓库已修复后的代码，但 DockerHub 上的预构建镜像仍是旧代码（无 "zh"）
+```
+
+**后果链（逐步跟踪）：**
+
+1. `/api/languages` 接口只返回 `["fr", "en", "ru"]`，Language 下拉框没有"中文"选项。
+2. 用户无法通过 UI 将 `account.language` 设置为 `zh`，数据库中该字段保持原值（`en` 或 `fr`）。
+3. 每次页面加载时，`contextResolver.js` 中的 `resolveAccount` 会执行：
+
+```javascript
+// docdoku-plm-front/app/js/common-objects/contextResolver.js  第145行
+var accountLocale = account.language || 'en';
+if (window.localStorage.locale !== accountLocale) {
+    window.localStorage.locale = accountLocale;  // 强制覆盖回 'en'
+    window.location.reload();                     // 重载页面
+}
+```
+
+4. 即使通过浏览器控制台手动执行 `localStorage.setItem('locale','zh'); location.reload()`，下一次 `resolveAccount` 运行时也会把 `localStorage.locale` **强制改回** `'en'`，中文永远无法持久化。
+
+**法语为什么不受影响？**  
+法语从一开始就在预构建镜像的支持列表里。用户可以正常在 UI 选法语、保存，`account.language='fr'` 写入数据库，`resolveAccount` 读回 `'fr'`，一切正常。
+
+---
+
+## 第二层：前端预构建镜像没有 `zh/` NLS 翻译文件
+
+DockerHub 的前端镜像 `docdoku/docdoku-plm-front:2.6.2` 在打包时同样没有 `zh/` 目录。RequireJS 的 i18n 插件加载翻译文件的流程：
+
+1. 读取根包（如 `localization/nls/common.js`），得到 `{ root: {...}, 'fr': true, 'zh': true, ... }`。
+2. 根据 `require.config` 里的 `locale` 值（本例为 `'zh'`）去请求对应子目录文件，如 `nls/zh/common.js`。
+3. **若该文件不存在（404）**，RequireJS 静默回退，使用 `root` 里的英文字符串——界面完全变回英文，且没有任何报错提示。
+
+**法语为什么不受影响？**  
+法语 NLS 文件（`nls/fr/*.js`）在原始前端镜像里就已存在，不需要卷挂载。
+
+**本仓库的修复（已在 docker-compose.yml 中体现）：**
+
+```yaml
+front:
+  volumes:
+    - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+```
+
+这个卷挂载会把本地的 `nls/` 目录整体挂载进容器，让 `zh/` 文件可被访问。**但该挂载仅在前端容器重启后生效**，且需要后端同时支持 `zh`（第一层问题解决后），才能走完整个切换流程。
+
+---
+
+## 第三层：nginx 字符集配置缺失（已修复）
+
+原始 nginx 配置不指定 `charset utf-8`。当浏览器或 RequireJS XHR 请求 `.js` 文件时，响应头里没有 `charset` 信息，浏览器可能用默认字符集（Latin-1）解码中文字符，导致乱码或 JSON 解析失败。
+
+`docdoku-plm-docker/front/nginx.conf` 已加入修复：
+
+```nginx
+charset utf-8;
+charset_types text/html text/css application/javascript application/json;
+```
+
+法语不涉及非 ASCII 字符（除少量重音字母外），即使没有此配置也基本正常——这也是法语"几乎全部正常"的原因之一。
+
+---
+
+## 第四层：次要问题（影响范围较小）
+
+### 4a. `datePickerLang` 全部硬编码为法语
+
+每个 `main.js` 文件（账户管理、工作区管理、文档管理……）都有：
+
+```javascript
+// 例：docdoku-plm-front/app/account-management/main.js 第56行
+datePickerLang: '../../bower_components/bootstrap-datepicker/js/locales/bootstrap-datepicker.fr',
+```
+
+这意味着无论切换到哪种语言，日期选择器（datepicker）始终显示**法语**的月份名和按钮文字。对中文用户来说，日历会出现法文月份名，体验不正确。法语用户不受影响（因为本来就是法语）。
+
+### 4b. `moment.js` 无法识别 `'zh'` 语言码
+
+`common-objects/utils/date.js` 中：
+
+```javascript
+moment.locale(App.config.locale);  // 传入 'zh'
+```
+
+但 moment.js 没有名为 `'zh'` 的 locale，它使用的是 `'zh-cn'`（简体中文）或 `'zh-tw'`（繁体中文）。因此 `moment.locale('zh')` 会静默失败并回落到英文，导致所有**相对时间**（如"3 天前"）和**本地化日期格式**显示为英文。
+
+### 4c. `app/main/main.js` 默认 locale 为 `'zh'`（可能是遗留测试代码）
+
+```javascript
+// docdoku-plm-front/app/main/main.js 第52行
+return window.localStorage.getItem('locale') || 'zh';
+```
+
+其他所有模块的 fallback 都是 `'en'`，只有登录页是 `'zh'`。这不影响已登录用户的语言切换，但如果用户 localStorage 为空、第一次访问登录页，会意外以中文展示登录界面（而其他页面仍回落英文）。
+
+---
+
+## 整体对比总结
+
+| 层面 | 法语（fr）| 中文（zh）| 根本原因 |
+|------|-----------|-----------|----------|
+| 后端语言列表 | ✅ 原生支持 | ❌ 预构建镜像缺失 | `SUPPORTED_LANGUAGES` 未含 `zh` |
+| 语言下拉框 | ✅ 有法语选项 | ❌ 无中文选项 | 上一行导致 |
+| 账户语言持久化 | ✅ 正常保存 | ❌ 无法保存 | 同上 |
+| contextResolver 循环覆盖 | ✅ 不受影响 | ❌ 强制覆盖回英文 | 上一行导致 |
+| 前端 NLS 文件 | ✅ 原生存在 | ⚠️ 需卷挂载 | 预构建前端镜像无 `zh/` |
+| nginx 字符集 | ✅ 不影响 | ❌ 原始配置无 utf-8 | 已修复（nginx.conf）|
+| datepicker 语言 | ✅ 恰好是法语 | ❌ 显示法语日历 | 所有 main.js 硬编码 `.fr` |
+| moment.js 相对时间 | ✅ 正确 | ❌ 显示英文 | moment 用 `zh-cn` 不用 `zh` |
+
+---
+
+## 解决方案路径（按优先级）
+
+1. **必须**：按 `Chinese-Language-Redeploy-Guide.md` 中的**方案 B** 从源码重建后端镜像，使 `/api/languages` 返回 `zh`。
+2. **已完成**：docker-compose.yml 中的 NLS 卷挂载（前端 `zh/` 翻译文件）。
+3. **已完成**：`docdoku-plm-docker/front/nginx.conf` 中的 `charset utf-8` 配置。
+4. **可选优化**：将所有 `main.js` 中的 `datePickerLang` 从 `bootstrap-datepicker.fr` 改为动态加载对应语言，并将 `moment.locale('zh')` 改为 `moment.locale('zh-cn')`。
+
+---
+
 # loadSample.sh 报 "Not Found" 错误的分析与解决（2026-05-14 新增）
 
 ## 错误信息
