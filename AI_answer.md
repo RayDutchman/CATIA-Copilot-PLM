@@ -1,3 +1,63 @@
+# 同步小修复已完成（2026-05-14）
+
+以下三处小问题已直接修改代码，不涉及 `datePickerLang` 硬编码法语。
+
+## Fix 1 — `app/main/main.js`：locale fallback 从 `'zh'` 改为 `'en'`
+
+**文件**：`docdoku-plm-front/app/main/main.js` 第 52 行
+
+```js
+// 修改前（错误）
+return window.localStorage.getItem('locale') || 'zh';
+
+// 修改后（正确）
+return window.localStorage.getItem('locale') || 'en';
+```
+
+**原因**：当 `localStorage` 中没有任何 locale 记录时（例如新用户首次访问），应默认显示英文（所有模块的 fallback 一致）。之前用 `'zh'` 作为 fallback 会导致 RequireJS i18n 尝试加载 `zh` 语言包，但如果使用的是 DockerHub 预构建前端镜像（不含 `nls/zh/`），将静默失败并回退到英文，造成混乱。
+
+---
+
+## Fix 2 — `app/js/common-objects/utils/date.js`：`moment.locale` 传正确的 locale 码
+
+**文件**：`docdoku-plm-front/app/js/common-objects/utils/date.js` 第 14 行
+
+```js
+// 修改前（错误）
+moment.locale(App.config.locale);
+
+// 修改后（正确）
+moment.locale(App.config.locale === 'zh' ? 'zh-cn' : App.config.locale);
+```
+
+**原因**：moment.js（通过 `moment-with-locales`）的中文简体 locale 名是 `zh-cn`，传入 `zh` 时 moment 找不到对应 locale，会静默地不切换，导致相对时间（"3 天前"、"刚刚"）等仍显示英文。
+
+---
+
+## Fix 3 — `docdoku-plm-docker/front/nginx.conf`：NLS 翻译文件排除 1 年强缓存
+
+**文件**：`docdoku-plm-docker/front/nginx.conf`
+
+```nginx
+# 新增：NLS 翻译文件不缓存
+location ~* /js/localization/nls/ {
+    root   /usr/share/nginx/html;
+    expires -1;
+    add_header Cache-Control "no-store";
+}
+
+# 原有：其他静态资源保持 1 年缓存（nls/ 路径在上面已被优先匹配，不会命中此规则）
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    root   /usr/share/nginx/html;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+**原因**：nginx 的 `location` 匹配规则中，更具体的路径规则（`/js/localization/nls/`）会先于通配符扩展名规则（`*.js`）被匹配。之前 NLS 文件命中 `*.js` 规则，被浏览器缓存 1 年。如果用户曾经访问过旧镜像（或 404 响应），即使重建镜像/重新挂载 nls/ 目录，浏览器也会继续使用缓存。去除缓存后，每次页面加载都会重新从服务端获取最新翻译文件。
+
+---
+
 # 卷挂载可靠性分析 + 本地重建前端及现代化方案（2026-05-14 新增）
 
 ---
