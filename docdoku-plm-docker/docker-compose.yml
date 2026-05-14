@@ -82,7 +82,7 @@ services:
     image: postgres:13.1-alpine
     env_file: ./env/db.env     
     volumes:
-      - db-volume:/var/lib/mysql
+      - db-volume:/var/lib/postgresql/data
     networks:
       - network    
 
