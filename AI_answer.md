@@ -3328,3 +3328,111 @@ cd ../docdoku-plm-sample-data
 
 3. **AI_answer.md 缺少该内容**：本文件（AI_answer.md）之前没有记录 `external: true` 的分析，导致找不到这部分解释。现在通过本节补充完整。
 
+
+---
+
+# 两个历史会话改动的正确性分析（2026-05-14）
+
+## 会话 1：session/8b4f07aa — PostgreSQL 数据目录路径修复
+
+### 改动内容
+
+文件：`docdoku-plm-docker/docker-compose.yml`
+
+```yaml
+# 修改前
+- db-volume:/var/lib/mysql
+
+# 修改后
+- db-volume:/var/lib/postgresql/data
+```
+
+### 分析结论：✅ 完全正确
+
+**理由：**
+
+1. `db` 服务使用的镜像是 `postgres:13.1-alpine`（PostgreSQL，不是 MySQL）。
+2. PostgreSQL 容器的数据默认存储在 `/var/lib/postgresql/data`，而 `/var/lib/mysql` 是 **MySQL** 的数据目录，两者完全不同。
+3. 挂载到 `/var/lib/mysql` 时，PostgreSQL 完全无视这个路径，在容器的可写层（ephemeral layer）中存储数据。每次 `docker compose down` 再 `up`，数据库内容（用户账号、工作区、零件数据等）全部清空。
+4. 改为 `/var/lib/postgresql/data` 后，数据持久化到命名卷 `db-volume`，重启容器不会丢失数据。
+
+**此改动是必须的修复，没有问题。**
+
+---
+
+## 会话 2：session/4a000967 — nginx.conf 添加 SPA 路由和静态资源缓存
+
+### 改动内容
+
+文件：`docdoku-plm-docker/front/nginx.conf`
+
+新增了三项内容：
+1. `charset_types text/html text/css application/javascript application/json;`
+2. `try_files $uri $uri/ /index.html;`（在 `location /` 块内）
+3. 静态资源缓存块（JS/CSS/图片等缓存 1 年，`Cache-Control: public, immutable`）
+4. `error_page 500 502 503 504 /50x.html;` 错误页配置
+
+### 逐项分析
+
+#### ① charset_types 扩展 — ✅ 正确
+
+nginx 的 `charset utf-8;` 指令默认只对 `text/html`、`text/xml`、`text/plain` 生效。通过 `charset_types` 显式加入 `application/javascript` 和 `application/json`，确保浏览器在加载 NLS 文件时收到 `Content-Type: application/javascript; charset=utf-8`，这正是解决中文乱码的关键。**正确。**
+
+#### ② try_files SPA 路由 — ✅ 正确且必要
+
+docdoku-plm-front 是 RequireJS 单页应用（SPA）。用户访问或刷新类似 `/workspace/my-workspace/parts` 这样的路径时，nginx 若没有 `try_files`，会尝试在磁盘上查找对应目录或文件，找不到就返回 404。加上 `try_files $uri $uri/ /index.html;` 后，这些路径都回退到 `index.html`，由前端路由处理。**正确。**
+
+#### ③ 静态资源缓存 1 年 + immutable — ⚠️ 有一个潜在问题
+
+```nginx
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    root   /usr/share/nginx/html;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+**问题：NLS 中文翻译文件是 `.js` 文件，通过卷挂载注入。**
+
+- 路径：`../docdoku-plm-front/app/js/localization/nls` → `/usr/share/nginx/html/js/localization/nls`
+- 这些 `.js` 文件会被上面的 `location ~* \.js$` 规则匹配，浏览器会将其缓存 1 年（`immutable`）。
+- 如果你在本地修改了某个 NLS 文件（比如 `nls/zh/common.js` 新增了翻译条目），重启容器后 nginx 会提供新文件，但**浏览器不会请求新内容**，仍然使用本地缓存的旧版本，导致修改不生效。
+- `immutable` 的语义是"文件内容绝对不会改变"，适用于内容哈希命名的静态资源（如 `bundle.a1b2c3.js`），不适用于按路径引用、内容可能变化的文件。
+
+**建议的修复方案：**
+
+排除 NLS 文件目录，或者只对真正不变的资源（如字体、图片）使用 `immutable`：
+
+```nginx
+# 对可能变化的 NLS/JS 文件，降低缓存或关闭 immutable
+location ~* /js/localization/ {
+    root   /usr/share/nginx/html;
+    expires -1;
+    add_header Cache-Control "no-cache";
+}
+
+# 对其他静态资源才使用长期缓存
+location ~* \.(css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    root   /usr/share/nginx/html;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+或者更简单的临时方案：浏览器强制刷新（`Ctrl+Shift+R` 或 `Ctrl+F5`），可以跳过缓存立即生效。
+
+#### ④ error_page 配置 — ✅ 正确，是良好实践
+
+---
+
+### 总体结论
+
+| 改动 | 正确性 | 说明 |
+|------|--------|------|
+| `charset_types` 扩展 | ✅ 正确 | 确保 JS/JSON 文件携带 charset=utf-8 |
+| `try_files` SPA 路由 | ✅ 正确且必要 | 防止刷新页面时 404 |
+| 静态资源 1 年 + immutable 缓存 | ⚠️ 有潜在问题 | NLS `.js` 文件被过度缓存，修改后浏览器不更新 |
+| error_page 配置 | ✅ 正确 | 标准错误处理 |
+
+**会话 4a000967 的改动整体方向正确**，修复了 SPA 路由问题，但静态资源缓存策略过于激进，会影响 NLS 翻译文件的热更新。如果你在开发阶段频繁修改中文翻译，建议对 `/js/localization/` 路径单独设置 `no-cache`。
+
