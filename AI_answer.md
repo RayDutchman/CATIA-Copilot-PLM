@@ -896,3 +896,116 @@ java -classpath "target/docdoku-plm-sample-data.jar:target/dependency/*" \
 # 后续只更新翻译
 ./scripts/build-i18n.sh
 ```
+
+---
+
+# 中文界面问题全面修复说明（2026-05-14 第二次更新）
+
+## 问题描述
+
+1. 编辑账户页面语言选项中，中文显示"zh"而不是"中文（简体）"
+2. 切换中文后，其它页面几乎不是中文
+3. 登录界面 (http://localhost:8000/) 希望默认显示中文
+
+---
+
+## 根本原因分析
+
+### 问题一："zh" 显示为 "zh" 而非 "中文（简体）"
+
+**两个原因叠加：**
+
+1. **标签名称**：`nls/common.js`（英文根）中 `LANGUAGES.zh = '中文'`，未使用"中文（简体）"的完整名称
+2. **`fr` / `ru` locale 的 LANGUAGES 缺少 `zh` 键**：
+   - `nls/fr/common.js` 的 `LANGUAGES` 只有 `fr / en / ru`，**没有 `zh`**
+   - `nls/ru/common.js` 同上
+   - require.js i18n 插件做 **浅合并**（shallow merge）：locale-specific 文件的 `LANGUAGES` 整体替换 root 的 `LANGUAGES`，不做深度合并
+   - 所以当 locale=fr/ru 时，`App.config.i18n.LANGUAGES['zh']` 是 `undefined`
+   - jQuery 的 `.text(undefined)` 不改变原有文字，option 的文字保持为模板渲染的原始值 `{{.}}` 即 `"zh"`
+
+### 问题二：切换中文后其它页面不显示中文
+
+**原因：`edit-account.js` 的 `onUpdateSuccess` 逻辑有缺陷**
+
+原代码：
+```js
+window.localStorage.locale = 'unset';
+// 仅弹出提示，不自动刷新
+```
+
+- 保存语言切换到 zh 后，locale 被设为字符串 `'unset'`（而非 null/undefined）
+- `'unset'` 是 truthy，所以 require.js i18n 会尝试加载 `nls/unset/common.js` 等（不存在），回退到英文 root
+- contextResolver 检测到 `'unset' !== 'zh'` 后会设置 locale='zh' 并自动刷新——这需要**两次页面加载**
+- 中间那次加载（locale='unset'）显示英文，造成用户困惑
+
+### 问题三：登录界面默认英文
+
+`app/main/main.js` 的 i18n locale 配置：
+```js
+return window.localStorage.getItem('locale') || 'en';
+```
+对于从未访问过的新用户，默认展示英文登录页。
+
+---
+
+## 修复内容
+
+### Fix 1：语言标签名改为"中文（简体）"
+
+| 文件 | 修改内容 |
+|------|---------|
+| `nls/common.js` | `zh: '中文'` → `zh: '中文（简体）'` |
+| `nls/zh/common.js` | 同上 |
+| `nls/fr/common.js` | `LANGUAGES` 新增 `zh: '中文（简体）'` |
+| `nls/ru/common.js` | `LANGUAGES` 新增 `zh: '中文（简体）'` |
+
+### Fix 2：保存语言后立即切换 locale 并自动刷新
+
+`app/account-management/js/views/edit-account.js` 的 `onUpdateSuccess`：
+
+**修复前：**
+```js
+window.localStorage.locale = 'unset'; // 设为字符串 'unset'
+// 只显示提示，不自动刷新
+```
+
+**修复后：**
+```js
+App.config.account = account;  // 更新内存中的账户数据
+if (window.localStorage.locale !== account.language) {
+    window.localStorage.locale = account.language; // 直接设为新语言
+    window.location.reload(); // 立即自动刷新
+} else {
+    // 语言未变化，只显示成功提示
+}
+```
+
+效果：保存账户后立即刷新，只需一次页面加载即可切换语言。
+
+### Fix 3：登录界面默认中文
+
+`app/main/main.js`：
+```js
+// 修复前
+return window.localStorage.getItem('locale') || 'en';
+// 修复后  
+return window.localStorage.getItem('locale') || 'zh';
+```
+
+新用户首次访问登录页时，界面默认显示中文。已有偏好的用户不受影响（localStorage 优先）。
+
+---
+
+## 重新部署
+
+只需重建前端翻译（方案 A，无需重编译后端）：
+
+```bash
+cd /path/to/CATIA-Copilot-PLM
+git pull
+
+cd docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d front
+```
+
+> 注：以上修改均在前端 JS/NLS 文件中，通过卷挂载即可生效，**无需重新构建后端镜像**。

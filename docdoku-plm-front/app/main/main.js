@@ -49,7 +49,7 @@ require.config({
             locale: (function () {
                 'use strict';
                 try {
-                    return window.localStorage.getItem('locale') || 'en';
+                    return window.localStorage.getItem('locale') || 'zh';
                 } catch (ex) {
                     return 'en';
                 }
