@@ -1009,3 +1009,96 @@ docker compose up --force-recreate --no-deps -d front
 ```
 
 > 注：以上修改均在前端 JS/NLS 文件中，通过卷挂载即可生效，**无需重新构建后端镜像**。
+
+---
+
+# 中文修复没有看到效果的根本原因诊断（2026-05-14 第三次更新）
+
+## 背景
+
+用户同步了代码修改，但界面仍然是英文，"中文修复没有效果"。以下是逐层剥析。
+
+---
+
+## 最可能的根本原因：账户语言字段仍然是 `en`
+
+这是最关键的一点，前两次修复都没有改变它。
+
+**`contextResolver.js` 的真实行为：**
+
+```js
+// contextResolver.js 第 145-148 行（已修复版本）
+var accountLocale = account.language || 'en';   // 从服务器获取账户语言
+if (window.localStorage.locale !== accountLocale) {
+    window.localStorage.locale = accountLocale;  // 用账户语言覆盖 localStorage
+    window.location.reload();
+}
+```
+
+这意味着：**每次页面加载，contextResolver 都会从服务器读取账户的 `language` 字段，并强制将 `localStorage.locale` 改成账户语言。**
+
+如果你的账户在数据库里 `language = 'en'`（注册时的旧默认值），那么：
+
+1. 页面加载 → `localStorage.locale` 可能是 `'zh'`
+2. contextResolver 读到 `account.language = 'en'`
+3. 发现不匹配 → 把 `localStorage.locale` 改成 `'en'` → 刷新
+4. 刷新后用英文加载 → contextResolver 再读账户 → `localStorage.locale = 'en'`，匹配 → 不再刷新
+5. 结果：**永远是英文**，与 `main.js` 的默认值 `'zh'` 完全无关
+
+**Fix 3（`main.js` 默认 zh）只对没有 `localStorage.locale` 的全新浏览器有效，一旦 contextResolver 跑过一次，它就会被账户语言覆盖。**
+
+---
+
+## 第二可能原因：前端容器未重新部署
+
+前端 JS 是通过 Docker 卷挂载进容器的。如果 `git pull` 后没有重启前端容器，浏览器访问的仍然是旧文件。
+
+**验证方法：** 在浏览器里打开 `http://localhost:8000/js/common-objects/contextResolver.js`（直接访问 JS 文件），确认里面的 `onUpdateSuccess` 逻辑是否包含 `window.location.reload()`。
+
+---
+
+## 第三可能原因：浏览器缓存了旧 JS 文件
+
+即使容器重启了，浏览器可能还缓存了旧的 JS 文件。
+
+**解决：** 在浏览器里按 `Ctrl+Shift+R`（硬刷新/强制忽略缓存）。
+
+---
+
+## 我需要你提供的诊断信息
+
+请在浏览器控制台（F12 → Console）执行以下命令，把结果告诉我：
+
+```js
+// 1. 当前 localStorage 里的 locale 值
+localStorage.getItem('locale')
+
+// 2. 当前账户信息里的 language 字段
+fetch('/docdoku-plm-server-rest/api/accounts/me', {
+  headers: { 'Authorization': 'Bearer ' + localStorage.jwt }
+}).then(r => r.json()).then(a => console.log('account.language =', a.language))
+```
+
+另外请告诉我：
+
+| 问题 | 期望回答 |
+|------|---------|
+| 账户设置页面（Edit Account）→ Language 下拉框当前显示的是哪个语言？ | 例：English / French / Chinese |
+| 登录页 `http://localhost:8000/index.html` 是中文还是英文？ | 中文 / 英文 |
+| 哪些页面/文字是中文的，哪些是英文的？（举2-3个具体例子） | 例："登录按钮是英文 Login，但欢迎页面标题是中文" |
+| `git pull` 后是否执行了 `docker compose up --force-recreate --no-deps -d front`？ | 是/否 |
+| 是否在浏览器里做过强制刷新（Ctrl+Shift+R）？ | 是/否 |
+
+---
+
+## 快速自查流程
+
+```
+账户 language 字段是 'zh' 吗？
+    ├── 否 → 去账户设置改成 Chinese，保存 → 自动刷新 → 应该生效
+    └── 是 → localStorage.getItem('locale') 是 'zh' 吗？
+                ├── 否 → 前端容器未重启 / 浏览器缓存问题
+                └── 是 → NLS 文件本身缺键（需要告诉我哪些页面是英文的）
+```
+
+**95% 的概率是第一步就能解决：账户的 Language 字段仍然设置的是 English。** 去账户设置改为 Chinese（中文），保存后页面会自动刷新，此后所有页面都应该是中文。
