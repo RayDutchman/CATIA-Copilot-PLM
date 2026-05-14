@@ -910,7 +910,7 @@ public class PartResource {
                 } else {
                     cadInstances.add(new CADInstance(0, 0, 0, 0, 0, 0));
                 }
-                for (PartSubstituteLinkDTO substituteLinkDTO : partUsageLinkDTO.getSubstitutes() != null ? partUsageLinkDTO.getSubstitutes() : Collections.emptyList()) {
+                for (PartSubstituteLinkDTO substituteLinkDTO : partUsageLinkDTO.getSubstitutes() != null ? partUsageLinkDTO.getSubstitutes() : Collections.<PartSubstituteLinkDTO>emptyList()) {
                     PartMaster substitute = findOrCreatePartMaster(workspaceId, substituteLinkDTO.getSubstitute());
                     if (substitute != null) {
 

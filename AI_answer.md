@@ -3057,3 +3057,50 @@ docker compose up --force-recreate --no-deps -d front
 | 额外卷挂载 JS 文件 | 简单 | ✅ 大部分 JS 逻辑生效 | ✅ 推荐 |
 | 重建 front 镜像 | 复杂（旧工具链） | ✅ 所有 JS + 模板全部生效 | ⚠️ 可选（如果卷挂载不够用） |
 | 后端国际化 | 较复杂 | ✅ 修复服务器端英文响应 | ✅ 长期方案 |
+
+---
+
+## 2026-05-14 PartResource.java 编译错误修复
+
+### 问题
+
+运行 `mvn clean package -DskipTests` 报如下编译错误：
+
+```
+[ERROR] PartResource.java:[913,106] incompatible types: java.lang.Object cannot be converted to com.docdoku.plm.server.rest.dto.PartSubstituteLinkDTO
+```
+
+### 原因分析
+
+这是上一次 AI 提交（"Fix NPE in PartResource.createComponents when substitutes list is null"）引入的 bug。
+
+**出错代码（第 913 行）：**
+```java
+for (PartSubstituteLinkDTO substituteLinkDTO :
+        partUsageLinkDTO.getSubstitutes() != null
+        ? partUsageLinkDTO.getSubstitutes()
+        : Collections.emptyList()) {
+```
+
+**根本原因：** Java 编译器在三元表达式（ternary expression）中对 `Collections.emptyList()` 的泛型类型推断失败。
+
+- `partUsageLinkDTO.getSubstitutes()` 返回 `List<PartSubstituteLinkDTO>`
+- `Collections.emptyList()` 没有显式类型参数，编译器无法推断出它的元素类型为 `PartSubstituteLinkDTO`，推断为 `List<Object>`
+- 三元表达式整体类型变为 `List<Object>`，导致 for-each 循环中 `PartSubstituteLinkDTO` 无法接收 `Object` 类型，编译失败
+
+**为什么昨晚成功？** 上一次的 AI 修改（为了解决 NPE）引入了 `Collections.emptyList()` 但没有加类型参数，该代码提交后在下次编译时触发了此类型推断错误。
+
+### 修复方案
+
+添加显式泛型类型参数 `<PartSubstituteLinkDTO>`：
+
+```java
+for (PartSubstituteLinkDTO substituteLinkDTO :
+        partUsageLinkDTO.getSubstitutes() != null
+        ? partUsageLinkDTO.getSubstitutes()
+        : Collections.<PartSubstituteLinkDTO>emptyList()) {
+```
+
+### 修改文件
+
+`docdoku-plm-server-rest/src/main/java/com/docdoku/plm/server/rest/PartResource.java` 第 913 行
