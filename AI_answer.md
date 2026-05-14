@@ -1321,3 +1321,100 @@ docker compose up --force-recreate --no-deps -d front
 然后强制刷新浏览器：`Ctrl + Shift + R`
 
 **验证方式：** 浏览器打开 `http://localhost:8000/js/localization/nls/zh/common.js`，现在中文应该显示正常（`关于 DocDokuPLM` 而不是乱码）。界面所有文字应该变成中文。
+
+---
+
+# 关于"中文乱码"与"界面不切换"是否是同一问题的分析（2026-05-14）
+
+## 直接回答你的问题
+
+**不，我不能确定"乱码不解决就导致界面不切换"。** 这两个现象有不同的根因，需要分开分析。
+
+---
+
+## 两个现象的技术解释
+
+### 现象 A：直接访问 NLS 文件时中文是乱码
+
+当你在浏览器地址栏直接访问 `http://localhost:8000/js/localization/nls/zh/common.js` 时，浏览器作为**独立资源**处理它，依赖 HTTP `Content-Type` 响应头里的 `charset` 声明来决定编码。如果 nginx 没有声明 `charset=utf-8`，浏览器默认用 Latin-1 解码 UTF-8 字节，导致中文显示为乱码。
+
+**这是一个"查看"层面的问题，不影响 RequireJS 实际加载。**
+
+### 现象 B：RequireJS 如何加载 NLS 文件
+
+RequireJS i18n 插件通过 **`<script>` 标签注入**（不是 XHR）来加载 NLS bundle。当 `<script>` 在 UTF-8 HTML 页面上下文中注入外部 JS 文件时，浏览器**使用页面的 UTF-8 编码**来解析脚本，**不依赖 HTTP 头里的 charset**。
+
+**结论：charset 修复有益（让浏览器直接查看也正确），但它本身不是界面不切换的根本原因。**
+
+---
+
+## 界面仍然显示英文的真正可能原因
+
+### 诊断步骤（在浏览器控制台执行）
+
+**第 1 步：确认 `localStorage.locale` 的当前值**
+```js
+console.log('locale in localStorage:', localStorage.locale);
+```
+- 如果输出 `'en'` 或 `undefined` → contextResolver 还未将其设置为 `'zh'`
+- 如果输出 `'zh'` → locale 已设置，但 RequireJS 在此次页面加载时读取的是什么？
+
+**第 2 步：确认 RequireJS 实际使用的 locale**
+```js
+try {
+  console.log('RequireJS locale:', require.s.contexts._.config.config.i18n.locale);
+} catch(e) { console.log(e); }
+```
+- 如果返回 `'en'` 但 `localStorage.locale` 是 `'zh'` → 说明 RequireJS 在读取 locale 时 localStorage 还是 `'en'`，后来才被 contextResolver 改成 `'zh'`，但 **RequireJS 的 locale 是一次性读取的，不会响应 localStorage 变化**
+
+**第 3 步：Network 面板验证（刷新页面后搜索 `nls/zh`）**
+- 如果没有任何请求到 `nls/zh/` 目录的文件 → RequireJS 根本没有尝试加载中文 bundle，说明它用的是 `'en'`
+
+---
+
+## 核心 Race Condition 问题
+
+```
+页面加载顺序：
+1. main.js 执行 → RequireJS 读取 localStorage.locale（此时可能是 'en' 或 null）
+2. RequireJS 决定加载 nls/en/ 或 nls/root/ 的 bundle
+3. contextResolver.resolveAccount() 执行 → 服务器返回 account.language = 'zh'
+4. contextResolver 将 localStorage.locale 设置为 'zh'
+5. 如果 localStorage.locale 原来就是 'zh'：条件 'zh' !== 'zh' 为 false → 不触发 reload
+6. RequireJS 已经加载了英文 bundle → 界面保持英文
+```
+
+**关键逻辑（contextResolver.js）：**
+```js
+var accountLocale = account.language || 'en';  // = 'zh'
+if (window.localStorage.locale !== accountLocale) {
+    window.localStorage.locale = accountLocale;
+    window.location.reload();  // 只有不同时才 reload
+}
+// 如果 localStorage.locale 已经是 'zh'，但 RequireJS 本次加载用了 'en'，则不会 reload
+```
+
+---
+
+## 立即验证方法（强制触发）
+
+在浏览器控制台执行：
+```js
+// 清除旧的 locale 缓存，强制下次加载时重新判断
+delete localStorage.locale;
+window.location.reload();
+```
+
+- **如果刷新后界面变成中文** → 问题是 `localStorage.locale` 残留的旧值导致 contextResolver 不触发 reload，而 RequireJS 读取时 locale 不对。修复方案：确保 main.js 里的 locale 读取逻辑与 contextResolver 的更新逻辑一致。
+- **如果刷新后还是英文** → 说明 contextResolver 确实触发了 reload，但 reload 后 RequireJS 依然加载英文。需要检查账户的 `account.language` 字段是否真的是 `'zh'`（在 Network 面板查看 `/api/accounts/me` 的响应）。
+
+---
+
+## 总结
+
+| 现象 | 根因 | 是否相同问题 |
+|------|------|-------------|
+| 直接访问 NLS 文件时中文乱码 | nginx 未声明 `charset=utf-8` | ❌ 不同问题 |
+| 界面语言不切换 | RequireJS locale 读取时机 vs contextResolver 更新时机的 race condition | ❌ 不同问题 |
+
+修复 charset 只解决"查看"层面的乱码，**不能**解决界面语言不切换。需要通过上面的控制台诊断步骤找出 locale 切换不生效的具体原因。
