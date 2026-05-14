@@ -186,20 +186,22 @@ define([
         },
 
         onUpdateSuccess: function (account) {
-            var needReload = window.localStorage.locale !== account.language;
-            if (window.localStorage.locale !== account.language) {
-                window.localStorage.locale = 'unset';
-            }
+            App.config.account = account;
 
             if (this.newPassword) {
                 this.password = this.newPassword;
             }
 
-            this.$notifications.append(new AlertView({
-                type: 'success',
-                title: App.config.i18n.ACCOUNT_UPDATED,
-                message: needReload ? App.config.i18n.NEED_PAGE_RELOAD_CHANGED_LANG : ''
-            }).render().$el);
+            if (window.localStorage.locale !== account.language) {
+                window.localStorage.locale = account.language;
+                window.location.reload();
+            } else {
+                this.$notifications.append(new AlertView({
+                    type: 'success',
+                    title: App.config.i18n.ACCOUNT_UPDATED,
+                    message: ''
+                }).render().$el);
+            }
         },
 
         togglePasswordUpdate: function () {
