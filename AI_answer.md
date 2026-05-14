@@ -1559,3 +1559,90 @@ Network 面板，刷新页面后，查看所有 API 请求的响应内容。如�
 | "delete→英文"原因 | ℹ️ 正常现象 | 双重 reload 的中间状态，等几秒会自动恢复 |
 
 **前端 i18n 本身工作正常。你能看到"部分中文"说明语言切换已经成功了。剩下还显示英文的内容是后端服务器返回的英文数据，需要服务器端做国际化才能变成中文。**
+
+---
+
+# 如何检查服务器端 account.language 实际存储的值（2026-05-14 新增）
+
+## 问题
+
+即使在账号设置页面将语言保存为"中文"，如何确认服务器端 `account.language` 实际存的是不是 `'en'`？
+
+---
+
+## 方法 1：直接查询 API（最准确）
+
+在浏览器控制台执行：
+
+```js
+fetch(App.config.apiEndPoint + '/accounts/me', {
+    headers: { 'Authorization': 'Bearer ' + localStorage.jwt }
+})
+.then(r => r.json())
+.then(data => console.log('server account.language =', data.language, '| full:', JSON.stringify(data)));
+```
+
+返回结果里的 `language` 字段就是服务器实际存储的值。
+
+---
+
+## 方法 2：Network 面板拦截
+
+1. 打开 DevTools → Network 面板
+2. 刷新页面
+3. 找到请求 URL 包含 `/api/accounts/me` 的请求（Method: GET）
+4. 点开 → Response 标签
+5. 查看 JSON 里的 `"language"` 字段
+
+---
+
+## 方法 3：拦截保存请求，确认发送的值
+
+在账号设置页面点击保存**之前**，先在控制台挂钩：
+
+```js
+var origAjax = $.ajax;
+$.ajax = function(opts) {
+    if (opts.url && opts.url.includes('/accounts/me') && opts.type === 'PUT') {
+        console.log('PUT /accounts/me payload:', opts.data);
+    }
+    return origAjax.apply(this, arguments);
+};
+```
+
+然后在账号设置页面选"中文"并保存，控制台会打印实际发送给服务器的 JSON，确认 `language` 字段是否真的是 `"zh"`。
+
+---
+
+## 方法 4：查看内存中的 App.config.account
+
+刷新页面后，在控制台执行：
+
+```js
+setTimeout(() => {
+    console.log('App.config.account.language =', App.config.account && App.config.account.language);
+    console.log('localStorage.locale =', localStorage.locale);
+}, 3000);
+```
+
+---
+
+## 快速一行命令（推荐）
+
+打开任意页面的控制台，执行：
+
+```js
+fetch(App.config.apiEndPoint+'/accounts/me',{headers:{'Authorization':'Bearer '+localStorage.jwt}}).then(r=>r.json()).then(d=>console.log(d.language))
+```
+
+---
+
+## 两种结果及含义
+
+| `data.language` 返回值 | 含义 |
+|----------------------|------|
+| `"zh"` | 服务器端存储正确，语言切换成功，"部分英文"来自后端 API 响应内容 |
+| `"en"` 或 `null` | 服务器端没有保存成功，需要检查保存时的 PUT 请求是否返回错误（Network 面板查看 PUT `/accounts/me` 的 Response Code） |
+
+如果返回 `'zh'` → 前端语言切换完全正常，剩余英文来自服务器端 API 内容，需要服务器端国际化处理。  
+如果返回 `'en'` 或 `undefined` → 保存语言设置本身失败了，重新在账号页保存并检查 PUT 请求的响应状态码。
