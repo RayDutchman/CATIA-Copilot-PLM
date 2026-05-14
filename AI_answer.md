@@ -2352,3 +2352,79 @@ curl http://localhost:8001/api/languages
 ## 一句话结论
 
 端口号打错了，把 `8081` 改成 `8001` 即可。
+
+---
+
+# loadSample.sh 成功后的后续操作步骤
+
+## 背景
+
+运行以下命令成功，说明示例数据已加载到后端：
+
+```bash
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+
+- `-h http://localhost:8001`：后端 API 地址（`back` 容器，宿主机端口 8001 映射容器内 8080）
+- `-u admin -p admin123`：管理员账号（loadSample 脚本创建的默认账号）
+- `-w my-workspace`：示例数据加载到的工作区名称
+
+---
+
+## 后续操作步骤
+
+### 第 1 步：打开 PLM Web 界面
+
+在浏览器访问前端：
+
+```
+http://localhost:8000
+```
+
+这是 `front` 容器（nginx 静态文件服务）的访问地址。
+
+---
+
+### 第 2 步：登录账号
+
+使用 loadSample 脚本使用的账号登录：
+
+- **用户名**：`admin`
+- **密码**：`admin123`
+
+> 如果系统提示该账号不存在，需先手动注册同名账号（点击页面上的 **Sign up**），然后重新运行 loadSample.sh。
+
+---
+
+### 第 3 步：进入工作区
+
+登录后，在工作区列表中点击 **my-workspace**（即 `-w` 参数指定的工作区）。
+
+---
+
+### 第 4 步：查看示例数据
+
+进入工作区后，可在以下模块查看 loadSample 加载的示例内容：
+
+| 模块 | 说明 |
+|------|------|
+| **Documents**（文档管理） | 示例文档、版本、工作流 |
+| **Product**（产品管理） | 示例零件、产品结构、BOM |
+| **Product Structure**（产品结构） | 零件层级树形视图 |
+| **Change Management**（变更管理） | 示例变更申请、变更通知 |
+
+---
+
+### 第 5 步（可选）：查看其他管理工具
+
+| 工具 | 地址 | 说明 |
+|------|------|------|
+| **Kibana**（日志/搜索分析） | http://localhost:8002 | Elasticsearch 可视化 |
+| **MailHog**（邮件测试） | http://localhost:8003 | 查看系统发送的通知邮件 |
+| **Adminer**（数据库管理） | http://localhost:8004 | 直接查看 PostgreSQL 数据 |
+
+---
+
+## 一句话总结
+
+打开 **http://localhost:8000**，用 `admin / admin123` 登录，进入 **my-workspace** 工作区，即可查看已加载的示例数据。
