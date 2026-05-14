@@ -97,7 +97,9 @@ module.exports = {
                     src: [
                         'js/localization/nls/*',
                         'js/localization/nls/fr/*',
-                        'js/localization/nls/es/*'
+                        'js/localization/nls/es/*',
+                        'js/localization/nls/ru/*',
+                        'js/localization/nls/zh/*'
                     ]
                 }
             ]

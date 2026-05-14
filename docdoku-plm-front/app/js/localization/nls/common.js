@@ -75,6 +75,10 @@ define({
         CHANGE_ITEM_ASSIGNEE: 'Assignee',
         CHANGE_ITEM_CATEGORY: 'Category',
         CHANGE_ITEM_PRIORITY: 'Priority',
+        CHANGE_ITEM_PRIORITY_LOW: 'Low',
+        CHANGE_ITEM_PRIORITY_MEDIUM: 'Medium',
+        CHANGE_ITEM_PRIORITY_HIGH: 'High',
+        CHANGE_ITEM_PRIORITY_EMERGENCY: 'Emergency',
         CHANGES: 'Change management',
         CHANGE_MANAGEMENT: 'Change management',
         CHANNEL_NOT_READY_ERROR: 'Cannot communicate with the call server. Please insure that your browser is websocket capable, or your network doesn\'t block them.',
@@ -740,10 +744,12 @@ define({
         LANGUAGES: {
             fr: 'French',
             en: 'English',
-            ru: 'Russian'
+            ru: 'Russian',
+            zh: '中文（简体）'
         }
     },
     'es': true,
     'fr': true,
-    'ru': true
+    'ru': true,
+    'zh': true
 });

@@ -73,6 +73,10 @@ define({
     CHANGE_ITEM_ASSIGNEE: 'Назначение',
     CHANGE_ITEM_CATEGORY: 'Категория',
     CHANGE_ITEM_PRIORITY: 'Приоритет',
+    CHANGE_ITEM_PRIORITY_LOW: 'Низкий',
+    CHANGE_ITEM_PRIORITY_MEDIUM: 'Средний',
+    CHANGE_ITEM_PRIORITY_HIGH: 'Высокий',
+    CHANGE_ITEM_PRIORITY_EMERGENCY: 'Экстренный',
     CHANGES: 'Редактировать управление',
     CHANGE_MANAGEMENT: 'Редактировать управление',
     CHANNEL_NOT_READY_ERROR: 'Не удается установить связь с сервером вызовов. Пожалуйста, убедитесь, что ваш браузер поддерживает websocket, или ваш интернет-провайдер не блокирует их.',
@@ -725,6 +729,7 @@ define({
     LANGUAGES: {
         fr: 'French',
         en: 'English',
-        ru: 'Russian'
+        ru: 'Russian',
+        zh: '中文（简体）'
     }
 });

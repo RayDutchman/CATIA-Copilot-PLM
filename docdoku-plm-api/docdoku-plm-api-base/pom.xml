@@ -152,6 +152,15 @@
                 <groupId>com.github.kongchen</groupId>
                 <artifactId>swagger-maven-plugin</artifactId>
                 <version>3.1.7</version>
+                <!-- Java 11+ removed JAXB from the JDK; supply it explicitly so
+                     the plugin can find javax.xml.bind.annotation.XmlRootElement -->
+                <dependencies>
+                    <dependency>
+                        <groupId>javax.xml.bind</groupId>
+                        <artifactId>jaxb-api</artifactId>
+                        <version>2.3.1</version>
+                    </dependency>
+                </dependencies>
                 <executions>
                     <execution>
                         <phase>compile</phase>

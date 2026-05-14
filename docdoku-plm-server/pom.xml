@@ -56,6 +56,14 @@
                 <scope>provided</scope>
             </dependency>
 
+            <!-- JAXB API: removed from JDK in Java 11, must be supplied explicitly -->
+            <dependency>
+                <groupId>javax.xml.bind</groupId>
+                <artifactId>jaxb-api</artifactId>
+                <version>2.3.1</version>
+                <scope>provided</scope>
+            </dependency>
+
             <!-- Apache Commons -->
             <dependency>
                 <groupId>commons-codec</groupId>
@@ -146,7 +154,7 @@
             <dependency>
                 <groupId>com.github.ralfstuckert.pdfbox-layout</groupId>
                 <artifactId>pdfbox2-layout</artifactId>
-                <version>1.0.0</version>
+                <version>1.0.1</version>
             </dependency>
 
             <!-- Test -->
@@ -277,6 +285,9 @@
                         <encoding>UTF-8</encoding>
                         <showDeprecation>true</showDeprecation>
                         <showWarnings>true</showWarnings>
+                        <compilerArgs>
+                            <compilerArg>-parameters</compilerArg>
+                        </compilerArgs>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -296,6 +307,13 @@
                     <configuration>
                         <ejbVersion>3.1</ejbVersion>
                     </configuration>
+                </plugin>
+                <!-- maven-war-plugin 2.x is incompatible with JDK 17+.
+                     Pin to 3.3.2 which works on JDK 11 and 17. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>3.3.2</version>
                 </plugin>
                 <plugin>
                     <groupId>org.jacoco</groupId>

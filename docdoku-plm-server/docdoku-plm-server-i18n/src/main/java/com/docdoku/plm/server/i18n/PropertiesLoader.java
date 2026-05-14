@@ -38,7 +38,7 @@ import java.util.logging.Logger;
  * * */
 public class PropertiesLoader {
 
-    private static final String[] SUPPORTED_LANGUAGES = {"fr", "en", "ru"};
+    private static final String[] SUPPORTED_LANGUAGES = {"fr", "en", "ru", "zh"};
 
     private static final Logger LOGGER = Logger.getLogger(PropertiesLoader.class.getName());
 
@@ -61,6 +61,10 @@ public class PropertiesLoader {
 
             case "ru":
                 baseName = propertiesFileBaseName + "_ru.properties";
+                break;
+
+            case "zh":
+                baseName = propertiesFileBaseName + "_zh.properties";
                 break;
 
             default:
