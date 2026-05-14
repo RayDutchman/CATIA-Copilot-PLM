@@ -1736,3 +1736,244 @@ fetch(location.origin+'/api/accounts/me',{headers:{'Authorization':'Bearer '+loc
 | 正常登录状态（JWT 认证） | 上方带 `Authorization` 头的命令 |
 | Session/Cookie 认证 | 带 `credentials:'include'` 的命令 |
 | App 已初始化（在 workspace 页面） | 原来的 `App.config.apiEndPoint` 命令也可用 |
+
+---
+
+# docdoku-plm-sample-data 部署指南 + 后台账号密码管理（2026-05-14 新增）
+
+## 一、docdoku-plm-sample-data 是什么
+
+`docdoku-plm-sample-data` 是一个 **Java 客户端工具**，通过调用 DocDokuPLM 的 REST API，自动在服务器上创建演示用的账号、工作区和样例数据（零件、文档、工作流等）。
+
+**环境要求：**
+- Java JDK 7+
+- Maven 3+
+- DocDokuPLM 服务器已通过 `docker-compose up -d` 启动，且后端完全就绪
+
+---
+
+## 二、部署步骤
+
+### 第1步：确认后端服务已就绪
+
+```bash
+cd docdoku-plm-docker
+docker-compose up -d
+# 等待约 60~120 秒让 back 容器完全启动
+docker-compose logs -f back
+# 看到包含 "deployed" 或 "ready" 的日志行即可
+```
+
+> **注意：** `back` 服务（后端）使用的端口是 **8001**（映射自容器内 8080），不是前端的 8000。
+
+### 第2步：进入 sample-data 目录，运行加载脚本
+
+```bash
+cd docdoku-plm-sample-data
+
+# Linux / Mac
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+
+# Windows
+loadSample.bat -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+
+参数说明：
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `-u` | 登录名（**将自动创建此账号**） | `admin` |
+| `-p` | 密码（**将自动创建此账号**） | `admin123` |
+| `-h` | 服务器 URL，**指向后端 8001 端口** | `http://localhost:8001` |
+| `-w` | 工作区名称（可选，不填自动生成 `wks-xxxxxxxx`） | `my-workspace` |
+
+### 第3步：验证结果
+
+脚本运行成功后，终端会输出：
+
+```
+Congratulations!
+Everything is ok, you can now connect to DocDokuPLM http://localhost:8001
+Credentials: admin/admin123
+Workspace: my-workspace
+```
+
+然后打开浏览器访问 `http://localhost:8000`，用 `admin` / `admin123` 登录，即可看到自动创建的样例数据。
+
+### Sample-data 会自动创建哪些账号？
+
+除了你通过 `-u`/`-p` 指定的主账号外，工具还会自动批量创建以下固定登录名的账号：
+
+```
+rob, joe, steve, mickey, bill, rendal, winie, titi, toto, tata
+```
+
+这些账号的密码与主账号密码相同（均为 `-p` 参数的值）。
+
+---
+
+## 三、后台账号和密码管理
+
+DocDokuPLM 有以下几种方式管理账号密码：
+
+### 方式一：通过前端 UI（最简单）
+
+1. 用管理员账号登录 `http://localhost:8000`
+2. 点击右上角头像 → **Account**（账户设置）→ 修改自己的密码
+3. 管理员进入 **Organization**（组织管理）→ **Users** → 可查看、停用所有用户
+
+### 方式二：通过 Adminer 数据库管理界面
+
+docker-compose 内置了 Adminer 数据库管理界面，可以直接查看用户数据：
+
+```
+访问地址：http://localhost:8004
+系统：PostgreSQL
+服务器：db
+用户名：changeit        ← 来自 docdoku-plm-docker/env/db.env: POSTGRES_USER
+密码：changeit          ← 来自 docdoku-plm-docker/env/db.env: POSTGRES_PASSWORD
+数据库：docdokuplm      ← 来自 docdoku-plm-docker/env/db.env: POSTGRES_DB
+```
+
+关键数据库表：
+
+| 表名 | 用途 |
+|------|------|
+| `ACCOUNT` | 用户账号（login、email、language 等） |
+| `CREDENTIAL` | 密码哈希（password 字段为 SHA-512+盐值哈希） |
+
+> ⚠️ **注意**：密码是哈希存储的，**不能直接在数据库中修改为明文**。需要通过 API 或前端流程重置密码。
+
+### 方式三：通过 REST API（推荐脚本化批量管理）
+
+**创建新账号（无需登录，注册接口为公开接口）：**
+
+```bash
+curl -X POST http://localhost:8001/docdoku-plm-server-rest/api/accounts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "login":"newuser",
+    "password":"newpass123",
+    "email":"newuser@example.com",
+    "name":"New User",
+    "language":"zh",
+    "timeZone":"Asia/Shanghai"
+  }'
+```
+
+**修改自己的账号信息（包括密码）：**
+
+```bash
+# 第1步：登录获取 JWT Token
+TOKEN=$(curl -s -X POST http://localhost:8001/docdoku-plm-server-rest/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"login":"admin","password":"admin123"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('jwt',''))")
+
+# 第2步：修改账号信息（含密码）
+curl -X PUT http://localhost:8001/docdoku-plm-server-rest/api/accounts/me \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "login":"admin",
+    "password":"newpassword123",
+    "email":"admin@example.com",
+    "name":"Admin",
+    "language":"zh",
+    "timeZone":"Asia/Shanghai"
+  }'
+```
+
+### 方式四：修改数据库连接密码（仅针对 DB 连接凭据，非用户密码）
+
+如需更改 PostgreSQL 数据库本身的连接密码，需要同步修改两个文件后重建容器：
+
+1. 编辑 `docdoku-plm-docker/env/db.env`：修改 `POSTGRES_PASSWORD`
+2. 编辑 `docdoku-plm-docker/env/back.env`：同步修改 `DATABASE_PWD`
+3. 重建容器：
+
+```bash
+docker-compose down -v   # ⚠️ -v 会清空所有数据，谨慎使用
+docker-compose up -d
+```
+
+---
+
+# Docker 容器图片分析与清理（2026-05-14 新增）
+
+## 图片中发现的问题
+
+根据截图中的 Docker Desktop 容器列表，可以发现以下情况：
+
+### 问题1：存在多个已停止（Exited）的容器
+
+图中有若干容器状态为 **Exited**（已退出），这意味着：
+
+- 这些容器已经停止运行，不再占用 CPU/内存
+- 但它们仍占用**磁盘空间**（容器层文件系统）
+- 容器名称可能与新启动的同名容器冲突
+
+### 问题2：可能存在多套 docdoku-plm 容器叠加
+
+如果你多次执行了 `docker-compose up`，可能会看到多套相同名称的容器（新旧各一套），旧的处于 Exited 状态。
+
+### 问题3：端口冲突风险
+
+如果 Exited 容器中有已绑定端口的记录，重新启动时可能引发端口冲突错误（`bind: address already in use`）。
+
+---
+
+## 停止的容器可以删掉吗？
+
+**可以安全删除**，但需要注意以下前提：
+
+| 条件 | 说明 |
+|------|------|
+| ✅ 容器状态为 Exited | 已停止的容器不影响正在运行的服务 |
+| ✅ 不是数据卷的唯一来源 | docdoku-plm 的数据存放在**命名 volume**（如 `db-volume`），不存在容器本身，删容器不会丢数据 |
+| ⚠️ 不要删除正在运行的容器 | 状态为 Running/Up 的容器不要误删 |
+
+### 清理命令
+
+**方式一：通过 Docker Desktop UI**
+
+在 Docker Desktop 容器列表中，勾选所有 Exited 状态的容器 → 点击 Delete 即可。
+
+**方式二：命令行批量清理所有已停止容器**
+
+```bash
+# 删除所有已停止的容器（不影响运行中容器）
+docker container prune
+
+# 确认后执行，会提示 "Are you sure? [y/N]"
+```
+
+**方式三：更彻底的清理（连同无用镜像、缓存一起清）**
+
+```bash
+# 清理停止的容器 + 悬空镜像 + 未使用网络 + 构建缓存
+docker system prune
+
+# 如果还想清理未被任何容器使用的镜像：
+docker system prune -a
+```
+
+> ⚠️ `docker system prune -a` 会删除所有未使用的镜像，包括 docdoku-plm 的镜像。下次 `docker-compose up` 时需要重新拉取，比较耗时，生产环境慎用。
+
+---
+
+## 推荐操作流程
+
+```bash
+# 1. 先停止所有 docdoku-plm 容器（如果有运行中的）
+cd docdoku-plm-docker
+docker-compose down
+
+# 2. 清理所有已停止容器（安全，不影响 volume 数据）
+docker container prune -f
+
+# 3. 重新启动（干净启动）
+docker-compose up -d
+```
+
+这样可以确保没有残留容器干扰，且不会丢失数据库中的数据。
