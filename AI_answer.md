@@ -2428,3 +2428,117 @@ http://localhost:8000
 ## 一句话总结
 
 打开 **http://localhost:8000**，用 `admin / admin123` 登录，进入 **my-workspace** 工作区，即可查看已加载的示例数据。
+
+---
+
+# localhost:8000 出问题 + Docker 镜像时间"5年前"问题解答
+
+## 问题二：docdoku-plm-front 镜像显示"5年前"，正常吗？
+
+**完全正常。** 原因如下：
+
+`docker-compose.yml` 中 `front` 服务使用的是 Docker Hub 的官方预编译镜像：
+
+```yaml
+image: docdoku/docdoku-plm-front:2.6.2
+```
+
+这个镜像是 DocDoku 官方团队大约 5 年前发布到 Docker Hub 的，我们**从未重新构建过前端镜像**。
+
+我们对前端所做的修改（中文翻译、nginx.conf、NLS文件）**全部是通过卷挂载（volume mount）在容器运行时注入**的，不会改变镜像本身的创建时间。镜像创建时间永远是 Docker Hub 上的发布时间，不会变。
+
+> 📌 只有执行 `docker build` 才会生成新镜像并更新时间。我们没有重建前端镜像，所以 "5年前" 是预期的正常表现。
+
+---
+
+## 问题一：localhost:8000 出问题了
+
+### 根本原因分析
+
+最可能的原因是：我们挂载的自定义 `docdoku-plm-docker/front/nginx.conf` **过于精简**，缺少了 SPA（单页应用）路由所必需的 `try_files` 指令。
+
+原始容器内的 nginx 配置可能包含类似：
+```nginx
+try_files $uri $uri/ /index.html;
+```
+
+而我们的 nginx.conf 只有：
+```nginx
+location / {
+    root   /usr/share/nginx/html;
+    index  index.html index.htm;
+}
+```
+
+**没有 `try_files` 指令**时，访问 `/workspace/my-workspace` 等路径时，nginx 会尝试查找实际文件，找不到就返回 404，而不是回退到 `index.html` 让前端路由处理。
+
+---
+
+### 修复方案：完善 nginx.conf
+
+将 `docdoku-plm-docker/front/nginx.conf` 更新为以下内容：
+
+```nginx
+server {
+    listen       80;
+    server_name  localhost;
+
+    # Serve all text and JS files as UTF-8 so Chinese NLS translations
+    # are decoded correctly by the browser and by RequireJS XHR requests.
+    charset utf-8;
+    charset_types text/html text/css application/javascript application/json;
+
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+        # SPA fallback: any unknown path serves index.html for client-side routing
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache static assets aggressively
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        root   /usr/share/nginx/html;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+}
+```
+
+修改后，重启 front 容器：
+
+```bash
+cd docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d front
+```
+
+---
+
+### 如何确认问题已解决
+
+访问 http://localhost:8000，如果页面正常加载登录界面，说明修复成功。
+
+如果仍有问题，可以查看 front 容器日志：
+
+```bash
+docker compose logs front
+```
+
+或查看 nginx 错误日志：
+
+```bash
+docker compose exec front cat /var/log/nginx/error.log
+```
+
+---
+
+## 快速总结
+
+| 问题 | 原因 | 解决方案 |
+|------|------|---------|
+| 镜像显示"5年前" | 使用的是 Docker Hub 官方预编译镜像，未重建 | 完全正常，无需处理 |
+| localhost:8000 出错 | 自定义 nginx.conf 缺少 `try_files` SPA 路由指令 | 更新 nginx.conf（见上方），重启 front 容器 |
