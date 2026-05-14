@@ -3104,3 +3104,65 @@ for (PartSubstituteLinkDTO substituteLinkDTO :
 ### 修改文件
 
 `docdoku-plm-server-rest/src/main/java/com/docdoku/plm/server/rest/PartResource.java` 第 913 行
+
+---
+
+# loadSample.sh 报 "Conflict" 错误的分析与解决（2026-05-14）
+
+## 问题状态
+
+`mvn clean package -DskipTests` 已成功（编译错误已修复）。  
+但运行 `./loadSample.sh -u admin -p admin123 -h http://localhost:8001/docdoku-plm-server-rest -w my-workspace` 时报错：
+
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : Conflict
+com.docdoku.plm.api.client.ApiException: Conflict
+    at ...WorkspacesApi.createWorkspace(WorkspacesApi.java:284)
+    at com.docdoku.loaders.SampleLoader.createWorkspace(SampleLoader.java:313)
+```
+
+## 根本原因
+
+HTTP 409 Conflict 表示**名称为 `my-workspace` 的工作区已经存在**。
+
+查看 `SampleLoader.java` 第 307-313 行：
+
+```java
+private void createWorkspace() throws ApiException {
+    LOGGER.info("Creating workspace...");
+    WorkspaceDTO workspaceDTO = new WorkspaceDTO();
+    workspaceDTO.setId(workspaceId);
+    workspaceDTO.setDescription("Some workspaceId created from sample loader");
+    new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+}
+```
+
+该方法直接调用创建接口，没有处理工作区已存在的情况。上次运行时已成功创建了 `my-workspace`，再次运行就会冲突。
+
+## 解决方案
+
+### 方案一（推荐）：换一个工作区名称
+
+```bash
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001/docdoku-plm-server-rest -w my-workspace-2
+```
+
+### 方案二：通过 Web UI 删除已有工作区
+
+1. 登录 DocDoku PLM Web 界面（http://localhost:8001）
+2. 以 admin 身份进入工作区 `my-workspace` 的管理页面
+3. 删除该工作区后重新运行脚本
+
+### 方案三：通过 REST API 删除工作区
+
+```bash
+curl -X DELETE \
+  http://localhost:8001/docdoku-plm-server-rest/api/workspaces/my-workspace \
+  -u admin:admin123
+```
+
+删除后重新运行 `loadSample.sh`。
+
+## 说明
+
+`"Cannot create account, trying to use given credentials for next operations"` 这条 INFO 日志**不是错误**，它只是说明 admin 账号已存在（正常），程序会使用已有凭据继续。真正的失败点是在创建工作区时的 Conflict。
