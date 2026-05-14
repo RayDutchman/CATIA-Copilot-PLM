@@ -24,6 +24,9 @@ services:
       # the backend image (Method B in Chinese-Language-Redeploy-Guide.md) for
       # that.
       - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+      # Custom nginx config that adds charset=utf-8 so Chinese NLS files are
+      # decoded correctly by the browser and by RequireJS XHR requests.
+      - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
 
   back:
     image: docdoku/docdoku-plm-server:2.6.2

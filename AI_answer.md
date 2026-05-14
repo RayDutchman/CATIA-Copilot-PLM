@@ -1241,3 +1241,83 @@ fetch('http://localhost:8001/docdoku-plm-server-rest/api/accounts/me', {
 | 账户 language 字段还是 `en` | 正确 API 命令查询 | 账户设置改为 Chinese，保存 |
 | 浏览器缓存了旧 JS | 界面还是英文 | `Ctrl+Shift+R` 硬刷新 |
 | zh NLS 文件内容有误 | `nls/zh/common.js` 能访问但 UI 仍英文 | 告知我哪些页面/文字仍是英文，可精确补全缺失的 key |
+
+---
+
+# 中文乱码根本原因及修复（2026-05-14 第五次更新）
+
+## 最新诊断结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `account.language` | `zh` ✅ |
+| `localStorage.locale` | `zh` ✅ |
+| `http://localhost:8000/js/localization/nls/zh/common.js` | 可访问，但中文是**乱码** ❌ |
+| 界面中英文状态 | 无变化 |
+
+---
+
+## 根本原因：nginx 未声明 UTF-8 编码
+
+NLS 文件本身是正确的 UTF-8 文件（仓库里验证过），容器也在运行，文件也能访问。
+
+问题出在 **nginx 响应头**。默认的 `nginx:1.19.1-alpine` 不在 `Content-Type` 里声明 `charset`：
+
+```http
+Content-Type: application/javascript
+```
+
+而不是：
+
+```http
+Content-Type: application/javascript; charset=utf-8
+```
+
+RequireJS 用 XHR 动态加载 NLS 文件时，如果响应头没有 `charset=utf-8`，浏览器（尤其是某些版本）会用默认编码（ISO-8859-1 或系统编码）解码 UTF-8 字节流 → 中文变成乱码 → 应用把这串乱码字符串渲染到 DOM → 界面显示乱码。
+
+---
+
+## 已提交的修复
+
+### 新增文件：`docdoku-plm-docker/front/nginx.conf`
+
+```nginx
+server {
+    listen       80;
+    server_name  localhost;
+
+    # Serve all text and JS files as UTF-8 so Chinese NLS translations
+    # are decoded correctly by the browser and by RequireJS XHR requests.
+    charset utf-8;
+
+    location / {
+        root   /usr/share/nginx/html;
+        index  index.html index.htm;
+    }
+}
+```
+
+### 修改文件：`docdoku-plm-docker/docker-compose.yml`
+
+在 `front` 服务的 `volumes` 里新增一行挂载：
+
+```yaml
+- ./front/nginx.conf:/etc/nginx/conf.d/default.conf
+```
+
+这样在 nginx 的 `Content-Type` 头里会自动加上 `; charset=utf-8`，RequireJS 加载 NLS 文件时就能正确解码 UTF-8 中文。
+
+---
+
+## 应用修复步骤
+
+**`git pull` 后执行：**
+
+```bash
+cd /path/to/CATIA-Copilot-PLM/docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d front
+```
+
+然后强制刷新浏览器：`Ctrl + Shift + R`
+
+**验证方式：** 浏览器打开 `http://localhost:8000/js/localization/nls/zh/common.js`，现在中文应该显示正常（`关于 DocDokuPLM` 而不是乱码）。界面所有文字应该变成中文。
