@@ -1102,3 +1102,142 @@ fetch('/docdoku-plm-server-rest/api/accounts/me', {
 ```
 
 **95% 的概率是第一步就能解决：账户的 Language 字段仍然设置的是 English。** 去账户设置改为 Chinese（中文），保存后页面会自动刷新，此后所有页面都应该是中文。
+
+---
+
+# 新诊断信息分析（2026-05-14 第四次更新）
+
+## 用户提供的诊断信息
+
+| 项目 | 结果 |
+|------|------|
+| `localStorage.getItem('locale')` | `'zh'` ✅ |
+| 账户 language 字段 API 调用 | ❌ 报错：`Unexpected token '<'` |
+| 直接访问 `http://localhost:8000/js/common-objects/contextResolver.js` | ❌ 无法访问 |
+
+---
+
+## 原因分析
+
+### 问题一：API fetch 报错 `Unexpected token '<'` 的真实原因
+
+这个错误表示服务器返回了 HTML（一个错误页面），而不是 JSON。
+
+**根本原因是 fetch 命令里的 URL 用的是相对路径：**
+
+```js
+fetch('/docdoku-plm-server-rest/api/accounts/me', ...)
+```
+
+相对路径 `/docdoku-plm-server-rest/api/...` 会请求 `http://localhost:8000/docdoku-plm-server-rest/api/...`，  
+但后端实际在 **8001 端口**（由 `front.json` 的 `"port": 8001` 决定）。
+
+在 8000 端口（前端 nginx）请求这个路径，nginx 会返回一个 HTML 404 页面。  
+`JSON.parse('<html>...')` 就会报 `Unexpected token '<'`。
+
+**正确的 API 诊断命令：**
+
+```js
+// 使用完整 URL（后端在 8001 端口）
+fetch('http://localhost:8001/docdoku-plm-server-rest/api/accounts/me', {
+  headers: { 'Authorization': 'Bearer ' + localStorage.jwt }
+}).then(r => r.json()).then(a => console.log('account.language =', a.language))
+```
+
+---
+
+### 问题二：`http://localhost:8000/js/common-objects/contextResolver.js` 无法访问
+
+这是正常的。`contextResolver.js` 是一个 **RequireJS 模块**，在生产构建中，RequireJS 优化器（r.js）会将它打包进对应模块的 bundle 文件，不再作为独立文件提供。
+
+所以这个 URL 404 并不说明任何问题，这是预期行为。
+
+---
+
+### 问题三：`localStorage.locale = 'zh'` 但界面仍然是英文 — 真正的根因
+
+`locale` 已经是 `'zh'`，但页面还是英文，说明问题出在 **zh NLS 文件不在容器里或无法被加载**。
+
+**工作原理：** RequireJS i18n 插件在页面加载时会：
+1. 读取 `localStorage.locale = 'zh'`
+2. 发起 AJAX 请求加载 `http://localhost:8000/js/localization/nls/zh/common.js`
+3. 如果返回 404 → 静默 fallback 到英文（不报错！这就是为什么没有任何可见的错误提示）
+
+**直接验证方法（在浏览器地址栏输入）：**
+
+```
+http://localhost:8000/js/localization/nls/zh/common.js
+```
+
+- **如果看到 JavaScript 代码**（以 `define({` 开头）→ NLS 文件已加载，问题在别处
+- **如果看到 404 / nginx 错误页** → NLS 文件没有挂载到容器里，这就是根因
+
+---
+
+## 为什么 NLS 文件可能不在容器里
+
+前端容器使用的是 Docker Hub 预构建镜像 `docdoku/docdoku-plm-front:2.6.2`，该镜像在 zh 支持加入之前就已构建，**镜像内不包含任何 zh NLS 文件**。
+
+我们通过 `docker-compose.yml` 的卷挂载来注入 zh 文件：
+
+```yaml
+- ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+```
+
+**这个挂载要生效，必须满足以下条件：**
+
+1. `docdoku-plm-docker/docker-compose.yml` 中包含上面这一行（已包含 ✅）
+2. 运行 docker compose 命令时的工作目录是 `docdoku-plm-docker/`
+3. **在最近一次 `git pull` 之后** 执行了 `docker compose up --force-recreate --no-deps -d front`
+
+---
+
+## 立即执行步骤
+
+**第 1 步：重启前端容器（让卷挂载生效）**
+
+```bash
+cd /path/to/CATIA-Copilot-PLM/docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d front
+```
+
+**第 2 步：验证 zh NLS 文件可访问**
+
+浏览器打开：`http://localhost:8000/js/localization/nls/zh/common.js`
+
+应该看到类似：
+```js
+/*global define*/
+define({
+    ABOUT_DOCDOKUPLM: '关于 DocDokuPLM',
+    ...
+```
+
+**第 3 步：硬刷新浏览器（清除缓存）**
+
+```
+Ctrl + Shift + R
+```
+
+**第 4 步：确认账户语言设置为中文**
+
+用正确的 API URL 检查账户语言：
+```js
+fetch('http://localhost:8001/docdoku-plm-server-rest/api/accounts/me', {
+  headers: { 'Authorization': 'Bearer ' + localStorage.jwt }
+}).then(r => r.json()).then(a => console.log('account.language:', a.language))
+```
+
+如果返回 `account.language: 'en'`，需要去 **账户设置 → Language → 选 Chinese → 保存**。  
+保存后页面自动刷新，此时 `localStorage.locale` 会被设为 `'zh'`，界面应全部显示中文。
+
+---
+
+## 总结：所有可能原因 + 修复方式
+
+| 原因 | 验证方法 | 修复 |
+|------|---------|------|
+| 容器未重启，卷挂载未生效 | `http://localhost:8000/js/localization/nls/zh/common.js` 返回 404 | `docker compose up --force-recreate --no-deps -d front` |
+| 账户 language 字段还是 `en` | 正确 API 命令查询 | 账户设置改为 Chinese，保存 |
+| 浏览器缓存了旧 JS | 界面还是英文 | `Ctrl+Shift+R` 硬刷新 |
+| zh NLS 文件内容有误 | `nls/zh/common.js` 能访问但 UI 仍英文 | 告知我哪些页面/文字仍是英文，可精确补全缺失的 key |
