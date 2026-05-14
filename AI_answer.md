@@ -1,3 +1,279 @@
+# 卷挂载可靠性分析 + 本地重建前端及现代化方案（2026-05-14 新增）
+
+---
+
+## 一、卷挂载方案能确保中文切换吗？
+
+### 简短答案
+
+**不能完全确保。** 卷挂载解决了"NLS 翻译文件存在"这一个问题，但整个中文切换流程还有三道额外障碍，只要任何一道未解决，中文就无法正常使用。
+
+---
+
+### 卷挂载覆盖的范围
+
+```yaml
+# docker-compose.yml 中的 front 服务
+volumes:
+  - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+  - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
+```
+
+| 挂载项 | 解决的问题 | 是否充分 |
+|--------|-----------|---------|
+| `nls/` 目录整体挂载 | 前端容器中存在 `nls/zh/*.js` 文件 | ✅（前提：后端已支持 zh）|
+| `nginx.conf` 挂载 | HTTP 响应头包含 `charset=utf-8` | ✅ |
+
+---
+
+### 卷挂载无法解决的三道障碍
+
+#### 障碍 1（决定性）：后端预构建镜像不返回 `zh`
+
+`docdoku/docdoku-plm-server:2.6.2` 是 DockerHub 预构建镜像，其中 `PropertiesLoader.java` 的 `SUPPORTED_LANGUAGES` 不包含 `zh`。这导致：
+
+- `/api/languages` 返回 `["fr", "en", "ru"]` → Language 下拉框无"中文"选项
+- `account.language` 永远无法被保存为 `zh`
+- `contextResolver.resolveAccount()` 每次读取账户时会强制把 `localStorage.locale` 改回 `en`，导致卷挂载的翻译文件永远不会被加载
+
+**结论：只要后端不重建，卷挂载对中文切换毫无效果。**
+
+#### 障碍 2：nginx 的 1 年强缓存会覆盖挂载更新
+
+`front/nginx.conf` 对所有 `.js` 文件设置了 1 年不可变缓存：
+
+```nginx
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+`nls/zh/*.js` 文件也是 `.js`，会命中此规则。如果用户的浏览器**曾经**用旧镜像缓存过旧 URL（或 404 响应），即使卷挂载生效，浏览器也可能从本地缓存读取旧数据。
+
+**解决方法**：必须在浏览器做强制刷新（`Ctrl+Shift+R`），或在 nginx.conf 中把 `nls/` 路径从长缓存中排除。
+
+#### 障碍 3：`moment.locale('zh')` 无效
+
+`common-objects/utils/date.js` 调用 `moment.locale(App.config.locale)`，但 moment.js 没有 `zh` 这个 locale（它使用 `zh-cn`），所以所有相对时间（"3 天前"）和本地化日期仍显示英文。这不是翻译文件问题，卷挂载无法解决。
+
+---
+
+### 卷挂载有效的前提条件
+
+| 前提条件 | 状态 |
+|---------|------|
+| 后端镜像从源码重建，`zh` 加入 `SUPPORTED_LANGUAGES` | ❌ 必须手动执行（见 Chinese-Language-Redeploy-Guide.md 方案 B）|
+| 浏览器强制刷新（绕过 1 年缓存）| ⚠️ 每次更新后用户需手动操作 |
+| `moment.locale` 传正确的 locale 码 | ⚠️ 代码层面的小 bug，不影响文字翻译 |
+
+**总结**：卷挂载是必要条件，但不是充分条件。必须配合后端重建才能真正实现中文切换。
+
+---
+
+## 二、本地重建前端 + 前端现代化方案
+
+---
+
+### 阶段 0：理解现有前端架构
+
+现有技术栈极为老旧，是典型的 2013 年风格：
+
+| 技术 | 当前版本 | 问题 |
+|------|---------|------|
+| **构建工具** | Grunt 1.0 + Bower 1.8 | Bower 已停止维护（2017），Grunt 生态萎缩 |
+| **模块系统** | RequireJS 2.1（AMD 规范）| 已被 ES Modules 取代 |
+| **模板引擎** | Mustache 0.8 | 无响应式，无组件化 |
+| **MVC 框架** | Backbone.js 1.0 | 无虚拟 DOM，无状态管理 |
+| **jQuery** | 1.9.1（2013 年版）| 严重过时 |
+| **Bootstrap** | 2.3.2 | 严重过时（当前 5.x）|
+| **国际化** | requirejs-i18n 2.0 | 依赖 AMD 加载器，不可摇树优化 |
+| **字体图标** | FontAwesome 4.7 | 当前 6.x |
+| **Three.js** | r90（2018 年版）| 当前 r165+ |
+
+---
+
+### 阶段 1（短期）：本地从源码构建现有前端
+
+**目标**：脱离 DockerHub 预构建镜像，本地生成自定义 Docker 镜像，解决所有中文相关问题。
+
+**环境要求**：Node.js 12–14（更高版本与 Grunt/Bower 插件有兼容问题）
+
+#### 1.1 构建步骤
+
+```bash
+cd docdoku-plm-front
+
+# 安装构建依赖（Node.js 12-14 下执行）
+npm install
+
+# bower install 已在 postinstall 自动触发
+# 若 bower 报错，手动执行：
+npx bower install --allow-root
+
+# 构建生产包（输出到 dist/）
+npm run build
+# 等价于: grunt build
+
+# 构建 Docker 镜像（替换 DockerHub 预构建版本）
+docker build -f docker/Dockerfile -t docdoku/docdoku-plm-front:2.6.2 .
+```
+
+#### 1.2 构建时需要确认的关键点
+
+- `grunt/tasks/copy.js` 的 `copy:i18n` 任务已包含 `nls/zh/*`，`grunt build` 后 `dist/js/localization/nls/zh/` 会完整存在 ✅
+- 所有 RequireJS 模块构建时 `paths: {localization: 'empty:'}` — NLS 文件不会被打包进 bundle，而是运行时动态加载，因此挂载或复制到正确路径即可 ✅
+- 构建完成后无需再使用卷挂载 `nls/` 目录——翻译文件已内嵌在镜像的 `dist/` 里
+
+#### 1.3 本地构建完成后修改 docker-compose.yml
+
+```yaml
+front:
+  # image: docdoku/docdoku-plm-front:2.6.2  ← 改用本地构建镜像
+  build:
+    context: ../docdoku-plm-front
+    dockerfile: docker/Dockerfile
+  # 卷挂载 nls 目录变为可选（已内嵌在镜像中）
+  volumes:
+    - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
+    - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
+```
+
+#### 1.4 同步修复的小问题（建议一并处理）
+
+| 问题 | 文件 | 修复方法 |
+|------|------|---------|
+| `app/main/main.js` fallback 是 `'zh'` 而非 `'en'` | `app/main/main.js:52` | 改为 `return window.localStorage.getItem('locale') \|\| 'en'` |
+| `moment.locale('zh')` 无效 | `app/js/common-objects/utils/date.js:14` | 改为 `moment.locale(locale === 'zh' ? 'zh-cn' : locale)` |
+| `datePickerLang` 硬编码法语 | 所有 `main.js:56` 附近 | 短期：暂时接受；中期：改用动态加载或删除 datepicker |
+
+---
+
+### 阶段 2（中期）：现代化构建工具链（不换框架）
+
+**目标**：用 Vite 替换 Grunt+RequireJS，保留 Backbone/Mustache 业务逻辑，解决依赖碎片化和构建速度问题。
+
+**为什么选 Vite**：Vite 对 AMD/CommonJS 格式有良好的兼容层（`@vitejs/plugin-legacy`），可以在迁移 AMD 模块的同时保持应用运行。
+
+#### 2.1 工具替换路线
+
+```
+Bower → npm/pnpm（统一到 package.json）
+Grunt → Vite（构建）+ npm scripts（任务）
+RequireJS/AMD → Vite + @vitejs/plugin-legacy（过渡）→ ES Modules（最终）
+requirejs-i18n → i18next 或 vue-i18n（若迁移框架），短期可保留
+LESS → CSS Modules 或 PostCSS（Vite 原生支持）
+```
+
+#### 2.2 国际化改进（关键）
+
+用 **i18next** 替换 `requirejs-i18n`：
+
+- 支持命名空间（对应现有的各 `nls/*.js` 模块）
+- 支持动态加载（不需要 AMD 加载器）
+- 支持 `moment.js` 集成（`i18next-moment-localizer`）
+- 现有 `nls/zh/*.js` 的 key-value 结构可以直接机械转换为 JSON
+
+```javascript
+// 现有 nls/zh/common.js 格式
+define({ ABOUT_DOCDOKUPLM: '关于 DocDokuPLM', ... });
+
+// 迁移后 locales/zh/common.json 格式（机械转换）
+{ "ABOUT_DOCDOKUPLM": "关于 DocDokuPLM", ... }
+```
+
+#### 2.3 nginx 缓存策略修正
+
+把 `nls/` 目录从长期缓存规则中排除（无论哪个方案都应修复）：
+
+```nginx
+# 翻译文件不设长期缓存，支持热更新
+location ~* /js/localization/nls/ {
+    root /usr/share/nginx/html;
+    expires -1;
+    add_header Cache-Control "no-store";
+}
+
+# 其他静态资源保持长缓存
+location ~* \.(js|css|png|jpg|...)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+---
+
+### 阶段 3（长期）：前端框架现代化
+
+**目标**：用 Vue 3 + TypeScript 逐步替换 Backbone/Mustache，保持 REST API 不变。
+
+#### 3.1 框架选型建议
+
+| 选项 | 优点 | 适配程度 |
+|------|------|---------|
+| **Vue 3** | 渐进式迁移友好，Composition API，内置 i18n（vue-i18n） | ⭐⭐⭐ 推荐 |
+| React 18 | 生态最大，但迁移成本高（JSX vs Mustache 差异大） | ⭐⭐ |
+| Angular | 完整框架，但重量级，与现有架构差异最大 | ⭐ |
+
+#### 3.2 Vue 3 渐进式迁移策略
+
+关键原则：**每个页面模块独立迁移，不 Big Bang 重写**
+
+```
+Phase A：搭架子（1-2周）
+  - 在 Vite 构建中引入 Vue 3
+  - 为每个 Grunt 模块（account-management, workspace-management...）
+    创建对应的 Vue 应用挂载点
+  - 保留旧 Backbone 代码，两套并存
+
+Phase B：逐模块迁移（按模块复杂度排序，从简单开始）
+  简单模块优先：download → documents → account-management
+  复杂模块次之：document-management → change-management
+  最复杂模块最后：product-structure（含 Three.js 3D 视图）
+
+Phase C：3D 视图专项升级
+  - Three.js r90 → r165+（API 变化较大，需专项适配）
+  - 考虑将 3D 视图封装为 Web Component，与框架解耦
+```
+
+#### 3.3 国际化架构（配合 Vue 3）
+
+```javascript
+// 使用 vue-i18n，翻译文件从现有 nls/ 机械迁移
+import { createI18n } from 'vue-i18n'
+
+const i18n = createI18n({
+  locale: localStorage.locale || 'en',
+  fallbackLocale: 'en',
+  messages: {
+    zh: () => import('./locales/zh/index.json'),  // 按需加载
+    fr: () => import('./locales/fr/index.json'),
+    en: () => import('./locales/en/index.json'),
+  }
+})
+```
+
+#### 3.4 与后端 API 的集成
+
+现有 REST API 不需要任何改动，只需：
+- 用 `axios` 或 `fetch` 替换 Backbone 的 `$.ajax`
+- `contextResolver.js` 中的账户加载逻辑迁移为 Pinia store
+
+---
+
+### 阶段总览与优先级
+
+| 阶段 | 目标 | 风险 | 时间估算 |
+|------|------|------|---------|
+| **0（现状分析）** | 完成 ✅ | - | - |
+| **1（本地构建）** | 脱离 DockerHub 前端镜像，确保 zh 内嵌 | 低 | 1 天 |
+| **2（Vite 替换构建工具）** | 现代化构建链，i18next 国际化 | 中 | 1-2 周 |
+| **3（Vue 3 渐进式迁移）** | 组件化、TypeScript、现代 UI | 高 | 数月 |
+
+**建议执行顺序**：先完成阶段 1（低风险，立即解决中文问题） + 后端重建（方案 B），再评估是否值得投入阶段 2/3。
+
+---
+
 # 中文切换失败的深度分析（2026-05-14 新增）
 
 ## 结论摘要
