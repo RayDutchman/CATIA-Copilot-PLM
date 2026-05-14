@@ -853,3 +853,46 @@ java -classpath "target/docdoku-plm-sample-data.jar:target/dependency/*" \
 | `401 Unauthorized` | 账号密码错误或账号不存在 | 检查 `-u`/`-p` 参数；首次运行会自动创建账号 |
 | `maven: command not found` | 未安装 Maven | `apt install maven` 或从官网下载 |
 | `BUILD FAILURE` (API 版本) | `docdoku-api-java` SNAPSHOT 依赖找不到 | 需要先在同一本地仓库 `mvn install` 对应的 API 模块 |
+
+---
+
+# 中文语言重部署指南更新说明（2026-05-14）
+
+## 本次变更
+
+针对 `Chinese-Language-Redeploy-Guide.md` 的优化请求，做了以下更新：
+
+### 1. 删除方案 C（前后端同时重建）
+
+方案 C 需要安装 Node.js 18、npm、bower 等额外工具，且对中文语言支持**没有必要性**——前端中文翻译已通过方案 A 的卷挂载注入，无需重新编译前端 Docker 镜像。删除后指南更简洁，避免误导。
+
+### 2. 优化方案 B 的 Maven 构建步骤
+
+原命令：`mvn clean package -DskipTests`（构建所有 9 个模块，首次约 5–15 分钟）
+
+新策略：
+
+| 情况 | 命令 | 说明 |
+|------|------|------|
+| 首次 / 修改了非语言代码 | `mvn clean install -DskipTests` | 完整构建并将所有模块安装到 `~/.m2` |
+| **仅修改了翻译/语言文件** | `mvn clean package -DskipTests -pl docdoku-plm-server-i18n,docdoku-plm-server-ear` | 只重编译 i18n 模块 + 重打包 EAR，约 1–2 分钟 |
+
+**原理**：`docdoku-plm-server-i18n` 是与语言直接相关的唯一模块（含 `PropertiesLoader.java` 和 `.properties` 文件）。首次完整构建使用 `install` 将其他所有模块安装到本地仓库后，后续只需重新构建 i18n 和最终 EAR，其他模块直接从 `~/.m2` 取用。
+
+### 3. 新增三个一键脚本
+
+| 脚本 | 功能 |
+|------|------|
+| `scripts/build-base-image.sh` | 构建 Payara 私有基础镜像（首次必须） |
+| `scripts/build-backend-full.sh` | `git pull` + 完整 Maven 构建 + Docker 镜像 + 重部署后端 |
+| `scripts/build-i18n.sh` | `git pull` + 仅语言模块构建 + Docker 镜像 + 重部署后端 |
+
+典型流程：
+```bash
+# 首次
+./scripts/build-base-image.sh
+./scripts/build-backend-full.sh
+
+# 后续只更新翻译
+./scripts/build-i18n.sh
+```
