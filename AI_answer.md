@@ -3166,3 +3166,165 @@ curl -X DELETE \
 ## 说明
 
 `"Cannot create account, trying to use given credentials for next operations"` 这条 INFO 日志**不是错误**，它只是说明 admin 账号已存在（正常），程序会使用已有凭据继续。真正的失败点是在创建工作区时的 Conflict。
+
+---
+
+---
+
+# 关于删除 `external: true` 是否导致 loadSample.sh 导入困难（2026-05-14 新增）
+
+## 你的问题
+
+> 我曾经在你的指导下删去了 docker-compose.yml 中的 `external: true`，这是否与我们现在导入 sample data 这么困难有关？
+
+## 结论先说
+
+**删除 `external: true` 与 loadSample.sh 导入困难基本无关。** 真正的困难原因是多个彼此独立的问题叠加在一起，全部与网络配置无关。
+
+---
+
+## 一、`external: true` 的含义是什么？
+
+在 docker-compose 中，`external: true` 可以出现在 **networks（网络）** 或 **volumes（卷）** 的声明里，含义不同。
+
+### 对于 networks（网络）
+
+```yaml
+# 原来的写法（external: true）
+networks:
+  network:
+    external: true   # 意思：这个网络已经在 Docker 中预先创建好了，
+                     # docker-compose 不要自动创建，直接使用已有的
+```
+
+删除后（现在的写法）：
+```yaml
+networks:
+  network:
+    driver: bridge   # 意思：docker-compose 自己创建并管理这个 bridge 网络
+```
+
+**区别：**
+- `external: true`：要求网络**预先存在**（你需要先用 `docker network create network` 手动创建），否则 `docker compose up` 会失败
+- 删除后：docker-compose 每次 `up` 时自动创建网络，`down` 时自动删除，更自包含，更适合本地开发
+
+### 对于 volumes（卷）
+
+```yaml
+# 带 external: true
+volumes:
+  db-volume:
+    external: true   # 使用外部预先创建的 volume，不自动创建
+```
+
+删除后：
+```yaml
+volumes:
+  db-volume:         # docker-compose 自动创建并管理这个 volume
+```
+
+---
+
+## 二、删除 `external: true` 为什么不影响 loadSample.sh？
+
+loadSample.sh 运行于**宿主机（Host）**，通过宿主机端口连接容器：
+
+```
+宿主机（loadSample.sh 进程）
+        ↓  访问 localhost:8001
+Docker 端口映射（ports: - 8001:8080）
+        ↓
+back 容器（Payara，内部端口 8080）
+        ↓
+容器间通信（back → db → es 等）
+```
+
+1. **loadSample.sh 的连接方式**：从宿主机发 HTTP 请求到 `localhost:8001`，这通过 `docker-compose.yml` 中 `ports: - 8001:8080` 实现。**端口映射不受 Docker 网络名称或 `external: true` 的影响。**
+
+2. **容器间通信**：`back` 容器访问 `db`（PostgreSQL）、`es`（Elasticsearch）等，使用 Docker 内部 DNS（如 `db:5432`），只要所有容器都在同一个 network 里即可。无论这个 network 是 docker-compose 自动创建的还是 external 的，容器间通信方式相同。
+
+3. **删除后反而更稳**：之前 `external: true` 要求你先手动 `docker network create network`，忘了就报错。删除后 docker-compose 自动管理，反而减少了出错机会。
+
+---
+
+## 三、那么 loadSample.sh 困难的真正原因是什么？
+
+根据本次 PR 中完整的问题排查记录，困难的原因是以下多个问题**叠加**：
+
+| # | 问题 | 错误现象 | 解决方法 |
+|---|------|---------|---------|
+| ① | `-h` 参数缺少 `/docdoku-plm-server-rest` context path | `Not Found (404)` | 改为 `-h http://localhost:8001/docdoku-plm-server-rest` |
+| ② | 端口号写错（8081 vs 8001） | `Connection refused` | 改为 `-h http://localhost:8001/...` |
+| ③ | `docdoku-plm-api-java` 未安装到本地 Maven 仓库 | Maven 构建失败，找不到依赖 | 先运行 `mvn -f docdoku-plm-api/pom.xml -DskipTests install` |
+| ④ | `docdoku-plm-sample-data/pom.xml` 中 source/target 为 Java 1.7 | JDK 17/21 编译失败：`Source option 7 is no longer supported` | 将 1.7 改为 1.8（已修复） |
+| ⑤ | `SampleLoader.createWorkspace()` 没有幂等性 | 重复运行报 `Conflict (409)` | 换新工作区名（如 `-w my-workspace-2`）或修复代码捕获 409 |
+| ⑥ | PostgreSQL volume 挂载路径错误 `/var/lib/mysql` | 容器重启后数据丢失，账号不见了 | 已修复为 `/var/lib/postgresql/data` |
+
+这些原因**全部与 Docker 网络配置（`external: true`）无关**。
+
+---
+
+## 四、`external: true` 唯一可能造成问题的场景
+
+如果你删除的是 **volumes 的 `external: true`**，且原来的 external volume 中已有数据（如 PostgreSQL 数据库里的账号和工作区），那么删除后：
+
+- docker-compose 会创建**新的空 volume**（与原来的 external volume 是不同的存储）
+- 原来 volume 中的数据**不会自动迁移**
+- 容器启动后数据库为空，相当于"全新安装"
+
+**但这仍然不会导致 loadSample.sh 本身连接失败**，只是数据库是空的（需要重新初始化管理员账号、重新运行 loadSample.sh）。
+
+---
+
+## 五、当前 docker-compose.yml 的网络配置（正确状态）
+
+```yaml
+networks:
+  network:
+    driver: bridge   # ✅ 自动创建和管理，无需预先手动创建，适合本地开发
+```
+
+这是正确的配置，不需要改回去。
+
+---
+
+## 六、正确的完整 loadSample 命令（总结）
+
+```bash
+# 第 1 步：安装 API 依赖到本地 Maven 仓库（只需做一次）
+cd /path/to/CATIA-Copilot-PLM
+mvn -f docdoku-plm-api/pom.xml -DskipTests install
+
+# 第 2 步：确认所有容器运行中
+cd docdoku-plm-docker
+docker compose ps
+# 确认 back、db、es、smtp 都是 Up（running）状态
+
+# 第 3 步：等待后端完全启动（首次启动需要 1-3 分钟）
+docker compose logs -f back
+# 看到 "Payara Server ... started" 后 Ctrl+C 退出
+
+# 第 4 步：运行 loadSample
+cd ../docdoku-plm-sample-data
+./loadSample.sh -u admin -p admin123 \
+  -h http://localhost:8001/docdoku-plm-server-rest \
+  -w my-workspace
+```
+
+> ⚠️ **注意 `-h` 参数必须包含 `/docdoku-plm-server-rest`！**  
+> 程序内部会自动追加 `/api`，最终调用：`http://localhost:8001/docdoku-plm-server-rest/api/languages`
+
+---
+
+## 七、关于 Session 8b4f07aa 的改动分析
+
+该 session（https://github.com/RayDutchman/CATIA-Copilot-PLM/sessions/8b4f07aa-fdb7-4590-a99d-9e520dc37a50）包含的主要改动包括创建 `PR_Detailed_Analysis.md`，其中最重要的一节就是对 `external: true` 删除影响的分析。
+
+**分析结论：**
+
+1. **改动本身是正确的**：删除 `external: true`（改为 docker-compose 自动管理 bridge 网络）是合理的本地开发配置，不会导致服务连接问题。
+
+2. **文档写作过于精简**：当时创建的 `PR_Detailed_Analysis.md` 虽然结构清晰，但每一节的解释不够深入，没有把问题的来龙去脉说清楚。
+
+3. **AI_answer.md 缺少该内容**：本文件（AI_answer.md）之前没有记录 `external: true` 的分析，导致找不到这部分解释。现在通过本节补充完整。
+
