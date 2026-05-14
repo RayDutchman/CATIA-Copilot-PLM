@@ -1646,3 +1646,93 @@ fetch(App.config.apiEndPoint+'/accounts/me',{headers:{'Authorization':'Bearer '+
 
 如果返回 `'zh'` → 前端语言切换完全正常，剩余英文来自服务器端 API 内容，需要服务器端国际化处理。  
 如果返回 `'en'` 或 `undefined` → 保存语言设置本身失败了，重新在账号页保存并检查 PUT 请求的响应状态码。
+
+---
+
+# 修复"App is not defined"错误（2026-05-14 补充）
+
+## 错误原因
+
+```
+Uncaught ReferenceError: App is not defined
+```
+
+`App` 是 RequireJS 模块系统初始化后才挂载到 `window` 上的全局对象。如果你在**登录页**、**工作区选择页**，或者在页面加载完成之前打开控制台执行命令，RequireJS 尚未完成初始化，`App` 变量不存在。
+
+---
+
+## 解决方法：不依赖 App，直接用 window.location 构造 API 地址
+
+`apiEndPoint` 的构造规则就是 `当前页面 origin + /api`（源码 contextResolver.js 第 125 行）：
+
+```js
+App.config.apiEndPoint = (isSSL ? 'https' : 'http') + base + 'api';
+// base = '://' + domain + ':' + port + '/'
+// 等价于 window.location.origin + '/api'（在默认部署下）
+```
+
+所以可以直接用：
+
+```js
+var apiBase = window.location.origin + '/api';
+fetch(apiBase + '/accounts/me', {
+    headers: { 'Authorization': 'Bearer ' + localStorage.jwt }
+})
+.then(r => r.json())
+.then(d => console.log('language =', d.language, '| full:', JSON.stringify(d)));
+```
+
+**一行版：**
+
+```js
+fetch(location.origin+'/api/accounts/me',{headers:{'Authorization':'Bearer '+localStorage.jwt}}).then(r=>r.json()).then(d=>console.log(d.language))
+```
+
+---
+
+## 如果 contextPath 不为空（部署在子路径下）
+
+如果应用不是部署在根路径（如 `http://server:8080/docdoku/`），则 API 地址是：
+
+```
+http://server:8080/docdoku/api
+```
+
+可以从当前页面 URL 中提取：
+
+```js
+// 自动从当前 URL 提取 contextPath
+var apiBase = location.href.replace(/\/[^\/]*$/, '') + '/api';
+// 或者直接硬编码：
+var apiBase = 'http://localhost:8080/api';
+
+fetch(apiBase + '/accounts/me', {
+    headers: { 'Authorization': 'Bearer ' + localStorage.jwt }
+})
+.then(r => r.json())
+.then(d => console.log('language =', d.language));
+```
+
+---
+
+## 如果 localStorage.jwt 也为空
+
+说明你未登录，或者使用的是 Session/Cookie 认证而非 JWT。这时去掉 Authorization 头，让浏览器自动带 Cookie：
+
+```js
+fetch(location.origin+'/api/accounts/me',{credentials:'include'}).then(r=>r.json()).then(d=>console.log(d.language))
+```
+
+---
+
+## 总结：推荐命令（无需 App，适用任何页面）
+
+```js
+fetch(location.origin+'/api/accounts/me',{headers:{'Authorization':'Bearer '+localStorage.jwt}}).then(r=>r.json()).then(d=>console.log(d.language))
+```
+
+| 情况 | 使用命令 |
+|------|---------|
+| 正常登录状态（JWT 认证） | 上方带 `Authorization` 头的命令 |
+| Session/Cookie 认证 | 带 `credentials:'include'` 的命令 |
+| App 已初始化（在 workspace 页面） | 原来的 `App.config.apiEndPoint` 命令也可用 |
