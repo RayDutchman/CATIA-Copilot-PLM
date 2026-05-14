@@ -2260,3 +2260,95 @@ git rm --cached docdoku-plm-api/docdoku-plm-api-js/package-lock.json
 | `node_modules/` | npm 下载的依赖包（数万文件） | ❌ 不跟踪，已加入 `.gitignore` |
 | `package-lock.json` | npm 依赖版本锁定文件 | ✅ 建议跟踪，保留即可 |
 | `target/` | Maven 编译/打包产物 | ❌ 不跟踪，已在 `.gitignore` 中 |
+
+---
+
+# loadSample.sh 报 Connection refused 错误说明（2026-05-14 新增）
+
+## 问题描述
+
+运行以下命令时报 `Connection refused`：
+
+```bash
+./loadSample.sh -u admin -p admin123 -h http://localhost:8081 -w my-workspace
+```
+
+错误信息：
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : java.net.ConnectException: Connection refused
+```
+
+---
+
+## 根本原因：端口号写错了
+
+你用的是 **8081**，但后端 API 服务实际映射的是 **8001**。
+
+查看 `docdoku-plm-docker/docker-compose.yml`：
+
+```yaml
+back:
+  image: docdoku/docdoku-plm-server:2.6.2
+  ports:
+    - 8001:8080      # ← 宿主机端口是 8001，不是 8081
+```
+
+各端口对应关系汇总：
+
+| 服务 | 宿主机端口 | 作用 |
+|------|-----------|------|
+| `front` | 8000 | 前端界面（浏览器访问） |
+| **`back`** | **8001** | **后端 REST API（loadSample 使用）** |
+| `kibana` | 8002 | ElasticSearch 可视化 |
+| `smtp` (mailhog) | 8003 | 邮件测试界面 |
+| `adminer` | 8004 | 数据库管理界面 |
+| `ssl-proxy` | 9000 | HTTPS 代理 |
+
+---
+
+## 解决方案
+
+**把 `-h http://localhost:8081` 改为 `-h http://localhost:8001`：**
+
+```bash
+cd docdoku-plm-sample-data
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+
+---
+
+## 前提条件：确认 Docker 容器正在运行
+
+命令能连接的前提是 Docker 容器已经启动。先确认：
+
+```bash
+cd docdoku-plm-docker
+docker compose ps
+```
+
+应该看到所有服务状态为 `Up`，尤其是 `back` 服务。  
+如果 `back` 没有运行，先启动：
+
+```bash
+docker compose up -d
+```
+
+等待约 30–60 秒让后端 Payara 服务器完全启动后，再运行 `loadSample.sh`。
+
+---
+
+## 如何验证后端已就绪
+
+在浏览器或 curl 访问：
+
+```bash
+curl http://localhost:8001/api/languages
+```
+
+如果返回 JSON 数组（如 `["zh","en","fr",...]`），说明后端已就绪，可以运行 loadSample.sh 了。
+
+---
+
+## 一句话结论
+
+端口号打错了，把 `8081` 改成 `8001` 即可。
