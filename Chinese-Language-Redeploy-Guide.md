@@ -102,12 +102,7 @@ sudo apt-get update
 sudo apt-get install -y maven openjdk-11-jdk
 ```
 
-### 第一步：拉取最新代码
-
-```bash
-cd /path/to/CATIA-Copilot-PLM
-git pull
-```
+---
 
 ### 第零步：构建基础镜像（首次构建必须）
 
@@ -116,7 +111,8 @@ git pull
 仓库内已提供构建该基础镜像所需的 Dockerfile，执行一次即可：
 
 ```bash
-# 仍在 docdoku-plm-server/ 目录下执行
+cd /path/to/CATIA-Copilot-PLM/docdoku-plm-server
+
 docker build \
   -f docker/payara/Dockerfile \
   -t docdoku/docdoku-plm-server-base:2.6.2 \
@@ -126,14 +122,43 @@ docker build \
 > ⏱ 此步骤需要下载 Payara 镜像及安装 LibreOffice，首次约 5–20 分钟。
 > 构建完成后无需重复执行（除非清空了本地 Docker 镜像缓存）。
 
+---
+
+### 第一步：拉取最新代码
+
+```bash
+cd /path/to/CATIA-Copilot-PLM
+git pull
+```
+
+---
+
 ### 第二步：Maven 构建后端
+
+#### 情况 A：首次构建，或修改了语言以外的代码
+
+使用 `install` 目标将所有模块安装到本地 Maven 仓库（`~/.m2`），供后续快速构建使用：
 
 ```bash
 cd docdoku-plm-server
 
-# 编译并打包 EAR（跳过测试，加快速度）
-mvn clean package -DskipTests
+# 完整构建（跳过测试）——首次约 5–15 分钟，后续有缓存更快
+mvn clean install -DskipTests
 ```
+
+#### 情况 B：仅修改了语言/翻译文件（快速重建）
+
+只需重新构建语言模块（`docdoku-plm-server-i18n`）和装配 EAR，**跳过其他所有模块**，速度大幅缩短：
+
+```bash
+cd docdoku-plm-server
+
+# 前提：已执行过一次情况 A 的完整构建（其他模块已在 ~/.m2 中）
+mvn clean package -DskipTests \
+  -pl docdoku-plm-server-i18n,docdoku-plm-server-ear
+```
+
+> ⏱ 快速构建仅重新编译 i18n 模块并重新打包 EAR，通常 1–2 分钟内完成。
 
 构建成功后，关键产物位于：
 
@@ -141,7 +166,7 @@ mvn clean package -DskipTests
 docdoku-plm-server-ear/target/docdoku-plm-server-ear.ear
 ```
 
-> ⏱ 首次构建需要下载依赖，约 5–15 分钟；后续会使用本地缓存，速度更快。
+---
 
 ### 第三步：构建 Docker 镜像
 
@@ -157,6 +182,8 @@ docker build \
 > 说明：`docker/Dockerfile` 使用第零步中本地构建的 `docdoku/docdoku-plm-server-base:2.6.2`
 > 作为基础镜像，只把本地编译好的 EAR 复制进去。
 
+---
+
 ### 第四步：重启后端容器
 
 ```bash
@@ -165,6 +192,8 @@ cd ../docdoku-plm-docker
 # 重建 back 服务，使用刚才本地构建的同名镜像
 docker compose up --force-recreate --no-deps -d back
 ```
+
+---
 
 ### 第五步：验证
 
@@ -178,43 +207,38 @@ docker compose logs -f back
 
 ---
 
-## 方案 C：前后端同时重建（完整中文支持）
+## 一键脚本（推荐）
 
-如果同时需要重建前端（含 npm 构建），请在方案 B 的基础上，**先**完成前端构建：
-
-### 前置条件（额外）
-
-| 工具 | 版本要求 | 检查命令 |
-|------|----------|----------|
-| Node.js | 18+ | `node --version` |
-| npm | 随 Node | `npm --version` |
-
-安装 Node.js 18：
+为节省手动操作，`scripts/` 目录已提供三个脚本，授权后直接运行即可：
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# 首次授权（只需一次）
+chmod +x scripts/build-base-image.sh scripts/build-backend-full.sh scripts/build-i18n.sh
 ```
 
-### 构建前端
+| 脚本 | 用途 | 何时使用 |
+|------|------|----------|
+| `scripts/build-base-image.sh` | 构建 Payara 基础镜像 | 首次，或清空 Docker 镜像缓存后 |
+| `scripts/build-backend-full.sh` | 完整 Maven 构建 + Docker 镜像 + 重部署后端 | 首次，或修改了非语言代码后 |
+| `scripts/build-i18n.sh` | 仅重建语言模块 + Docker 镜像 + 重部署后端 | 只修改了翻译/语言文件后 |
+
+**典型首次部署流程：**
 
 ```bash
-cd /path/to/CATIA-Copilot-PLM/docdoku-plm-front
+cd /path/to/CATIA-Copilot-PLM
 
-npm install
-npx bower install --allow-root
+# Step 0（只需一次）
+./scripts/build-base-image.sh
 
-# 构建并打包 Docker 镜像（脚本内含 docker build）
-./build.sh
+# Step 1-4（首次完整构建）
+./scripts/build-backend-full.sh
 ```
 
-> 构建完成后执行 `docker images | grep docdoku-plm-front` 确认镜像已生成。
-
-然后按方案 B 的步骤构建后端，最后重启前后端：
+**后续仅更新翻译时：**
 
 ```bash
-cd ../docdoku-plm-docker
-docker compose up --force-recreate --no-deps -d front back
+cd /path/to/CATIA-Copilot-PLM
+./scripts/build-i18n.sh
 ```
 
 ---
