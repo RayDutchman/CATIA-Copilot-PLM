@@ -1,3 +1,129 @@
+# localhost:8000 问题分析与修复指南（2026-05-14 新增）
+
+## 问题一：docdoku-plm-front 镜像显示"5年前"是否正常？
+
+**正常的。** 这是预期行为，原因如下：
+
+`docker-compose.yml` 中 `front` 服务使用的是 Docker Hub 上的官方预编译镜像：
+```yaml
+front:
+  image: docdoku/docdoku-plm-front:2.6.2
+```
+这个镜像在 Docker Hub 上发布于大约5年前，VS Code 的 Docker 扩展显示的是**镜像的原始创建时间**，而不是你拉取或启动它的时间。
+
+**你从未重新编译 front 镜像**——你重新编译的是 `docdoku-plm-server`（后端），但前端镜像仍然是直接从 Docker Hub 拉取的原版。这是完全正确的做法，因为你的前端修改是通过**挂载目录**（volume mount）实现的：
+```yaml
+volumes:
+  - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+  - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
+```
+修改的 NLS 文件会在运行时被挂载进容器，不需要重建镜像。
+
+---
+
+## 问题二：localhost:8000 出问题的根本原因分析
+
+根据你提供的命令历史，**最大的嫌疑是第 141 行**：
+
+```bash
+141  docker-compose down -v
+```
+
+### ⚠️ 致命操作：`down -v` 删除了所有数据卷
+
+`-v` 参数会**永久删除**所有 Docker volumes，包括：
+- `db-volume`（PostgreSQL 数据库 — 所有账号、工作区、零件数据全部丢失）
+- `es-volume`（Elasticsearch 索引数据）
+- `docdoku-plm-server-volume`（文件库 vault）
+- `conversion-volume`（转换服务数据）
+
+执行这条命令后，数据库是**空的**，连 admin 账号也不复存在。
+
+---
+
+## 命令历史逐项分析
+
+| 行号 | 命令 | 问题/说明 |
+|------|------|----------|
+| 133 | `./loadSample.sh -h http://localhost:8001` | ✅ 端口正确（back 服务映射到 8001） |
+| 134 | `docker system prune` | ⚠️ 清理了未使用的镜像/容器（一般无害） |
+| 141 | `docker-compose down -v` | ❌ **致命**：删除了所有数据卷，数据库被清空 |
+| 145 | `./loadSample.sh -h http://localhost:8081` | ❌ 端口错误：8081 不是 back 服务的端口（应为 8001） |
+| 148 | `docker compose up -d` | ✅ 重新启动了所有服务（但数据库是全新空的） |
+| 149/152 | `./loadSample.sh -h http://localhost:8001` | ⚠️ back 服务可能还未完全启动（Payara 需要 2-5 分钟） |
+
+---
+
+## 可能的当前错误原因
+
+根据以上分析，localhost:8000 出问题可能是以下原因之一（或组合）：
+
+### 原因 A：后端 back 服务尚未就绪
+Payara 服务器启动需要 2-5 分钟。如果在它完全启动前就打开前端，会看到 API 请求失败的错误。
+
+### 原因 B：数据库为空，admin 账号不存在
+`down -v` 清空了数据库。`docker compose up -d` 会重新创建数据库，但**默认情况下没有 admin 账号**。你需要重新初始化。
+
+### 原因 C：sample data 未成功加载
+第 145 行用了错误端口 8081（应为 8001），所以那次 loadSample 失败了。第 149/152 行用了正确端口，但可能因为 back 还没完全启动而失败。
+
+### 原因 D：NLS 挂载目录不存在导致 front 容器启动失败
+`docker-compose.yml` 挂载了：
+```yaml
+- ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+```
+如果在 WSL2 的 `/mnt/d/...` 路径下这个目录不存在，nginx 容器可能无法正常启动。
+
+---
+
+## 修复步骤
+
+请按以下顺序执行：
+
+### 步骤 1：确认所有容器都在运行
+```bash
+cd /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM/docdoku-plm-docker
+docker compose ps
+```
+检查所有服务是否显示 `Up`（特别是 `front`、`back`、`db`）。
+
+### 步骤 2：检查 back 服务日志
+```bash
+docker compose logs back --tail=50
+```
+如果看到 `Server startup in ... ms` 说明 Payara 已就绪。如果看到错误，请将日志内容发给我。
+
+### 步骤 3：检查 front 服务日志
+```bash
+docker compose logs front --tail=20
+```
+如果 nginx 因挂载目录不存在而报错，需要确认 NLS 目录存在：
+```bash
+ls /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM/docdoku-plm-front/app/js/localization/nls
+```
+
+### 步骤 4：确认 back 就绪后，重新加载样本数据
+```bash
+cd /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM/docdoku-plm-sample-data
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+**注意**：必须等 back 服务完全启动后再运行（检查日志确认）。
+
+### 步骤 5：访问 localhost:8000
+在浏览器打开 `http://localhost:8000`，使用 `admin` / `admin123` 登录。
+
+---
+
+## 总结
+
+| 问题 | 结论 |
+|------|------|
+| front 镜像显示5年前 | ✅ 正常，是 Docker Hub 原版镜像的创建时间 |
+| localhost:8000 出错 | ❌ 最可能是 `down -v` 清空了数据库，back 服务需要重新初始化 |
+| 主要修复操作 | 等待 back 完全启动，再重新执行 `loadSample.sh` |
+
+---
+
 # 中文语言切换问题修复说明（2026-05-13 新增）
 
 ## 问题描述
