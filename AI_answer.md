@@ -2117,3 +2117,62 @@ docker-compose up -d
 > **"Always write all answers and explanations into AI_answer.md in the repository root, not just in the chat response."**
 
 今后每次回答问题，都会优先将内容写入 `AI_answer.md` 并通过 `report_progress` 提交到仓库，确保你能在文件中看到答案。
+
+---
+
+# loadSample.sh 报错修复：Source/Target option 7 不再支持（2026-05-14）
+
+## 错误信息
+
+```
+[ERROR] Source option 7 is no longer supported. Use 8 or later.
+[ERROR] Target option 7 is no longer supported. Use 8 or later.
+```
+
+## 原因
+
+`docdoku-plm-sample-data/pom.xml` 中 `maven-compiler-plugin` 的配置写死了 Java 1.7：
+
+```xml
+<source>1.7</source>
+<target>1.7</target>
+```
+
+你使用的 JDK（JDK 17 或 JDK 21）已经**彻底移除了对 Java 7 源码/字节码目标的支持**。从 JDK 17 开始，`--release 7` / `-source 1.7` / `-target 1.7` 全部不合法，编译器直接报错。
+
+## 修复方法
+
+将 `docdoku-plm-sample-data/pom.xml` 中的版本改为 `1.8`（已修复，见本次 commit）：
+
+```xml
+<!-- 修复前 -->
+<source>1.7</source>
+<target>1.7</target>
+
+<!-- 修复后 -->
+<source>1.8</source>
+<target>1.8</target>
+```
+
+## 为什么选 1.8？
+
+- 原项目最低支持 Java 8，选 `1.8` 是最保守的改动，不会引入新的 API 依赖
+- 你的 JDK 17/21 完全兼容编译 Java 8 源码
+
+## 修复后重新运行
+
+```bash
+cd /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM
+./docdoku-plm-sample-data/loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+
+> 注意：`loadSample.sh` 在 `docdoku-plm-sample-data/` 子目录下，需确认路径正确。  
+> 如果你在仓库根目录运行，命令是：  
+> ```bash
+> cd docdoku-plm-sample-data
+> ./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+> ```
+
+## 一句话结论
+
+`pom.xml` 中 `<source>1.7</source>` 和 `<target>1.7</target>` 与新版 JDK 不兼容，改为 `1.8` 即可解决编译错误。
