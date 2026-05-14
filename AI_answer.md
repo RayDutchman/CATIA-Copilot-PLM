@@ -2668,3 +2668,150 @@ docker compose exec front cat /var/log/nginx/error.log
 |------|------|---------|
 | 镜像显示"5年前" | 使用的是 Docker Hub 官方预编译镜像，未重建 | 完全正常，无需处理 |
 | localhost:8000 出错 | 自定义 nginx.conf 缺少 `try_files` SPA 路由指令 | 更新 nginx.conf（见上方），重启 front 容器 |
+
+---
+
+# loadSample.sh 报 "Not Found" 错误的分析与解决（2026-05-14 新增）
+
+## 错误信息
+
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : Not Found
+com.docdoku.plm.api.client.ApiException: Not Found
+    at ...LanguagesApi.getLanguages(LanguagesApi.java:93)
+```
+
+## 根本原因：loadSample.sh 的 `-h` 参数 URL 不正确
+
+### 代码分析
+
+查看 `docdoku-plm-sample-data/src/main/java/com/docdoku/loaders/Main.java` 第 70 行：
+
+```java
+SampleLoader sampleLoader = new SampleLoader(login, password, workspaceId, url + "/api");
+```
+
+程序会把你传入的 `-h` URL 后面**自动追加 `/api`**，然后调用 `/languages` 接口。
+
+所以当你运行：
+```bash
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001 -w my-workspace
+```
+
+程序实际请求的是：
+```
+http://localhost:8001/api/languages
+```
+
+### 为什么会 404？
+
+查看 `docdoku-plm-docker/env/front.json`：
+
+```json
+{
+    "server": {
+        "ssl": false,
+        "domain": "localhost",
+        "port": 8001,
+        "contextPath": "/docdoku-plm-server-rest",
+        ...
+    }
+}
+```
+
+后端服务的 REST API 实际路径是：
+```
+http://localhost:8001/docdoku-plm-server-rest/api/languages
+```
+
+而你传入的 `-h http://localhost:8001` 缺少了 `/docdoku-plm-server-rest` 这段**应用上下文路径（context path）**，导致请求打到了错误的地址，服务器返回 404 Not Found。
+
+---
+
+## 解决方法：加上 context path
+
+**正确的命令是：**
+
+```bash
+cd docdoku-plm-sample-data
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001/docdoku-plm-server-rest -w my-workspace
+```
+
+注意：`-h` 参数的值要加上 `/docdoku-plm-server-rest`，程序内部会自动再追加 `/api`，最终调用：
+```
+http://localhost:8001/docdoku-plm-server-rest/api/languages  ✅
+```
+
+---
+
+## 完整的正确启动和加载流程
+
+### 第一步：确认所有容器都在运行
+
+```bash
+cd docdoku-plm-docker
+docker compose ps
+```
+
+确保 `back`、`db`、`es`、`smtp` 状态都是 `Up`（running）。
+
+如果 `back` 没有运行，先启动：
+```bash
+docker compose up -d
+```
+
+然后等待后端启动完成（通常需要 1-3 分钟），可以通过日志观察：
+```bash
+docker compose logs -f back
+```
+看到类似 `Payara Server ... started` 的信息表示启动成功。
+
+### 第二步：验证后端 API 是否可访问
+
+在浏览器或 curl 中访问：
+```
+http://localhost:8001/docdoku-plm-server-rest/api/languages
+```
+
+如果返回 JSON 数据（语言列表），说明后端正常。如果返回 404，说明后端还没有完全启动。
+
+### 第三步：运行 loadSample.sh（使用正确的 URL）
+
+```bash
+cd docdoku-plm-sample-data
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001/docdoku-plm-server-rest -w my-workspace
+```
+
+---
+
+## 关于 localhost:8000 仍有问题
+
+如果 `http://localhost:8000` 还是有问题，很可能是**后端 `back` 容器没有正常启动**，而不是前端问题。
+
+请执行以下诊断步骤：
+
+```bash
+cd docdoku-plm-docker
+
+# 1. 查看所有容器状态
+docker compose ps
+
+# 2. 查看后端日志（最后 100 行）
+docker compose logs --tail=100 back
+
+# 3. 查看数据库日志
+docker compose logs --tail=50 db
+```
+
+常见问题：
+- 如果 `db` 容器出错，后端无法连接数据库，会不断重启
+- 如果你之前执行了 `docker-compose down -v`，**数据库 volume 被删除了**，需要重新初始化（重新 `docker compose up -d` 就会自动初始化新数据库）
+
+---
+
+## 总结
+
+| 问题 | 原因 | 解决方案 |
+|------|------|---------|
+| loadSample.sh 报 Not Found | `-h` 参数缺少 `/docdoku-plm-server-rest` context path | 改为 `-h http://localhost:8001/docdoku-plm-server-rest` |
+| localhost:8000 仍有问题 | 后端 `back` 容器未正常启动 | 检查 `docker compose logs back` 找原因 |
