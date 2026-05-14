@@ -2033,3 +2033,87 @@ mvn -f docdoku-plm-api/pom.xml -pl docdoku-plm-api-base,docdoku-plm-api-java -am
 ## 一句话结论
 
 这不是你命令参数写错，而是**缺少本地安装 `docdoku-plm-api-java` 依赖**；先安装 `docdoku-plm-api` 模块，再跑 `loadSample.sh` 就可以。
+
+---
+
+# 问题解答：PostgreSQL 数据目录映射错误的影响（2026-05-14）
+
+## 背景
+
+之前的 `docker-compose.yml` 中，`db` 服务的 Volume 挂载路径写成了 `/var/lib/mysql`（MySQL 的路径），而不是 PostgreSQL 正确的 `/var/lib/postgresql/data`。这个问题已在 commit `92f1d43` 中修复。
+
+---
+
+## Q1：路径映射错误，为什么我还能登录并且创建账号、上传零件？
+
+**原因：PostgreSQL 完全忽略了那个错误的挂载点，在容器内部自行运行。**
+
+PostgreSQL 镜像启动时，数据目录由环境变量 `PGDATA` 控制，默认值是 `/var/lib/postgresql/data`。当 `db-volume` 被挂载到 `/var/lib/mysql` 时：
+
+- `/var/lib/mysql` 这个路径对 PostgreSQL **毫无意义**（那是 MySQL 的数据目录）
+- PostgreSQL 完全不理会那个挂载，照样在 `/var/lib/postgresql/data`（容器的**临时可写层**）里初始化并写数据
+- 应用能正常工作，因为数据库本身是健康的，只是数据没有真正持久化
+
+**实际后果：**  
+每次执行 `docker-compose down` 再 `up`（容器被删除重建），数据库里所有数据（账号、工作区、零件记录等）都会**全部丢失**，因为它们存在容器的临时可写层里，而不在 named volume 里。
+
+---
+
+## Q2：那个 Volume（`db-volume`）去哪了？
+
+`db-volume` 这个 named volume **仍然存在于你的 Docker 系统中**，只是它被挂载到了 `/var/lib/mysql`，PostgreSQL 从来没有向那里写过任何数据——所以它实际上是**空的**。
+
+可以用以下命令确认：
+```bash
+# 查看所有 named volumes（名称包含项目目录名前缀）
+docker volume ls
+
+# 查看 db-volume 的详情（Mountpoint 字段显示宿主机上的实际路径）
+docker volume inspect docdokuplmdocker_db-volume
+```
+
+---
+
+## Q3：能不能删掉？
+
+**可以删，而且推荐清理后重新开始。**
+
+因为旧的 `db-volume` 是空的（从未存储过 PostgreSQL 数据），没有任何有价值的内容。
+
+```bash
+# 方式一：彻底清理并重建（推荐）
+cd docdoku-plm-docker
+docker-compose down -v    # -v 会删除所有关联的 named volumes（包括 db-volume）
+docker-compose up -d      # 重新创建，此时 db-volume 正确挂载到 /var/lib/postgresql/data
+
+# 方式二：只删除 db-volume（需要先停止容器）
+docker-compose down
+docker volume rm docdokuplmdocker_db-volume
+docker-compose up -d
+```
+
+> ⚠️ 注意：执行 `down -v` 会同时删除 `es-volume`（Elasticsearch 索引）和 `docdoku-plm-server-volume`（上传的文件）。如果你有重要数据需要保留，用方式二只删 `db-volume`。
+
+---
+
+## Q4：这个错误有没有可能导致语言切换不正常？
+
+**不会，两者完全无关。**
+
+语言切换问题的原因链是：
+
+1. **语言选项不显示"中文"**：后端 Java 代码中硬编码了支持的语言列表，未包含 `zh`，这和数据库无关
+2. **中文翻译不加载**：前端 NLS 文件加载路径/编码（nginx charset）问题，也和数据库无关
+3. **语言偏好设置**：用户的语言偏好虽然存储在数据库中，但只要容器没有重启，数据就在内存+临时可写层里，可以正常读写
+
+因此，语言切换问题是**前端 NLS 文件 + 后端语言枚举**的问题，已经在之前的 PR 中通过挂载翻译文件和修改后端枚举来修复，与 PostgreSQL 的 Volume 映射无关。
+
+---
+
+## 关于"让你记住每次都写在 AI_answer.md"
+
+已通过 `store_memory` 工具将此偏好永久保存到 Agent 的记忆中：
+
+> **"Always write all answers and explanations into AI_answer.md in the repository root, not just in the chat response."**
+
+今后每次回答问题，都会优先将内容写入 `AI_answer.md` 并通过 `report_progress` 提交到仓库，确保你能在文件中看到答案。
