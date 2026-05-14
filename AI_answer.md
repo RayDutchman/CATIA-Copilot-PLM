@@ -1,3 +1,81 @@
+# loadSample.sh 错误分析与修复（2026-05-14 更新）
+
+## 第二个问题：Internal Server Error (500) — createCarProduct 失败
+
+### 错误信息
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : Internal Server Error
+com.docdoku.plm.api.client.ApiException: Internal Server Error
+    at PartsApi.updatePartIteration(PartsApi.java:4006)
+    at SampleLoader.createCarProduct(SampleLoader.java:1098)
+```
+
+### 根本原因（服务器端 Bug）
+错误发生在服务器代码 `PartResource.java` 第 913 行：
+
+```java
+// 原来的代码（有 bug）：
+for (PartSubstituteLinkDTO substituteLinkDTO : partUsageLinkDTO.getSubstitutes()) {
+```
+
+当一个零件链接（如 `driverSeatLink`、`passengerSeatLink`、`backPassengersSeatsLink`）没有设置任何"替代品"时，`getSubstitutes()` 返回 `null`，而对 `null` 进行 for-each 循环会抛出 `NullPointerException`，这在服务器端表现为 HTTP 500 Internal Server Error。
+
+### 修复方法
+已在 `PartResource.java` 第 913 行添加 null 安全保护：
+
+```java
+// 修复后的代码：
+for (PartSubstituteLinkDTO substituteLinkDTO : partUsageLinkDTO.getSubstitutes() != null ? partUsageLinkDTO.getSubstitutes() : Collections.emptyList()) {
+```
+
+### 如何应用修复
+
+**方法一（推荐）：重新构建服务器镜像**
+1. 修复代码已提交到本仓库的当前分支
+2. 重新构建 `docdoku-plm-server` 服务：
+   ```bash
+   cd docdoku-plm-server
+   mvn clean package -DskipTests
+   # 或者重建 Docker 镜像
+   docker-compose build server
+   docker-compose up -d server
+   ```
+3. 等待服务器重启后，再次运行：
+   ```bash
+   ./loadSample.sh -u admin -p admin123 -h http://localhost:8001/docdoku-plm-server-rest -w my-workspace
+   ```
+
+**注意：** 运行前需要清理之前部分创建的数据（账户、工作区等），否则会报重复创建错误。可以通过重置数据库来解决：
+```bash
+docker-compose down -v   # 删除数据卷（会清空所有数据！）
+docker-compose up -d
+```
+
+然后重新运行 loadSample.sh。
+
+---
+
+## 第一个问题：Not Found (404) — LanguagesApi.getLanguages 失败
+
+### 错误信息
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : Not Found
+com.docdoku.plm.api.client.ApiException: Not Found
+    at LanguagesApi.getLanguages(LanguagesApi.java:93)
+    at SampleLoader.checkServerAvailability(SampleLoader.java:132)
+```
+
+### 根本原因
+命令中的 `-h` 参数 URL 缺少 `/docdoku-plm-server-rest` 路径前缀。
+
+### 修复方法
+将命令改为：
+```bash
+./loadSample.sh -u admin -p admin123 -h http://localhost:8001/docdoku-plm-server-rest -w my-workspace
+```
+
+---
+
 # localhost:8000 问题分析与修复指南（2026-05-14 新增）
 
 ## 问题一：docdoku-plm-front 镜像显示"5年前"是否正常？
