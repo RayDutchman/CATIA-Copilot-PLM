@@ -4043,3 +4043,165 @@ if(RotationType.MATRIX.equals(cadInstanceDTO.getRotationType())){
 
 之前修复的 `SampleLoader.createWorkspace` 409 Conflict 处理仍然生效，如果使用相同工作区名重跑也不会再报冲突错误（只会输出 WARNING 并继续）。但由于 car product 的零件可能已经部分创建，建议使用全新工作区名。
 
+
+---
+
+## 重新编译部署详细步骤（面向 Linux/Docker 小白）
+
+> 背景：上一个会话修复了 `UpdatePartIterationPSFilter.java` 中的 NullPointerException（`loadSample.sh` 创建汽车产品时报 HTTP 500 的根本原因）。修复后的代码已在 GitHub 上，需要重新编译打包 Docker 镜像才能生效。
+
+---
+
+### 第一步：确认已有工具
+
+打开终端，依次运行以下三条命令，确认都有输出：
+
+```bash
+java -version
+# 应输出类似：openjdk version "11.x.x" 
+# 如果报"command not found"：sudo apt-get install -y openjdk-11-jdk
+
+mvn -version
+# 应输出类似：Apache Maven 3.x.x
+# 如果报"command not found"：sudo apt-get install -y maven
+
+docker --version
+# 应输出类似：Docker version 24.x.x
+# 如果报错，说明 Docker 未安装，需先安装 Docker Desktop 或 Docker Engine
+```
+
+---
+
+### 第二步：拉取最新修复代码
+
+```bash
+# 进入你的项目目录（根据实际路径修改）
+cd ~/CATIA-Copilot-PLM
+
+# 拉取最新代码（包含 NPE 修复）
+git pull
+```
+
+> 如果 `git pull` 提示有冲突，可以运行 `git stash` 先暂存本地改动再拉取。
+
+---
+
+### 第三步：构建 Payara 基础镜像（首次必须，之后可跳过）
+
+这一步只需执行一次。如果你之前已经做过了，直接跳到第四步。
+
+```bash
+# 在项目根目录下执行
+cd ~/CATIA-Copilot-PLM
+
+chmod +x scripts/build-base-image.sh
+./scripts/build-base-image.sh
+```
+
+> ⏱ 首次约 5–20 分钟（需要下载 Payara + 安装 LibreOffice），请耐心等待，看到 `Successfully built` 即完成。
+
+---
+
+### 第四步：完整编译 + 打包 Docker 镜像 + 重新部署
+
+**最简单方式**：直接运行现成的一键脚本：
+
+```bash
+cd ~/CATIA-Copilot-PLM
+
+chmod +x scripts/build-backend-full.sh
+./scripts/build-backend-full.sh
+```
+
+这个脚本会自动做四件事：
+1. `git pull`（拉最新代码）
+2. `mvn clean install -DskipTests`（Maven 编译，首次约 5–15 分钟）
+3. `docker build`（把编译结果打包成 Docker 镜像）
+4. `docker compose up --force-recreate --no-deps -d back`（重启后端容器）
+
+> ⏱ 总耗时：首次约 10–30 分钟，之后有 Maven 缓存约 2–5 分钟。
+
+**如果脚本不存在或报错，也可以手动逐步执行：**
+
+```bash
+# 步骤 4a：Maven 编译
+cd ~/CATIA-Copilot-PLM/docdoku-plm-server
+mvn clean install -DskipTests
+
+# 步骤 4b：打包 Docker 镜像
+docker build \
+  --build-arg VERSION=2.6.2 \
+  -f docker/Dockerfile \
+  -t docdoku/docdoku-plm-server:2.6.2 \
+  .
+
+# 步骤 4c：重启后端容器
+cd ~/CATIA-Copilot-PLM/docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d back
+```
+
+---
+
+### 第五步：确认后端启动成功
+
+```bash
+cd ~/CATIA-Copilot-PLM/docdoku-plm-docker
+
+# 查看后端实时日志（按 Ctrl+C 退出）
+docker compose logs -f back
+```
+
+等待出现类似以下字样，说明启动完成：
+```
+Deployed [docdoku-plm-server-ear]
+```
+
+> 后端启动通常需要 1–3 分钟，请耐心等待。
+
+---
+
+### 第六步：重新运行 loadSample.sh
+
+后端启动完成后，使用一个**全新的工作区名称**运行：
+
+```bash
+cd ~/CATIA-Copilot-PLM/docdoku-plm-sample-data
+
+./loadSample.sh \
+  -u admin \
+  -p admin123 \
+  -h http://localhost:8001/docdoku-plm-server-rest \
+  -w my-workspace-new
+```
+
+> ⚠️ 必须使用一个从未用过的工作区名（如 `my-workspace-new`、`demo-ws-1` 等），避免部分已创建数据导致冲突。
+
+正常运行完成后，最后几行应显示：
+```
+[INFO] - Creating product instances...
+[INFO] - Done
+[INFO] BUILD SUCCESS
+```
+
+---
+
+### 常见问题排查
+
+#### Q：`mvn` 报错，找不到类或包
+**原因：** Maven 本地仓库 (`~/.m2`) 中缺少依赖。  
+**解决：** 确保网络正常，首次构建会自动下载所有依赖（约几百 MB）。
+
+#### Q：`docker build` 报错 `pull access denied for docdoku/docdoku-plm-server-base`
+**原因：** 没有执行第三步（构建基础镜像）。  
+**解决：** 先执行第三步再重试。
+
+#### Q：`docker compose` 报错 `command not found`
+**解决：** 尝试用 `docker-compose`（带连字符）替代 `docker compose`：
+```bash
+docker-compose up --force-recreate --no-deps -d back
+```
+
+#### Q：loadSample.sh 运行到中途又报 HTTP 500
+**原因：** 可能后端还没有完全启动，或工作区名重复。  
+**解决：** 等待 `docker compose logs -f back` 中出现 `Deployed` 再运行；并更换工作区名称。
+
