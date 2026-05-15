@@ -3728,3 +3728,133 @@ docdoku-plm-front/app/js/localization/nls/es/
 | 修改文件（各删 1 行） | 最多 10 个 NLS bundle JS 文件 |
 | 后端修改 | 0 |
 
+
+---
+
+# localhost:8004 操作说明 & 全系统账号密码总览（2026-05-15 新增）
+
+---
+
+## 一、localhost:8004 是什么？能做什么？
+
+根据 `docdoku-plm-docker/docker-compose.yml`：
+
+```yaml
+adminer:
+  image: adminer:4.7.1-standalone
+  ports:
+    - 8004:8080
+  depends_on:
+    - db
+```
+
+**:8004 是 [Adminer](https://www.adminer.org/) 数据库管理工具的 Web 界面**，连接到本系统的 PostgreSQL 数据库容器（`db`）。
+
+### 可以进行的操作
+
+| 操作类型 | 具体内容 |
+|---|---|
+| **查看数据** | 浏览所有数据库表、查看行记录 |
+| **执行 SQL** | 运行任意 SELECT/INSERT/UPDATE/DELETE/DDL 语句 |
+| **修改数据** | 直接编辑表中的字段值（包括用户账号、密码哈希） |
+| **导出/导入** | 导出 SQL 或 CSV，导入 SQL 脚本 |
+| **表结构管理** | 查看表结构、索引、外键关系 |
+| **用户账号管理** | 直接操作 `ACCOUNT`、`USERGROUPMAPPING` 等核心表 |
+
+> ⚠️ **Adminer 可以绕过应用层权限，直接修改数据库**，因此**生产环境必须关闭或限制访问**（README 中也有此警告）。
+
+### 登录方式
+
+在 Adminer 登录页面填写：
+- **系统**：PostgreSQL
+- **服务器**：`db`（Docker 内部网络名）
+- **用户名**：`changeit`（见 `env/db.env`）
+- **密码**：`changeit`
+- **数据库**：`docdokuplm`
+
+---
+
+## 二、全系统账号密码总览
+
+本系统共有以下几类凭据，全部集中在 `docdoku-plm-docker/env/` 目录的配置文件中：
+
+### 1. PostgreSQL 数据库账号（`env/db.env`）
+
+| 项目 | 值 |
+|---|---|
+| 数据库名 | `docdokuplm` |
+| 用户名 | `changeit` |
+| 密码 | `changeit` |
+| 用途 | Adminer 登录、后端服务连接数据库 |
+
+### 2. 后端应用配置凭据（`env/back.env`）
+
+| 项目 | 值 | 用途 |
+|---|---|---|
+| `DATABASE_USER` | `changeit` | 后端连接 PostgreSQL |
+| `DATABASE_PWD` | `changeit` | 后端连接 PostgreSQL |
+| `JWT_KEY` | `changeit` | JWT Token 签名密钥 |
+| `KEYSTORE_PASS` | `changeit` | PKCS12 密钥库密码 |
+| `KEYSTORE_KEY_PASS` | `changeit` | 密钥库中密钥的密码 |
+| `SMTP_USER` | `DocDokuPLM` | SMTP 发件用户名（MailHog 无需真实密码）|
+| `ES_PREFIX` | `changeit` | Elasticsearch 索引前缀（非真正密码）|
+| `ES_SERVER_USERNAME` | （空） | Elasticsearch 无认证 |
+| `ES_SERVER_PWD` | （空） | Elasticsearch 无认证 |
+
+### 3. 密钥库生成参数（`start.sh`）
+
+| 项目 | 值 |
+|---|---|
+| `STOREPASS` | `changeit` |
+| `KEYPASS` | `changeit` |
+| `KEYALIAS` | `mykeyalias` |
+
+### 4. DocDokuPLM 应用层账号（用户自己创建，存储在 PostgreSQL）
+
+应用层账号**没有预置默认账号**，需要在首次访问 `localhost:8000`（或 `:9000`）时**通过注册界面创建**。规则如下：
+
+| 角色 | 创建方式 | 说明 |
+|---|---|---|
+| **普通用户** | 在前端登录页点击 Register 注册 | 密码以摘要算法（SHA等）存储在 `ACCOUNT` 表 |
+| **超级管理员（admin）** | 第一个注册的账号自动成为 admin，或通过 Adminer 直接修改 `USERGROUPMAPPING` 表 | `groupName = 'admin'` |
+| **普通用户（users）** | 注册后默认分配 | `groupName = 'users'` |
+
+---
+
+## 三、怎样修改账号和密码？
+
+### 方法一：通过前端应用修改（推荐，普通场景）
+
+1. 登录 `localhost:8000`（或 `:9000`）
+2. 右上角 → **账号设置**（Account Edition）
+3. 修改姓名、邮箱、语言、时区，**填写新密码后保存**
+4. 如果忘记密码，在登录页点击 **"Forgot your password?"**，系统会发送邮件到 MailHog（`localhost:8003` 可查看）
+
+### 方法二：通过 Adminer（:8004）直接修改数据库（管理员/应急场景）
+
+1. 打开 `http://localhost:8004`，用 PostgreSQL + db / changeit / changeit / docdokuplm 登录
+2. 找到 `ACCOUNT` 表，查看字段 `login`、`password`（哈希值）
+3. 用 SQL 直接更新密码哈希（需要先计算新密码的 SHA-256 摘要，与后端 `digestAlgorithm` 一致）：
+   ```sql
+   UPDATE ACCOUNT SET password = '<新密码的SHA-256哈希> ' WHERE login = '<用户名>';
+   ```
+4. 若要将某账号升级为 admin，修改 `USERGROUPMAPPING` 表：
+   ```sql
+   UPDATE USERGROUPMAPPING SET groupname = 'admin' WHERE login = '<用户名>';
+   ```
+
+### 方法三：修改各服务凭据（如 DB 密码、JWT Key 等）
+
+1. 编辑 `docdoku-plm-docker/env/db.env`、`back.env`、`start.sh` 中的 `changeit`
+2. 重启相关容器：
+   ```bash
+   docker-compose up --force-recreate --no-deps db back
+   ```
+
+---
+
+## 四、安全提醒
+
+所有凭据当前均为默认值 `changeit`，**生产部署前必须全部修改**，参考 README：
+> "Make sure to edit all passwords in env files before you start the script."
+
