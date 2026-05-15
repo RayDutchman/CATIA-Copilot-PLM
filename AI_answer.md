@@ -4205,3 +4205,89 @@ docker-compose up --force-recreate --no-deps -d back
 **原因：** 可能后端还没有完全启动，或工作区名重复。  
 **解决：** 等待 `docker compose logs -f back` 中出现 `Deployed` 再运行；并更换工作区名称。
 
+
+---
+
+## 各端口状态分析与说明
+
+### 1. localhost:8001 → 点击链接跳到 http://localhost:4848/ 无法访问
+
+**原因：这是正常的，不是 bug。**
+
+- `localhost:8001` 是 Payara 应用服务器的 **HTTP 业务端口**（即 DocDokuPLM 后端 REST API）。
+- 页面上那个链接指向的 `http://localhost:4848/` 是 Payara 的**管理控制台**端口。
+- 查看 `docker-compose.yml`：`back` 服务只映射了 `8001:8080`，**没有映射 4848 端口**，所以该端口在容器外部是不可访问的——这是**故意设计**的，生产环境不应该把管理控制台暴露到外部。
+
+**结论：忽略这个链接，不影响任何功能。** 正常使用 `localhost:8000` 访问主应用即可。
+
+---
+
+### 2. localhost:8002（Kibana）有什么用？
+
+Kibana 是 Elasticsearch 的**可视化工具**。在本项目中：
+
+- DocDokuPLM 后端把所有文档、零件、产品等的**全文搜索索引**存储在 Elasticsearch（内部端口 9200）中。
+- Kibana（8002）让你能以图形界面查看和搜索 Elasticsearch 中的索引数据。
+- 对于**普通使用**，你不需要访问 Kibana。只有在调试搜索功能（比如全文搜索不返回结果）时才需要用到它。
+
+**结论：正常辅助工具，不影响主应用，可以忽略。**
+
+---
+
+### 3. localhost:8004（Adminer 数据库管理）—— 数据库内容"看起来不正常"
+
+#### 第二张图分析
+
+从图片描述来看，你使用以下信息登录了：
+- 系统：PostgreSQL
+- 服务器：`db`（或 `localhost`）
+- 用户名：`changeit`
+- 密码：`changeit`
+- 数据库：`docdokuplm`
+
+**登录 Adminer 的正确参数：**
+
+| 字段 | 填写值 |
+|------|--------|
+| 系统 | PostgreSQL |
+| 服务器 | **db** （不是 localhost！必须填容器服务名） |
+| 用户名 | changeit |
+| 密码 | changeit |
+| 数据库 | docdokuplm |
+
+> ⚠️ 如果服务器填写了 `localhost`，会连接失败或连到错误实例。必须填 `db`，因为 Adminer 和数据库在同一个 Docker 网络内，通过服务名互相访问。
+
+#### 数据库中应该有什么？
+
+如果 `loadSample.sh` 成功运行，数据库中应该有大量表和数据。以下是关键表：
+
+| 表名 | 内容 |
+|------|------|
+| `workspace` | 工作区 |
+| `partmaster` | 零件主数据 |
+| `partrevision` | 零件版本 |
+| `partiteration` | 零件迭代 |
+| `account` | 用户账户 |
+| `documentmaster` | 文档主数据 |
+
+#### 如果看到"表为空"或"表很少"
+
+说明 `loadSample.sh` 没有把数据写入数据库，可能原因：
+1. `loadSample.sh` 运行时报了错误（HTTP 500 等），但你没注意到
+2. 工作区名称和之前重复，导致数据没有完整写入
+3. Docker 数据卷之前被清空过
+
+**验证方法：** 在 Adminer 里点击 `docdokuplm` 数据库，然后点左侧的 "Select" 查看 `workspace` 表，看里面有没有你运行 `loadSample.sh` 时指定的工作区名称。
+
+---
+
+### 总结
+
+| 端口 | 状态 | 操作 |
+|------|------|------|
+| 8000 | ✅ 正常，主应用 | 正常使用 |
+| 8001 | ✅ 正常，REST API | 4848 链接无法访问属正常 |
+| 8002 | ✅ 正常，Kibana | 忽略，无需使用 |
+| 8003 | ✅ 正常，MailHog | 查看系统发出的邮件 |
+| 8004 | ⚠️ 需确认 | 见上方说明，服务器必须填 `db` |
+
