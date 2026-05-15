@@ -12,24 +12,20 @@ services:
 
   front:
     image: docdoku/docdoku-plm-front:2.6.2
+    restart: unless-stopped
     networks:
       - network
     ports:
       - 8000:80
     volumes:
       - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
-      # Mount Chinese (zh) NLS translation files so the UI displays in Chinese
-      # once the account language is set to zh.  The language *option* in the
-      # account-settings dropdown requires the backend to return "zh" — rebuild
-      # the backend image (Method B in Chinese-Language-Redeploy-Guide.md) for
-      # that.
-      - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
       # Custom nginx config that adds charset=utf-8 so Chinese NLS files are
       # decoded correctly by the browser and by RequireJS XHR requests.
       - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
 
   back:
     image: docdoku/docdoku-plm-server:2.6.2
+    restart: unless-stopped
     env_file: ./env/back.env
     volumes:      
       - ./keystore:/opt/payara41/keystore
@@ -46,6 +42,7 @@ services:
 
   conversion:
     image: docdoku/docdoku-plm-conversion-service:2.6.2
+    restart: unless-stopped
     env_file: ./env/conversion.env
     networks:
       - network
@@ -58,6 +55,7 @@ services:
 
   es:
     image: docker.elastic.co/elasticsearch/elasticsearch:6.6.1
+    restart: unless-stopped
     env_file: ./env/es.env
     ulimits:
       memlock:
@@ -70,6 +68,7 @@ services:
   
   kibana:
      image: docker.elastic.co/kibana/kibana:6.6.1
+     restart: unless-stopped
      env_file: ./env/kibana.env      
      networks:
        - network
@@ -80,6 +79,7 @@ services:
 
   db:
     image: postgres:13.1-alpine
+    restart: unless-stopped
     env_file: ./env/db.env     
     volumes:
       - db-volume:/var/lib/postgresql/data
@@ -88,6 +88,7 @@ services:
 
   smtp:
     image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
     networks:
       - network
     ports: 
@@ -96,6 +97,7 @@ services:
 
   adminer:
     image: adminer:4.8.1
+    restart: unless-stopped
     networks:
       - network
     ports:
@@ -105,6 +107,7 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -113,6 +116,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
+    restart: unless-stopped
     env_file: ./env/kafka.env    
     networks:
       - network
@@ -121,6 +125,7 @@ services:
 
   ssl-proxy:
     image: nginx:1.19.1-alpine
+    restart: unless-stopped
     volumes:
       - ./proxy/ssl:/etc/nginx/ssl
       - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf

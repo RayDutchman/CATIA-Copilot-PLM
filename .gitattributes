@@ -1,0 +1,25 @@
+# Normalize all text files to LF on commit
+* text=auto eol=lf
+
+# Explicitly declare shell scripts as LF
+*.sh text eol=lf
+
+# Windows-only batch files keep CRLF
+*.bat text eol=crlf
+
+# Binary files - no line ending conversion
+*.jar binary
+*.ear binary
+*.war binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary

@@ -748,7 +748,6 @@ define({
             zh: '中文（简体）'
         }
     },
-    'es': true,
     'fr': true,
     'ru': true,
     'zh': true

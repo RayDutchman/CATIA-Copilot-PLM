@@ -7,7 +7,6 @@ define({
         DOCUMENT_BASELINE_IS_EMPTY:'You cannot create an empty document collection'
     },
     'fr': true,
-    'es': true,
     'ru': true,
     'zh': true
 });
