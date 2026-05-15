@@ -9,7 +9,6 @@ define({
         STRUCTURE: 'Product structure'
     },
     fr: true,
-    es: true,
     ru: true,
     zh: true
 });

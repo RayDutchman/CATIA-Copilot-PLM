@@ -48,8 +48,12 @@ require.config({
         i18n: {
             locale: (function () {
                 'use strict';
+                var SUPPORTED = ['fr', 'ru', 'zh'];
                 try {
-                    return window.localStorage.getItem('locale') || 'en';
+                    var stored = window.localStorage.getItem('locale');
+                    if (stored) { return stored; }
+                    var nav = (navigator.language || navigator.userLanguage || '').split('-')[0].toLowerCase();
+                    return SUPPORTED.indexOf(nav) !== -1 ? nav : 'en';
                 } catch (ex) {
                     return 'en';
                 }
