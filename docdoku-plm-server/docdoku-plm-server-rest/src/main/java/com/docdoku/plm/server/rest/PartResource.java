@@ -925,7 +925,9 @@ public class PartResource {
                         if (substituteLinkDTO.getCadInstances() != null) {
                             for (CADInstanceDTO cadInstanceDTO : substituteLinkDTO.getCadInstances()) {
                                 CADInstance cadInstance = mapper.map(cadInstanceDTO, CADInstance.class);
-                                cadInstance.setRotationMatrix(new RotationMatrix(cadInstanceDTO.getMatrix()));
+                                if(RotationType.MATRIX.equals(cadInstanceDTO.getRotationType())){
+                                    cadInstance.setRotationMatrix(new RotationMatrix(cadInstanceDTO.getMatrix()));
+                                }
                                 if (cadInstance.getRotationType() == null) {
                                     cadInstance.setRotationType(RotationType.ANGLE);
                                 }
