@@ -240,7 +240,7 @@
                 </executions>
             </plugin>
 
-            <!--Build the swagger-ui-dist-->
+            <!--Build the swagger-ui-dist (skipped: npm not required for API JAR)-->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
@@ -248,7 +248,7 @@
                 <executions>
                     <execution>
                         <id>build</id>
-                        <phase>package</phase>
+                        <phase>none</phase>
                         <goals>
                             <goal>exec</goal>
                         </goals>
