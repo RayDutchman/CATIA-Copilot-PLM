@@ -1,3 +1,33 @@
+# loadSample.sh Conflict 修复（2026-05-15）
+
+## 问题
+
+重复运行 `loadSample.sh` 时报 `HTTP 409 Conflict`，因为工作区已存在，而 `SampleLoader.java` 的 `createWorkspace()` 方法没有处理该情况。
+
+## 修复（`docdoku-plm-sample-data/src/main/java/com/docdoku/loaders/SampleLoader.java`）
+
+与已有的 `createCallerAccount()` / `createOtherAccounts()` 模式保持一致，捕获 409 并打 warning 后继续：
+
+```java
+// 修改前
+new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+
+// 修改后
+try {
+    new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+} catch (ApiException e) {
+    if (e.getCode() == 409) {
+        LOGGER.warning("Workspace " + workspaceId + " already exists, continuing with existing workspace");
+    } else {
+        throw e;
+    }
+}
+```
+
+修复后，无论工作区是否已存在，脚本都可以幂等地重复运行，不再中断。
+
+---
+
 # 同步小修复已完成（2026-05-14）
 
 以下三处小问题已直接修改代码，不涉及 `datePickerLang` 硬编码法语。
