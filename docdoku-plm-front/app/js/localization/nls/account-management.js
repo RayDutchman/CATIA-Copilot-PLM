@@ -13,7 +13,6 @@ define({
         NEED_PAGE_RELOAD_CHANGED_LANG: 'The page needs to be refreshed for the language settings to apply'
     },
     'fr': true,
-    'es': true,
     'ru': true,
     'zh': true
 });

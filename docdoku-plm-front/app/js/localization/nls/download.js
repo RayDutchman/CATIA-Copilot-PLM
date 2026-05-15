@@ -9,7 +9,6 @@ define({
         DPLM_CLIENT_ABOUT_TEXT:'DPLM Client is a multi-platform client application which allows to exchange efficiently (upload / download) files between your local workstation and the DocDokuPLM server. File format agnostic, it provides seamless integration with all the authoring tools on the market.'
     },
     'fr': true,
-    'es': true,
     'ru': true,
     'zh': true
 });

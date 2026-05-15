@@ -84,7 +84,6 @@ define({
         SET_NEW_WORKSPACE_ADMIN_SUBTITLE: 'Set new admin for your workspace'
     },
     'fr': true,
-    'es': true,
     'ru': true,
     'zh': true
 });

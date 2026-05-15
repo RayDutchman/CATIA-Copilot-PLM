@@ -17,7 +17,6 @@ define({
         ORGANIZATION_UPDATED: 'Organization update success'
     },
     'fr': true,
-    'es': true,
     'ru': true,
     'zh': true
 });

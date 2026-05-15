@@ -77,7 +77,11 @@ require.config({
             locale: (function () {
                 'use strict';
                 try {
-                    return window.localStorage.locale || 'en';
+                    var SUPPORTED = ['fr', 'ru', 'zh'];
+                    var stored = window.localStorage.locale;
+                    if (stored) { return stored; }
+                    var nav = (navigator.language || navigator.userLanguage || '').split('-')[0].toLowerCase();
+                    return SUPPORTED.indexOf(nav) !== -1 ? nav : 'en';
                 } catch (ex) {
                     return 'en';
                 }
