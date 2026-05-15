@@ -3607,3 +3607,124 @@ location ~* \.(css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
 | 容器通信 | Bridge 网络 + 服务名DNS | 所有容器在同一 network，通过服务名寻址 |
 | 异步任务 | Kafka 消息队列 | back → kafka → conversion 解耦文件转换流程 |
 
+
+---
+
+# 中文显示差异分析 & 去除西班牙语支持计划（2026-05-15 新增）
+
+---
+
+## 一、为什么 localhost:9000 中文正常，localhost:8000 中文不正常？
+
+### 根本原因：`charset utf-8` 指令只在 front 容器的自定义 nginx.conf 中存在
+
+#### 访问路径对比
+
+| 端口 | 路径 | nginx 配置 |
+|---|---|---|
+| **:9000** | 浏览器 → ssl-proxy（nginx）→ **proxy_pass http://front**（front 的 nginx） | 请求先经过 ssl-proxy，再由 front 的自定义 nginx.conf 响应 |
+| **:8000** | 浏览器 → **直接打到 front 容器的 :80** | 同样由 front 的自定义 nginx.conf 响应 |
+
+等等——两者都最终由 front 容器的 nginx 响应，为什么结果不一样？
+
+### 详细机制
+
+`docdoku-plm-docker/front/nginx.conf`（挂载到 front 容器）的关键配置：
+
+```nginx
+charset utf-8;
+charset_types text/html text/css application/javascript application/json;
+```
+
+这个配置保证所有 JS/JSON 文件（包括中文 NLS 翻译文件）在 HTTP 响应头中带上 `Content-Type: application/javascript; charset=utf-8`，浏览器和 RequireJS 的 XHR 请求才能以 UTF-8 正确解码中文字符。
+
+#### 但直接访问 :8000 为什么不正常？
+
+关键在于 **HTTP 缓存**。
+
+- `:9000`（ssl-proxy）的 `proxy/nginx.conf` 明确设置了禁止缓存：
+  ```nginx
+  add_header Cache-Control 'private no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0';
+  expires off;
+  etag off;
+  ```
+  每次请求都从 front 的 nginx 拿最新响应，**带有正确的 `charset=utf-8` 响应头**。
+
+- `:8000`（直接访问 front）的自定义 nginx.conf 对静态资源（`.js` 文件）有**强缓存规则**：
+  ```nginx
+  location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+      expires 1y;
+      add_header Cache-Control "public, immutable";
+  }
+  ```
+  如果浏览器之前缓存了没有 `charset` 的响应（例如首次部署前或不同浏览器 session），就会用旧缓存，不含 `charset=utf-8`，导致中文乱码。
+
+#### 另一个潜在原因：`charset` 指令作用域
+
+`charset utf-8` 被定义在 `server {}` 块的顶层，但静态资源的 `location ~* \.(js|css...)` 块**重写了响应头**（`add_header Cache-Control "public, immutable"`），在 nginx 中，子 `location` 块的 `add_header` 会**继承父级的 charset**，但如果浏览器在静态资源块的强缓存模式下命中缓存（304 或本地缓存），**charset 响应头不会重新发送**，浏览器用旧的解码方式处理。
+
+#### 结论
+
+> **:9000 正常的原因**：ssl-proxy 强制禁止缓存，每次请求都从 front 拿带 `charset=utf-8` 的新响应。  
+> **:8000 不正常的原因**：front 的静态资源路径有 `1y` 强缓存，若浏览器缓存了不带 charset 的旧响应，中文 NLS 文件以默认编码（latin-1）解析，导致乱码。
+
+**修复建议**：清除浏览器缓存后再访问 :8000，或将 JS 静态资源的缓存时间改短（或在 front 的 nginx.conf 中也加上禁缓存头）。
+
+---
+
+## 二、去除西班牙语（es）支持的完整 Plan
+
+### 涉及文件总览
+
+西班牙语在本项目中分为两层：
+
+| 层次 | 位置 | 说明 |
+|---|---|---|
+| **前端 NLS bundle 声明** | `docdoku-plm-front/app/js/localization/nls/*.js`（7个文件） | 每个文件中有 `'es': true`，告知 RequireJS 存在 es 子目录 |
+| **前端 NLS 翻译文件** | `docdoku-plm-front/app/js/localization/nls/es/common.js`（1个文件） | 唯一的西班牙语翻译文件 |
+| **后端语言列表** | `docdoku-plm-server/docdoku-plm-server-i18n/src/main/java/com/docdoku/plm/server/i18n/PropertiesLoader.java` | `SUPPORTED_LANGUAGES` 数组中**已不含 "es"**（已是 `{"fr", "en", "ru", "zh"}`）|
+| **后端属性资源文件** | `docdoku-plm-server/**/*_es.properties` | **不存在**，后端从未有西班牙语资源 |
+
+### 执行步骤
+
+#### Step 1：删除唯一的西班牙语翻译文件目录
+
+```
+docdoku-plm-front/app/js/localization/nls/es/
+└── common.js   ← 删除整个 es/ 目录
+```
+
+#### Step 2：在 7 个 NLS bundle 根文件中移除 `'es': true` 声明
+
+以下每个文件都有 `'es': true`（或 `es: true`），需要删除这一行：
+
+1. `docdoku-plm-front/app/js/localization/nls/common.js`
+2. `docdoku-plm-front/app/js/localization/nls/index.js`
+3. `docdoku-plm-front/app/js/localization/nls/account-management.js`
+4. `docdoku-plm-front/app/js/localization/nls/workspace-management.js`
+5. `docdoku-plm-front/app/js/localization/nls/download.js`
+6. `docdoku-plm-front/app/js/localization/nls/product-management.js`
+7. `docdoku-plm-front/app/js/localization/nls/document-management.js`
+8. `docdoku-plm-front/app/js/localization/nls/change-management.js`
+9. `docdoku-plm-front/app/js/localization/nls/product-structure.js`
+10. `docdoku-plm-front/app/js/localization/nls/organization-management.js`
+
+（注：index.js 当前内容为 `define({});`，需确认是否有 es 条目）
+
+#### Step 3：确认后端无需修改
+
+`PropertiesLoader.java` 的 `SUPPORTED_LANGUAGES` 数组已经是 `{"fr", "en", "ru", "zh"}`，不含 "es"，**后端无需改动**。
+
+#### Step 4：验证
+
+- 在账号设置的语言下拉列表中，确认"西班牙语"选项不再出现（该列表由后端 `/api/languages` 接口驱动）
+- 由于后端已不返回 "es"，语言下拉里本来就没有西班牙语选项，删除前端 NLS 文件后，即使有人手动切换到 es 语言 cookie，RequireJS 也不会尝试加载 es 翻译，会 fallback 到英语
+
+### 改动规模估计
+
+| 类型 | 数量 |
+|---|---|
+| 删除目录/文件 | 1 个目录（`nls/es/`），含 1 个文件 |
+| 修改文件（各删 1 行） | 最多 10 个 NLS bundle JS 文件 |
+| 后端修改 | 0 |
+
