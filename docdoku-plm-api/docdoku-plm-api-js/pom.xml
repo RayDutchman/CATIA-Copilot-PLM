@@ -85,7 +85,7 @@
                 <executions>
                     <execution>
                         <id>build</id>
-                        <phase>process-sources</phase>
+                        <phase>none</phase>
                         <goals>
                             <goal>exec</goal>
                         </goals>

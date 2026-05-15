@@ -56,7 +56,6 @@ define({
         LOGIN_AN_OTHER_WAY: 'Login another way'
     },
     'fr': true,
-    'es': true,
     'ru': true,
     'zh': true
 });
