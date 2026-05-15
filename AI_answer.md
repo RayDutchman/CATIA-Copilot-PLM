@@ -1,3 +1,512 @@
+# loadSample.sh Conflict 修复（2026-05-15）
+
+## 问题
+
+重复运行 `loadSample.sh` 时报 `HTTP 409 Conflict`，因为工作区已存在，而 `SampleLoader.java` 的 `createWorkspace()` 方法没有处理该情况。
+
+## 修复（`docdoku-plm-sample-data/src/main/java/com/docdoku/loaders/SampleLoader.java`）
+
+与已有的 `createCallerAccount()` / `createOtherAccounts()` 模式保持一致，捕获 409 并打 warning 后继续：
+
+```java
+// 修改前
+new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+
+// 修改后
+try {
+    new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+} catch (ApiException e) {
+    if (e.getCode() == 409) {
+        LOGGER.warning("Workspace " + workspaceId + " already exists, continuing with existing workspace");
+    } else {
+        throw e;
+    }
+}
+```
+
+修复后，无论工作区是否已存在，脚本都可以幂等地重复运行，不再中断。
+
+---
+
+# 同步小修复已完成（2026-05-14）
+
+以下三处小问题已直接修改代码，不涉及 `datePickerLang` 硬编码法语。
+
+## Fix 1 — `app/main/main.js`：locale fallback 从 `'zh'` 改为 `'en'`
+
+**文件**：`docdoku-plm-front/app/main/main.js` 第 52 行
+
+```js
+// 修改前（错误）
+return window.localStorage.getItem('locale') || 'zh';
+
+// 修改后（正确）
+return window.localStorage.getItem('locale') || 'en';
+```
+
+**原因**：当 `localStorage` 中没有任何 locale 记录时（例如新用户首次访问），应默认显示英文（所有模块的 fallback 一致）。之前用 `'zh'` 作为 fallback 会导致 RequireJS i18n 尝试加载 `zh` 语言包，但如果使用的是 DockerHub 预构建前端镜像（不含 `nls/zh/`），将静默失败并回退到英文，造成混乱。
+
+---
+
+## Fix 2 — `app/js/common-objects/utils/date.js`：`moment.locale` 传正确的 locale 码
+
+**文件**：`docdoku-plm-front/app/js/common-objects/utils/date.js` 第 14 行
+
+```js
+// 修改前（错误）
+moment.locale(App.config.locale);
+
+// 修改后（正确）
+moment.locale(App.config.locale === 'zh' ? 'zh-cn' : App.config.locale);
+```
+
+**原因**：moment.js（通过 `moment-with-locales`）的中文简体 locale 名是 `zh-cn`，传入 `zh` 时 moment 找不到对应 locale，会静默地不切换，导致相对时间（"3 天前"、"刚刚"）等仍显示英文。
+
+---
+
+## Fix 3 — `docdoku-plm-docker/front/nginx.conf`：NLS 翻译文件排除 1 年强缓存
+
+**文件**：`docdoku-plm-docker/front/nginx.conf`
+
+```nginx
+# 新增：NLS 翻译文件不缓存
+location ~* /js/localization/nls/ {
+    root   /usr/share/nginx/html;
+    expires -1;
+    add_header Cache-Control "no-store";
+}
+
+# 原有：其他静态资源保持 1 年缓存（nls/ 路径在上面已被优先匹配，不会命中此规则）
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    root   /usr/share/nginx/html;
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+**原因**：nginx 的 `location` 匹配规则中，更具体的路径规则（`/js/localization/nls/`）会先于通配符扩展名规则（`*.js`）被匹配。之前 NLS 文件命中 `*.js` 规则，被浏览器缓存 1 年。如果用户曾经访问过旧镜像（或 404 响应），即使重建镜像/重新挂载 nls/ 目录，浏览器也会继续使用缓存。去除缓存后，每次页面加载都会重新从服务端获取最新翻译文件。
+
+---
+
+# 卷挂载可靠性分析 + 本地重建前端及现代化方案（2026-05-14 新增）
+
+---
+
+## 一、卷挂载方案能确保中文切换吗？
+
+### 简短答案
+
+**不能完全确保。** 卷挂载解决了"NLS 翻译文件存在"这一个问题，但整个中文切换流程还有三道额外障碍，只要任何一道未解决，中文就无法正常使用。
+
+---
+
+### 卷挂载覆盖的范围
+
+```yaml
+# docker-compose.yml 中的 front 服务
+volumes:
+  - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+  - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
+```
+
+| 挂载项 | 解决的问题 | 是否充分 |
+|--------|-----------|---------|
+| `nls/` 目录整体挂载 | 前端容器中存在 `nls/zh/*.js` 文件 | ✅（前提：后端已支持 zh）|
+| `nginx.conf` 挂载 | HTTP 响应头包含 `charset=utf-8` | ✅ |
+
+---
+
+### 卷挂载无法解决的三道障碍
+
+#### 障碍 1（决定性）：后端预构建镜像不返回 `zh`
+
+`docdoku/docdoku-plm-server:2.6.2` 是 DockerHub 预构建镜像，其中 `PropertiesLoader.java` 的 `SUPPORTED_LANGUAGES` 不包含 `zh`。这导致：
+
+- `/api/languages` 返回 `["fr", "en", "ru"]` → Language 下拉框无"中文"选项
+- `account.language` 永远无法被保存为 `zh`
+- `contextResolver.resolveAccount()` 每次读取账户时会强制把 `localStorage.locale` 改回 `en`，导致卷挂载的翻译文件永远不会被加载
+
+**结论：只要后端不重建，卷挂载对中文切换毫无效果。**
+
+#### 障碍 2：nginx 的 1 年强缓存会覆盖挂载更新
+
+`front/nginx.conf` 对所有 `.js` 文件设置了 1 年不可变缓存：
+
+```nginx
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+`nls/zh/*.js` 文件也是 `.js`，会命中此规则。如果用户的浏览器**曾经**用旧镜像缓存过旧 URL（或 404 响应），即使卷挂载生效，浏览器也可能从本地缓存读取旧数据。
+
+**解决方法**：必须在浏览器做强制刷新（`Ctrl+Shift+R`），或在 nginx.conf 中把 `nls/` 路径从长缓存中排除。
+
+#### 障碍 3：`moment.locale('zh')` 无效
+
+`common-objects/utils/date.js` 调用 `moment.locale(App.config.locale)`，但 moment.js 没有 `zh` 这个 locale（它使用 `zh-cn`），所以所有相对时间（"3 天前"）和本地化日期仍显示英文。这不是翻译文件问题，卷挂载无法解决。
+
+---
+
+### 卷挂载有效的前提条件
+
+| 前提条件 | 状态 |
+|---------|------|
+| 后端镜像从源码重建，`zh` 加入 `SUPPORTED_LANGUAGES` | ❌ 必须手动执行（见 Chinese-Language-Redeploy-Guide.md 方案 B）|
+| 浏览器强制刷新（绕过 1 年缓存）| ⚠️ 每次更新后用户需手动操作 |
+| `moment.locale` 传正确的 locale 码 | ⚠️ 代码层面的小 bug，不影响文字翻译 |
+
+**总结**：卷挂载是必要条件，但不是充分条件。必须配合后端重建才能真正实现中文切换。
+
+---
+
+## 二、本地重建前端 + 前端现代化方案
+
+---
+
+### 阶段 0：理解现有前端架构
+
+现有技术栈极为老旧，是典型的 2013 年风格：
+
+| 技术 | 当前版本 | 问题 |
+|------|---------|------|
+| **构建工具** | Grunt 1.0 + Bower 1.8 | Bower 已停止维护（2017），Grunt 生态萎缩 |
+| **模块系统** | RequireJS 2.1（AMD 规范）| 已被 ES Modules 取代 |
+| **模板引擎** | Mustache 0.8 | 无响应式，无组件化 |
+| **MVC 框架** | Backbone.js 1.0 | 无虚拟 DOM，无状态管理 |
+| **jQuery** | 1.9.1（2013 年版）| 严重过时 |
+| **Bootstrap** | 2.3.2 | 严重过时（当前 5.x）|
+| **国际化** | requirejs-i18n 2.0 | 依赖 AMD 加载器，不可摇树优化 |
+| **字体图标** | FontAwesome 4.7 | 当前 6.x |
+| **Three.js** | r90（2018 年版）| 当前 r165+ |
+
+---
+
+### 阶段 1（短期）：本地从源码构建现有前端
+
+**目标**：脱离 DockerHub 预构建镜像，本地生成自定义 Docker 镜像，解决所有中文相关问题。
+
+**环境要求**：Node.js 12–14（更高版本与 Grunt/Bower 插件有兼容问题）
+
+#### 1.1 构建步骤
+
+```bash
+cd docdoku-plm-front
+
+# 安装构建依赖（Node.js 12-14 下执行）
+npm install
+
+# bower install 已在 postinstall 自动触发
+# 若 bower 报错，手动执行：
+npx bower install --allow-root
+
+# 构建生产包（输出到 dist/）
+npm run build
+# 等价于: grunt build
+
+# 构建 Docker 镜像（替换 DockerHub 预构建版本）
+docker build -f docker/Dockerfile -t docdoku/docdoku-plm-front:2.6.2 .
+```
+
+#### 1.2 构建时需要确认的关键点
+
+- `grunt/tasks/copy.js` 的 `copy:i18n` 任务已包含 `nls/zh/*`，`grunt build` 后 `dist/js/localization/nls/zh/` 会完整存在 ✅
+- 所有 RequireJS 模块构建时 `paths: {localization: 'empty:'}` — NLS 文件不会被打包进 bundle，而是运行时动态加载，因此挂载或复制到正确路径即可 ✅
+- 构建完成后无需再使用卷挂载 `nls/` 目录——翻译文件已内嵌在镜像的 `dist/` 里
+
+#### 1.3 本地构建完成后修改 docker-compose.yml
+
+```yaml
+front:
+  # image: docdoku/docdoku-plm-front:2.6.2  ← 改用本地构建镜像
+  build:
+    context: ../docdoku-plm-front
+    dockerfile: docker/Dockerfile
+  # 卷挂载 nls 目录变为可选（已内嵌在镜像中）
+  volumes:
+    - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
+    - ./front/nginx.conf:/etc/nginx/conf.d/default.conf
+```
+
+#### 1.4 同步修复的小问题（建议一并处理）
+
+| 问题 | 文件 | 修复方法 |
+|------|------|---------|
+| `app/main/main.js` fallback 是 `'zh'` 而非 `'en'` | `app/main/main.js:52` | 改为 `return window.localStorage.getItem('locale') \|\| 'en'` |
+| `moment.locale('zh')` 无效 | `app/js/common-objects/utils/date.js:14` | 改为 `moment.locale(locale === 'zh' ? 'zh-cn' : locale)` |
+| `datePickerLang` 硬编码法语 | 所有 `main.js:56` 附近 | 短期：暂时接受；中期：改用动态加载或删除 datepicker |
+
+---
+
+### 阶段 2（中期）：现代化构建工具链（不换框架）
+
+**目标**：用 Vite 替换 Grunt+RequireJS，保留 Backbone/Mustache 业务逻辑，解决依赖碎片化和构建速度问题。
+
+**为什么选 Vite**：Vite 对 AMD/CommonJS 格式有良好的兼容层（`@vitejs/plugin-legacy`），可以在迁移 AMD 模块的同时保持应用运行。
+
+#### 2.1 工具替换路线
+
+```
+Bower → npm/pnpm（统一到 package.json）
+Grunt → Vite（构建）+ npm scripts（任务）
+RequireJS/AMD → Vite + @vitejs/plugin-legacy（过渡）→ ES Modules（最终）
+requirejs-i18n → i18next 或 vue-i18n（若迁移框架），短期可保留
+LESS → CSS Modules 或 PostCSS（Vite 原生支持）
+```
+
+#### 2.2 国际化改进（关键）
+
+用 **i18next** 替换 `requirejs-i18n`：
+
+- 支持命名空间（对应现有的各 `nls/*.js` 模块）
+- 支持动态加载（不需要 AMD 加载器）
+- 支持 `moment.js` 集成（`i18next-moment-localizer`）
+- 现有 `nls/zh/*.js` 的 key-value 结构可以直接机械转换为 JSON
+
+```javascript
+// 现有 nls/zh/common.js 格式
+define({ ABOUT_DOCDOKUPLM: '关于 DocDokuPLM', ... });
+
+// 迁移后 locales/zh/common.json 格式（机械转换）
+{ "ABOUT_DOCDOKUPLM": "关于 DocDokuPLM", ... }
+```
+
+#### 2.3 nginx 缓存策略修正
+
+把 `nls/` 目录从长期缓存规则中排除（无论哪个方案都应修复）：
+
+```nginx
+# 翻译文件不设长期缓存，支持热更新
+location ~* /js/localization/nls/ {
+    root /usr/share/nginx/html;
+    expires -1;
+    add_header Cache-Control "no-store";
+}
+
+# 其他静态资源保持长缓存
+location ~* \.(js|css|png|jpg|...)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+}
+```
+
+---
+
+### 阶段 3（长期）：前端框架现代化
+
+**目标**：用 Vue 3 + TypeScript 逐步替换 Backbone/Mustache，保持 REST API 不变。
+
+#### 3.1 框架选型建议
+
+| 选项 | 优点 | 适配程度 |
+|------|------|---------|
+| **Vue 3** | 渐进式迁移友好，Composition API，内置 i18n（vue-i18n） | ⭐⭐⭐ 推荐 |
+| React 18 | 生态最大，但迁移成本高（JSX vs Mustache 差异大） | ⭐⭐ |
+| Angular | 完整框架，但重量级，与现有架构差异最大 | ⭐ |
+
+#### 3.2 Vue 3 渐进式迁移策略
+
+关键原则：**每个页面模块独立迁移，不 Big Bang 重写**
+
+```
+Phase A：搭架子（1-2周）
+  - 在 Vite 构建中引入 Vue 3
+  - 为每个 Grunt 模块（account-management, workspace-management...）
+    创建对应的 Vue 应用挂载点
+  - 保留旧 Backbone 代码，两套并存
+
+Phase B：逐模块迁移（按模块复杂度排序，从简单开始）
+  简单模块优先：download → documents → account-management
+  复杂模块次之：document-management → change-management
+  最复杂模块最后：product-structure（含 Three.js 3D 视图）
+
+Phase C：3D 视图专项升级
+  - Three.js r90 → r165+（API 变化较大，需专项适配）
+  - 考虑将 3D 视图封装为 Web Component，与框架解耦
+```
+
+#### 3.3 国际化架构（配合 Vue 3）
+
+```javascript
+// 使用 vue-i18n，翻译文件从现有 nls/ 机械迁移
+import { createI18n } from 'vue-i18n'
+
+const i18n = createI18n({
+  locale: localStorage.locale || 'en',
+  fallbackLocale: 'en',
+  messages: {
+    zh: () => import('./locales/zh/index.json'),  // 按需加载
+    fr: () => import('./locales/fr/index.json'),
+    en: () => import('./locales/en/index.json'),
+  }
+})
+```
+
+#### 3.4 与后端 API 的集成
+
+现有 REST API 不需要任何改动，只需：
+- 用 `axios` 或 `fetch` 替换 Backbone 的 `$.ajax`
+- `contextResolver.js` 中的账户加载逻辑迁移为 Pinia store
+
+---
+
+### 阶段总览与优先级
+
+| 阶段 | 目标 | 风险 | 时间估算 |
+|------|------|------|---------|
+| **0（现状分析）** | 完成 ✅ | - | - |
+| **1（本地构建）** | 脱离 DockerHub 前端镜像，确保 zh 内嵌 | 低 | 1 天 |
+| **2（Vite 替换构建工具）** | 现代化构建链，i18next 国际化 | 中 | 1-2 周 |
+| **3（Vue 3 渐进式迁移）** | 组件化、TypeScript、现代 UI | 高 | 数月 |
+
+**建议执行顺序**：先完成阶段 1（低风险，立即解决中文问题） + 后端重建（方案 B），再评估是否值得投入阶段 2/3。
+
+---
+
+# 中文切换失败的深度分析（2026-05-14 新增）
+
+## 结论摘要
+
+法语（fr）切换成功、中文（zh）切换不成功，根本原因是**多层缺失**的叠加——不是单一问题。下面按层次逐一剖析。
+
+---
+
+## 第一层：后端预构建镜像不支持 `zh`（核心阻断）
+
+`docdoku-plm-docker/docker-compose.yml` 使用的是 DockerHub 上的预构建镜像：
+
+```yaml
+back:
+  image: docdoku/docdoku-plm-server:2.6.2
+```
+
+该镜像打包时，`PropertiesLoader.java` 中的 `SUPPORTED_LANGUAGES` 数组**只有** `["fr", "en", "ru"]`——没有 `zh`：
+
+```java
+// docdoku-plm-server-i18n/src/main/java/com/docdoku/plm/server/i18n/PropertiesLoader.java
+private static final String[] SUPPORTED_LANGUAGES = {"fr", "en", "ru", "zh"};
+// ↑ 这是本仓库已修复后的代码，但 DockerHub 上的预构建镜像仍是旧代码（无 "zh"）
+```
+
+**后果链（逐步跟踪）：**
+
+1. `/api/languages` 接口只返回 `["fr", "en", "ru"]`，Language 下拉框没有"中文"选项。
+2. 用户无法通过 UI 将 `account.language` 设置为 `zh`，数据库中该字段保持原值（`en` 或 `fr`）。
+3. 每次页面加载时，`contextResolver.js` 中的 `resolveAccount` 会执行：
+
+```javascript
+// docdoku-plm-front/app/js/common-objects/contextResolver.js  第145行
+var accountLocale = account.language || 'en';
+if (window.localStorage.locale !== accountLocale) {
+    window.localStorage.locale = accountLocale;  // 强制覆盖回 'en'
+    window.location.reload();                     // 重载页面
+}
+```
+
+4. 即使通过浏览器控制台手动执行 `localStorage.setItem('locale','zh'); location.reload()`，下一次 `resolveAccount` 运行时也会把 `localStorage.locale` **强制改回** `'en'`，中文永远无法持久化。
+
+**法语为什么不受影响？**  
+法语从一开始就在预构建镜像的支持列表里。用户可以正常在 UI 选法语、保存，`account.language='fr'` 写入数据库，`resolveAccount` 读回 `'fr'`，一切正常。
+
+---
+
+## 第二层：前端预构建镜像没有 `zh/` NLS 翻译文件
+
+DockerHub 的前端镜像 `docdoku/docdoku-plm-front:2.6.2` 在打包时同样没有 `zh/` 目录。RequireJS 的 i18n 插件加载翻译文件的流程：
+
+1. 读取根包（如 `localization/nls/common.js`），得到 `{ root: {...}, 'fr': true, 'zh': true, ... }`。
+2. 根据 `require.config` 里的 `locale` 值（本例为 `'zh'`）去请求对应子目录文件，如 `nls/zh/common.js`。
+3. **若该文件不存在（404）**，RequireJS 静默回退，使用 `root` 里的英文字符串——界面完全变回英文，且没有任何报错提示。
+
+**法语为什么不受影响？**  
+法语 NLS 文件（`nls/fr/*.js`）在原始前端镜像里就已存在，不需要卷挂载。
+
+**本仓库的修复（已在 docker-compose.yml 中体现）：**
+
+```yaml
+front:
+  volumes:
+    - ../docdoku-plm-front/app/js/localization/nls:/usr/share/nginx/html/js/localization/nls
+```
+
+这个卷挂载会把本地的 `nls/` 目录整体挂载进容器，让 `zh/` 文件可被访问。**但该挂载仅在前端容器重启后生效**，且需要后端同时支持 `zh`（第一层问题解决后），才能走完整个切换流程。
+
+---
+
+## 第三层：nginx 字符集配置缺失（已修复）
+
+原始 nginx 配置不指定 `charset utf-8`。当浏览器或 RequireJS XHR 请求 `.js` 文件时，响应头里没有 `charset` 信息，浏览器可能用默认字符集（Latin-1）解码中文字符，导致乱码或 JSON 解析失败。
+
+`docdoku-plm-docker/front/nginx.conf` 已加入修复：
+
+```nginx
+charset utf-8;
+charset_types text/html text/css application/javascript application/json;
+```
+
+法语不涉及非 ASCII 字符（除少量重音字母外），即使没有此配置也基本正常——这也是法语"几乎全部正常"的原因之一。
+
+---
+
+## 第四层：次要问题（影响范围较小）
+
+### 4a. `datePickerLang` 全部硬编码为法语
+
+每个 `main.js` 文件（账户管理、工作区管理、文档管理……）都有：
+
+```javascript
+// 例：docdoku-plm-front/app/account-management/main.js 第56行
+datePickerLang: '../../bower_components/bootstrap-datepicker/js/locales/bootstrap-datepicker.fr',
+```
+
+这意味着无论切换到哪种语言，日期选择器（datepicker）始终显示**法语**的月份名和按钮文字。对中文用户来说，日历会出现法文月份名，体验不正确。法语用户不受影响（因为本来就是法语）。
+
+### 4b. `moment.js` 无法识别 `'zh'` 语言码
+
+`common-objects/utils/date.js` 中：
+
+```javascript
+moment.locale(App.config.locale);  // 传入 'zh'
+```
+
+但 moment.js 没有名为 `'zh'` 的 locale，它使用的是 `'zh-cn'`（简体中文）或 `'zh-tw'`（繁体中文）。因此 `moment.locale('zh')` 会静默失败并回落到英文，导致所有**相对时间**（如"3 天前"）和**本地化日期格式**显示为英文。
+
+### 4c. `app/main/main.js` 默认 locale 为 `'zh'`（可能是遗留测试代码）
+
+```javascript
+// docdoku-plm-front/app/main/main.js 第52行
+return window.localStorage.getItem('locale') || 'zh';
+```
+
+其他所有模块的 fallback 都是 `'en'`，只有登录页是 `'zh'`。这不影响已登录用户的语言切换，但如果用户 localStorage 为空、第一次访问登录页，会意外以中文展示登录界面（而其他页面仍回落英文）。
+
+---
+
+## 整体对比总结
+
+| 层面 | 法语（fr）| 中文（zh）| 根本原因 |
+|------|-----------|-----------|----------|
+| 后端语言列表 | ✅ 原生支持 | ❌ 预构建镜像缺失 | `SUPPORTED_LANGUAGES` 未含 `zh` |
+| 语言下拉框 | ✅ 有法语选项 | ❌ 无中文选项 | 上一行导致 |
+| 账户语言持久化 | ✅ 正常保存 | ❌ 无法保存 | 同上 |
+| contextResolver 循环覆盖 | ✅ 不受影响 | ❌ 强制覆盖回英文 | 上一行导致 |
+| 前端 NLS 文件 | ✅ 原生存在 | ⚠️ 需卷挂载 | 预构建前端镜像无 `zh/` |
+| nginx 字符集 | ✅ 不影响 | ❌ 原始配置无 utf-8 | 已修复（nginx.conf）|
+| datepicker 语言 | ✅ 恰好是法语 | ❌ 显示法语日历 | 所有 main.js 硬编码 `.fr` |
+| moment.js 相对时间 | ✅ 正确 | ❌ 显示英文 | moment 用 `zh-cn` 不用 `zh` |
+
+---
+
+## 解决方案路径（按优先级）
+
+1. **必须**：按 `Chinese-Language-Redeploy-Guide.md` 中的**方案 B** 从源码重建后端镜像，使 `/api/languages` 返回 `zh`。
+2. **已完成**：docker-compose.yml 中的 NLS 卷挂载（前端 `zh/` 翻译文件）。
+3. **已完成**：`docdoku-plm-docker/front/nginx.conf` 中的 `charset utf-8` 配置。
+4. **可选优化**：将所有 `main.js` 中的 `datePickerLang` 从 `bootstrap-datepicker.fr` 改为动态加载对应语言，并将 `moment.locale('zh')` 改为 `moment.locale('zh-cn')`。
+
+---
+
 # loadSample.sh 报 "Not Found" 错误的分析与解决（2026-05-14 新增）
 
 ## 错误信息
@@ -3435,4 +3944,417 @@ location ~* \.(css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
 | error_page 配置 | ✅ 正确 | 标准错误处理 |
 
 **会话 4a000967 的改动整体方向正确**，修复了 SPA 路由问题，但静态资源缓存策略过于激进，会影响 NLS 翻译文件的热更新。如果你在开发阶段频繁修改中文翻译，建议对 `/js/localization/` 路径单独设置 `no-cache`。
+
+
+---
+
+## loadSample.sh "Internal Server Error" 根本原因分析与修复（会话 investigation-chinese-support-issue）
+
+### 问题背景
+
+使用新工作区名（`-w my-workspace-2`）运行 `loadSample.sh` 后，409 Conflict 问题解决，但在 `createCarProduct` 阶段报 HTTP 500 Internal Server Error：
+
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : Internal Server Error
+com.docdoku.plm.api.client.ApiException: Internal Server Error
+    at com.docdoku.plm.api.services.PartsApi.updatePartIteration(PartsApi.java:3988)
+    at com.docdoku.loaders.SampleLoader.createCarProduct(SampleLoader.java:1098)
+```
+
+### 根本原因（主要 Bug）
+
+**文件：** `docdoku-plm-server/docdoku-plm-server-ejb/src/main/java/com/docdoku/plm/server/configuration/filter/UpdatePartIterationPSFilter.java`
+
+**第 79 行（修复前）：**
+```java
+for(PartSubstituteLink substituteLink: link.getSubstitutes()){
+    links.add(substituteLink);
+}
+```
+
+**问题：** `PartSubstituteLink.getSubstitutes()` 按设计返回 `null`（"A substitute cannot have substitutes"），而 Java for-each 语法对 null 集合直接抛出 `NullPointerException`。
+
+**触发链路：**
+1. `updatePartIteration` 在更新汽车总成（CAR-001）后，调用 `checkCyclicAssemblyForPartIteration` 检测循环引用
+2. `psFilterVisitor.visit()` 遍历零件结构，包括引擎零件的**替代链接**（engineSubstitute → ENGINE-100）
+3. 遍历到 `PartSubstituteLink` 时，`filter(List<PartLink> path)` 被调用
+4. `link.getSubstitutes()` 返回 `null` → `NullPointerException`
+5. RuntimeException → `RuntimeExceptionMapper` → HTTP 500
+
+**为什么门（Door）产品成功，汽车（Car）产品失败：**
+- Door 产品的零件结构没有任何替代链接（Substitute Links）
+- Car 产品的 ENGINE 零件设置了替代链接（ENGINE-050 可替换为 ENGINE-100）
+- 只有存在替代链接时，访问者才会遍历到 `PartSubstituteLink`，进而触发 NPE
+
+### 修复内容
+
+#### 修复 1（主要）：UpdatePartIterationPSFilter.java
+
+```java
+// 修复前（第 79 行）
+for(PartSubstituteLink substituteLink: link.getSubstitutes()){
+    links.add(substituteLink);
+}
+
+// 修复后：增加 null 检查
+List<PartSubstituteLink> substitutes = link.getSubstitutes();
+if (substitutes != null) {
+    for(PartSubstituteLink substituteLink: substitutes){
+        links.add(substituteLink);
+    }
+}
+```
+
+#### 修复 2（次要）：PartResource.java
+
+第 928 行 substitute 链接的 CAD 实例处理代码存在不一致——unconditionally 调用 `setRotationMatrix`，而 usage link 代码只在 `MATRIX` 类型时调用。修复为与 usage link 保持一致：
+
+```java
+// 修复前
+cadInstance.setRotationMatrix(new RotationMatrix(cadInstanceDTO.getMatrix()));
+
+// 修复后：仅在 MATRIX 类型时设置
+if(RotationType.MATRIX.equals(cadInstanceDTO.getRotationType())){
+    cadInstance.setRotationMatrix(new RotationMatrix(cadInstanceDTO.getMatrix()));
+}
+```
+
+### 重新编译部署步骤
+
+修复代码已提交到分支 `copilot/investigate-chinese-support-issue`。需要：
+
+1. **重新编译：**
+   ```bash
+   mvn clean package -DskipTests
+   ```
+
+2. **重新部署到 Payara：**
+   将生成的 WAR/EAR 部署到服务器（`docdoku-plm-server-rest` 和 `docdoku-plm-server-ejb` 模块）
+
+3. **重新运行 loadSample.sh：**
+   ```bash
+   ./loadSample.sh -u admin -p admin123 \
+     -h http://localhost:8001/docdoku-plm-server-rest \
+     -w my-workspace-3
+   ```
+   （建议使用新的工作区名，避免部分已创建数据造成冲突）
+
+### 重要说明：409 处理修复仍然有效
+
+之前修复的 `SampleLoader.createWorkspace` 409 Conflict 处理仍然生效，如果使用相同工作区名重跑也不会再报冲突错误（只会输出 WARNING 并继续）。但由于 car product 的零件可能已经部分创建，建议使用全新工作区名。
+
+
+---
+
+## 重新编译部署详细步骤（面向 Linux/Docker 小白）
+
+> 背景：上一个会话修复了 `UpdatePartIterationPSFilter.java` 中的 NullPointerException（`loadSample.sh` 创建汽车产品时报 HTTP 500 的根本原因）。修复后的代码已在 GitHub 上，需要重新编译打包 Docker 镜像才能生效。
+
+---
+
+### 第一步：确认已有工具
+
+打开终端，依次运行以下三条命令，确认都有输出：
+
+```bash
+java -version
+# 应输出类似：openjdk version "11.x.x" 
+# 如果报"command not found"：sudo apt-get install -y openjdk-11-jdk
+
+mvn -version
+# 应输出类似：Apache Maven 3.x.x
+# 如果报"command not found"：sudo apt-get install -y maven
+
+docker --version
+# 应输出类似：Docker version 24.x.x
+# 如果报错，说明 Docker 未安装，需先安装 Docker Desktop 或 Docker Engine
+```
+
+---
+
+### 第二步：拉取最新修复代码
+
+```bash
+# 进入你的项目目录（根据实际路径修改）
+cd ~/CATIA-Copilot-PLM
+
+# 拉取最新代码（包含 NPE 修复）
+git pull
+```
+
+> 如果 `git pull` 提示有冲突，可以运行 `git stash` 先暂存本地改动再拉取。
+
+---
+
+### 第三步：构建 Payara 基础镜像（首次必须，之后可跳过）
+
+这一步只需执行一次。如果你之前已经做过了，直接跳到第四步。
+
+```bash
+# 在项目根目录下执行
+cd ~/CATIA-Copilot-PLM
+
+chmod +x scripts/build-base-image.sh
+./scripts/build-base-image.sh
+```
+
+> ⏱ 首次约 5–20 分钟（需要下载 Payara + 安装 LibreOffice），请耐心等待，看到 `Successfully built` 即完成。
+
+---
+
+### 第四步：完整编译 + 打包 Docker 镜像 + 重新部署
+
+**最简单方式**：直接运行现成的一键脚本：
+
+```bash
+cd ~/CATIA-Copilot-PLM
+
+chmod +x scripts/build-backend-full.sh
+./scripts/build-backend-full.sh
+```
+
+这个脚本会自动做四件事：
+1. `git pull`（拉最新代码）
+2. `mvn clean install -DskipTests`（Maven 编译，首次约 5–15 分钟）
+3. `docker build`（把编译结果打包成 Docker 镜像）
+4. `docker compose up --force-recreate --no-deps -d back`（重启后端容器）
+
+> ⏱ 总耗时：首次约 10–30 分钟，之后有 Maven 缓存约 2–5 分钟。
+
+**如果脚本不存在或报错，也可以手动逐步执行：**
+
+```bash
+# 步骤 4a：Maven 编译
+cd ~/CATIA-Copilot-PLM/docdoku-plm-server
+mvn clean install -DskipTests
+
+# 步骤 4b：打包 Docker 镜像
+docker build \
+  --build-arg VERSION=2.6.2 \
+  -f docker/Dockerfile \
+  -t docdoku/docdoku-plm-server:2.6.2 \
+  .
+
+# 步骤 4c：重启后端容器
+cd ~/CATIA-Copilot-PLM/docdoku-plm-docker
+docker compose up --force-recreate --no-deps -d back
+```
+
+---
+
+### 第五步：确认后端启动成功
+
+```bash
+cd ~/CATIA-Copilot-PLM/docdoku-plm-docker
+
+# 查看后端实时日志（按 Ctrl+C 退出）
+docker compose logs -f back
+```
+
+等待出现类似以下字样，说明启动完成：
+```
+Deployed [docdoku-plm-server-ear]
+```
+
+> 后端启动通常需要 1–3 分钟，请耐心等待。
+
+---
+
+### 第六步：重新运行 loadSample.sh
+
+后端启动完成后，使用一个**全新的工作区名称**运行：
+
+```bash
+cd ~/CATIA-Copilot-PLM/docdoku-plm-sample-data
+
+./loadSample.sh \
+  -u admin \
+  -p admin123 \
+  -h http://localhost:8001/docdoku-plm-server-rest \
+  -w my-workspace-new
+```
+
+> ⚠️ 必须使用一个从未用过的工作区名（如 `my-workspace-new`、`demo-ws-1` 等），避免部分已创建数据导致冲突。
+
+正常运行完成后，最后几行应显示：
+```
+[INFO] - Creating product instances...
+[INFO] - Done
+[INFO] BUILD SUCCESS
+```
+
+---
+
+### 常见问题排查
+
+#### Q：`mvn` 报错，找不到类或包
+**原因：** Maven 本地仓库 (`~/.m2`) 中缺少依赖。  
+**解决：** 确保网络正常，首次构建会自动下载所有依赖（约几百 MB）。
+
+#### Q：`docker build` 报错 `pull access denied for docdoku/docdoku-plm-server-base`
+**原因：** 没有执行第三步（构建基础镜像）。  
+**解决：** 先执行第三步再重试。
+
+#### Q：`docker compose` 报错 `command not found`
+**解决：** 尝试用 `docker-compose`（带连字符）替代 `docker compose`：
+```bash
+docker-compose up --force-recreate --no-deps -d back
+```
+
+#### Q：loadSample.sh 运行到中途又报 HTTP 500
+**原因：** 可能后端还没有完全启动，或工作区名重复。  
+**解决：** 等待 `docker compose logs -f back` 中出现 `Deployed` 再运行；并更换工作区名称。
+
+
+---
+
+## 各端口状态分析与说明
+
+### 1. localhost:8001 → 点击链接跳到 http://localhost:4848/ 无法访问
+
+**原因：这是正常的，不是 bug。**
+
+- `localhost:8001` 是 Payara 应用服务器的 **HTTP 业务端口**（即 DocDokuPLM 后端 REST API）。
+- 页面上那个链接指向的 `http://localhost:4848/` 是 Payara 的**管理控制台**端口。
+- 查看 `docker-compose.yml`：`back` 服务只映射了 `8001:8080`，**没有映射 4848 端口**，所以该端口在容器外部是不可访问的——这是**故意设计**的，生产环境不应该把管理控制台暴露到外部。
+
+**结论：忽略这个链接，不影响任何功能。** 正常使用 `localhost:8000` 访问主应用即可。
+
+---
+
+### 2. localhost:8002（Kibana）有什么用？
+
+Kibana 是 Elasticsearch 的**可视化工具**。在本项目中：
+
+- DocDokuPLM 后端把所有文档、零件、产品等的**全文搜索索引**存储在 Elasticsearch（内部端口 9200）中。
+- Kibana（8002）让你能以图形界面查看和搜索 Elasticsearch 中的索引数据。
+- 对于**普通使用**，你不需要访问 Kibana。只有在调试搜索功能（比如全文搜索不返回结果）时才需要用到它。
+
+**结论：正常辅助工具，不影响主应用，可以忽略。**
+
+---
+
+### 3. localhost:8004（Adminer 数据库管理）—— 数据库内容"看起来不正常"
+
+#### 第二张图分析
+
+从图片描述来看，你使用以下信息登录了：
+- 系统：PostgreSQL
+- 服务器：`db`（或 `localhost`）
+- 用户名：`changeit`
+- 密码：`changeit`
+- 数据库：`docdokuplm`
+
+**登录 Adminer 的正确参数：**
+
+| 字段 | 填写值 |
+|------|--------|
+| 系统 | PostgreSQL |
+| 服务器 | **db** （不是 localhost！必须填容器服务名） |
+| 用户名 | changeit |
+| 密码 | changeit |
+| 数据库 | docdokuplm |
+
+> ⚠️ 如果服务器填写了 `localhost`，会连接失败或连到错误实例。必须填 `db`，因为 Adminer 和数据库在同一个 Docker 网络内，通过服务名互相访问。
+
+#### 数据库中应该有什么？
+
+如果 `loadSample.sh` 成功运行，数据库中应该有大量表和数据。以下是关键表：
+
+| 表名 | 内容 |
+|------|------|
+| `workspace` | 工作区 |
+| `partmaster` | 零件主数据 |
+| `partrevision` | 零件版本 |
+| `partiteration` | 零件迭代 |
+| `account` | 用户账户 |
+| `documentmaster` | 文档主数据 |
+
+#### 如果看到"表为空"或"表很少"
+
+说明 `loadSample.sh` 没有把数据写入数据库，可能原因：
+1. `loadSample.sh` 运行时报了错误（HTTP 500 等），但你没注意到
+2. 工作区名称和之前重复，导致数据没有完整写入
+3. Docker 数据卷之前被清空过
+
+**验证方法：** 在 Adminer 里点击 `docdokuplm` 数据库，然后点左侧的 "Select" 查看 `workspace` 表，看里面有没有你运行 `loadSample.sh` 时指定的工作区名称。
+
+---
+
+### 总结
+
+| 端口 | 状态 | 操作 |
+|------|------|------|
+| 8000 | ✅ 正常，主应用 | 正常使用 |
+| 8001 | ✅ 正常，REST API | 4848 链接无法访问属正常 |
+| 8002 | ✅ 正常，Kibana | 忽略，无需使用 |
+| 8003 | ✅ 正常，MailHog | 查看系统发出的邮件 |
+| 8004 | ⚠️ 需确认 | 见上方说明，服务器必须填 `db` |
+
+
+---
+
+## localhost:8004 数据库看起来异常 —— 原因分析与修复
+
+### 问题一：Adminer 4.7.1 与 PostgreSQL 13 不兼容（**真正的 bug，已修复**）
+
+**根本原因：**  
+`docker-compose.yml` 里使用的是 `adminer:4.7.1-standalone`，而数据库是 `postgres:13.1-alpine`。
+
+PostgreSQL 从版本 12 起**删除了** `pg_class.relhasoids` 这一系统列。但 Adminer 4.7.1 的 SQL 查询里还使用了这个列：
+
+```sql
+CASE WHEN c.relhasoids THEN 'oid' ELSE '' END AS "Oid"
+```
+
+DB 日志中这条报错正是来自 Adminer：
+
+```
+ERROR:  column c.relhasoids does not exist at character 305
+STATEMENT:  SELECT c.relname AS "Name" ... CASE WHEN c.relhasoids ...
+```
+
+**结果：** Adminer 登录后无法列出任何表，页面显示异常/空白——这是 Adminer 自身的查询报错，不是数据库数据有问题。
+
+**修复方法（已在 `docker-compose.yml` 中修改）：**  
+将 Adminer 从 `4.7.1-standalone` 升级为 `4.8.1`，该版本已移除对 `relhasoids` 的引用，完全兼容 PostgreSQL 12+：
+
+```yaml
+# 修改前
+image: adminer:4.7.1-standalone
+# 修改后
+image: adminer:4.8.1
+```
+
+**重新拉取并启动：**
+
+```bash
+cd docdoku-plm-docker
+docker compose pull adminer
+docker compose up -d adminer
+```
+
+之后再访问 `localhost:8004`，填写 服务器=`db`、用户名=`changeit`、密码=`changeit`、数据库=`docdokuplm`，应能正常看到所有表。
+
+---
+
+### 问题二：大量 `relation "xxx" does not exist` 错误（**正常现象，无需处理**）
+
+DB 日志里 `13:00:38` 附近的一大批报错：
+
+```
+ERROR:  relation "oauthprovider" does not exist
+ERROR:  relation "account" does not exist
+ERROR:  relation "workspace" does not exist
+...
+```
+
+这些是 **Payara 后端 JPA（EclipseLink）自动建表时的正常行为**：
+
+1. Payara 启动，读取 `persistence.xml` 中的配置 `javax.persistence.schema-generation.database.action = create`。
+2. EclipseLink 先用 `SELECT 1 FROM <表名>` 探测每张表是否已存在——因为是全新数据库，当然每张都不存在，数据库报错。
+3. EclipseLink 收到"表不存在"的响应后，立刻执行 `CREATE TABLE` 建表。
+4. 建表完成，应用正常运行。
+
+这些报错只在第一次启动（空数据库）时出现，属于正常的 DDL 生成流程，**不需要干预**。
 

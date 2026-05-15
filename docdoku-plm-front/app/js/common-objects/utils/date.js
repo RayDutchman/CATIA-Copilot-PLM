@@ -11,7 +11,7 @@ define([
 
     Logger.log('DATE', 'Using timezone ' + timeZone + ' and locale ' + App.config.locale);
 
-    moment.locale(App.config.locale);
+    moment.locale(App.config.locale === 'zh' ? 'zh-cn' : App.config.locale);
 
     return {
 

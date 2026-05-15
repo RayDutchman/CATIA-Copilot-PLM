@@ -310,7 +310,15 @@ public class SampleLoader {
         WorkspaceDTO workspaceDTO = new WorkspaceDTO();
         workspaceDTO.setId(workspaceId);
         workspaceDTO.setDescription("Some workspaceId created from sample loader");
-        new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+        try {
+            new WorkspacesApi(client).createWorkspace(workspaceDTO, login);
+        } catch (ApiException e) {
+            if (e.getCode() == 409) {
+                LOGGER.warning("Workspace " + workspaceId + " already exists, continuing with existing workspace");
+            } else {
+                throw e;
+            }
+        }
     }
 
 

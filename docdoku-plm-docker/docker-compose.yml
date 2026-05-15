@@ -95,7 +95,7 @@ services:
       - 8003:8025
 
   adminer:
-    image: adminer:4.7.1-standalone
+    image: adminer:4.8.1
     networks:
       - network
     ports:
