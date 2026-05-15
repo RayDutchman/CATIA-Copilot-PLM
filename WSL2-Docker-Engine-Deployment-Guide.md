@@ -447,14 +447,24 @@ docker compose up -d --force-recreate --remove-orphans
 
 ## 🔧 可选：让 Docker 随 WSL2 自动启动
 
-默认情况下，每次打开 Ubuntu 终端都需要手动执行 `sudo service docker start`。可通过以下方式配置开机自启：
+默认情况下，每次打开 Ubuntu 终端都需要手动执行 `sudo service docker start`。如果已启用 `systemd`（`/etc/wsl.conf` 中有 `[boot] systemd=true`），Docker 会随 systemd 自动启动，无需额外配置。
+
+如果**没有启用 systemd**，可以在 `/etc/wsl.conf` 的 `[boot]` 段中加入启动命令：
 
 ```bash
-echo '[boot]
-command = service docker start' | sudo tee /etc/wsl.conf
+# 注意：直接追加，不要覆盖整个文件（文件中已有其他配置）
+sudo sed -i '/^\[boot\]/a command = service docker start' /etc/wsl.conf
 ```
 
-配置生效后，每次打开 WSL2 终端，Docker 将自动在后台启动。
+或者手动编辑 `/etc/wsl.conf`，在 `[boot]` 段下加一行：
+
+```ini
+[boot]
+systemd=true
+command = service docker start
+```
+
+> **本项目的 `/etc/wsl.conf` 已启用 `systemd=true`**，Docker 会自动随 systemd 启动，无需上述操作。
 
 ---
 
