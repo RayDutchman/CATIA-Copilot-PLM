@@ -3945,3 +3945,101 @@ location ~* \.(css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
 
 **会话 4a000967 的改动整体方向正确**，修复了 SPA 路由问题，但静态资源缓存策略过于激进，会影响 NLS 翻译文件的热更新。如果你在开发阶段频繁修改中文翻译，建议对 `/js/localization/` 路径单独设置 `no-cache`。
 
+
+---
+
+## loadSample.sh "Internal Server Error" 根本原因分析与修复（会话 investigation-chinese-support-issue）
+
+### 问题背景
+
+使用新工作区名（`-w my-workspace-2`）运行 `loadSample.sh` 后，409 Conflict 问题解决，但在 `createCarProduct` 阶段报 HTTP 500 Internal Server Error：
+
+```
+[SEVERE] - Ooops, something went wrong while loading sample data : Internal Server Error
+com.docdoku.plm.api.client.ApiException: Internal Server Error
+    at com.docdoku.plm.api.services.PartsApi.updatePartIteration(PartsApi.java:3988)
+    at com.docdoku.loaders.SampleLoader.createCarProduct(SampleLoader.java:1098)
+```
+
+### 根本原因（主要 Bug）
+
+**文件：** `docdoku-plm-server/docdoku-plm-server-ejb/src/main/java/com/docdoku/plm/server/configuration/filter/UpdatePartIterationPSFilter.java`
+
+**第 79 行（修复前）：**
+```java
+for(PartSubstituteLink substituteLink: link.getSubstitutes()){
+    links.add(substituteLink);
+}
+```
+
+**问题：** `PartSubstituteLink.getSubstitutes()` 按设计返回 `null`（"A substitute cannot have substitutes"），而 Java for-each 语法对 null 集合直接抛出 `NullPointerException`。
+
+**触发链路：**
+1. `updatePartIteration` 在更新汽车总成（CAR-001）后，调用 `checkCyclicAssemblyForPartIteration` 检测循环引用
+2. `psFilterVisitor.visit()` 遍历零件结构，包括引擎零件的**替代链接**（engineSubstitute → ENGINE-100）
+3. 遍历到 `PartSubstituteLink` 时，`filter(List<PartLink> path)` 被调用
+4. `link.getSubstitutes()` 返回 `null` → `NullPointerException`
+5. RuntimeException → `RuntimeExceptionMapper` → HTTP 500
+
+**为什么门（Door）产品成功，汽车（Car）产品失败：**
+- Door 产品的零件结构没有任何替代链接（Substitute Links）
+- Car 产品的 ENGINE 零件设置了替代链接（ENGINE-050 可替换为 ENGINE-100）
+- 只有存在替代链接时，访问者才会遍历到 `PartSubstituteLink`，进而触发 NPE
+
+### 修复内容
+
+#### 修复 1（主要）：UpdatePartIterationPSFilter.java
+
+```java
+// 修复前（第 79 行）
+for(PartSubstituteLink substituteLink: link.getSubstitutes()){
+    links.add(substituteLink);
+}
+
+// 修复后：增加 null 检查
+List<PartSubstituteLink> substitutes = link.getSubstitutes();
+if (substitutes != null) {
+    for(PartSubstituteLink substituteLink: substitutes){
+        links.add(substituteLink);
+    }
+}
+```
+
+#### 修复 2（次要）：PartResource.java
+
+第 928 行 substitute 链接的 CAD 实例处理代码存在不一致——unconditionally 调用 `setRotationMatrix`，而 usage link 代码只在 `MATRIX` 类型时调用。修复为与 usage link 保持一致：
+
+```java
+// 修复前
+cadInstance.setRotationMatrix(new RotationMatrix(cadInstanceDTO.getMatrix()));
+
+// 修复后：仅在 MATRIX 类型时设置
+if(RotationType.MATRIX.equals(cadInstanceDTO.getRotationType())){
+    cadInstance.setRotationMatrix(new RotationMatrix(cadInstanceDTO.getMatrix()));
+}
+```
+
+### 重新编译部署步骤
+
+修复代码已提交到分支 `copilot/investigate-chinese-support-issue`。需要：
+
+1. **重新编译：**
+   ```bash
+   mvn clean package -DskipTests
+   ```
+
+2. **重新部署到 Payara：**
+   将生成的 WAR/EAR 部署到服务器（`docdoku-plm-server-rest` 和 `docdoku-plm-server-ejb` 模块）
+
+3. **重新运行 loadSample.sh：**
+   ```bash
+   ./loadSample.sh -u admin -p admin123 \
+     -h http://localhost:8001/docdoku-plm-server-rest \
+     -w my-workspace-3
+   ```
+   （建议使用新的工作区名，避免部分已创建数据造成冲突）
+
+### 重要说明：409 处理修复仍然有效
+
+之前修复的 `SampleLoader.createWorkspace` 409 Conflict 处理仍然生效，如果使用相同工作区名重跑也不会再报冲突错误（只会输出 WARNING 并继续）。但由于 car product 的零件可能已经部分创建，建议使用全新工作区名。
+
