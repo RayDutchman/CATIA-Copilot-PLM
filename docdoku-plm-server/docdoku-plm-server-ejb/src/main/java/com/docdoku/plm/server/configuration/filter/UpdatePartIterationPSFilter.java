@@ -76,8 +76,11 @@ public class UpdatePartIterationPSFilter implements ProductStructureFilter, Seri
         PartLink link = path.get(path.size()-1);
         links.add(link);
 
-        for(PartSubstituteLink substituteLink: link.getSubstitutes()){
-            links.add(substituteLink);
+        List<PartSubstituteLink> substitutes = link.getSubstitutes();
+        if (substitutes != null) {
+            for(PartSubstituteLink substituteLink: substitutes){
+                links.add(substituteLink);
+            }
         }
 
         return links;
