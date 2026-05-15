@@ -4291,3 +4291,70 @@ Kibana 是 Elasticsearch 的**可视化工具**。在本项目中：
 | 8003 | ✅ 正常，MailHog | 查看系统发出的邮件 |
 | 8004 | ⚠️ 需确认 | 见上方说明，服务器必须填 `db` |
 
+
+---
+
+## localhost:8004 数据库看起来异常 —— 原因分析与修复
+
+### 问题一：Adminer 4.7.1 与 PostgreSQL 13 不兼容（**真正的 bug，已修复**）
+
+**根本原因：**  
+`docker-compose.yml` 里使用的是 `adminer:4.7.1-standalone`，而数据库是 `postgres:13.1-alpine`。
+
+PostgreSQL 从版本 12 起**删除了** `pg_class.relhasoids` 这一系统列。但 Adminer 4.7.1 的 SQL 查询里还使用了这个列：
+
+```sql
+CASE WHEN c.relhasoids THEN 'oid' ELSE '' END AS "Oid"
+```
+
+DB 日志中这条报错正是来自 Adminer：
+
+```
+ERROR:  column c.relhasoids does not exist at character 305
+STATEMENT:  SELECT c.relname AS "Name" ... CASE WHEN c.relhasoids ...
+```
+
+**结果：** Adminer 登录后无法列出任何表，页面显示异常/空白——这是 Adminer 自身的查询报错，不是数据库数据有问题。
+
+**修复方法（已在 `docker-compose.yml` 中修改）：**  
+将 Adminer 从 `4.7.1-standalone` 升级为 `4.8.1`，该版本已移除对 `relhasoids` 的引用，完全兼容 PostgreSQL 12+：
+
+```yaml
+# 修改前
+image: adminer:4.7.1-standalone
+# 修改后
+image: adminer:4.8.1
+```
+
+**重新拉取并启动：**
+
+```bash
+cd docdoku-plm-docker
+docker compose pull adminer
+docker compose up -d adminer
+```
+
+之后再访问 `localhost:8004`，填写 服务器=`db`、用户名=`changeit`、密码=`changeit`、数据库=`docdokuplm`，应能正常看到所有表。
+
+---
+
+### 问题二：大量 `relation "xxx" does not exist` 错误（**正常现象，无需处理**）
+
+DB 日志里 `13:00:38` 附近的一大批报错：
+
+```
+ERROR:  relation "oauthprovider" does not exist
+ERROR:  relation "account" does not exist
+ERROR:  relation "workspace" does not exist
+...
+```
+
+这些是 **Payara 后端 JPA（EclipseLink）自动建表时的正常行为**：
+
+1. Payara 启动，读取 `persistence.xml` 中的配置 `javax.persistence.schema-generation.database.action = create`。
+2. EclipseLink 先用 `SELECT 1 FROM <表名>` 探测每张表是否已存在——因为是全新数据库，当然每张都不存在，数据库报错。
+3. EclipseLink 收到"表不存在"的响应后，立刻执行 `CREATE TABLE` 建表。
+4. 建表完成，应用正常运行。
+
+这些报错只在第一次启动（空数据库）时出现，属于正常的 DDL 生成流程，**不需要干预**。
+
