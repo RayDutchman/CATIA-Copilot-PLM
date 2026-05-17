@@ -34,8 +34,9 @@
     "phantomjs": "^2.1.7",
     "serve-static": "^1.13.2",
     "time-grunt": "~0.2.10",
-    "underscore": "~1.7.0",
+    "underscore": "^1.13.6",
     "uuid": "~3.0.1",
+    "vite": "^4.5.14",
     "xml2js": "~0.4.9",
     "yargs": "~4.7.1"
   },
@@ -52,7 +53,22 @@
     "build": "grunt build",
     "dist": "grunt serve:dist",
     "dev": "grunt serve",
-    "validate": "grunt jshint"
+    "validate": "grunt jshint",
+    "vite:dev": "vite",
+    "vite:build": "vite build",
+    "vite:preview": "vite preview"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@vitejs/plugin-vue": "^4.6.2",
+    "backbone": "^1.4.0",
+    "jquery": "^3.7.1",
+    "jwt-decode": "^3.1.2",
+    "moment": "^2.30.1",
+    "mustache": "^4.2.0",
+    "oidc-client": "^1.11.5",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.34",
+    "vue-i18n": "^9.14.5",
+    "vue-router": "^4.6.4"
+  }
 }

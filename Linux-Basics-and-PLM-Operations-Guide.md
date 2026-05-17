@@ -11,7 +11,7 @@
 1. [打开 WSL2 终端](#1-打开-wsl2-终端)
 2. [Linux 终端基础操作](#2-linux-终端基础操作)
 3. [导航到项目目录](#3-导航到项目目录)
-4. [启动 PLM 系统（start.sh）](#4-启动-plm-系统startsh)
+4. [启动 PLM 系统](#4-启动-plm-系统)
 5. [验证服务运行状态](#5-验证服务运行状态)
 6. [访问 Web 界面](#6-访问-web-界面)
 7. [查看运行日志](#7-查看运行日志)
@@ -129,31 +129,20 @@ ls
 
 ---
 
-## 4. 启动 PLM 系统（start.sh）
+## 4. 启动 PLM 系统
 
-在 `docdoku-plm-docker` 目录内执行启动脚本：
+> ⚠️ **重要提示**：本项目前端和后端镜像**必须从源码本地构建**（含中文支持等定制修改），**不要直接运行 `start.sh`**。`start.sh` 内含 `docker-compose pull`，会从 Docker Hub 拉取原始镜像并**覆盖**你本地构建的版本，导致中文支持等功能失效。详见 [WSL2-Docker-Engine-Deployment-Guide.md](./WSL2-Docker-Engine-Deployment-Guide.md)。
 
-```bash
-./start.sh
-```
-
-> **首次运行**时，脚本会自动完成以下工作：
-> 1. 创建 `data` 数据目录（用于存储上传的文件）
-> 2. 生成加密密钥库（Keystore）
-> 3. 从 Docker Hub 拉取所有镜像（**需要几分钟，取决于网速**）
-> 4. 启动全部容器
-
-如果遇到权限错误，先赋予脚本执行权限：
+完成本地镜像构建后，在 `docdoku-plm-docker` 目录内执行：
 
 ```bash
-chmod +x start.sh
-./start.sh
+docker compose up -d --force-recreate --remove-orphans
 ```
 
 看到类似下面的输出说明启动成功：
 
 ```
-[+] Running 10/10
+[+] Running 11/11
  ✔ Container docdoku-plm-docker-db-1          Started
  ✔ Container docdoku-plm-docker-es-1          Started
  ✔ Container docdoku-plm-docker-smtp-1        Started
@@ -242,7 +231,7 @@ docker compose logs --tail=100
 后端完全启动后，日志中会出现类似：
 
 ```
-[back] INFO  Server startup in 45678 ms.
+docdoku-plm-server-ear was successfully deployed in 20804 milliseconds.
 ```
 
 看到这行说明后端已就绪，可以正常使用。
@@ -355,8 +344,18 @@ rm -f ./keystore
 # 4. 删除 Docker 数据卷
 docker volume rm docdoku-plm-server-volume
 
-# 5. 重新运行启动脚本
-./start.sh
+# 5. 重新创建 data 目录和 keystore，并启动服务
+mkdir -p ./data
+# 重新生成 keystore（若不存在）
+if [ ! -f ./keystore ]; then
+  keytool -genkey -noprompt -alias mykeyalias \
+    -dname "CN=localhost" \
+    -keystore ./keystore \
+    -storepass changeit -keypass changeit \
+    -keyalg RSA -keysize 2048 -validity 3650
+fi
+docker volume create docdoku-plm-server-volume
+docker compose up -d --force-recreate --remove-orphans
 ```
 
 重置完成后，系统将以全新状态启动，需要重新注册账号。
