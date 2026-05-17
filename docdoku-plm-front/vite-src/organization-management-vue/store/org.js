@@ -31,7 +31,7 @@ export const useOrgStore = defineStore('org', () => {
   async function fetchOrganization() {
     const appStore = useAppStore()
     const res = await authFetch(appStore.apiEndPoint + '/organizations')
-    if (res.status === 404) {
+    if (res.status === 204 || res.status === 404) {
       organization.value = null
       return
     }

@@ -1,7 +1,7 @@
 <template>
   <!-- 变更项目列表（issues / requests / orders 通用）
        对应原 change_issue_content.html + change_issue_list.js + change_issue_list_item.html -->
-  <div class="actions well">
+  <div v-if="canWrite" class="actions well">
     <button class="btn btn-primary" @click="openCreate">
       <i class="fa fa-plus"></i>
     </button>
@@ -154,6 +154,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useApi } from '../../vue-common/composables/useApi.js'
+import { useAuthStore } from '../../vue-common/store/auth.js'
 import AlertBanner from '../../vue-common/components/AlertBanner.vue'
 
 const props = defineProps({
@@ -164,6 +165,7 @@ const props = defineProps({
 const { t } = useI18n()
 const route = useRoute()
 const api   = useApi()
+const authStore = useAuthStore()
 
 // ── 配置（根据 type 派生）
 const iconMap = { issues: 'fa fa-bug', requests: 'fa fa-ticket', orders: 'fa fa-archive' }
@@ -184,6 +186,9 @@ const categories = ['ADAPTIVE', 'CORRECTIVE', 'PERFECTIVE', 'PREVENTIVE', 'OTHER
 
 // ── 数据
 const workspaceId   = computed(() => route.params.workspaceId)
+const canWrite = computed(() =>
+  authStore.workspaces.administratedWorkspaces.some(w => w.id === workspaceId.value)
+)
 const items         = ref([])
 const workspaceUsers = ref([])
 const loading       = ref(false)

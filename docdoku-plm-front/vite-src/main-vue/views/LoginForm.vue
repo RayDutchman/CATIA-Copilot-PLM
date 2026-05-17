@@ -52,12 +52,20 @@ onMounted(() => {
   if (params.get('denied')) notifications.value.push({ type: 'error', message: t('FORBIDDEN_MESSAGE') })
 })
 
+async function ensureApiEndPoint() {
+  if (!appStore.apiEndPoint) {
+    await appStore.resolveServerProperties('..')
+  }
+  return appStore.apiEndPoint
+}
+
 async function onSubmit() {
   delete localStorage.jwt
   notifications.value = []
   submitting.value = true
   try {
-    const res = await fetch(appStore.apiEndPoint + '/auth/login', {
+    const apiEndPoint = await ensureApiEndPoint()
+    const res = await fetch(apiEndPoint + '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ login: loginInput.value, password: passwordInput.value }),

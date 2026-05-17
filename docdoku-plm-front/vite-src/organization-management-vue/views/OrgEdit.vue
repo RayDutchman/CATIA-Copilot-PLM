@@ -4,7 +4,7 @@
     <button
       v-if="hasOrg"
       class="btn btn-custom"
-      @click="confirmDelete"
+      @click.prevent="showDeleteModal = true"
     >
       {{ t('DELETE') }}
     </button>
@@ -117,10 +117,6 @@ async function onSubmit() {
   } finally {
     submitting.value = false
   }
-}
-
-function confirmDelete() {
-  showDeleteModal.value = true
 }
 
 async function doDelete() {

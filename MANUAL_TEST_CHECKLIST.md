@@ -258,7 +258,10 @@ F12 → Network → 筛选 Status 4xx/5xx
 | I-04 | document-vue | 文件夹名仅支持 `[A-Za-z0-9_-]`，含 CJK 可能 URL 编码异常 | 低优先级，待后续 |
 | I-05 | workspace-vue | `/api/workspaces/{ws}/memberships` 触发 CORS 403 | 后端配置问题，前端无法修复 |
 | I-06 | workspace-vue | Dashboard 柱状图 CJK 标签被 SVG viewBox 截断 | 已修复（viewBox 高度 220→240） |
-| I-07 | document-vue | 运行时字段名（currentIteration/lastIteration 等）需 Network 面板核对 | 待人工验证 |
+| I-07 | document-vue | 运行时字段名（currentIteration/lastIteration 等）需 Network 面板核对 | 已修复（DocumentList 使用 documentIterations[last]） |
+| I-08 | main-vue | 登录提交时 apiEndPoint 未初始化会请求 `/main-vue/undefined/auth/login` | 已修复 |
+| I-09 | change-vue | 只读用户仍显示新建/删除按钮 | 已修复 |
+| I-10 | organization-vue | 无组织用户 `/organizations` 返回 204 时跳回原版 workspace 页面 | 已修复 |
 
 ---
 
