@@ -142,7 +142,7 @@ git pull
 ```bash
 cd docdoku-plm-server
 
-# 完整构建（跳过测试）——首次约 5–15 分钟，后续有缓存更快
+# 完整构建（跳过测试）——首次约 15–20 分钟，后续有缓存更快
 mvn clean install -DskipTests
 ```
 

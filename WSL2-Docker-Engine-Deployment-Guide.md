@@ -248,7 +248,7 @@ docker build \
   .
 ```
 
-> ⏱ 总计约 5–15 分钟（主要耗时在 `npm run build` 的 grunt 压缩/合并步骤）。
+> ⏱ 总计约 1–2 分钟（grunt 压缩/合并步骤实测约 40 秒）。
 
 ---
 
@@ -287,7 +287,7 @@ docker build \
 ```bash
 cd /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM/docdoku-plm-server
 
-# 完整构建（跳过测试）—— 首次约 5–15 分钟
+# 完整构建（跳过测试）—— 首次约 15–20 分钟，后续有缓存更快
 mvn clean install -DskipTests
 ```
 
@@ -320,7 +320,7 @@ docker compose up -d --force-recreate --remove-orphans
 后端（Payara 应用服务器）冷启动需要 **1–3 分钟**。在此期间前端页面能加载，但所有 API 调用都会失败。
 
 ```bash
-# 实时查看后端启动日志，等到出现 "Deployed" 字样再访问
+# 实时查看后端启动日志，等到出现 "successfully deployed" 字样再访问
 docker compose logs -f back
 ```
 
