@@ -1,7 +1,7 @@
 # DocDokuPLM 前端现代化计划
 
-> 最后更新：2026-05-18（测试数据创建完毕 + Playwright 自动化验收完成）
-> 当前进度：**change/document/workspace-management-vue 三个模块全部通过 Playwright 自动化验收；等待用户真实浏览器人工验证**
+> 最后更新：2026-05-18（organization-management-vue 完成 + 手工测试清单生成）
+> 当前进度：**5 模块已 vue 化（account/workspace/change/document/organization）；已部署验证；待用户真实浏览器人工验证**
 
 ---
 
@@ -168,7 +168,8 @@
 | 2 | `workspace-management` | 低-中 | ✅ 完成 |
 | 3 | `change-management` | 中 | ✅ 完成 |
 | 4 | `document-management` | 高 | ✅ 完成 |
-| 5 | `product-structure` | 极高 | 🔲 待迁移（阶段 5 专项）|
+| 5 | `organization-management` | 低-中 | ✅ 完成（阶段 8）|
+| 6 | `product-structure` | 极高 | 🔲 待迁移（阶段 5 专项）|
 
 ### document-management-vue 完成内容
 

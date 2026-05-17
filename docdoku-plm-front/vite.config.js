@@ -27,6 +27,8 @@ export default defineConfig({
         'document-management-vue': resolve(__dirname, 'vite-src/document-management-vue/index.html'),
         // 阶段 7：main-vue 模块（Vue 版登录 + 模块卡片菜单，含 [Vue版]/[原版] 双按钮）
         'main-vue': resolve(__dirname, 'vite-src/main-vue/index.html'),
+        // 阶段 8：organization-management-vue 模块（Vue 3 SFC 重写）
+        'organization-management-vue': resolve(__dirname, 'vite-src/organization-management-vue/index.html'),
       },
     },
   },

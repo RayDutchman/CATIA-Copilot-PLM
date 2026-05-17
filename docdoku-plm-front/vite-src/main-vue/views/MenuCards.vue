@@ -151,7 +151,7 @@ const cards = computed(() => {
     {
       id: 'organization', icon: 'fa fa-users',
       title: t('CARD_ORG_TITLE'), desc: t('CARD_ORG_DESC'),
-      vueUrl: null,
+      vueUrl: `${c}organization-management-vue/index.html`,
       legacyUrl: `${c}organization-management/index.html`,
     },
     {
