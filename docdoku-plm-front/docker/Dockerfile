@@ -18,6 +18,9 @@ COPY dist-vite/change-management-vue /usr/share/nginx/html/change-management-vue
 # Vue 3 SFC 版 document-management（阶段 6，新轨道）
 COPY dist-vite/document-management-vue /usr/share/nginx/html/document-management-vue
 
+# Vue 3 SFC 版 main（阶段 7，Vue 版登录页 + 模块卡片菜单）
+COPY dist-vite/main-vue /usr/share/nginx/html/main-vue
+
 # Vite ESM 版 download（阶段 2 产物）
 COPY dist-vite/download /usr/share/nginx/html/download-vite
 

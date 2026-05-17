@@ -30,17 +30,24 @@
           <th style="width:20px"><input type="checkbox" @change="toggleAll" :checked="allChecked" /></th>
           <th>{{ $t('DOCUMENT_S_REFERENCE') }}</th>
           <th>{{ $t('VERSION') }}</th>
+          <th>{{ $t('ITERATION') }}</th>
+          <th>{{ $t('TYPE') }}</th>
           <th>{{ $t('DOCUMENT_S_TITLE') }}</th>
           <th>{{ $t('AUTHOR') }}</th>
           <th>{{ $t('MODIFICATION_DATE') }}</th>
           <th>{{ $t('STATUS') }}</th>
           <th>{{ $t('CHECKOUT_BY') }}</th>
+          <th style="width:20px" :title="$t('ACL')"><i class="fa fa-key"></i></th>
+          <th style="width:20px" :title="$t('ITERATION_CHANGE_SUBSCRIPTION')">🔒</th>
+          <th style="width:20px" :title="$t('STATE_CHANGE_SUBSCRIPTION')">🔄</th>
+          <th style="width:20px" :title="$t('PUBLIC_SHARED')">🌐</th>
+          <th style="width:20px" :title="$t('ATTACHED_FILES')">📎</th>
           <th style="width:120px">{{ $t('ACTIONS') }}</th>
         </tr>
       </thead>
       <tbody>
         <tr v-if="documents.length === 0">
-          <td colspan="9" class="text-center muted">{{ $t('NO_DOCUMENT') }}</td>
+          <td colspan="16" class="text-center muted">{{ $t('NO_DOCUMENT') }}</td>
         </tr>
         <tr
           v-for="doc in documents"
@@ -48,6 +55,57 @@
           :class="{ success: isCheckedOut(doc) && isMyCheckout(doc), warning: isCheckedOut(doc) && !isMyCheckout(doc) }"
         >
           <td><input type="checkbox" :value="doc.id" v-model="selected" /></td>
+          <td>
+            <strong>{{ getReference(doc) }}</strong>
+          </td>
+          <td>{{ doc.version }}</td>
+          <td>{{ getIteration(doc) }}</td>
+          <td>{{ doc.type || '—' }}</td>
+          <td>{{ doc.title || '—' }}</td>
+          <td>{{ doc.author?.name || doc.author?.login || '—' }}</td>
+          <td>{{ formatDate(doc.modificationDate) }}</td>
+          <td>
+            <span :class="statusBadge(doc)">{{ $t(doc.status || 'UNDEFINED') }}</span>
+          </td>
+          <td>{{ doc.checkOutUser?.login || '—' }}</td>
+          <td style="text-align:center">
+            <i v-if="hasAcl(doc)" class="fa fa-lock" :title="$t('ACL_RESTRICTED')"></i>
+            <i v-else class="fa fa-unlock-alt muted"></i>
+          </td>
+          <td style="text-align:center">
+            <i v-if="doc.iterationChangeSubscription" class="fa fa-check-circle" style="color:#5cb85c"></i>
+          </td>
+          <td style="text-align:center">
+            <i v-if="doc.stateChangeSubscription" class="fa fa-check-circle" style="color:#5cb85c"></i>
+          </td>
+          <td style="text-align:center">
+            <i v-if="doc.publicShared" class="fa fa-globe" style="color:#337ab7"></i>
+          </td>
+          <td style="text-align:center">
+            <span v-if="hasFiles(doc)" :title="$t('FILES')">
+              <i class="fa fa-paperclip"></i>{{ fileCount(doc) }}
+            </span>
+          </td>
+          <!-- ACL：有访问控制限制时显示锁图标 -->
+          <td class="text-center">
+            <i v-if="doc.acl" class="fa fa-lock" style="color:#c0392b" :title="$t('ACL')"></i>
+          </td>
+          <!-- 迭代变更订阅 -->
+          <td class="text-center">
+            <i v-if="doc.iterationSubscription" class="fa fa-check" style="color:#27ae60"></i>
+          </td>
+          <!-- 状态变更订阅 -->
+          <td class="text-center">
+            <i v-if="doc.stateSubscription" class="fa fa-check" style="color:#27ae60"></i>
+          </td>
+          <!-- 公开分享 -->
+          <td class="text-center">
+            <i v-if="doc.publicShared" class="fa fa-globe" style="color:#2980b9"></i>
+          </td>
+          <!-- 附件 -->
+          <td class="text-center">
+            <span v-if="doc.attachedFiles?.length" class="badge">{{ doc.attachedFiles.length }}</span>
+          </td>
           <td>
             <strong>{{ getReference(doc) }}</strong>
           </td>
