@@ -154,6 +154,25 @@ const newDoc = ref({ reference: '', title: '', description: '' });
 const newDocError = ref('');
 const creatingDoc = ref(false);
 
+// 将完整 folderId 转换为 URL 路径片段（去掉工作区前缀，冒号改斜杠）
+// 例：Workspace_0:~admin → ~admin；Workspace_0:~admin:Sub → ~admin/Sub
+function folderIdToUrlPath(ws, folderId) {
+    if (folderId.startsWith(ws + ':')) {
+        return folderId.slice(ws.length + 1).replace(/:/g, '/');
+    }
+    return folderId;
+}
+
+// 将 URL 路径片段还原为完整 folderId（加工作区前缀，斜杠改冒号）
+// 例：~admin → Workspace_0:~admin；~admin/Sub → Workspace_0:~admin:Sub
+function urlPathToFolderId(ws, path) {
+    if (!path) return null;
+    const decoded = decodeURIComponent(path);
+    // 已经是完整 folderId（包含工作区前缀）则直接返回
+    if (decoded.startsWith(ws + ':')) return decoded;
+    return `${ws}:${decoded.replace(/\//g, ':')}`;
+}
+
 // 加载根文件夹
 async function loadRootFolders() {
     loadingFolders.value = true;
@@ -187,14 +206,14 @@ async function loadSubFolders(folder) {
     }
 }
 
-// 加载文件夹中的文档
+// 加载文件夹中的文档（使用 ?folder= 查询参数，/folders/{id}/documents 路径返回 404）
 async function loadDocuments(folderId) {
     if (!folderId) return;
     loadingDocs.value = true;
     documents.value = [];
     try {
         const ws = workspaceId.value;
-        const data = await get(`/workspaces/${ws}/folders/${encodeURIComponent(folderId)}/documents`);
+        const data = await get(`/workspaces/${ws}/documents?folder=${encodeURIComponent(folderId)}`);
         documents.value = Array.isArray(data) ? data : [];
     } catch (e) {
         error.value = e.message || '加载文档失败';
@@ -216,14 +235,14 @@ async function onSelectFolder(folder) {
         loadDocuments(folder.id)
     ]);
 
-    // 更新路由
+    // 更新路由（用相对路径，避免 folderId 中的 : 被 double-encode）
     const ws = workspaceId.value;
-    router.push(`/${ws}/folders/${encodeURIComponent(folder.id)}`);
+    router.push(`/${ws}/folders/${folderIdToUrlPath(ws, folder.id)}`);
 }
 
 // 删除文件夹
 async function onDeleteFolder(folder) {
-    if (!confirm(`${folder.name} を削除しますか？`)) return;
+    if (!confirm(`确定删除文件夹 "${folder.name}"？`)) return;
     try {
         const ws = workspaceId.value;
         await del(`/workspaces/${ws}/folders/${encodeURIComponent(folder.id)}`);
@@ -327,15 +346,15 @@ watch([workspaceId, currentPath], async ([ws]) => {
     await loadRootFolders();
     // 如果路由带了路径，自动展开对应文件夹
     if (currentPath.value) {
-        // 从路径推断文件夹 id（实际上路径就是 folderId 的 encoded 形式）
-        const fid = currentPath.value;
+        // 从 URL 相对路径还原完整 folderId（"~admin" → "Workspace_0:~admin"）
+        const fid = urlPathToFolderId(ws, currentPath.value);
         activeFolderId.value = fid;
         // 找到对应文件夹对象
         const found = rootFolders.value.find(f => f.id === fid);
         if (found) {
             currentFolder.value = found;
         } else {
-            currentFolder.value = { id: fid, name: decodeURIComponent(fid) };
+            currentFolder.value = { id: fid, name: currentPath.value.split('/').pop() };
         }
         await loadDocuments(fid);
     }
