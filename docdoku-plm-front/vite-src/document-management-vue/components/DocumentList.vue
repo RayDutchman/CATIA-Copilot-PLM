@@ -23,7 +23,7 @@
       <i class="fa fa-spinner fa-spin"></i> {{ $t('LOADING') }}
     </div>
 
-    <!-- 文档表格 -->
+    <!-- 文档表格：16 列（与表头严格对应） -->
     <table v-else class="table table-striped table-hover table-condensed" style="font-size:12px">
       <thead>
         <tr>
@@ -52,73 +52,74 @@
         <tr
           v-for="doc in documents"
           :key="doc.id"
-          :class="{ success: isCheckedOut(doc) && isMyCheckout(doc), warning: isCheckedOut(doc) && !isMyCheckout(doc) }"
+          :class="{
+            success: isCheckedOut(doc) && isMyCheckout(doc),
+            warning: isCheckedOut(doc) && !isMyCheckout(doc)
+          }"
         >
+          <!-- 1. 选择框 -->
           <td><input type="checkbox" :value="doc.id" v-model="selected" /></td>
-          <td>
-            <strong>{{ getReference(doc) }}</strong>
-          </td>
+
+          <!-- 2. 文档 ID -->
+          <td><strong>{{ getReference(doc) }}</strong></td>
+
+          <!-- 3. 版本号 -->
           <td>{{ doc.version }}</td>
+
+          <!-- 4. 迭代号 -->
           <td>{{ getIteration(doc) }}</td>
+
+          <!-- 5. 类型 -->
           <td>{{ doc.type || '—' }}</td>
+
+          <!-- 6. 标题 -->
           <td>{{ doc.title || '—' }}</td>
+
+          <!-- 7. 作者 -->
           <td>{{ doc.author?.name || doc.author?.login || '—' }}</td>
-          <td>{{ formatDate(doc.modificationDate) }}</td>
+
+          <!-- 8. 修改时间（取最新迭代的 modificationDate，fallback 到 creationDate） -->
+          <td>{{ formatDate(getLastIteration(doc)?.modificationDate || doc.creationDate) }}</td>
+
+          <!-- 9. 状态 -->
           <td>
             <span :class="statusBadge(doc)">{{ $t(doc.status || 'UNDEFINED') }}</span>
           </td>
+
+          <!-- 10. 签出人 -->
           <td>{{ doc.checkOutUser?.login || '—' }}</td>
+
+          <!-- 11. ACL（有访问控制时显示锁） -->
           <td style="text-align:center">
             <i v-if="hasAcl(doc)" class="fa fa-lock" :title="$t('ACL_RESTRICTED')"></i>
             <i v-else class="fa fa-unlock-alt muted"></i>
           </td>
+
+          <!-- 12. 🔒 迭代变更订阅 -->
           <td style="text-align:center">
-            <i v-if="doc.iterationChangeSubscription" class="fa fa-check-circle" style="color:#5cb85c"></i>
+            <i v-if="doc.iterationSubscription" class="fa fa-check-circle" style="color:#5cb85c"></i>
           </td>
+
+          <!-- 13. 🔄 状态变更订阅 -->
           <td style="text-align:center">
-            <i v-if="doc.stateChangeSubscription" class="fa fa-check-circle" style="color:#5cb85c"></i>
+            <i v-if="doc.stateSubscription" class="fa fa-check-circle" style="color:#5cb85c"></i>
           </td>
+
+          <!-- 14. 🌐 公开共享 -->
           <td style="text-align:center">
             <i v-if="doc.publicShared" class="fa fa-globe" style="color:#337ab7"></i>
           </td>
+
+          <!-- 15. 📎 附件数量 -->
           <td style="text-align:center">
             <span v-if="hasFiles(doc)" :title="$t('FILES')">
               <i class="fa fa-paperclip"></i>{{ fileCount(doc) }}
             </span>
           </td>
-          <!-- ACL：有访问控制限制时显示锁图标 -->
-          <td class="text-center">
-            <i v-if="doc.acl" class="fa fa-lock" style="color:#c0392b" :title="$t('ACL')"></i>
-          </td>
-          <!-- 迭代变更订阅 -->
-          <td class="text-center">
-            <i v-if="doc.iterationSubscription" class="fa fa-check" style="color:#27ae60"></i>
-          </td>
-          <!-- 状态变更订阅 -->
-          <td class="text-center">
-            <i v-if="doc.stateSubscription" class="fa fa-check" style="color:#27ae60"></i>
-          </td>
-          <!-- 公开分享 -->
-          <td class="text-center">
-            <i v-if="doc.publicShared" class="fa fa-globe" style="color:#2980b9"></i>
-          </td>
-          <!-- 附件 -->
-          <td class="text-center">
-            <span v-if="doc.attachedFiles?.length" class="badge">{{ doc.attachedFiles.length }}</span>
-          </td>
+
+          <!-- 16. 操作按钮 -->
           <td>
-            <strong>{{ getReference(doc) }}</strong>
-          </td>
-          <td>{{ doc.version }}</td>
-          <td>{{ doc.title || '—' }}</td>
-          <td>{{ doc.author?.name || doc.author?.login || '—' }}</td>
-          <td>{{ formatDate(doc.modificationDate) }}</td>
-          <td>
-            <span :class="statusBadge(doc)">{{ $t(doc.status || 'UNDEFINED') }}</span>
-          </td>
-          <td>{{ doc.checkOutUser?.login || '—' }}</td>
-          <td>
-            <!-- 签出按钮：未签出时显示 -->
+            <!-- 签出：未签出时显示 -->
             <button
               v-if="!isCheckedOut(doc) && !doc.obsolete"
               class="btn btn-mini"
@@ -163,11 +164,38 @@ const authStore = useAuthStore();
 const error = ref('');
 const selected = ref([]);
 
-// 文档 ID 格式：reference-version（如 DOC001-A）
+// 获取最新迭代对象（documentIterations 最后一个）
+function getLastIteration(doc) {
+    const iters = doc.documentIterations;
+    if (!iters || iters.length === 0) return null;
+    return iters[iters.length - 1];
+}
+
+// 文档 Reference：id 最后一个 "-" 之前的部分（去掉版本号）
 function getReference(doc) {
     const id = doc.id || '';
     const lastDash = id.lastIndexOf('-');
     return lastDash > 0 ? id.substring(0, lastDash) : id;
+}
+
+// 迭代号：取最新迭代的 iteration 字段
+function getIteration(doc) {
+    return getLastIteration(doc)?.iteration ?? '—';
+}
+
+// 是否有 ACL 限制
+function hasAcl(doc) {
+    return !!doc.acl;
+}
+
+// 是否有附件
+function hasFiles(doc) {
+    return (getLastIteration(doc)?.attachedFiles?.length ?? 0) > 0;
+}
+
+// 附件数量
+function fileCount(doc) {
+    return getLastIteration(doc)?.attachedFiles?.length ?? 0;
 }
 
 // 判断是否已签出
