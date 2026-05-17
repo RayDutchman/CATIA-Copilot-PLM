@@ -237,7 +237,7 @@ docdoku-plm-front/app/js/localization/nls/es/
 
 ```yaml
 adminer:
-  image: adminer:4.7.1-standalone
+  image: adminer:4.8.1
   ports:
     - 8004:8080
   depends_on:
@@ -344,7 +344,7 @@ adminer:
 1. 编辑 `docdoku-plm-docker/env/db.env`、`back.env`、`start.sh` 中的 `changeit`
 2. 重启相关容器：
    ```bash
-   docker-compose up --force-recreate --no-deps db back
+   docker compose up --force-recreate --no-deps db back
    ```
 
 ---
