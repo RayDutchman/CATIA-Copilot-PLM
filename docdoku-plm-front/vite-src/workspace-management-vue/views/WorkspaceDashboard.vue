@@ -54,7 +54,8 @@
       <div class="chart well-large well workspace-chart chart-anim">
         <h3>{{ t('ENTITIES') }}</h3>
         <template v-if="stats">
-          <svg viewBox="0 0 300 220" width="100%" style="display:block; overflow:visible;">
+          <!-- viewBox 高度 240（原 220）：底部多 20px，CJK 标签不被截断 -->
+          <svg viewBox="0 0 300 240" width="100%" style="display:block; overflow:visible;">
             <!-- y 轴刻度线 -->
             <g v-for="tick in entityYTicks" :key="tick.y">
               <line :x1="CHART_PAD_L" :y1="tick.sy" :x2="CHART_W - CHART_PAD_R" :y2="tick.sy" stroke="#E5E9F0" stroke-width="1" stroke-dasharray="3,3" />
@@ -77,7 +78,8 @@
       <div class="chart well-large well workspace-chart chart-anim">
         <h3>{{ t('USERS') }}</h3>
         <template v-if="userBars.length">
-          <svg viewBox="0 0 380 220" width="100%" style="display:block; overflow:visible;">
+          <!-- viewBox 高度 240（原 220）：底部多 20px，CJK 标签不被截断 -->
+          <svg viewBox="0 0 380 240" width="100%" style="display:block; overflow:visible;">
             <!-- y 轴刻度线 -->
             <g v-for="tick in userYTicks" :key="tick.y">
               <line :x1="CHART_PAD_L" :y1="tick.sy" :x2="380 - CHART_PAD_R" :y2="tick.sy" stroke="#E5E9F0" stroke-width="1" stroke-dasharray="3,3" />
