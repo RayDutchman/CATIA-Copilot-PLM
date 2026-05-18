@@ -8,7 +8,7 @@ define(['threecore', 'objloader', 'views/progress_bar_view'], function (THREE, O
         }
     };
 
-    var defaultMaterial = new THREE.MeshLambertMaterial({color: new THREE.Color(0xff0000)});
+    var defaultMaterial = new THREE.MeshLambertMaterial({color: new THREE.Color(0xcccccc)});
 
     function setShadows(object) {
         if (object instanceof THREE.Object3D) {
