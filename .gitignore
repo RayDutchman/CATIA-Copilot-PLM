@@ -21,3 +21,10 @@ docdoku-plm-front/app/**/main.css
 docdoku-plm-docker/keystore
 docdoku-plm-docker/data/
 
+# SSL 私钥（钥匙不入库，证书/公钥可以保留）
+docdoku-plm-docker/proxy/ssl/*.key
+
+# OpenCode / Playwright 工具目录（本地运行产生，非项目代码）
+.playwright-mcp/
+.sisyphus/
+
