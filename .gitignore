@@ -17,3 +17,7 @@ docdoku-plm-front/app/**/main.css
 # Stray lock file at repo root (no package.json here)
 /package-lock.json
 
+# Runtime files created by start.sh / Docker (not in version control)
+docdoku-plm-docker/keystore
+docdoku-plm-docker/data/
+

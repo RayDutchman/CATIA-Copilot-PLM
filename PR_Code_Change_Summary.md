@@ -81,7 +81,6 @@ for (PartSubstituteLinkDTO substituteLinkDTO :
 | `README.md` | 项目自述 |
 | `CONTRIBUTING.md` | 贡献指南 |
 | `AI_answer.md` | AI 辅助答疑记录（持续更新） |
-| `Chinese-Language-Redeploy-Guide.md` | 中文界面重部署指南 |
 | `Linux-Basics-and-PLM-Operations-Guide.md` | Linux 基础与 PLM 操作指南 |
 | `WSL2-Docker-Engine-Deployment-Guide.md` | WSL2 + Docker 部署指南 |
 
@@ -194,4 +193,4 @@ try {
 | `.gitignore` 补充 | ✅ 已完成 |
 | 文档与指南 | ✅ 已完成 |
 | loadSample.sh Conflict 问题 | ⚠️ 已说明原因（工作区已存在），建议换用新工作区名称或修复 `SampleLoader.createWorkspace()` 幂等性 |
-| 中文界面支持 | 🔧 进行中（nginx.conf、NLS 文件挂载方案，详见 `Chinese-Language-Redeploy-Guide.md`） |
+| 中文界面支持 | ✅ 已完成（前后端镜像本地构建，自动按浏览器语言显示） |

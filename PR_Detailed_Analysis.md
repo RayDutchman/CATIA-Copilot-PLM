@@ -253,7 +253,6 @@ return window.localStorage.getItem('locale') || 'zh';
 | `README.md` | 项目自述、快速上手指南 |
 | `CONTRIBUTING.md` | 贡献指南 |
 | `AI_answer.md` | AI 辅助问答记录（持续更新，本次 PR 约 3000+ 行） |
-| `Chinese-Language-Redeploy-Guide.md` | 中文界面重部署指南（方案 A 卷挂载 / 方案 B 完整重编译后端） |
 | `Linux-Basics-and-PLM-Operations-Guide.md` | Linux 基础与 PLM 操作指南 |
 | `WSL2-Docker-Engine-Deployment-Guide.md` | WSL2 + Docker 部署指南 |
 

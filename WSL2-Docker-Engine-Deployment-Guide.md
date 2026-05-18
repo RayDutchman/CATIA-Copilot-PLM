@@ -233,6 +233,8 @@ npm install --ignore-scripts
 
 ### 8-2. 构建静态文件
 
+> **快捷方式**：如果 `dist/` 目录已存在且内容完整（例如从之前成功的构建中保留），可直接跳到 **8-3** 构建 Docker 镜像，无需重新运行耗时的 grunt 构建。
+
 ```bash
 # 仍在 docdoku-plm-front/ 目录下执行
 npm run build
@@ -254,7 +256,7 @@ docker build \
 
 ## 第九步：构建后端镜像
 
-本项目对后端也做了修改（增加中文语言支持、修复多个 Bug），同样必须从源码构建。详情参见 `Chinese-Language-Redeploy-Guide.md`。
+本项目对后端也做了修改（增加中文语言支持、修复多个 Bug），同样必须从源码构建。
 
 ### 前置工具
 
@@ -306,12 +308,17 @@ docker build \
 
 ## 第十步：启动所有服务
 
-> **不要直接运行 `start.sh`**：`start.sh` 内含 `docker-compose pull`，会从 Docker Hub 拉取镜像并覆盖你在第八、九步本地构建的镜像。
-
 ```bash
 cd /mnt/d/CATIA-Copilot-Project/CATIA-Copilot-PLM/docdoku-plm-docker
-docker compose up -d --force-recreate --remove-orphans
+bash start.sh
 ```
+
+`start.sh` 会自动完成初始化工作：创建 `data` 目录、创建 Docker 卷、生成密钥库（若不存在），最后启动全部容器。
+
+> **首次部署**使用 `bash start.sh`；**后续重启**（无需重新初始化）只需：
+> ```bash
+> docker compose up -d
+> ```
 
 ---
 
@@ -503,7 +510,7 @@ docker volume rm docdoku-plm-server-volume
 |------|------|----------|
 | `es` 容器反复重启/退出 | `vm.max_map_count` 不足 | 执行**第七步** |
 | 前端页面加载但所有操作报错 | `es` 崩溃导致后端不可用，或后端尚未就绪 | 先执行 `docker compose ps` 确认各容器状态；`es` 有问题则执行第七步 |
-| `back` 容器启动失败，日志报 `keystore` 找不到 | `keystore` 文件不存在 | 在 `docdoku-plm-docker/` 目录执行 `bash start.sh` 生成（不影响本地镜像，因为 `keystore` 已存在时 `start.sh` 会跳过 pull） |
+| `back` 容器启动失败，日志报 `keystore` 找不到 | `keystore` 文件不存在 | 在 `docdoku-plm-docker/` 目录执行 `bash start.sh` 完成初始化 |
 | `docker compose up` 报 volume 错误 | `docdoku-plm-server-volume` 未创建 | 在 `docdoku-plm-docker/` 目录执行 `bash start.sh` 完成初始化 |
 | 界面语言未自动跟随浏览器 / 显示旧版逻辑 | 前端镜像未重建，仍使用 DockerHub 原版 | 执行**第八步**从源码重建前端镜像 |
 | Language 下拉框没有"中文"选项 | 后端镜像未重建，不含中文支持 | 执行**第九步**从源码重建后端镜像 |
@@ -514,3 +521,29 @@ docker volume rm docdoku-plm-server-volume
 | Node.js 14 安装失败，提示发行版不受支持 | NodeSource 不支持 Ubuntu 25.04（resolute）及更新版本 | 改用 nvm 安装（见第八步前置工具） |
 | `loadSample` 报连接拒绝或 404 | `-h` 缺少 context path，或后端尚未就绪 | 确认 `-h http://localhost:8001/docdoku-plm-server-rest`（不是 8000，也不是裸的 8001），并等后端日志出现 `Deployed` 再运行 |
 | `loadSample` 报 409 Conflict | 该工作区已存在（脚本已做幂等处理，可忽略） | 正常现象，数据已加载，直接登录即可 |
+
+
+---
+
+## 界面语言设置
+
+本项目支持中文（简体）、英语、法语、俄语界面。系统会根据浏览器语言自动选择显示语言；也可手动指定：
+
+### 通过账户设置永久切换
+
+1. 登录后点击右上角头像 → **Account（账号）**
+2. 找到 **Language（语言）** 下拉框，选择 **中文（简体）**
+3. 点击保存，刷新页面（`Ctrl+F5`）即生效
+
+> 注册新账号时，注册表单中也有 Language 字段，可在注册时直接选择中文。
+
+### 临时切换（浏览器控制台快捷方式）
+
+无需修改账号设置，在浏览器开发者工具控制台（`F12` → **Console**）运行：
+
+```javascript
+localStorage.setItem('locale', 'zh');
+location.reload();
+```
+
+> 此方法仅影响当前浏览器标签页，不保存到账户，关闭浏览器后恢复默认语言。

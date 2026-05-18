@@ -140,8 +140,9 @@ ls
 > **首次运行**时，脚本会自动完成以下工作：
 > 1. 创建 `data` 数据目录（用于存储上传的文件）
 > 2. 生成加密密钥库（Keystore）
-> 3. 从 Docker Hub 拉取所有镜像（**需要几分钟，取决于网速**）
-> 4. 启动全部容器
+> 3. 启动全部容器
+>
+> ⚠️  运行前请确认前后端 Docker 镜像已完成本地构建（见 [WSL2-Docker-Engine-Deployment-Guide.md](./WSL2-Docker-Engine-Deployment-Guide.md) 第八、九步）。
 
 如果遇到权限错误，先赋予脚本执行权限：
 
@@ -349,8 +350,8 @@ docker compose rm --stop --force -v
 # 2. 删除数据目录
 rm -rf ./data
 
-# 3. 删除密钥库文件
-rm -f ./keystore
+# 3. 删除密钥库（文件或目录）
+rm -rf ./keystore
 
 # 4. 删除 Docker 数据卷
 docker volume rm docdoku-plm-server-volume

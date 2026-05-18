@@ -33,7 +33,6 @@
 | 宿主机路径 | 目标容器 | 容器内路径 | 用途 |
 |---|---|---|---|
 | `./env/front.json` | `front` | `/usr/share/nginx/html/webapp.properties.json` | 前端运行时配置（后端地址等） |
-| `../docdoku-plm-front/app/js/localization/nls` | `front` | `/usr/share/nginx/html/js/localization/nls` | 中文本地化翻译文件 |
 | `./front/nginx.conf` | `front` | `/etc/nginx/conf.d/default.conf` | 前端 nginx 配置（支持 UTF-8 中文） |
 | `./keystore` | `back` | `/opt/payara41/keystore` | SSL/TLS 密钥库 |
 | `./proxy/ssl` | `ssl-proxy` | `/etc/nginx/ssl` | SSL 证书文件 |
