@@ -2,11 +2,12 @@ networks:
   network:
     driver: bridge
     
-volumes: 
+volumes:
+  # db 使用 named volume：PostgreSQL 对文件权限敏感，由 Docker 管理更安全。
+  # 迁移方式：pg_dump / pg_restore，与存储位置无关。
   db-volume:
   es-volume:
   conversion-volume:
-  docdoku-plm-server-volume:
       
 services:
 
@@ -29,7 +30,7 @@ services:
     env_file: ./env/back.env
     volumes:      
       - ./keystore:/opt/payara41/keystore
-      - docdoku-plm-server-volume:/var/lib/docdoku/vault
+      - ./data/vault:/var/lib/docdoku/vault
       - conversion-volume:/var/lib/docdoku/conversions
     depends_on:
       - db
@@ -47,7 +48,7 @@ services:
     networks:
       - network
     volumes: 
-      - docdoku-plm-server-volume:/data/vault
+      - ./data/vault:/data/vault
       - conversion-volume:/data/conversions
     depends_on: 
       - kafka
