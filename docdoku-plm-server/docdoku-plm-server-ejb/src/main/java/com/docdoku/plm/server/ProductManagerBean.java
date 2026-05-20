@@ -3502,11 +3502,13 @@ public class ProductManagerBean implements IProductManagerLocal {
     }
 
     private boolean isCheckoutByUser(User user, PartRevision partRevision) {
-        return partRevision.isCheckedOut() && partRevision.getCheckOutUser().equals(user);
+        // 使用 user.equals() 避免 checkOutUser 为 null 时的 NPE
+        return partRevision.isCheckedOut() && user.equals(partRevision.getCheckOutUser());
     }
 
     private boolean isCheckoutByAnotherUser(User user, PartRevision partRevision) {
-        return partRevision.isCheckedOut() && !partRevision.getCheckOutUser().equals(user);
+        // 使用 user.equals() 避免 checkOutUser 为 null 时的 NPE
+        return partRevision.isCheckedOut() && !user.equals(partRevision.getCheckOutUser());
     }
 
     private void checkNameValidity(String name) throws NotAllowedException {
