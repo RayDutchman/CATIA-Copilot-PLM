@@ -14,7 +14,9 @@
         <input id="account_creation_form-login"
                type="text"
                name="account_creation_form-login"
+               minlength="3"
                maxlength="50"
+               pattern="[a-zA-Z0-9]+"
                size="20"
                required />
     </p>
@@ -23,6 +25,7 @@
         <input id="account_creation_form-name"
                type="text"
                name="account_creation_form-name"
+               minlength="2"
                maxlength="50"
                size="20"
                required />
@@ -30,9 +33,9 @@
     <p>
         <label for="account_creation_form-name">{{i18n.EMAIL}} :</label>
         <input id="account_creation_form-email"
-               type="text"
+               type="email"
                name="account_creation_form-email"
-               maxlength="50"
+               maxlength="100"
                size="20"
                required />
     </p>
@@ -60,6 +63,7 @@
                type="password"
                name="account_creation_form-password"
                value=""
+               minlength="6"
                maxlength="50"
                size="20"
                required />
@@ -71,6 +75,7 @@
                type="password"
                name="account_creation_form-confirmPassword"
                value=""
+               minlength="6"
                maxlength="50"
                size="20"
                required />

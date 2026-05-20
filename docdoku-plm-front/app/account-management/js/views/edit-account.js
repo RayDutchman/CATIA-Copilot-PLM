@@ -150,6 +150,26 @@ define([
                 timeZone: this.$('#account-timezone').val(),
             };
 
+            // 姓名：至少 2 个字符
+            if (account.name.length < 2) {
+                this.$notifications.append(new AlertView({
+                    type: 'error',
+                    message: App.config.i18n.NAME_TOO_SHORT
+                }).render().$el);
+                e.preventDefault();
+                return false;
+            }
+
+            // 邮箱：要求有 TLD（至少两位），拒绝 1@2 这类
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(account.email)) {
+                this.$notifications.append(new AlertView({
+                    type: 'error',
+                    message: App.config.i18n.EMAIL_INVALID
+                }).render().$el);
+                e.preventDefault();
+                return false;
+            }
+
             if (this.password) {
                 account.password = this.password;
 
@@ -158,6 +178,17 @@ define([
             if (this.enablePasswordUpdate) {
                 var newPassword = this.$('#account-password').val().trim();
                 var confirmedPassword = this.$('#account-confirm-password').val().trim();
+
+                // 新密码：至少 6 位
+                if (newPassword.length < 6) {
+                    this.$notifications.append(new AlertView({
+                        type: 'error',
+                        message: App.config.i18n.PASSWORD_TOO_SHORT
+                    }).render().$el);
+                    e.preventDefault();
+                    return false;
+                }
+
                 if (newPassword === confirmedPassword) {
                     account.newPassword = newPassword;
                     this.newPassword = newPassword;

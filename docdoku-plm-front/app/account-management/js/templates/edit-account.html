@@ -17,7 +17,7 @@
 
             <div class="controls">
                 <input id="account-name" type="text" value="{{account.name}}"
-                       name="name" maxlength="50" size="20" required/>
+                       name="name" minlength="2" maxlength="50" size="20" required/>
             </div>
         </div>
 
@@ -26,7 +26,7 @@
 
             <div class="controls">
                 <input id="account-email" type="email" value="{{account.email}}"
-                       name="email" required/>
+                       name="email" pattern="[^\s@]+@[^\s@]+\.[^\s@]{2,}" required/>
             </div>
         </div>
 
@@ -65,7 +65,7 @@
                 <label class="control-label" for="account-password">{{i18n.NEW_PASSWORD}}</label>
 
                 <div class="controls">
-                    <input type="password" id="account-password"/>
+                    <input type="password" id="account-password" minlength="6"/>
                 </div>
             </div>
 
@@ -73,7 +73,7 @@
                 <label class="control-label" for="account-confirm-password">{{i18n.CONFIRM_PASSWORD}}</label>
 
                 <div class="controls">
-                    <input type="password" id="account-confirm-password"/>
+                    <input type="password" id="account-confirm-password" minlength="6"/>
                 </div>
             </div>
         </div>

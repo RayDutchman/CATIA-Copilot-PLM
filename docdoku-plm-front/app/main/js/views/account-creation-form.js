@@ -58,6 +58,50 @@ define([
 
             this.$notifications.empty();
 
+            // 账号：只允许英文字母和数字，3~50 位
+            var login = this.$('#account_creation_form-login').val();
+            if (!/^[a-zA-Z0-9]{3,50}$/.test(login)) {
+                this.$notifications.append(new AlertView({
+                    type: 'error',
+                    message: App.config.i18n.LOGIN_INVALID
+                }).render().$el);
+                e.preventDefault();
+                return false;
+            }
+
+            // 姓名：至少 2 个字符
+            var name = this.$('#account_creation_form-name').val().trim();
+            if (name.length < 2) {
+                this.$notifications.append(new AlertView({
+                    type: 'error',
+                    message: App.config.i18n.NAME_TOO_SHORT
+                }).render().$el);
+                e.preventDefault();
+                return false;
+            }
+
+            // 邮箱：要求有 TLD（至少两位），拒绝 1@2 这类
+            var email = this.$('#account_creation_form-email').val().trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+                this.$notifications.append(new AlertView({
+                    type: 'error',
+                    message: App.config.i18n.EMAIL_INVALID
+                }).render().$el);
+                e.preventDefault();
+                return false;
+            }
+
+            // 密码：至少 6 位
+            if (this.$password.val().length < 6) {
+                this.$notifications.append(new AlertView({
+                    type: 'error',
+                    message: App.config.i18n.PASSWORD_TOO_SHORT
+                }).render().$el);
+                e.preventDefault();
+                return false;
+            }
+
+            // 两次密码必须一致
             if (this.$password.val() !== this.$confirmPassword.val()) {
                 this.$notifications.append(new AlertView({
                     type: 'error',
