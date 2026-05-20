@@ -512,7 +512,7 @@ docker volume rm docdoku-plm-server-volume
 | 前端页面加载但所有操作报错 | `es` 崩溃导致后端不可用，或后端尚未就绪 | 先执行 `docker compose ps` 确认各容器状态；`es` 有问题则执行第七步 |
 | `back` 容器启动失败，日志报 `keystore` 找不到 | `keystore` 文件不存在 | 在 `docdoku-plm-docker/` 目录执行 `bash start.sh` 完成初始化 |
 | `docker compose up` 报 volume 错误 | `docdoku-plm-server-volume` 未创建 | 在 `docdoku-plm-docker/` 目录执行 `bash start.sh` 完成初始化 |
-| 界面语言未自动跟随浏览器 / 显示旧版逻辑 | 前端镜像未重建，仍使用 DockerHub 原版 | 执行**第八步**从源码重建前端镜像 |
+| 界面语言未自动跟随浏览器 / 显示旧版逻辑 | 前端镜像未重建（仍为旧版本） | 执行**第八步**从源码重建前端镜像 |
 | Language 下拉框没有"中文"选项 | 后端镜像未重建，不含中文支持 | 执行**第九步**从源码重建后端镜像 |
 | Maven 构建报 `Operation not permitted` | DrvFs 挂载缺少 `metadata` 选项 | 执行**第六步**配置挂载选项并重启 WSL2 |
 | `docker build` 报 `pull access denied` for `docdoku-plm-server-base` | 该基础镜像是私有镜像，无法从 Docker Hub 拉取 | 执行**第九步 9-0** 本地构建基础镜像 |
