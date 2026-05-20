@@ -79,9 +79,12 @@ public class BinaryResourceUpload {
 
     public static Response tryToRespondCreated(String uri) {
         try {
-            return Response.created(new URI(uri)).build();
+            // 使用 URI(String) 构造时，空格等特殊字符会导致 URISyntaxException。
+            // 先将 URLEncoder 编出的 '+' 替换为 '%20'，确保空格被正确编码为合法 URI 字符。
+            String safeUri = uri.replace("+", "%20");
+            return Response.created(new URI(safeUri)).build();
         } catch (URISyntaxException e) {
-            LOGGER.log(Level.WARNING, null, e);
+            LOGGER.log(Level.WARNING, "Failed to build created URI: " + uri, e);
             return Response.ok().build();
         }
     }

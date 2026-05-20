@@ -367,7 +367,12 @@ public class ProductInstanceBinaryResource {
     private String uploadAFile(String workspaceId, Part formPart, ProductInstanceIterationKey pdtIterationKey)
             throws EntityNotFoundException, EntityAlreadyExistsException, AccessRightException, NotAllowedException, CreationException, UserNotActiveException, StorageException, IOException, WorkspaceNotEnabledException {
 
-        String fileName = Normalizer.normalize(formPart.getSubmittedFileName(), Normalizer.Form.NFC);
+        // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+        String submittedFileName = formPart.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            return null;
+        }
+        String fileName = Normalizer.normalize(submittedFileName, Normalizer.Form.NFC);
         // Init the binary resource with a null length
         BinaryResource binaryResource = productInstanceManagerLocal.saveFileInProductInstance(workspaceId, pdtIterationKey, fileName, 0);
         OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);
@@ -379,7 +384,12 @@ public class ProductInstanceBinaryResource {
     private String uploadAFileToPathData(String workspaceId, Part formPart, String configurationItemId, String serialNumber, int pathDataId, int iteration)
             throws EntityNotFoundException, EntityAlreadyExistsException, AccessRightException, NotAllowedException, CreationException, UserNotActiveException, StorageException, IOException, WorkspaceNotEnabledException {
 
-        String fileName = Normalizer.normalize(formPart.getSubmittedFileName(), Normalizer.Form.NFC);
+        // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+        String submittedFileName = formPart.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            return null;
+        }
+        String fileName = Normalizer.normalize(submittedFileName, Normalizer.Form.NFC);
         // Init the binary resource with a null length
         BinaryResource binaryResource = productInstanceManagerLocal.saveFileInPathData(workspaceId, configurationItemId, serialNumber, pathDataId, iteration, fileName, 0);
         OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);
@@ -391,7 +401,12 @@ public class ProductInstanceBinaryResource {
     private String uploadAFileToPathDataIteration(String workspaceId, Part formPart, String configurationItemId, String serialNumber, int pathDataId, int iteration)
             throws EntityNotFoundException, EntityAlreadyExistsException, AccessRightException, NotAllowedException, CreationException, UserNotActiveException, StorageException, IOException, WorkspaceNotEnabledException {
 
-        String fileName = Normalizer.normalize(formPart.getSubmittedFileName(), Normalizer.Form.NFC);
+        // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+        String submittedFileName = formPart.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            return null;
+        }
+        String fileName = Normalizer.normalize(submittedFileName, Normalizer.Form.NFC);
         // Init the binary resource with a null length
         BinaryResource binaryResource = productInstanceManagerLocal.saveFileInPathDataIteration(workspaceId, configurationItemId, serialNumber, pathDataId, iteration, fileName, 0);
         OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);

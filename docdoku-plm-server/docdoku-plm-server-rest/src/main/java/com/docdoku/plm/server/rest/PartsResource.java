@@ -606,7 +606,13 @@ public class PartsResource {
 
         Part part = parts.iterator().next();
 
-        String fileName = URLDecoder.decode(part.getSubmittedFileName(), "UTF-8");
+        // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+        String submittedFileName = part.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing filename in Content-Disposition header").build();
+        }
+        String fileName = URLDecoder.decode(submittedFileName, "UTF-8");
         String tempFolderName = UUID.randomUUID().toString();
 
         File importFile = Files.createTempFile(tempFolderName, fileName).toFile();
@@ -724,8 +730,17 @@ public class PartsResource {
         }
 
         Part part = parts.iterator().next();
-        String name = FileIO.getFileNameWithoutExtension(part.getSubmittedFileName());
-        String extension = FileIO.getExtension(part.getSubmittedFileName());
+        // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+        String submittedFileName = part.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing filename in Content-Disposition header").build();
+        }
+        String name = FileIO.getFileNameWithoutExtension(submittedFileName);
+        String extension = FileIO.getExtension(submittedFileName);
+
+        // extension 为 null 时（无扩展名文件）用原始文件名，避免拼出 "filename.null"
+        String fullFileName = (extension == null || extension.isEmpty()) ? name : name + "." + extension;
 
         File importFile = Files.createTempFile("part-" + name, "-import.tmp" + (extension == null ? "" : "." + extension)).toFile();
         BinaryResourceUpload.uploadBinary(new BufferedOutputStream(new FileOutputStream(importFile)), part);
@@ -733,9 +748,9 @@ public class PartsResource {
         ImportPreview importPreview;
 
         if ("attributes".equals(importType)) {
-            importPreview = importerService.dryRunImportIntoParts(workspaceId, importFile, name + "." + extension, autoCheckout, autoCheckin, permissiveUpdate);
+            importPreview = importerService.dryRunImportIntoParts(workspaceId, importFile, fullFileName, autoCheckout, autoCheckin, permissiveUpdate);
         } else if ("bom".equals(importType)) {
-            importPreview = importerService.dryRunImportBom(workspaceId, importFile, name + "." + extension, autoCheckout, autoCheckin, permissiveUpdate);
+            importPreview = importerService.dryRunImportBom(workspaceId, importFile, fullFileName, autoCheckout, autoCheckin, permissiveUpdate);
         } else {
             return Response.status(Response.Status.BAD_REQUEST).build();
         }

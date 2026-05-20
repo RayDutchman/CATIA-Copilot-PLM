@@ -130,6 +130,11 @@ public class PartBinaryResource {
 
             Part part = parts.iterator().next();
             String fileName = part.getSubmittedFileName();
+            // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+            if (fileName == null || fileName.trim().isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Missing filename in Content-Disposition header").build();
+            }
             BinaryResource binaryResource = productService.saveNativeCADInPartIteration(partPK, fileName, 0);
             OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);
             long length = BinaryResourceUpload.uploadBinary(outputStream, part);
@@ -175,7 +180,13 @@ public class PartBinaryResource {
             String fileName = null;
 
             for (Part formPart : formParts) {
-                fileName = Normalizer.normalize(formPart.getSubmittedFileName(), Normalizer.Form.NFC);
+                // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+                String submittedFileName = formPart.getSubmittedFileName();
+                if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+                    LOGGER.log(Level.WARNING, "Uploaded part has no filename in Content-Disposition, skipping.");
+                    continue;
+                }
+                fileName = Normalizer.normalize(submittedFileName, Normalizer.Form.NFC);
                 BinaryResource binaryResource = productService.saveFileInPartIteration(partPK, fileName, PartIteration.ATTACHED_FILES_SUBTYPE, 0);
                 OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);
                 long length = BinaryResourceUpload.uploadBinary(outputStream, formPart);

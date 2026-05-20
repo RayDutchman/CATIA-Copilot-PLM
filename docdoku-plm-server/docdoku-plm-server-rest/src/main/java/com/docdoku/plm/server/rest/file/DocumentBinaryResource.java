@@ -274,7 +274,13 @@ public class DocumentBinaryResource {
     private String uploadAFile(Part formPart, DocumentIterationKey docPK)
             throws EntityNotFoundException, EntityAlreadyExistsException, AccessRightException, NotAllowedException, CreationException, UserNotActiveException, StorageException, IOException, WorkspaceNotEnabledException {
 
-        String fileName = Normalizer.normalize(formPart.getSubmittedFileName(), Normalizer.Form.NFC);
+        // getSubmittedFileName() 在 Content-Disposition 缺少 filename 参数时可能返回 null
+        String submittedFileName = formPart.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            LOGGER.log(Level.WARNING, "Uploaded part has no filename in Content-Disposition, skipping.");
+            return null;
+        }
+        String fileName = Normalizer.normalize(submittedFileName, Normalizer.Form.NFC);
         // Init the binary resource with a null length
         BinaryResource binaryResource = documentService.saveFileInDocument(docPK, fileName, 0);
         OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);
