@@ -14,8 +14,9 @@
 docdoku-plm-front/dist/
 docdoku-plm-front/app/**/main.css
 
-# Stray lock file at repo root (no package.json here)
+# Lock files（npm 安装时因环境差异自动升级，不入库）
 /package-lock.json
+docdoku-plm-front/package-lock.json
 
 # Runtime files created by start.sh / Docker (not in version control)
 docdoku-plm-docker/keystore
@@ -27,4 +28,9 @@ docdoku-plm-docker/proxy/ssl/*.key
 # OpenCode / Playwright 工具目录（本地运行产生，非项目代码）
 .playwright-mcp/
 .sisyphus/
+
+# 根目录临时截图文件
+/*.png
+/*.jpg
+/*.jpeg
 
