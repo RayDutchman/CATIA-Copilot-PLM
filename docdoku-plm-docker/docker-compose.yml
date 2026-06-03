@@ -97,7 +97,7 @@ services:
     networks:
       - network
     ports: 
-      - 11025:1025
+      - 1025:1025
       - 8003:8025
 
   adminer:
