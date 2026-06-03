@@ -30,7 +30,7 @@ cmd_export() {
     info "开始导出..."
 
     # 检查容器运行状态
-    if ! docker compose -f "$COMPOSE_FILE" ps db | grep -q "running"; then
+    if ! docker compose -f "$COMPOSE_FILE" ps db | grep -qE "Up|running"; then
         error "db 容器未运行，请先执行 docker compose up -d"
     fi
 
