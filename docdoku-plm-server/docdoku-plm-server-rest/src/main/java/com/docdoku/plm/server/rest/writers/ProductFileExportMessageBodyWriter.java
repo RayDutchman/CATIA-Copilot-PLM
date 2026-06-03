@@ -137,6 +137,10 @@ public class ProductFileExportMessageBodyWriter implements MessageBodyWriter<Pro
         }
 
         for (DocumentLink docLink : lastIteration.getLinkedDocuments()) {
+            // [#8] 链接目标文档可能已被删除（null），或文档从未签入任何迭代（getLastIteration() 为 null）
+            if (docLink.getTargetDocument() == null || docLink.getTargetDocument().getLastIteration() == null) {
+                continue;
+            }
             for (BinaryResource linkedFile : docLink.getTargetDocument().getLastIteration().getAttachedFiles()) {
                 String folderName = docLink.getTargetDocument().getLastIteration().toString();
 

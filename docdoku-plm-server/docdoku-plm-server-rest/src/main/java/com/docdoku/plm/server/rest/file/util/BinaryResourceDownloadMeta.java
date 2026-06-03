@@ -140,7 +140,9 @@ public class BinaryResourceDownloadMeta {
     public EntityTag getETag() {
         //Todo add iteration and version
         //Todo remove special char from full Name
-        return new EntityTag(fullName + "_" + length + "_" + lastModified.getTime());
+        // [#6] lastModified 为 null 时（数据迁移不完整等），用 0 代替，避免 NPE
+        long lastModifiedTime = (lastModified != null) ? lastModified.getTime() : 0;
+        return new EntityTag(fullName + "_" + length + "_" + lastModifiedTime);
     }
 
 

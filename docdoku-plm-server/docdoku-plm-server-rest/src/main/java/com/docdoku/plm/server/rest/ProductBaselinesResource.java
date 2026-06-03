@@ -52,6 +52,7 @@ import javax.ws.rs.core.GenericEntity;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -147,13 +148,22 @@ public class ProductBaselinesResource {
         String description = productBaselineDTO.getDescription();
         String name = productBaselineDTO.getName();
         ProductBaselineType type = productBaselineDTO.getType();
+        // 防御性处理：未传 type 时默认使用 LATEST
+        if (type == null) {
+            type = ProductBaselineType.LATEST;
+        }
 
         List<BaselinedPartDTO> baselinedPartsDTO = productBaselineDTO.getBaselinedParts();
+        // 防御性处理：未传 baselinedParts 时避免 NPE
+        if (baselinedPartsDTO == null) {
+            baselinedPartsDTO = Collections.emptyList();
+        }
         List<PartIterationKey> partIterationKeys = baselinedPartsDTO.stream()
                 .map(part -> new PartIterationKey(workspaceId, part.getNumber(), part.getVersion(), part.getIteration())).collect(Collectors.toList());
 
         ProductBaseline baseline = productBaselineService.createBaseline(ciKey, name, type, description, partIterationKeys,
-                productBaselineDTO.getSubstituteLinks(), productBaselineDTO.getOptionalUsageLinks(),
+                productBaselineDTO.getSubstituteLinks() != null ? productBaselineDTO.getSubstituteLinks() : Collections.emptyList(),
+                productBaselineDTO.getOptionalUsageLinks() != null ? productBaselineDTO.getOptionalUsageLinks() : Collections.emptyList(),
                 productBaselineDTO.getEffectiveDate(), productBaselineDTO.getEffectiveSerialNumber(), productBaselineDTO.getEffectiveLotId(), dryRun);
 
         ProductBaselineDTO dto = mapper.map(baseline, ProductBaselineDTO.class);

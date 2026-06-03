@@ -1015,7 +1015,12 @@ public class ProductInstancesResource {
 
         Part part = parts.iterator().next();
 
-        String fileName = URLDecoder.decode(part.getSubmittedFileName(), "UTF-8");
+        // [#5] getSubmittedFileName() 可能返回 null（缺少 filename 参数），避免 URLDecoder NPE
+        String submittedFileName = part.getSubmittedFileName();
+        if (submittedFileName == null || submittedFileName.trim().isEmpty()) {
+            return Response.status(Response.Status.BAD_REQUEST).build();
+        }
+        String fileName = URLDecoder.decode(submittedFileName, "UTF-8");
         String tempFolderName = UUID.randomUUID().toString();
 
         File importFile = Files.createTempFile(tempFolderName, fileName).toFile();

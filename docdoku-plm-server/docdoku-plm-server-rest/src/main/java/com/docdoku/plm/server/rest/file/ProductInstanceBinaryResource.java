@@ -320,7 +320,16 @@ public class ProductInstanceBinaryResource {
         InputStream binaryContentInputStream = null;
 
         ProductInstanceIterationKey productInstanceIterationKey = new ProductInstanceIterationKey(serialNumber, workspaceId, configurationItemId, iteration);
-        ProductInstanceIteration productInstanceIteration = productInstanceManagerLocal.getProductInstanceIteration(productInstanceIterationKey).getProductInstanceMaster().getLastIteration();
+        // [#7] 链式调用中间值可能为 null，逐步检查避免 NPE
+        ProductInstanceIteration rawIteration =
+                productInstanceManagerLocal.getProductInstanceIteration(productInstanceIterationKey);
+        if (rawIteration == null || rawIteration.getProductInstanceMaster() == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        ProductInstanceIteration productInstanceIteration = rawIteration.getProductInstanceMaster().getLastIteration();
+        if (productInstanceIteration == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
         List<PathDataMaster> pathDataMasterList = productInstanceIteration.getPathDataMasterList();
 
         PathDataMaster pathDataMaster = pathDataMasterList.stream()

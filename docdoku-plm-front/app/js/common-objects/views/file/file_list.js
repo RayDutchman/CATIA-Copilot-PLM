@@ -95,6 +95,16 @@ define([
             }
         },
 
+        // 检查文件扩展名是否在 accept 列表内（若未设置 accept 则不限制）
+        isFileAccepted: function (file) {
+            if (!this.options.accept) {
+                return true;
+            }
+            var ext = '.' + file.name.split('.').pop().toLowerCase();
+            var acceptList = this.options.accept.split(',').map(function (s) { return s.trim().toLowerCase(); });
+            return acceptList.indexOf(ext) !== -1;
+        },
+
         fileDropHandler: function (e) {
 
             this.fileDragHover(e);
@@ -104,18 +114,39 @@ define([
                 return;
             }
 
+            var self = this;
             var items = e.dataTransfer.items;
 
             for (var i = 0; i < items.length; i++) {
                 var item = items[i].webkitGetAsEntry();
                 if (item) {
-                    traverseFileTree(item, null, this.uploadNewFile.bind(this));
+                    // 拖入文件也需要格式校验
+                    (function (entry) {
+                        traverseFileTree(entry, null, function (file) {
+                            if (!self.isFileAccepted(file)) {
+                                self.printNotifications('error',
+                                    (App.config.i18n.FILE_FORMAT_NOT_SUPPORTED || 'File format not supported') +
+                                    ': ' + file.name);
+                                return;
+                            }
+                            self.uploadNewFile(file);
+                        });
+                    })(item);
                 }
             }
         },
 
         fileSelectHandler: function (e) {
-            _.each(e.target.files, this.uploadNewFile.bind(this));
+            var self = this;
+            _.each(e.target.files, function (file) {
+                if (!self.isFileAccepted(file)) {
+                    self.printNotifications('error',
+                        (App.config.i18n.FILE_FORMAT_NOT_SUPPORTED || 'File format not supported') +
+                        ': ' + file.name);
+                    return;
+                }
+                self.uploadNewFile(file);
+            });
         },
 
         addAllFiles: function () {
@@ -321,6 +352,10 @@ define([
             this.uploadInput = this.$('input.upload-btn');
             this.progressBars = this.$('div.progress-bars');
             this.notifications = this.$('div.notifications');
+            // 若传入 accept 参数，则限制文件选择框可选的扩展名
+            if (this.options.accept) {
+                this.uploadInput.attr('accept', this.options.accept);
+            }
             //Hide the toggleCheckAll link which will be shown on add new File
             this.$toggleCheckAll = this.$('a.toggle-checkAll').hide();
         }

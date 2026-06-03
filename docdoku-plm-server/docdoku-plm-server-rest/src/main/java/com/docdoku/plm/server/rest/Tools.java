@@ -255,6 +255,10 @@ public class Tools {
 
         List<BaselinedPartOptionDTO> availableIterations = new ArrayList<>();
         for (PartRevision partRevision : partIteration.getPartRevision().getPartMaster().getPartRevisions()) {
+            // [#9] PartRevision 可能没有任何迭代（尚未签入），跳过以避免 NPE
+            if (partRevision.getLastIteration() == null) {
+                continue;
+            }
             BaselinedPartOptionDTO option = new BaselinedPartOptionDTO(partRevision.getVersion(),
                     partRevision.getLastIteration().getIteration(),
                     partRevision.isReleased());

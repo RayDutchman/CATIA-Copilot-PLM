@@ -4,6 +4,6 @@ define({
     CASCADE_RESULT: '结果',
     DONE: '完成',
     SELECTED: '已选',
-    PRODUCT_VIEW: '产品视图',
+    PRODUCT_VIEW: '产品配置视图',
     STRUCTURE: '产品结构'
 });

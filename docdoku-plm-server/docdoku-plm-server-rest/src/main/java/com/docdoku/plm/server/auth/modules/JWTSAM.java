@@ -64,7 +64,16 @@ public class JWTSAM extends CustomSAM {
         LOGGER.log(Level.FINE, "Validating request @" + request.getMethod() + " " + request.getRequestURI());
 
         String authorization = request.getHeader("Authorization");
+        // 缺少 Authorization 头时直接返回 FAILURE，避免 NPE
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return AuthStatus.FAILURE;
+        }
         String[] splitAuthorization = authorization.split(" ");
+        if (splitAuthorization.length != 2) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return AuthStatus.FAILURE;
+        }
         String jwt = splitAuthorization[1];
         ITokenManagerLocal tokenManager;
 

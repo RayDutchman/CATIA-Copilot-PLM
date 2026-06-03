@@ -61,7 +61,16 @@ public class BasicHeaderSAM extends CustomSAM {
         LOGGER.log(Level.FINE, "Validating request @" + request.getMethod() + " " + request.getRequestURI());
 
         String authorization = request.getHeader("Authorization");
+        // [#2] 缺少 Authorization 头时直接返回 FAILURE，避免 NPE
+        if (authorization == null || !authorization.startsWith("Basic ")) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return AuthStatus.FAILURE;
+        }
         String[] splitAuthorization = authorization.split(" ");
+        if (splitAuthorization.length != 2) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return AuthStatus.FAILURE;
+        }
 
         byte[] decoded = Base64.getDecoder().decode(splitAuthorization[1]);
 
@@ -76,13 +85,20 @@ public class BasicHeaderSAM extends CustomSAM {
 
         String[] splitCredentials = credentials.split(":");
 
+        // [#3] Basic Auth 格式非法（无 ':' 分隔符）时返回 400，避免数组越界
+        if (splitCredentials.length < 2) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return AuthStatus.FAILURE;
+        }
+
         String login = splitCredentials[0];
         String password = splitCredentials[1];
 
         Account account = AuthServices.authenticateAccount(login, password);
         UserGroupMapping userGroupMapping = AuthServices.getUserGroupMapping(login);
 
-        if (account != null) {
+        // [#4] userGroupMapping 为 null 时（数据不完整）返回 FAILURE，避免 NPE
+        if (account != null && userGroupMapping != null) {
             CallerPrincipalCallback callerPrincipalCallback = new CallerPrincipalCallback(clientSubject, login);
             GroupPrincipalCallback groupPrincipalCallback = new GroupPrincipalCallback(clientSubject, new String[]{userGroupMapping.getGroupName()});
             Callback[] callbacks = new Callback[]{callerPrincipalCallback, groupPrincipalCallback};

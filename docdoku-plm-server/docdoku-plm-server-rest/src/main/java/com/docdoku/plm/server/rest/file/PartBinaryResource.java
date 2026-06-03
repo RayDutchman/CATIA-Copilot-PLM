@@ -57,9 +57,12 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -134,6 +137,22 @@ public class PartBinaryResource {
             if (fileName == null || fileName.trim().isEmpty()) {
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity("Missing filename in Content-Disposition header").build();
+            }
+            // 校验文件扩展名是否在 CAD 转换器支持的白名单内
+            String lowerName = fileName.toLowerCase();
+            int dotIdx = lowerName.lastIndexOf('.');
+            String ext = dotIdx >= 0 ? lowerName.substring(dotIdx + 1) : "";
+            Set<String> supportedCadExtensions = new HashSet<>(Arrays.asList(
+                    "obj", "stl", "off", "ply", "3ds", "wrl",
+                    "dae", "dxf", "lwo", "x", "ac", "cob", "scn", "ms3d",
+                    "stp", "step", "igs", "iges",
+                    "ifc"
+            ));
+            if (!supportedCadExtensions.contains(ext)) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("Unsupported CAD file format: ." + ext +
+                                ". Supported formats: obj, stl, off, ply, 3ds, wrl, dae, dxf, stp, step, igs, iges, ifc")
+                        .build();
             }
             BinaryResource binaryResource = productService.saveNativeCADInPartIteration(partPK, fileName, 0);
             OutputStream outputStream = storageManager.getBinaryResourceOutputStream(binaryResource);
