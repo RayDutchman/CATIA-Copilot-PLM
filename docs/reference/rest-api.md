@@ -708,3 +708,287 @@ Content-Type: application/json
 ```
 
 **矩阵合成源码：** `docdoku-plm-server-rest/.../util/InstanceBodyWriterTools.java`
+
+---
+
+## 上传 Native CAD 文件（`.stp` 等）触发 3D 转换的正确流程
+
+### 接口
+
+```
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}/versions/{version}/iterations/{iteration}/nativecad
+Content-Type: multipart/form-data
+```
+
+### 关键约束：必须先 Checkout
+
+上传 `.stp` 文件会自动触发异步 3D 转换（stp → obj），但**转换结果回调时会再次检查零件是否处于 checkout 状态**。若此时零件已 check-in 或从未被 checkout，转换结果将被丢弃，geometry 不会保存。
+
+**正确操作顺序：**
+
+```
+1. POST .../parts/{number}/versions/{version}/checkouts    ← 先 checkout
+2. PUT  .../parts/{number}/versions/{version}/iterations/{iter}/nativecad  ← 上传 stp
+3. （等待转换完成，可查询 conversion 状态）
+4. POST .../parts/{number}/versions/{version}/checkins     ← 最后 check-in
+```
+
+**错误场景（"无转换"的成因）：**
+- 直接上传 `.stp` 而未 checkout → `saveNativeCADInPartIteration` 抛 `NotAllowedException4`，上传本身就会失败
+- Checkout 后上传，但 check-in 太快（转换尚未回调）→ 回调时判断 `isCheckedOut() == false`，geometry 被丢弃，`conversion.succeed = false`
+- 转换回调时的具体源码：`ConverterBean.java:172`
+
+```java
+if(!partRevision.isCheckedOut()) {
+    LOGGER.severe("Cannot proceed as the part is not checked out");
+    productService.endConversion(partIterationKey, false);
+    return;  // geometry 不保存
+}
+```
+
+**查询转换状态：**
+
+```
+GET /api/workspaces/{workspaceId}/parts/{partNumber}/versions/{version}/iterations/{iter}/conversion
+```
+
+返回示例：
+```json
+{
+  "pending": false,
+  "succeed": true,
+  "startDate": "2026-05-21T19:24:33.722Z",
+  "endDate": "2026-05-21T19:24:34.310Z"
+}
+```
+
+`succeed: false` 表示转换失败（或被丢弃）；`pending: true` 表示仍在转换中。**应等 `pending=false && succeed=true` 再 check-in。**
+
+### 前端"无转换"标签的含义
+
+前端检查 `partiteration_geometry` 是否有关联的 `.obj` 文件：
+- 有 geometry 记录 → 显示 3D 模型
+- 无 geometry 记录 → 显示"无转换"
+
+数据库表：`partiteration_geometry`（关联 `binaryresource` 中 `dtype = 'Geometry'` 的记录）
+
+---
+
+## 通过 API 上传完整装配体的接口清单
+
+### 认证
+
+```
+POST /api/auth/login
+Content-Type: application/json
+
+{ "login": "xxx", "password": "xxx" }
+```
+
+响应 Header 中返回 `JWT: <token>`，后续所有请求携带：
+```
+Authorization: Bearer <token>
+```
+
+### 创建零件
+
+```
+POST /api/workspaces/{workspaceId}/parts
+Content-Type: application/json
+
+{
+  "number": "PART-001",
+  "name":   "零件名称"
+}
+```
+
+- 创建后系统**自动 checkout**，`iteration = 1`，无需再单独调用 checkout 接口
+- 可选字段：`description`、`standardPart`、`templateId`、`workflowModelId`
+
+### 写入 BOM 和位置（装配体用）
+
+```
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{version}/iterations/{iteration}
+Content-Type: application/json
+
+{
+  "iterationNote": "初始BOM",
+  "components": [
+    {
+      "component": { "number": "CHILD-001" },
+      "cadInstances": [
+        {
+          "rotationType": "ANGLE",
+          "tx": 10.0, "ty": 0.0, "tz": 5.0,
+          "rx": 0.0,  "ry": 0.0, "rz": 90.0
+        }
+      ]
+    }
+  ]
+}
+```
+
+`cadInstances` 也支持矩阵模式（`rotationType: "MATRIX"`），此时 `matrix` 为长度 9 的数组（3×3 旋转矩阵，行优先），平移由 `tx/ty/tz` 单独给出。
+
+同一子件出现多次（阵列），在同一个 `cadInstances` 数组中放多个位置对象即可：
+```json
+"cadInstances": [
+  { "rotationType": "ANGLE", "tx": 0,   "ty": 0, "tz": 0  },
+  { "rotationType": "ANGLE", "tx": 100, "ty": 0, "tz": 0  }
+]
+```
+
+### 上传 CAD 文件（触发 3D 转换）
+
+```
+PUT /api/files/{workspaceId}/parts/{partNumber}/{version}/{iteration}/nativecad
+Content-Type: multipart/form-data
+
+[文件字段，字段名任意]
+```
+
+- 支持格式：`obj stl off ply 3ds wrl dae dxf lwo x ac cob scn ms3d stp step igs iges ifc`
+- 不支持：`.CATPart` `.CATProduct`（需商业 CAD 库，见 PLM_ISSUES.md BUG-10）
+- 上传成功后**立即触发异步转换**（Kafka），此时零件必须处于 checkout 状态（创建后自动满足）
+
+### 查询转换状态
+
+```
+GET /api/workspaces/{workspaceId}/parts/{partNumber}-{version}/iterations/{iteration}/conversion
+```
+
+```json
+{ "pending": false, "succeed": true, "startDate": "...", "endDate": "..." }
+```
+
+| pending | succeed | 含义 |
+|---------|---------|------|
+| true    | -       | 转换进行中，**不要 checkin** |
+| false   | true    | 转换成功，可以 checkin |
+| false   | false   | 转换失败，可 retry |
+
+### 重试转换
+
+```
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{version}/iterations/{iteration}/conversion
+```
+
+重走完整 convertCADFileToOBJ 流程（重新发 Kafka 消息），零件必须仍处于 checkout 状态。
+
+### Checkin
+
+```
+PUT /api/workspaces/{workspaceId}/parts/{partNumber}-{version}/checkin
+```
+
+无请求体，返回更新后的 `PartRevisionDTO`。
+
+---
+
+## 装配体上传流程规划
+
+### 数据模型关系
+
+```
+PartMaster（零件/装配体，同一实体）
+  └── PartRevision（版本 A/B/C）
+        └── PartIteration（迭代 1/2/3）
+              └── PartUsageLink（BOM 行，一行 = 引用一个子件）
+                    ├── component → PartMaster（被引用子件）
+                    └── CADInstance × N（该子件的 N 个位置实例）
+```
+
+"零件"和"装配体"是同一个 `PartMaster` 实体，区别仅在于 `PartIteration.isAssembly()` 动态判断（`components` 是否非空）。**数据库中不存在单独的"装配体"表。**
+
+### 方式 A：每个零件独立 STP + 外部 BOM 数据
+
+适用场景：你有外部数据（JSON/CSV/程序生成）描述装配层级和各子件位置。
+
+**操作顺序（深度优先，叶子零件先于父级）：**
+
+```
+1. 登录，获取 JWT
+
+对每个零件（从叶子到根）：
+2. POST /parts                       创建零件（自动 checkout, iter=1）
+3. [仅装配体] PUT .../iterations/1   写入 BOM + cadInstances（位置）
+4. PUT /files/.../nativecad          上传 .stp（触发异步转换）
+5. 轮询 GET .../conversion           等待 pending=false
+   └─ 若 succeed=false → PUT .../conversion 重试，再轮询
+6. PUT .../checkin                   签入
+```
+
+步骤 3 和 4 顺序无关，但**步骤 4、5、6 必须严格串行**（上传→等转换→再 checkin）。
+
+### 方式 B：一个装配体 STP，syncAssembly 自动解析 BOM
+
+适用场景：有一个完整的装配体 STP 文件，其内部包含子件层级和位置信息。
+
+**操作顺序：**
+
+```
+1. 登录，获取 JWT
+
+2. 先上传所有叶子零件（不同零件之间可并行）：
+   POST /parts → PUT nativecad → 轮询 → checkin
+   ⚠️ 上传时的文件名必须与装配体 STP 内部引用的子件文件名完全一致（含大小写）
+
+3. 创建装配体零件：POST /parts
+
+4. PUT /files/.../nativecad  上传整个装配体 .stp
+   → 转换服务解析子件层级和位置，回调 syncAssembly
+   → syncAssembly 按文件名查 binaryresource 表匹配已存在的 PartMaster
+   → 自动写入 BOM + CADInstance（覆盖旧结构）
+
+5. 轮询 .../conversion
+   succeed=true  → 所有子件均匹配成功
+   succeed=false → 至少有一个子件文件名未匹配（检查大小写，查后端日志 WARNING）
+
+6. PUT .../checkin
+```
+
+**syncAssembly 的匹配逻辑（源码 `BinaryResourceDAO.java:157`）：**
+
+```sql
+WHERE fullName LIKE '{workspaceId}/parts/%/nativecad/{cadFileName}'
+```
+
+严格按文件名匹配，大小写敏感，无通配符容错。匹配失败时静默跳过，仅打印 WARNING 日志，不中断流程也不报错给调用方。
+
+### 两种方式对比
+
+| 考量点 | 方式 A（独立 STP + 外部 BOM） | 方式 B（装配体 STP） |
+|--------|-------------------------------|----------------------|
+| BOM 控制 | 完全可控 | 依赖 STP 内部解析 |
+| 位置数据 | 需外部提供 | 自动从 STP 提取 |
+| 文件名约束 | 无 | 严格与 STP 内引用一致 |
+| 多层嵌套 | 每层手动写 BOM | 转换服务递归处理（取决于实现） |
+| 适用场景 | 有程序化 BOM 数据源 | 有完整装配体 STP 且文件名可控 |
+
+### 时序约束（两种方式通用）
+
+```
+上传 .stp → （Kafka 异步）→ 转换服务处理 → 回调 ConverterBean
+                                                 ↓
+                                        再次检查 isCheckedOut()
+                                        若已 checkin → 转换结果丢弃
+```
+
+**规则：同一零件的"上传→轮询→checkin"三步必须串行。不同零件之间可以并行。**
+
+### 不同零件并行上传示例（方式 A）
+
+```
+线程1: leaf_A → 上传 → 等转换 → checkin
+线程2: leaf_B → 上传 → 等转换 → checkin
+线程3: leaf_C → 上传 → 等转换 → checkin
+                    ↓（等所有叶子完成后）
+主线程: assy  → 写BOM → 上传 → 等转换 → checkin
+```
+
+### 已知限制
+
+- 无批量创建零件接口（需逐个 POST）
+- 无批量查询转换状态接口（需逐个轮询）
+- 创建零件时不支持直接指定 `components`，必须先创建再 PUT iterations
+- `PartCreationDTO` 必填字段：`number`；其余均可省略
