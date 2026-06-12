@@ -1,10 +1,16 @@
 ### real image
-# debian:buster-slim + openjdk-11-jre-headless：
-#   - buster 是原始镜像所用的 Debian 版本，freecad 0.18 / assimp 4.1 均在其 apt 仓库中
-#   - buster 官方仓库已 EOL，需切换到 archive.debian.org
-#   - openjdk-11 替代已下架的 openjdk:8-jre（Quarkus 1.2.1 兼容 Java 11）
-#   - run-java.sh 从本地复制，不再依赖已停止维护的 fabric8 镜像
-FROM debian:buster-slim
+# debian:bookworm-slim (Debian 12) + OpenJDK 17 + cadquery-ocp (OpenCASCADE Python bindings)
+# Replaces: openjdk:8-jre (removed from Docker Hub) + FreeCAD 0.18 (headless color not supported)
+#
+# Key changes vs original:
+#   - Base OS: debian:buster (EOL) -> debian:bookworm-slim
+#   - JRE: openjdk:8-jre -> openjdk-17-jre-headless (Quarkus 1.2.1 supports Java 11+)
+#   - STEP converter: FreeCAD 0.18 + Mesh.export -> cadquery-ocp + pygltflib
+#     * OCC headless color reading via XDE (XCAFDoc_ColorTool)
+#     * Controllable triangulation quality (BRepMesh_IncrementalMesh)
+#     * Output: .glb (self-contained, no MTL sidecar)
+#   - run-java.sh: copied from local (no longer pulls from fabric8 image)
+FROM debian:bookworm-slim
 
 ENV JAVA_OPTIONS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
 ENV AB_ENABLED=jmx_exporter
@@ -14,19 +20,44 @@ ENV DECIMATER_URL=https://github.com/docdoku/docdoku-plm-openmesh-decimater/raw/
 
 USER root
 
-# 切换到 buster 归档仓库（buster 官方仓库已 EOL），安装 JRE 和 CAD 转换工具
-RUN echo "deb http://archive.debian.org/debian buster main contrib non-free" > /etc/apt/sources.list \
- && echo "deb http://archive.debian.org/debian-security buster/updates main contrib non-free" >> /etc/apt/sources.list \
- && apt-get update -qqy \
+# System packages:
+#   - openjdk-17-jre-headless: Java runtime for Quarkus service
+#   - python3 + pip: for convert_step_glb.py
+#   - libgl1 libxrender1 libsm6 libxt6: required shared libs for cadquery-ocp/OCC
+#   - assimp-utils: for DAE/DXF converter (unchanged)
+#   - wget + unzip: for downloading IFCConvert and meshconv
+RUN apt-get update -qqy \
  && apt-get install -qqy --no-install-recommends \
-      openjdk-11-jre-headless \
-      freecad \
+      openjdk-17-jre-headless \
+      python3 \
+      python3-pip \
+      libgl1 \
+      libglib2.0-0 \
+      libxrender1 \
+      libsm6 \
+      libxt6 \
       assimp-utils \
       wget \
       unzip \
  && rm -rf /var/lib/apt/lists/*
 
-# 创建目录并下载第三方转换工具
+# Install Python packages for STEP->GLB conversion (offline from pre-downloaded wheels):
+#   - cadquery-ocp: OpenCASCADE Python bindings (OCC 7.8, includes XDE color tools)
+#   - vtk + matplotlib: required by cadquery-ocp at import time (headless, no display needed)
+#   - pygltflib: lightweight glTF 2.0 serializer
+#   - numpy: numerical arrays for vertex/index data
+# Wheels are bundled in the 'wheels/' directory to avoid network dependency during build.
+COPY wheels/ /tmp/wheels/
+RUN pip3 install --break-system-packages --no-index --find-links /tmp/wheels/ \
+      /tmp/wheels/cadquery_ocp-7.8.1.1.post1-cp311-cp311-manylinux_2_31_x86_64.whl \
+      /tmp/wheels/vtk-9.3.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl \
+ && pip3 install --break-system-packages --no-index --find-links /tmp/wheels/ \
+      /tmp/wheels/matplotlib-3.11.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl \
+      /tmp/wheels/pygltflib-1.16.5-py3-none-any.whl \
+      /tmp/wheels/numpy-2.2.6-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl \
+ && rm -rf /tmp/wheels/
+
+# Create directories and download third-party conversion tools
 RUN mkdir /deployments \
  && mkdir -p /data/vault /data/conversions \
  && mkdir -p /opt/ifcconvert /opt/meshconv /opt/decimater \
@@ -41,7 +72,7 @@ RUN mkdir /deployments \
 COPY conversion-service/target/lib/* /deployments/lib/
 COPY conversion-service/target/*-runner.jar /deployments/app.jar
 
-# run-java.sh 从本地复制，不依赖外部镜像
+# run-java.sh extracted locally from fabric8 image — no external dependency
 COPY run-java.sh /deployments/run-java.sh
 
 RUN mkdir /home/1001 \

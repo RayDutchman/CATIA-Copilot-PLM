@@ -61,6 +61,7 @@ require.config({
         transformcontrols: '../../js/dmu/controls/TransformControls',
         objloader: '../../js/dmu/loaders/OBJLoader',
         mtlloader: '../../js/dmu/loaders/MTLLoader',
+        gltfloader: '../../js/dmu/loaders/GLTFLoader',
         buffergeometryutils: '../../js/dmu/utils/BufferGeometryUtils',
         stats: '../../js/dmu/utils/Stats',
         selectize: '../../bower_components/selectize/dist/js/standalone/selectize',
