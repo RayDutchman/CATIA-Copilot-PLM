@@ -1,6 +1,7 @@
 global:
   en: English
   fr: French
+  zh: Chinese
   navigation: Navigation
   toc: Table of content
   version: Version

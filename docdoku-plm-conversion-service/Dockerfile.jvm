@@ -1,46 +1,51 @@
-### runner script
-FROM fabric8/java-alpine-openjdk8-jre AS runner_script_provider
-
 ### real image
-FROM openjdk:8-jre
+# debian:buster-slim + openjdk-11-jre-headless：
+#   - buster 是原始镜像所用的 Debian 版本，freecad 0.18 / assimp 4.1 均在其 apt 仓库中
+#   - buster 官方仓库已 EOL，需切换到 archive.debian.org
+#   - openjdk-11 替代已下架的 openjdk:8-jre（Quarkus 1.2.1 兼容 Java 11）
+#   - run-java.sh 从本地复制，不再依赖已停止维护的 fabric8 镜像
+FROM debian:buster-slim
 
 ENV JAVA_OPTIONS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
 ENV AB_ENABLED=jmx_exporter
 ENV IFCCONVERT_URL=https://github.com/IfcOpenShell/IfcOpenShell/releases/download/v0.5.0-preview2/IfcConvert-master-9ad68db-linux64.zip
 ENV MESHCONV_URL=http://www.patrickmin.com/meshconv/linux64/meshconv
-ENV DECIMATER_URL https://github.com/docdoku/docdoku-plm-openmesh-decimater/raw/master/builds/decimater-linux-64.zip
+ENV DECIMATER_URL=https://github.com/docdoku/docdoku-plm-openmesh-decimater/raw/master/builds/decimater-linux-64.zip
 
 USER root
 
-# Install deps packages
-RUN \
- apt-get update -qqy && apt-get install -qqy --no-install-recommends \
- freecad  \
- assimp-utils
+# 切换到 buster 归档仓库（buster 官方仓库已 EOL），安装 JRE 和 CAD 转换工具
+RUN echo "deb http://archive.debian.org/debian buster main contrib non-free" > /etc/apt/sources.list \
+ && echo "deb http://archive.debian.org/debian-security buster/updates main contrib non-free" >> /etc/apt/sources.list \
+ && apt-get update -qqy \
+ && apt-get install -qqy --no-install-recommends \
+      openjdk-11-jre-headless \
+      freecad \
+      assimp-utils \
+      wget \
+      unzip \
+ && rm -rf /var/lib/apt/lists/*
 
-# Run filesystem changes + download other deps
-RUN \
- mkdir /deployments && \
- mkdir /data && \
- mkdir /data/vault && \
- mkdir /data/conversions && \
- mkdir -p /opt/ifcconvert && \
- mkdir -p /opt/meshconv && \
- mkdir -p /opt/decimater && \
- wget --quiet -O /opt/ifcconvert.zip ${IFCCONVERT_URL} && \
- wget --quiet -O /opt/meshconv/meshconv ${MESHCONV_URL} && \
- wget --quiet -O /opt/decimater.zip ${DECIMATER_URL} && \
- unzip -qq /opt/ifcconvert.zip -d /opt/ifcconvert && \
- unzip -qq /opt/decimater.zip -d /opt/ && \
- chmod +x /opt/meshconv/meshconv && \
- rm /opt/decimater.zip && \
- rm /opt/ifcconvert.zip
+# 创建目录并下载第三方转换工具
+RUN mkdir /deployments \
+ && mkdir -p /data/vault /data/conversions \
+ && mkdir -p /opt/ifcconvert /opt/meshconv /opt/decimater \
+ && wget --quiet -O /opt/ifcconvert.zip ${IFCCONVERT_URL} \
+ && wget --quiet -O /opt/meshconv/meshconv ${MESHCONV_URL} \
+ && wget --quiet -O /opt/decimater.zip ${DECIMATER_URL} \
+ && unzip -qq /opt/ifcconvert.zip -d /opt/ifcconvert \
+ && unzip -qq /opt/decimater.zip -d /opt/ \
+ && chmod +x /opt/meshconv/meshconv \
+ && rm /opt/decimater.zip /opt/ifcconvert.zip
 
 COPY conversion-service/target/lib/* /deployments/lib/
 COPY conversion-service/target/*-runner.jar /deployments/app.jar
 
-RUN mkdir /home/1001 && \
-  groupadd -g 1001 1001 \
+# run-java.sh 从本地复制，不依赖外部镜像
+COPY run-java.sh /deployments/run-java.sh
+
+RUN mkdir /home/1001 \
+  && groupadd -g 1001 1001 \
   && useradd -u 1001 -M -s /bin/bash 1001 -g root -d /home/1001 \
   && chown -R 1001 /deployments \
   && chmod -R 777 /deployments \
@@ -53,7 +58,6 @@ RUN mkdir /home/1001 && \
 
 USER 1001
 
-COPY --from=runner_script_provider /deployments/run-java.sh /deployments
 VOLUME ["/data/vault", "/data/conversions"]
 EXPOSE 8080
 

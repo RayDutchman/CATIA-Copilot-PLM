@@ -1,9 +1,8 @@
 encoding: utf-8
 name: "DocDokuPLM user guides"
 exclude: [bower_components]
-languages: ["en", "fr"]
+languages: ["en", "fr", "zh"]
 versions: ["2.5"]
 defaultlanguage: ["en"]
-relative_permalinks: true
 url: /
 markdown: kramdown

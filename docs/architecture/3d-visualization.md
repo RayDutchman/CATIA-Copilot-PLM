@@ -177,13 +177,53 @@ stp, step, igs, iges, ifc
 
 ---
 
+## 装配体感叹号（ModificationNotification）说明
+
+### 现象
+
+当某零件的子件发生了新 check-in（迭代变化）后，该零件在前端会显示感叹号，提示"子件已更新，请确认"。用户可点击"标记为已验证"（Acknowledge）消除感叹号。
+
+### 技术实现
+
+触发链路：
+
+```
+checkInPart()
+  → CDI Event: @CheckedIn
+    → PartNotificationManager.onCheckInPartIteration()
+      → ProductManagerBean.createModificationNotifications()
+        → 对所有把该零件作为子件/替代件的父装配迭代
+          → 创建 ModificationNotification 记录（acknowledged=false）
+```
+
+"标记为已验证" 对应接口：
+```
+PUT /api/workspaces/{ws}/notifications/{notificationId}
+Body: { "ackComment": "..." }
+```
+
+处理方法：`ProductManagerBean.updateModificationNotification()`（第 1006–1026 行），仅设置 `acknowledged=true` 和时间戳，无其他副作用。
+
+### 是否影响 3D 预览
+
+**不影响。** `configSpec=latest` 对应 `LatestCheckedInPSFilter`，其 `filter()` 方法只调用 `getLastRevision().getLastCheckedInIteration()`，完全不读 `ModificationNotification` 表。感叹号状态只附加在 `ComponentDTO.notifications` 字段上用于前端展示，不参与任何版本选择或 geometry 加载逻辑。
+
+**结论：装配体及其全部子件完成 check-in 后，3D 预览即可正常显示，无需点击"标记为已验证"。**
+
+---
+
 ## 修复建议
 
 ### 方案 A：用正确顺序重新上传（无需改代码）
 
-对 Workspace_1 中四个子零件，执行：
+对未能正常显示 3D 的零件，执行：
 ```
-checkout → 上传 .stp → 等转换完成 → checkin
+checkout → 上传 .stp → 等转换完成（轮询 conversion 接口） → checkin
+```
+
+也可对已上传但 geometry 在 checkout 状态的迭代，直接调用 check-in 接口（如本次对 Assem1 装配树的处理）：
+```
+PUT /api/workspaces/{ws}/parts/{partNumber}-{version}/checkin
 ```
 
 ### 方案 B：修改 ConverterBean 逻辑（改代码）

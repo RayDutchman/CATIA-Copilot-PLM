@@ -397,17 +397,39 @@
 
 ---
 
-*最后更新：2026-05-21*
-
-| 扩展名 | 转换器 | 底层工具 |
-|--------|--------|----------|
-| `.obj` | ObjFileConverterImpl | 直接使用 |
-| `.stl`, `.off`, `.ply`, `.3ds`, `.wrl` | AllFileConverterImpl | meshconv |
-| `.dae`, `.dxf`, `.lwo`, `.x`, `.ac`, `.cob`, `.scn`, `.ms3d` | DaeFileConverterImpl | assimp |
-| `.stp`, `.step`, `.igs`, `.iges` | StepFileConverterImpl | FreeCAD + Python |
-| `.ifc` | IFCFileConverterImpl | IfcConvert |
-| `.CATPart`, `.CATProduct`, `.3dxml` | **无** | **不支持** |
+*最后更新：2026-06-13*
 
 ---
 
-*最后更新：2026-05-21*
+## 十二、前端数值显示 Bug
+
+### [BUG-41] 零件实例位置编辑框：极小浮点数科学计数法末尾被截断显示
+
+- **文件：** `docdoku-plm-front/app/js/common-objects/views/part/cad_instance_view.js`
+- **根本原因：** API 返回的 `tx`/`ty`/`tz`/`rx`/`ry`/`rz` 字段在 MATRIX 模式下来自 `RotationMatrix.getValues()`，CATIA 浮点运算会在理论为 0 的位置产生 `1e-14`～`1e-16` 量级的噪声值（如 `-9.8367310048985e-15`）。前端将该值直接填入固定宽度的 `<input>` 输入框，输入框宽度只能显示 `-9.8367` 等前几位，`e-15` 的科学计数法指数部分恰好被截断在可见区域之外，导致用户误以为该值是 `-9.8367 mm`，实为 `-9.8367 × 10⁻¹⁵ mm`（物理上为 0）。
+- **影响：** 前端 BOM 编辑界面中，Translation (x y z) 和 Rotation (x y z) 输入框显示误导性数值，用户难以判断实际位置是否正确。
+- **修复状态：** `已修复`
+- **修复方案：** 在 `cad_instance_view.js` 的 `render()` 方法中，传给 Mustache 模板前先对 6 个坐标值做归零处理（`|v| < 1e-10` 时置为 0），仅影响显示层，不改动 model 存储的原始值和回写逻辑。同步修改了 `dist/product-structure/main.js` 和 `dist/product-management/main.js` 中的 minified 版本，并重建前端镜像。
+  function clampNearZero(v, threshold) {
+      threshold = threshold || 1e-10;
+      return Math.abs(v) < threshold ? 0 : v;
+  }
+  ```
+
+---
+
+## 十三、3D 预览颜色 Bug
+
+### [BUG-42] STEP 文件转换后 3D 预览颜色全部丢失，仅显示单一灰色
+
+- **影响范围：** 所有通过 `.stp`/`.step` 上传的零件，在 3D 预览中颜色信息完全丢失，所有零件统一显示为灰色（`#cccccc`）
+- **根本原因：** 颜色丢失跨三个阶段（详见历史记录）
+- **修复状态：** `已修复`
+- **修复内容：**
+  1. **`convert_step_obj.py`**：重写转换脚本，在调用 FreeCAD 转换前先解析 STEP 文件中的 `COLOUR_RGB`→`STYLED_ITEM` 颜色链，为每个 `MANIFOLD_SOLID_BREP` 提取颜色，对每个 FreeCAD Object 分别导出带 `g`/`usemtl` 分组的 OBJ，并生成配套 `.mtl` 文件。支持多 body 多色零件；无颜色信息时退回原始单 mesh 导出。
+  2. **`StepFileConverterImpl.java`**：转换完成后检测同名 `.mtl` 文件，若存在则加入 `materials` 列表返回，使 `ConverterBean` 将其存入 `attachedfiles`。新增 `ArrayList`/`List` import。
+  3. **`LoaderManager.js`**：新增 `mtlloader` 依赖，`parseFile()` 改为先用 `MTLLoader` 加载 `.mtl`，成功后再用 `OBJLoader + setMaterials()` 加载 `.obj`；加载失败时退化为无材质加载，不影响可用性。同步修改了 `dist/product-structure/main.js` 中的 minified 版本。
+- **注意事项：**
+  - FreeCAD 0.18 headless 模式下颜色需从 STEP 文件文本直接解析（无法通过 ViewObject API 读取），当前方案为 BREP 级别颜色（整体单色），面级别多色暂不支持
+  - 颜色生效需零件处于 **checkout 状态**触发转换，回调时才能写入 geometry 和 MTL（`ConverterBean:172` 的 checkout 检查限制，见 BUG 方案B 修复建议）
+  - 转换服务容器当前为热更新方式（直接替换 jar），若容器删除重建需重新构建（`openjdk:8-jre` 基础镜像已下架，需替换为 `eclipse-temurin:8-jre` 后重建）

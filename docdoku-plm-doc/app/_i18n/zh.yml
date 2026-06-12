@@ -1,0 +1,13 @@
+global:
+  en: English
+  fr: Français
+  zh: 中文
+  navigation: 导航
+  toc: 目录
+  version: 版本
+  languages: 语言
+  home: 首页
+  available_versions: 可用版本
+  user_guide: 用户手册
+pages:
+  home: 首页

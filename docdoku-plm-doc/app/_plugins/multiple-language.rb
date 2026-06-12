@@ -25,29 +25,21 @@ module Jekyll
       process_org
       languages.each do |lang|
 
-        # Build site for language lang
-        self.dest = self.dest + "/" + lang
+        # Build site for language lang（Jekyll 4：@dest 替代 self.dest=）
+        @dest = self.dest + "/" + lang
         self.config['baseurl'] = self.config['baseurl'] + "/" + lang
         self.config['lang'] = lang
         puts "Building site for language: \"#{self.config['lang']}\" to: #{self.dest}"
         process_org
 
         #Reset variables for next language
-        self.dest = dest_org
+        @dest = dest_org
         self.config['baseurl'] = baseurl_org
       end
       Jekyll.setlangs({})
       puts 'Build complete'
     end
 
-    alias :read_posts_org :read_posts
-    def read_posts(dir)
-      if dir == ''
-        read_posts("_i18n/#{self.config['lang']}/")
-      else
-        read_posts_org(dir)
-      end
-    end
   end
 
   class LocalizeTag < Liquid::Tag
