@@ -1,5 +1,5 @@
 /*global _,define,App*/
-define(['threecore', 'objloader', 'views/progress_bar_view'], function (THREE, OBJLoader, ProgressBarView) {
+define(['threecore', 'objloader', 'mtlloader', 'views/progress_bar_view'], function (THREE, OBJLoader, MTLLoader, ProgressBarView) {
     'use strict';
     var LoaderManager = function (options) {
         _.extend(this, options);
@@ -97,12 +97,40 @@ define(['threecore', 'objloader', 'views/progress_bar_view'], function (THREE, O
 
 
         parseFile: function (filename, texturePath, callbacks) {
-            var loader = new OBJLoader();
-            loader.load(filename, /* texturePath + '/attachedfiles/',*/ function (object) {
-                setShadows(object);
-                updateMaterial(object);
-                callbacks.success(object);
-            });
+            // Derive MTL filename from OBJ filename (same base name, .mtl extension)
+            // MTL and textures are stored under the attachedfiles/ sub-path
+            var fileShortName = filename.split('?')[0];
+            fileShortName = fileShortName.substr(fileShortName.lastIndexOf('/') + 1);
+            var mtlFile = fileShortName.substr(0, fileShortName.lastIndexOf('.')) + '.mtl';
+            var mtlBasePath = texturePath.substr(0, texturePath.lastIndexOf('/') + 1) + 'attachedfiles/';
+
+            function loadOBJ(materials) {
+                var objLoader = new OBJLoader();
+                if (materials && typeof materials.preload === 'function') {
+                    materials.preload();
+                    objLoader.setMaterials(materials);
+                }
+                objLoader.load(filename, function (object) {
+                    setShadows(object);
+                    // Only apply default material to meshes that have no named material
+                    updateMaterial(object);
+                    callbacks.success(object);
+                });
+            }
+
+            // Try to load MTL first; fall back gracefully if not found
+            try {
+                // JWT is sent via Authorization header by contextResolver.js,
+                // pass null so MTLLoader does not append a redundant ?token= param
+                var mtlLoader = new MTLLoader(null);
+                mtlLoader.setPath(mtlBasePath);
+                mtlLoader.load(mtlFile, loadOBJ, null, function () {
+                    // MTL not found or failed — load OBJ without materials
+                    loadOBJ(null);
+                });
+            } catch (e) {
+                loadOBJ(null);
+            }
         }
     };
     return LoaderManager;
