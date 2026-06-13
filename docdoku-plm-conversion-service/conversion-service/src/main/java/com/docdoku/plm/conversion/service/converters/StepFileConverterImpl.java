@@ -4,11 +4,12 @@ package com.docdoku.plm.conversion.service.converters;
 
 import com.docdoku.plm.server.converters.CADConverter;
 import com.docdoku.plm.server.converters.ConversionResultProxy;
-import com.docdoku.plm.server.converters.ConverterUtils;
 
 import javax.enterprise.context.ApplicationScoped;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +17,9 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,9 +33,13 @@ public class StepFileConverterImpl implements CADConverter {
 
     static {
         try (InputStream inputStream = StepFileConverterImpl.class.getResourceAsStream(CONF_PROPERTIES)) {
-            CONF.load(inputStream);
+            if (inputStream == null) {
+                LOGGER.severe("conf.properties not found on classpath: " + CONF_PROPERTIES);
+            } else {
+                CONF.load(inputStream);
+            }
         } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, null, e);
+            LOGGER.log(Level.SEVERE, "Failed to load conf.properties", e);
         }
     }
 
@@ -42,21 +50,27 @@ public class StepFileConverterImpl implements CADConverter {
         String pythonInterpreter = CONF.getProperty("pythonInterpreter");
         String freeCadLibPath    = CONF.getProperty("freeCadLibPath", "");
 
+        if (pythonInterpreter == null || pythonInterpreter.trim().isEmpty()) {
+            throw new ConversionException(
+                "pythonInterpreter not configured in conf.properties — check " + CONF_PROPERTIES);
+        }
+
         Path tmpDir     = Paths.get(tmpDirUri);
         Path tmpCadFile = Paths.get(cadFileUri);
 
         UUID uuid       = UUID.randomUUID();
-        // Output is now .glb instead of .obj
         Path tmpGLBFile = tmpDir.resolve(uuid + ".glb");
 
         Path scriptPath = tmpDir.resolve("convert_script_" + uuid + ".py");
         try (InputStream scriptStream = StepFileConverterImpl.class.getResourceAsStream(PYTHON_SCRIPT)) {
+            if (scriptStream == null) {
+                throw new ConversionException("Python script resource not found: " + PYTHON_SCRIPT);
+            }
             Files.copy(scriptStream, scriptPath);
-        } catch (IOException | NullPointerException e) {
+        } catch (IOException e) {
             throw new ConversionException("Unable to copy python script", e);
         }
 
-        // -l freeCadLibPath kept for script backward-compat (ignored by new script)
         String[] args = {
             pythonInterpreter,
             scriptPath.toAbsolutePath().toString(),
@@ -69,28 +83,58 @@ public class StepFileConverterImpl implements CADConverter {
         try {
             Process process = pb.start();
 
-            String stdOutput   = ConverterUtils.inputStreamToString(process.getInputStream());
-            String errorOutput = ConverterUtils.inputStreamToString(process.getErrorStream());
-
-            LOGGER.info(stdOutput);
+            // Read stdout and stderr concurrently to prevent deadlock when either
+            // buffer fills up (> 64 KB).  The OS pipe buffer is finite; if Java
+            // reads only one stream at a time, the Python process can block
+            // waiting for the other stream to be drained.
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            Future<String> stdFuture = pool.submit(() -> drainStream(process.getInputStream()));
+            Future<String> errFuture = pool.submit(() -> drainStream(process.getErrorStream()));
+            pool.shutdown();
 
             process.waitFor();
 
+            String stdOutput   = stdFuture.get();
+            String errorOutput = errFuture.get();
+
+            if (stdOutput != null && !stdOutput.isEmpty()) {
+                LOGGER.info(stdOutput);
+            }
+
             if (process.exitValue() == 0) {
-                // GLB is self-contained — no separate materials file needed
                 return new ConversionResultProxy(tmpGLBFile);
             } else {
                 throw new ConversionException(
                     "Cannot convert to GLB: " + tmpCadFile.toAbsolutePath() + ": " + errorOutput);
             }
-        } catch (IOException | InterruptedException e) {
-            LOGGER.log(Level.SEVERE, null, e);
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Process I/O error during GLB conversion", e);
             throw new ConversionException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();   // restore interrupt flag
+            throw new ConversionException(e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new ConversionException("Failed to read process output", e);
         }
+    }
+
+    /** Drain an InputStream into a String, ignoring errors silently. */
+    private static String drainStream(InputStream is) {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+        } catch (IOException e) {
+            // Stream already closed — ignore
+        }
+        return sb.toString();
     }
 
     @Override
     public boolean canConvertToOBJ(String cadFileExtension) {
+        // Method name is a misnomer (legacy interface); output is now GLB.
         return Arrays.asList("stp", "step", "igs", "iges").contains(cadFileExtension);
     }
 
