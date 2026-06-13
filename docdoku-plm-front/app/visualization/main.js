@@ -37,6 +37,7 @@ require.config({
         buffergeometryutils: '../../js/dmu/utils/BufferGeometryUtils',
         objloader: '../../js/dmu/loaders/OBJLoader',
         mtlloader: '../../js/dmu/loaders/MTLLoader',
+        gltfloader: '../../js/dmu/loaders/GLTFLoader',
         stats:'../../js/dmu/utils/Stats',
         utilsprototype:'../../js/utils/utils.prototype',
         jwt_decode: '../../bower_components/jwt-decode/build/jwt-decode'
