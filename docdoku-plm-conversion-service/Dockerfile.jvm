@@ -41,21 +41,11 @@ RUN apt-get update -qqy \
       unzip \
  && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages for STEP->GLB conversion (offline from pre-downloaded wheels):
-#   - cadquery-ocp: OpenCASCADE Python bindings (OCC 7.8, includes XDE color tools)
-#   - vtk + matplotlib: required by cadquery-ocp at import time (headless, no display needed)
-#   - pygltflib: lightweight glTF 2.0 serializer
-#   - numpy: numerical arrays for vertex/index data
-# Wheels are bundled in the 'wheels/' directory to avoid network dependency during build.
-COPY wheels/ /tmp/wheels/
-RUN pip3 install --break-system-packages --no-index --find-links /tmp/wheels/ \
-      /tmp/wheels/cadquery_ocp-7.8.1.1.post1-cp311-cp311-manylinux_2_31_x86_64.whl \
-      /tmp/wheels/vtk-9.3.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl \
- && pip3 install --break-system-packages --no-index --find-links /tmp/wheels/ \
-      /tmp/wheels/matplotlib-3.11.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl \
-      /tmp/wheels/pygltflib-1.16.5-py3-none-any.whl \
-      /tmp/wheels/numpy-2.2.6-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl \
- && rm -rf /tmp/wheels/
+# Install Python packages for STEP->GLB conversion from pinned requirements.
+# This keeps large wheel artifacts out of Git history and downloads packages at build time.
+COPY requirements-converter.txt /tmp/requirements-converter.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /tmp/requirements-converter.txt \
+ && rm -f /tmp/requirements-converter.txt
 
 # Create directories and download third-party conversion tools
 RUN mkdir /deployments \

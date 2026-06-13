@@ -4,4 +4,4 @@
 !conversion-service/target/*-runner.jar
 !conversion-service/target/lib/*
 !run-java.sh
-!wheels/
+!requirements-converter.txt
