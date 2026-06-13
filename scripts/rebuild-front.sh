@@ -53,7 +53,9 @@ NEW_REV=$(date +%s)000
 
 for index_html in \
     "${FRONT_DIR}/dist/visualization/index.html" \
-    "${FRONT_DIR}/dist/product-structure/index.html"; do
+    "${FRONT_DIR}/dist/product-structure/index.html" \
+    "${FRONT_DIR}/dist/product-management/index.html" \
+    "${FRONT_DIR}/dist/parts/index.html"; do
     if [ -f "${index_html}" ]; then
         # Replace any existing rev=NNNN with new rev
         sed -i "s/main\.js?rev=[0-9]*/main.js?rev=${NEW_REV}/g" "${index_html}"
@@ -64,7 +66,9 @@ done
 # Also update urlArgs in main.js files so RequireJS uses new rev for sub-modules
 for main_js in \
     "${FRONT_DIR}/dist/visualization/main.js" \
-    "${FRONT_DIR}/dist/product-structure/main.js"; do
+    "${FRONT_DIR}/dist/product-structure/main.js" \
+    "${FRONT_DIR}/dist/product-management/main.js" \
+    "${FRONT_DIR}/dist/parts/main.js"; do
     if [ -f "${main_js}" ]; then
         sed -i "s/urlArgs:\"rev=[0-9]*\"/urlArgs:\"rev=${NEW_REV}\"/g" "${main_js}"
         info "Updated urlArgs rev=${NEW_REV} in $(basename $(dirname ${main_js}))/main.js"
