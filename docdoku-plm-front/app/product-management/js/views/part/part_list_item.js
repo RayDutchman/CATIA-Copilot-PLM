@@ -33,9 +33,6 @@ define([
         initialize: function () {
             _.bindAll(this);
             this._isChecked = false;
-            this._isPreviewOpen = false;
-            this._previewRow = null;
-            this._previewToken = null;
 
             this.listenTo(this.model, 'change', this.render);
             this.listenTo(this.model, 'sync', this.render);
@@ -46,7 +43,6 @@ define([
         },
 
         render: function () {
-            this.removePreviewRow();
             this.$el.html(Mustache.render(template, {model: this.model, i18n: App.config.i18n}));
             this.$checkbox = this.$('input[type=checkbox]');
             if (this.isChecked()) {
@@ -59,16 +55,11 @@ define([
             this.bindUserPopover();
             this.bindDescriptionPopover();
             date.dateHelper(this.$('.date-popover'));
-            if (this._isPreviewOpen) {
-                this.insertPreviewRow(this.$el);
-            }
-            this.syncPreviewIcon();
             this.trigger('rendered', this);
             return this;
         },
 
         remove: function () {
-            this.removePreviewRow();
             return Backbone.View.prototype.remove.call(this);
         },
 
@@ -218,73 +209,20 @@ define([
             event.stopPropagation();
         },
 
-        /**
-         * 切换内联 3D 预览面板（在当前行下方插入/移除一个 iframe 行）。
-         * 用 visualization/index.html#assembly 路由，只含 3D 视图，无 BOM 树。
-         *
-         * 注意：不能用 this.$el 找行，因为 render() 后 this.$el 是新节点，
-         * 而 viewer row 挂在 DOM 里旧节点之后。从事件目标向上找真实 DOM 的 <tr>。
-         */
         toggle3DPreview: function (event) {
             event.preventDefault();
             event.stopPropagation();
 
-            var $row = $(event.target).closest('tr');
-            var $toggle = $(event.currentTarget);
-            if (this.isPreviewRendered()) {
-                this._isPreviewOpen = false;
-                this.removePreviewRow();
-            } else {
-                this._isPreviewOpen = true;
-                this._previewToken = _.uniqueId('part-preview-');
-                this.insertPreviewRow($row);
-            }
-
-            $toggle.blur();
-            this.syncPreviewIcon();
-        },
-
-        insertPreviewRow: function ($row) {
-            var colCount = $row.find('td').length;
             var url = this.model.getVisualizationUrl();
-            this._previewRow = $(
-                '<tr class="part-3d-viewer-row" data-preview-token="' + (this._previewToken || '') + '">' +
-                '<td colspan="' + colCount + '" style="padding:0;border-top:none;">' +
-                '<iframe src="' + url + '" ' +
-                'style="width:100%;height:480px;border:none;display:block;" ' +
-                'allowfullscreen></iframe>' +
-                '</td></tr>'
+            var viewerWindow = window.open(
+                url,
+                'docdoku-part-3d-preview',
+                'popup=yes,width=1200,height=800,resizable=yes,scrollbars=yes'
             );
-            $row.after(this._previewRow);
-        },
 
-        removePreviewRow: function () {
-            if (this._previewRow && this._previewRow.length) {
-                this._previewRow.remove();
+            if (viewerWindow) {
+                viewerWindow.focus();
             }
-            this._previewRow = null;
-            this._previewToken = null;
-        },
-
-        isPreviewRendered: function () {
-            if (!(this._previewToken && this._previewRow && this._previewRow.length && $.contains(document, this._previewRow[0]))) {
-                return false;
-            }
-
-            return this._previewRow.attr('data-preview-token') === this._previewToken;
-        },
-
-        syncPreviewIcon: function () {
-            var $icon = this.$('.part-3d-preview-toggle i');
-            if (!$icon.length) {
-                return;
-            }
-
-            var previewRendered = this.isPreviewRendered();
-            this._isPreviewOpen = previewRendered;
-
-            $icon.toggleClass('fa-video-camera', !previewRendered);
-            $icon.toggleClass('fa-compress', previewRendered);
         },
 
         moveAllCellsInTRtag: function () {
