@@ -9,8 +9,14 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Singleton
 public class GeometryParser {
@@ -124,12 +130,8 @@ public class GeometryParser {
             raf.readFully(jsonBytes);
             String json = new String(jsonBytes, StandardCharsets.UTF_8);
 
-            // Extract min/max from all POSITION accessors
-            // Pattern: "min":[x,y,z],"max":[x,y,z] near "POSITION"
-            // We parse all "min" and "max" arrays from accessor objects.
-            // Simple approach: find all occurrences of "min":[ and "max":[ in the JSON.
-            double[] globalMin = extractMinMaxFromGltfJson(json, "min");
-            double[] globalMax = extractMinMaxFromGltfJson(json, "max");
+            double[] globalMin = extractGlobalPositionBound(json, true);
+            double[] globalMax = extractGlobalPositionBound(json, false);
 
             if (globalMin != null && globalMax != null) {
                 xMin = globalMin[0]; yMin = globalMin[1]; zMin = globalMin[2];
@@ -157,45 +159,135 @@ public class GeometryParser {
      * @param key      "min" or "max"
      * @return double[3] global {x, y, z}, or null if not found
      */
-    private double[] extractMinMaxFromGltfJson(String json, String key) {
-        String searchKey = "\"" + key + "\":[";
-        boolean isMin = key.equals("min");
+    private double[] extractGlobalPositionBound(String json, boolean useMin) {
+        List<String> accessors = extractTopLevelObjects(json, "accessors");
+        if (accessors.isEmpty()) {
+            return null;
+        }
 
-        double rx = isMin ? Double.MAX_VALUE : -Double.MAX_VALUE;
-        double ry = isMin ? Double.MAX_VALUE : -Double.MAX_VALUE;
-        double rz = isMin ? Double.MAX_VALUE : -Double.MAX_VALUE;
+        Set<Integer> positionAccessorIndexes = extractPositionAccessorIndexes(json);
+        if (positionAccessorIndexes.isEmpty()) {
+            return null;
+        }
+
+        double rx = useMin ? Double.MAX_VALUE : -Double.MAX_VALUE;
+        double ry = useMin ? Double.MAX_VALUE : -Double.MAX_VALUE;
+        double rz = useMin ? Double.MAX_VALUE : -Double.MAX_VALUE;
         boolean found = false;
 
-        int idx = 0;
-        while ((idx = json.indexOf(searchKey, idx)) != -1) {
-            int start = idx + searchKey.length();
-            int end   = json.indexOf(']', start);
-            if (end < 0) break;
-            String arrayStr = json.substring(start, end);
-            String[] parts = arrayStr.split(",");
-            if (parts.length >= 3) {
-                try {
-                    double x = Double.parseDouble(parts[0].trim());
-                    double y = Double.parseDouble(parts[1].trim());
-                    double z = Double.parseDouble(parts[2].trim());
-                    if (isMin) {
-                        rx = Math.min(rx, x);
-                        ry = Math.min(ry, y);
-                        rz = Math.min(rz, z);
-                    } else {
-                        rx = Math.max(rx, x);
-                        ry = Math.max(ry, y);
-                        rz = Math.max(rz, z);
-                    }
-                    found = true;
-                } catch (NumberFormatException e) {
-                    // skip malformed entry
-                }
+        for (Integer accessorIndex : positionAccessorIndexes) {
+            if (accessorIndex < 0 || accessorIndex >= accessors.size()) {
+                continue;
             }
-            idx = end;
+            double[] values = extractAccessorBound(accessors.get(accessorIndex), useMin ? "min" : "max");
+            if (values == null) {
+                continue;
+            }
+            if (useMin) {
+                rx = Math.min(rx, values[0]);
+                ry = Math.min(ry, values[1]);
+                rz = Math.min(rz, values[2]);
+            } else {
+                rx = Math.max(rx, values[0]);
+                ry = Math.max(ry, values[1]);
+                rz = Math.max(rz, values[2]);
+            }
+            found = true;
         }
 
         return found ? new double[]{rx, ry, rz} : null;
+    }
+
+    private Set<Integer> extractPositionAccessorIndexes(String json) {
+        Set<Integer> indexes = new HashSet<>();
+        Pattern pattern = Pattern.compile("\\\"POSITION\\\"\\s*:\\s*(\\d+)");
+        Matcher matcher = pattern.matcher(json);
+        while (matcher.find()) {
+            indexes.add(Integer.parseInt(matcher.group(1)));
+        }
+        return indexes;
+    }
+
+    private double[] extractAccessorBound(String accessorJson, String key) {
+        Pattern pattern = Pattern.compile("\\\"" + key + "\\\"\\s*:\\s*\\[\\s*([-+0-9.eE]+)\\s*,\\s*([-+0-9.eE]+)\\s*,\\s*([-+0-9.eE]+)");
+        Matcher matcher = pattern.matcher(accessorJson);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return new double[]{
+                Double.parseDouble(matcher.group(1)),
+                Double.parseDouble(matcher.group(2)),
+                Double.parseDouble(matcher.group(3))
+            };
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private List<String> extractTopLevelObjects(String json, String arrayKey) {
+        List<String> objects = new ArrayList<>();
+        int keyIndex = json.indexOf("\"" + arrayKey + "\"");
+        if (keyIndex < 0) {
+            return objects;
+        }
+        int arrayStart = json.indexOf('[', keyIndex);
+        if (arrayStart < 0) {
+            return objects;
+        }
+        int arrayEnd = findMatchingBracket(json, arrayStart, '[', ']');
+        if (arrayEnd < 0) {
+            return objects;
+        }
+
+        int index = arrayStart + 1;
+        while (index < arrayEnd) {
+            char current = json.charAt(index);
+            if (current == '{') {
+                int objectEnd = findMatchingBracket(json, index, '{', '}');
+                if (objectEnd < 0) {
+                    break;
+                }
+                objects.add(json.substring(index, objectEnd + 1));
+                index = objectEnd + 1;
+            } else {
+                index++;
+            }
+        }
+        return objects;
+    }
+
+    private int findMatchingBracket(String text, int start, char open, char close) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                continue;
+            }
+            if (ch == open) {
+                depth++;
+            } else if (ch == close) {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
 }

@@ -220,16 +220,6 @@ define([
             return false;
         },
 
-        // 已签入（checkOutDate 为 null）—— 只有签入状态才可预览
-        isCheckedIn: function () {
-            return !this.isCheckout();
-        },
-
-        // 是否可显示 3D 预览：已签入，且（有 geometry 或是装配体）
-        canPreview3D: function () {
-            return this.isCheckedIn() && (this.hasGeometry() || this.isLastIterationAssembly());
-        },
-
         hasLastIterationAttachedFiles: function () {
             if (this.hasIterations()) {
                 return this.getLastIteration().getAttachedFiles().length > 0 || this.getLastIteration().get('nativeCADFile');

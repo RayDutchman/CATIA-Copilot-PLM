@@ -100,7 +100,7 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
         panSpeed: 0.3,
         cameraNear: 1,
         cameraFar: 5E4,
-        defaultCameraPosition: {x: -1000, y: 800, z: 1100},
+        defaultCameraPosition: {x: -1000, y: 1000, z: 1000},
         defaultTargetPosition: {x: 0, y: 0, z: 0},
         ambientLightColor:0xffffff,
         cameraLight1Color:0xbcbcbc,
@@ -122,87 +122,149 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
                 App.router = Router.getInstance();
                 Backbone.history.start();
 
+                function computeModelBounds() {
+                    if (!App.sceneManager || !App.sceneManager.scene) {
+                        return null;
+                    }
+
+                    var minX = Infinity;
+                    var maxX = -Infinity;
+                    var minY = Infinity;
+                    var maxY = -Infinity;
+                    var minZ = Infinity;
+                    var maxZ = -Infinity;
+                    var found = false;
+
+                    App.sceneManager.scene.traverse(function (obj) {
+                        var parent = obj;
+
+                        while (parent && !parent.partIterationId) {
+                            parent = parent.parent;
+                        }
+
+                        if (!(obj.isMesh && obj.geometry && parent && parent.partIterationId)) {
+                            return;
+                        }
+
+                        if (!obj.geometry.boundingBox) {
+                            obj.geometry.computeBoundingBox();
+                        }
+
+                        var box = obj.geometry.boundingBox;
+                        var matrix = obj.matrixWorld.elements;
+                        var corners = [
+                            [box.min.x, box.min.y, box.min.z],
+                            [box.max.x, box.max.y, box.max.z],
+                            [box.min.x, box.min.y, box.max.z],
+                            [box.min.x, box.max.y, box.min.z],
+                            [box.max.x, box.min.y, box.min.z],
+                            [box.min.x, box.max.y, box.max.z],
+                            [box.max.x, box.min.y, box.max.z],
+                            [box.max.x, box.max.y, box.min.z]
+                        ];
+
+                        corners.forEach(function (point) {
+                            var worldX = matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12];
+                            var worldY = matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13];
+                            var worldZ = matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14];
+
+                            minX = Math.min(minX, worldX);
+                            maxX = Math.max(maxX, worldX);
+                            minY = Math.min(minY, worldY);
+                            maxY = Math.max(maxY, worldY);
+                            minZ = Math.min(minZ, worldZ);
+                            maxZ = Math.max(maxZ, worldZ);
+                            found = true;
+                        });
+                    });
+
+                    if (!found) {
+                        return null;
+                    }
+
+                    return {
+                        center: {
+                            x: (minX + maxX) / 2,
+                            y: (minY + maxY) / 2,
+                            z: (minZ + maxZ) / 2
+                        },
+                        size: {
+                            x: maxX - minX,
+                            y: maxY - minY,
+                            z: maxZ - minZ
+                        }
+                    };
+                }
+
+                function getFitDistance(maxDimension) {
+                    var fov = (App.sceneManager.cameraObject.fov || 45) * Math.PI / 180;
+                    return (maxDimension || 1) / 2 / Math.tan(fov / 2) * 1.8;
+                }
+
+                function applyCamera(center, direction, distance, up) {
+                    App.sceneManager.setControlsContext({
+                        camPos: {
+                            x: center.x - direction.x * distance,
+                            y: center.y - direction.y * distance,
+                            z: center.z - direction.z * distance
+                        },
+                        target: center,
+                        camOrientation: up || App.sceneManager.cameraObject.up
+                    });
+                }
+
+                function normalizeDirection(direction) {
+                    var length = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z) || 1;
+                    return {
+                        x: direction.x / length,
+                        y: direction.y / length,
+                        z: direction.z / length
+                    };
+                }
+
                 window._vizFit = function () {
                     try {
-                        if (!App.sceneManager || !App.sceneManager.scene) {
+                        var bounds = computeModelBounds();
+
+                        if (!bounds) {
                             return;
                         }
 
-                        var minX = Infinity;
-                        var maxX = -Infinity;
-                        var minY = Infinity;
-                        var maxY = -Infinity;
-                        var minZ = Infinity;
-                        var maxZ = -Infinity;
-                        var found = false;
-
-                        App.sceneManager.scene.traverse(function (obj) {
-                            var parent = obj;
-
-                            while (parent && !parent.partIterationId) {
-                                parent = parent.parent;
-                            }
-
-                            if (!(obj.isMesh && obj.geometry && parent && parent.partIterationId)) {
-                                return;
-                            }
-
-                            if (!obj.geometry.boundingBox) {
-                                obj.geometry.computeBoundingBox();
-                            }
-
-                            var box = obj.geometry.boundingBox;
-                            var matrix = obj.matrixWorld.elements;
-                            var corners = [
-                                [box.min.x, box.min.y, box.min.z],
-                                [box.max.x, box.max.y, box.max.z],
-                                [box.min.x, box.min.y, box.max.z],
-                                [box.min.x, box.max.y, box.min.z],
-                                [box.max.x, box.min.y, box.min.z],
-                                [box.min.x, box.max.y, box.max.z],
-                                [box.max.x, box.min.y, box.max.z],
-                                [box.max.x, box.max.y, box.min.z]
-                            ];
-
-                            corners.forEach(function (point) {
-                                var worldX = matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12];
-                                var worldY = matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13];
-                                var worldZ = matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14];
-
-                                minX = Math.min(minX, worldX);
-                                maxX = Math.max(maxX, worldX);
-                                minY = Math.min(minY, worldY);
-                                maxY = Math.max(maxY, worldY);
-                                minZ = Math.min(minZ, worldZ);
-                                maxZ = Math.max(maxZ, worldZ);
-                                found = true;
-                            });
+                        var currentContext = App.sceneManager.getControlsContext();
+                        var direction = normalizeDirection({
+                            x: bounds.center.x - currentContext.camPos.x,
+                            y: bounds.center.y - currentContext.camPos.y,
+                            z: bounds.center.z - currentContext.camPos.z
                         });
+                        var maxDimension = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
 
-                        if (!found) {
+                        applyCamera(bounds.center, direction, getFitDistance(maxDimension), App.sceneManager.cameraObject.up);
+                    } catch (err) {
+                    }
+                };
+
+                window._vizReset = function () {
+                    try {
+                        var bounds = computeModelBounds();
+
+                        if (!bounds) {
+                            App.sceneManager.resetCameraPlace();
                             return;
                         }
 
-                        var centerX = (minX + maxX) / 2;
-                        var centerY = (minY + maxY) / 2;
-                        var centerZ = (minZ + maxZ) / 2;
-                        var maxDimension = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
-                        var fov = (App.sceneManager.cameraObject.fov || 45) * Math.PI / 180;
-                        var distance = maxDimension / 2 / Math.tan(fov / 2) * 1.8;
-
-                        App.sceneManager.setControlsContext({
-                            camPos: {
-                                x: centerX + distance * 0.5,
-                                y: centerY + distance * 0.4,
-                                z: centerZ + distance * 0.8
-                            },
-                            target: {
-                                x: centerX,
-                                y: centerY,
-                                z: centerZ
-                            },
-                            camOrientation: App.sceneManager.cameraObject.up
+                        var defaultDirection = normalizeDirection({
+                            x: 1,
+                            y: -1,
+                            z: -1
                         });
+                        var maxDimension = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
+                        var defaultUp = {
+                            x: 0,
+                            y: 1,
+                            z: 0
+                        };
+
+                        applyCamera(bounds.center, defaultDirection, getFitDistance(maxDimension), defaultUp);
                     } catch (err) {
                     }
                 };
@@ -225,8 +287,8 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
 
                     $resetButton.on('click', function (event) {
                         event.stopPropagation();
-                        if (window._vizFit) {
-                            window._vizFit();
+                        if (window._vizReset) {
+                            window._vizReset();
                         }
                     });
 
@@ -247,7 +309,9 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
                     }
 
                     if (event.data === 'resetCamera') {
-                        App.sceneManager.resetCameraPlace();
+                        if (window._vizReset) {
+                            window._vizReset();
+                        }
                     } else if (event.data === 'bestFit' && window._vizFit) {
                         window._vizFit();
                     }

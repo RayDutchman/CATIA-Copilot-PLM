@@ -728,6 +728,37 @@ public class ProductManagerBean implements IProductManagerLocal {
 
     @RolesAllowed(UserGroupMapping.REGULAR_USER_ROLE_ID)
     @Override
+    public BinaryResource saveGeometryInConvertedIteration(PartIterationKey pPartIPK, String pName, int quality, long pSize, double[] box) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, NotAllowedException, PartRevisionNotFoundException, FileAlreadyExistsException, CreationException, WorkspaceNotEnabledException, PartIterationNotFoundException, AccessRightException {
+        checkNameFileValidity(pName);
+        PartIteration partI = loadConvertiblePartIteration(pPartIPK);
+        String fullName = buildPartIterationFileFullName(partI, null, pName);
+
+        Geometry geometryBinaryResource = null;
+        for (Geometry geo : partI.getGeometries()) {
+            if (geo.getFullName().equals(fullName)) {
+                geometryBinaryResource = geo;
+                break;
+            }
+        }
+        if (geometryBinaryResource == null) {
+            geometryBinaryResource = new Geometry(quality, fullName, pSize, new Date());
+            binaryResourceDAO.createBinaryResource(geometryBinaryResource);
+            partI.addGeometry(geometryBinaryResource);
+        } else {
+            geometryBinaryResource.setContentLength(pSize);
+            geometryBinaryResource.setQuality(quality);
+            geometryBinaryResource.setLastModified(new Date());
+        }
+
+        if (box != null) {
+            geometryBinaryResource.setBox(box[0], box[1], box[2], box[3], box[4], box[5]);
+        }
+
+        return geometryBinaryResource;
+    }
+
+    @RolesAllowed(UserGroupMapping.REGULAR_USER_ROLE_ID)
+    @Override
     public BinaryResource saveFileInPartIteration(PartIterationKey pPartIPK, String pName, String subType, long pSize) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, NotAllowedException, PartRevisionNotFoundException, FileAlreadyExistsException, CreationException, WorkspaceNotEnabledException {
         User user = userManager.checkWorkspaceReadAccess(pPartIPK.getWorkspaceId());
         checkNameFileValidity(pName);
@@ -756,6 +787,31 @@ public class ProductManagerBean implements IProductManagerLocal {
         } else {
             throw new NotAllowedException("NotAllowedException4");
         }
+    }
+
+    @RolesAllowed(UserGroupMapping.REGULAR_USER_ROLE_ID)
+    @Override
+    public BinaryResource saveFileInConvertedIteration(PartIterationKey pPartIPK, String pName, String subType, long pSize) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, NotAllowedException, PartRevisionNotFoundException, FileAlreadyExistsException, CreationException, WorkspaceNotEnabledException, PartIterationNotFoundException, AccessRightException {
+        checkNameFileValidity(pName);
+        PartIteration partI = loadConvertiblePartIteration(pPartIPK);
+        String fullName = buildPartIterationFileFullName(partI, subType, pName);
+
+        BinaryResource binaryResource = null;
+        for (BinaryResource bin : partI.getAttachedFiles()) {
+            if (bin.getFullName().equals(fullName)) {
+                binaryResource = bin;
+                break;
+            }
+        }
+        if (binaryResource == null) {
+            binaryResource = new BinaryResource(fullName, pSize, new Date());
+            binaryResourceDAO.createBinaryResource(binaryResource);
+            partI.addAttachedFile(binaryResource);
+        } else {
+            binaryResource.setContentLength(pSize);
+            binaryResource.setLastModified(new Date());
+        }
+        return binaryResource;
     }
 
     @RolesAllowed({UserGroupMapping.REGULAR_USER_ROLE_ID, UserGroupMapping.ADMIN_ROLE_ID})
@@ -3470,6 +3526,25 @@ public class ProductManagerBean implements IProductManagerLocal {
      */
     private boolean hasPartRevisionWriteAccess(User user, PartRevision partRevision) {
         return user.isAdministrator() || isACLGrantWriteAccess(user, partRevision);
+    }
+
+    private PartIteration loadConvertiblePartIteration(PartIterationKey partIterationKey) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, PartRevisionNotFoundException, AccessRightException, WorkspaceNotEnabledException, PartIterationNotFoundException, NotAllowedException {
+        checkPartRevisionWriteAccess(partIterationKey.getPartRevision());
+        PartIteration partIteration = partIterationDAO.loadPartI(partIterationKey);
+        Conversion conversion = conversionDAO.findConversion(partIteration);
+        if (conversion == null) {
+            throw new NotAllowedException("NotAllowedException4");
+        }
+        return partIteration;
+    }
+
+    private String buildPartIterationFileFullName(PartIteration partIteration, String subType, String fileName) {
+        String workspaceId = partIteration.getWorkspaceId();
+        String partNumber = partIteration.getPartNumber();
+        String version = partIteration.getVersion();
+        int iteration = partIteration.getIteration();
+        String prefix = workspaceId + "/parts/" + partNumber + "/" + version + "/" + iteration + "/";
+        return prefix + (subType != null ? subType + "/" : "") + fileName;
     }
 
     /**

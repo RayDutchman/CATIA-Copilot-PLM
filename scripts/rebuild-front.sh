@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 # rebuild-front.sh
 #
-# 重建前端 Docker 镜像并重新部署。
-# 适用于修改以下任何文件后：
-#   - app/product-structure/js/dmu/LoaderManager.js
-#   - app/js/dmu/loaders/GLTFLoader.js (或其他 loader)
-#   - app/js/common-objects/views/part/cad_instance_view.js
-#   - 任何前端源码
+# 从前端源码重建 dist，构建前端镜像并重新部署。
+# 适用于任何前端源码修改。
 #
 # 脚本会自动：
-#   1. 同步 app/ 中的 loader 文件到 dist/（GLTFLoader 等新增文件）
-#   2. 更新 dist/ 中 index.html 的 data-main rev 参数，强制浏览器加载新版本
+#   1. 从源码执行 npm run build，完整重建 dist/
+#   2. 统一刷新所有前端入口的 rev 参数，强制浏览器加载新版本
 #   3. 重建 Docker 镜像并部署
+#   4. 校验容器内文件与本地 dist 是否一致
+#   5. 校验 HTTP 实际返回的入口页 rev 是否一致
 #
 # 用法：
 #   bash scripts/rebuild-front.sh
@@ -31,24 +29,15 @@ warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
 err()     { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 section() { echo -e "\n${GREEN}══ $* ══${NC}"; }
 
-# ── 1. 同步 app/js/dmu/loaders/ -> dist/js/dmu/loaders/ ──────────────────────
-section "同步 loader 文件 app/ -> dist/"
-SRC_LOADERS="${FRONT_DIR}/app/js/dmu/loaders"
-DST_LOADERS="${FRONT_DIR}/dist/js/dmu/loaders"
+# ── 1. 从源码重建 dist/ ──────────────────────────────────────────────────────
+section "从源码重建前端 dist"
+cd "${FRONT_DIR}"
+npm_config_legacy_peer_deps=true npm run build \
+  || err "前端源码构建失败"
+info "dist 重建完成"
 
-for f in "${SRC_LOADERS}"/*.js; do
-    fname=$(basename "$f")
-    if [ ! -f "${DST_LOADERS}/${fname}" ]; then
-        cp "$f" "${DST_LOADERS}/${fname}"
-        info "新增: dist/js/dmu/loaders/${fname}"
-    elif ! cmp -s "$f" "${DST_LOADERS}/${fname}"; then
-        cp "$f" "${DST_LOADERS}/${fname}"
-        info "更新: dist/js/dmu/loaders/${fname}"
-    fi
-done
-
-# ── 2. 更新 index.html 中的 rev 参数，强制浏览器绕过缓存 ─────────────────────
-section "更新 index.html rev 参数"
+# ── 2. 更新 index.html / main.js 中的 rev 参数，强制浏览器绕过缓存 ───────────
+section "刷新所有前端入口 rev 参数"
 NEW_REV=$(date +%s)000
 
 for index_html in \
@@ -90,7 +79,47 @@ docker compose up --force-recreate --no-deps -d front \
 
 sleep 3
 docker ps --filter "name=${CONTAINER}" --format "  状态: {{.Status}}"
+
+# ── 5. 校验容器内文件与本地 dist 一致 ───────────────────────────────────────
+section "校验容器内文件与本地 dist 一致"
+for relpath in \
+    "visualization/main.js" \
+    "visualization/index.html" \
+    "product-structure/main.js" \
+    "product-structure/index.html" \
+    "product-management/main.js" \
+    "product-management/index.html" \
+    "parts/main.js" \
+    "parts/index.html"; do
+    local_sha=$(sha256sum "${FRONT_DIR}/dist/${relpath}" | awk '{print $1}')
+    container_sha=$(docker exec "${CONTAINER}" sh -lc "sha256sum /usr/share/nginx/html/${relpath}" | awk '{print $1}')
+    if [ "${local_sha}" != "${container_sha}" ]; then
+        err "容器文件与本地 dist 不一致: ${relpath}"
+    fi
+    info "校验通过: ${relpath}"
+done
+
+# ── 6. 校验 HTTP 实际返回的 rev 参数 ─────────────────────────────────────────
+section "校验 HTTP 实际返回的入口 rev"
+for page in \
+    "visualization/index.html" \
+    "product-structure/index.html" \
+    "product-management/index.html" \
+    "parts/index.html"; do
+    actual_rev=$(python3 - <<PY
+import re, urllib.request
+text = urllib.request.urlopen('http://localhost:8000/${page}').read().decode('utf-8', 'ignore')
+match = re.search(r'data-main="main\\.js\\?([^\"]+)"', text)
+print(match.group(1) if match else 'NONE')
+PY
+)
+    if [ "${actual_rev}" != "rev=${NEW_REV}" ]; then
+        err "HTTP 返回的 rev 不正确: ${page} -> ${actual_rev}"
+    fi
+    info "HTTP rev 正确: ${page} -> ${actual_rev}"
+done
+
 info "前端部署完成: ${IMAGE}"
 echo ""
-echo "  rev=${NEW_REV} 已写入 index.html 和 main.js"
-echo "  浏览器会自动请求新版本，无需手动强制刷新"
+echo "  rev=${NEW_REV} 已写入所有前端入口的 index.html 和 main.js"
+echo "  已校验 dist / 容器文件 / HTTP 返回三层一致"

@@ -169,33 +169,6 @@ public class ConverterBean implements IConverterManagerLocal {
             return;
         }
 
-        // 若零件当前未处于 checkout 状态（用户在异步转换期间已 checkin），
-        // 尝试自动 checkout，以便写入几何数据，写入后再自动 checkin。
-        // 若另一用户持锁导致 checkout 失败，则跳过写入并记录警告（极罕见场景）。
-        boolean autoCheckedOut = false;
-        if (!partRevision.isCheckedOut()) {
-            try {
-                partRevision = productService.checkOutPart(partRevisionKey);
-                autoCheckedOut = true;
-                // checkout 后迭代号可能已变，刷新 partIteration 和 partIterationKey
-                partIteration = partRevision.getLastIteration();
-                partIterationKey = partIteration.getKey();
-                LOGGER.info("Auto checked out part " + partRevisionKey + " for geometry write-back");
-            } catch (NotAllowedException e) {
-                // 被其他用户锁定，无法自动 checkout，跳过几何写入
-                LOGGER.warning("Cannot auto checkout part " + partRevisionKey
-                        + " (locked by another user), skipping geometry write-back: " + e.getMessage());
-                productService.endConversion(partIterationKey, false);
-                return;
-            } catch (Exception e) {
-                // 其他 checkout 失败（如文件系统错误），同样跳过几何写入
-                LOGGER.log(Level.SEVERE, "Unexpected error during auto checkout of " + partRevisionKey
-                        + ", skipping geometry write-back", e);
-                productService.endConversion(partIterationKey, false);
-                return;
-            }
-        }
-
         Map<String, List<ConversionResult.Position>> componentPositionMap = conversionResult.getComponentPositionMap();
         Map<Integer, Path> convertedFileLODs = conversionResult.getConvertedFileLODs();
 
@@ -203,7 +176,6 @@ public class ConverterBean implements IConverterManagerLocal {
         if((convertedFileLODs == null || convertedFileLODs.isEmpty()) && componentPositionMap == null) {
             LOGGER.severe("Converted file and component position map are null, conversion failed \nError output: " + errorOutput);
             productService.endConversion(partIterationKey, false);
-            autoCheckIn(partRevisionKey, autoCheckedOut);
             return;
         }
 
@@ -211,7 +183,6 @@ public class ConverterBean implements IConverterManagerLocal {
         if (componentPositionMap != null && !syncAssembly(componentPositionMap, partIteration)) {
             LOGGER.severe("Failed to sync assembly, conversion failed");
             productService.endConversion(partIterationKey, false);
-            autoCheckIn(partRevisionKey, autoCheckedOut);
             return;
         }
 
@@ -244,32 +215,6 @@ public class ConverterBean implements IConverterManagerLocal {
             productService.endConversion(partIterationKey, true);
         } catch (ApplicationException e) {
             LOGGER.log(Level.SEVERE, null, e);
-        }
-
-        // 若本次是自动 checkout，写入完成后自动 checkin，恢复零件状态
-        if (autoCheckedOut) {
-            try {
-                productService.checkInPart(partRevisionKey);
-                LOGGER.info("Auto checked in part " + partRevisionKey + " after geometry write-back");
-            } catch (Exception e) {
-                LOGGER.log(Level.WARNING, "Auto checkin failed for " + partRevisionKey
-                        + ", part remains checked out: " + e.getMessage(), e);
-            }
-        }
-    }
-
-    /**
-     * 若本次是自动 checkout（autoCheckedOut=true），尝试将零件 checkin 回去。
-     * 用于提前 return 的失败路径，确保零件不会因转换失败而卡在 checkout 状态。
-     */
-    private void autoCheckIn(PartRevisionKey partRevisionKey, boolean autoCheckedOut) {
-        if (!autoCheckedOut) return;
-        try {
-            productService.checkInPart(partRevisionKey);
-            LOGGER.info("Auto checked in part " + partRevisionKey + " (conversion failed path)");
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Auto checkin failed for " + partRevisionKey
-                    + " on failure path, part remains checked out: " + e.getMessage(), e);
         }
     }
 
@@ -335,7 +280,7 @@ public class ConverterBean implements IConverterManagerLocal {
 
     private void saveGeometryFile(PartIterationKey partIPK, int quality, Path file, double[] box) {
         try {
-            Geometry lod = (Geometry) productService.saveGeometryInPartIteration(partIPK, file.getFileName().toString(),
+            Geometry lod = (Geometry) productService.saveGeometryInConvertedIteration(partIPK, file.getFileName().toString(),
                     quality, Files.size(file), box);
             try (OutputStream os = storageManager.getBinaryResourceOutputStream(lod)) {
                 Files.copy(file, os);
@@ -347,14 +292,14 @@ public class ConverterBean implements IConverterManagerLocal {
             LOGGER.log(Level.SEVERE, "Unable to get geometry file's size", e);
         } catch (UserNotFoundException | WorkspaceNotFoundException | WorkspaceNotEnabledException | CreationException
                 | FileAlreadyExistsException | PartRevisionNotFoundException | NotAllowedException
-                | UserNotActiveException | StorageException e) {
+                | UserNotActiveException | StorageException | PartIterationNotFoundException | AccessRightException e) {
             LOGGER.log(Level.SEVERE, "Cannot save geometry to part iteration", e);
         }
     }
 
     private void saveAttachedFile(PartIterationKey partIPK, Path file) {
         try {
-            BinaryResource binaryResource = productService.saveFileInPartIteration(partIPK,
+            BinaryResource binaryResource = productService.saveFileInConvertedIteration(partIPK,
                     file.getFileName().toString(), PartIteration.ATTACHED_FILES_SUBTYPE, Files.size(file));
             try (OutputStream os = storageManager.getBinaryResourceOutputStream(binaryResource)) {
                 Files.copy(file, os);
@@ -366,7 +311,7 @@ public class ConverterBean implements IConverterManagerLocal {
             LOGGER.log(Level.SEVERE, "Unable to get attached file's size", e);
         } catch (UserNotFoundException | WorkspaceNotFoundException | WorkspaceNotEnabledException | CreationException
                 | FileAlreadyExistsException | PartRevisionNotFoundException | NotAllowedException
-                | UserNotActiveException | StorageException e) {
+                | UserNotActiveException | StorageException | PartIterationNotFoundException | AccessRightException e) {
             LOGGER.log(Level.SEVERE, "Cannot save attached file to part iteration", e);
         }
     }

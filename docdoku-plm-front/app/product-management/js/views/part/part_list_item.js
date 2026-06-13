@@ -35,6 +35,7 @@ define([
             this._isChecked = false;
             this._isPreviewOpen = false;
             this._previewRow = null;
+            this._previewToken = null;
 
             this.listenTo(this.model, 'change', this.render);
             this.listenTo(this.model, 'sync', this.render);
@@ -58,10 +59,10 @@ define([
             this.bindUserPopover();
             this.bindDescriptionPopover();
             date.dateHelper(this.$('.date-popover'));
-            this.syncPreviewIcon();
             if (this._isPreviewOpen) {
                 this.insertPreviewRow(this.$el);
             }
+            this.syncPreviewIcon();
             this.trigger('rendered', this);
             return this;
         },
@@ -229,13 +230,17 @@ define([
             event.stopPropagation();
 
             var $row = $(event.target).closest('tr');
-            if (this._isPreviewOpen) {
+            var $toggle = $(event.currentTarget);
+            if (this.isPreviewRendered()) {
                 this._isPreviewOpen = false;
                 this.removePreviewRow();
             } else {
                 this._isPreviewOpen = true;
+                this._previewToken = _.uniqueId('part-preview-');
                 this.insertPreviewRow($row);
             }
+
+            $toggle.blur();
             this.syncPreviewIcon();
         },
 
@@ -243,7 +248,7 @@ define([
             var colCount = $row.find('td').length;
             var url = this.model.getVisualizationUrl();
             this._previewRow = $(
-                '<tr class="part-3d-viewer-row">' +
+                '<tr class="part-3d-viewer-row" data-preview-token="' + (this._previewToken || '') + '">' +
                 '<td colspan="' + colCount + '" style="padding:0;border-top:none;">' +
                 '<iframe src="' + url + '" ' +
                 'style="width:100%;height:480px;border:none;display:block;" ' +
@@ -258,6 +263,15 @@ define([
                 this._previewRow.remove();
             }
             this._previewRow = null;
+            this._previewToken = null;
+        },
+
+        isPreviewRendered: function () {
+            if (!(this._previewToken && this._previewRow && this._previewRow.length && $.contains(document, this._previewRow[0]))) {
+                return false;
+            }
+
+            return this._previewRow.attr('data-preview-token') === this._previewToken;
         },
 
         syncPreviewIcon: function () {
@@ -265,8 +279,12 @@ define([
             if (!$icon.length) {
                 return;
             }
-            $icon.toggleClass('fa-video-camera', !this._isPreviewOpen);
-            $icon.toggleClass('fa-compress', this._isPreviewOpen);
+
+            var previewRendered = this.isPreviewRendered();
+            this._isPreviewOpen = previewRendered;
+
+            $icon.toggleClass('fa-video-camera', !previewRendered);
+            $icon.toggleClass('fa-compress', previewRendered);
         },
 
         moveAllCellsInTRtag: function () {
