@@ -121,6 +121,137 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
                 App.sceneManager.init();
                 App.router = Router.getInstance();
                 Backbone.history.start();
+
+                window._vizFit = function () {
+                    try {
+                        if (!App.sceneManager || !App.sceneManager.scene) {
+                            return;
+                        }
+
+                        var minX = Infinity;
+                        var maxX = -Infinity;
+                        var minY = Infinity;
+                        var maxY = -Infinity;
+                        var minZ = Infinity;
+                        var maxZ = -Infinity;
+                        var found = false;
+
+                        App.sceneManager.scene.traverse(function (obj) {
+                            var parent = obj;
+
+                            while (parent && !parent.partIterationId) {
+                                parent = parent.parent;
+                            }
+
+                            if (!(obj.isMesh && obj.geometry && parent && parent.partIterationId)) {
+                                return;
+                            }
+
+                            if (!obj.geometry.boundingBox) {
+                                obj.geometry.computeBoundingBox();
+                            }
+
+                            var box = obj.geometry.boundingBox;
+                            var matrix = obj.matrixWorld.elements;
+                            var corners = [
+                                [box.min.x, box.min.y, box.min.z],
+                                [box.max.x, box.max.y, box.max.z],
+                                [box.min.x, box.min.y, box.max.z],
+                                [box.min.x, box.max.y, box.min.z],
+                                [box.max.x, box.min.y, box.min.z],
+                                [box.min.x, box.max.y, box.max.z],
+                                [box.max.x, box.min.y, box.max.z],
+                                [box.max.x, box.max.y, box.min.z]
+                            ];
+
+                            corners.forEach(function (point) {
+                                var worldX = matrix[0] * point[0] + matrix[4] * point[1] + matrix[8] * point[2] + matrix[12];
+                                var worldY = matrix[1] * point[0] + matrix[5] * point[1] + matrix[9] * point[2] + matrix[13];
+                                var worldZ = matrix[2] * point[0] + matrix[6] * point[1] + matrix[10] * point[2] + matrix[14];
+
+                                minX = Math.min(minX, worldX);
+                                maxX = Math.max(maxX, worldX);
+                                minY = Math.min(minY, worldY);
+                                maxY = Math.max(maxY, worldY);
+                                minZ = Math.min(minZ, worldZ);
+                                maxZ = Math.max(maxZ, worldZ);
+                                found = true;
+                            });
+                        });
+
+                        if (!found) {
+                            return;
+                        }
+
+                        var centerX = (minX + maxX) / 2;
+                        var centerY = (minY + maxY) / 2;
+                        var centerZ = (minZ + maxZ) / 2;
+                        var maxDimension = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 1;
+                        var fov = (App.sceneManager.cameraObject.fov || 45) * Math.PI / 180;
+                        var distance = maxDimension / 2 / Math.tan(fov / 2) * 1.8;
+
+                        App.sceneManager.setControlsContext({
+                            camPos: {
+                                x: centerX + distance * 0.5,
+                                y: centerY + distance * 0.4,
+                                z: centerZ + distance * 0.8
+                            },
+                            target: {
+                                x: centerX,
+                                y: centerY,
+                                z: centerZ
+                            },
+                            camOrientation: App.sceneManager.cameraObject.up
+                        });
+                    } catch (err) {
+                    }
+                };
+
+                setTimeout(function () {
+                    $('#part-3d-nav-btns').remove();
+
+                    var $nav = $('<div>').attr('id', 'part-3d-nav-btns').css({
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        'z-index': '9999',
+                        display: 'flex',
+                        gap: '4px'
+                    });
+                    var $resetButton = $('<button>').addClass('btn btn-custom').attr('title', '重置相机')
+                        .append($('<i>').addClass('fa fa-map-marker'));
+                    var $fitButton = $('<button>').addClass('btn btn-custom').attr('title', '最佳适应视图')
+                        .append($('<i>').addClass('fa fa-crosshairs'));
+
+                    $resetButton.on('click', function (event) {
+                        event.stopPropagation();
+                        if (window._vizFit) {
+                            window._vizFit();
+                        }
+                    });
+
+                    $fitButton.on('click', function (event) {
+                        event.stopPropagation();
+                        if (window._vizFit) {
+                            window._vizFit();
+                        }
+                    });
+
+                    $nav.append($resetButton).append($fitButton);
+                    $('body').append($nav);
+                }, 0);
+
+                window.addEventListener('message', function (event) {
+                    if (!App.sceneManager) {
+                        return;
+                    }
+
+                    if (event.data === 'resetCamera') {
+                        App.sceneManager.resetCameraPlace();
+                    } else if (event.data === 'bestFit' && window._vizFit) {
+                        window._vizFit();
+                    }
+                });
             });
         },function(xhr){
             new ErrorView({el:'#content'}).renderError(xhr);
