@@ -79,7 +79,9 @@ def to_face(shape):
 
 def read_step(filepath):
     """
-    Read a STEP file and return (shape_tool, color_tool, free_labels).
+    Read a STEP file and return (doc, shape_tool, color_tool, free_labels).
+    doc MUST be kept alive by the caller for as long as shape_tool/labels are used —
+    GC'ing doc will invalidate all TDF_Label handles.
     Colors are read via XDE CAF framework (works headless, OCC App layer).
     """
     app = XCAFApp_Application.GetApplication_s()
@@ -100,7 +102,7 @@ def read_step(filepath):
     labels = TDF_LabelSequence()
     st.GetFreeShapes(labels)
 
-    return st, ct, labels
+    return doc, st, ct, labels  # doc must be kept alive by caller!
 
 
 # ---------------------------------------------------------------------------
@@ -112,13 +114,19 @@ DEFAULT_COLOR = (0.8, 0.8, 0.8)  # light grey fallback
 def get_shape_color(ct, shape):
     """
     Try to read surface color, then generic color.
-    Returns (R, G, B) in [0, 1].
+    Returns (R, G, B) in [0, 1], or None if no color found.
+    Gracefully handles null shapes (returns None).
     """
-    col = Quantity_Color()
-    if ct.GetColor(shape, XCAFDoc_ColorType.XCAFDoc_ColorSurf, col):
-        return (col.Red(), col.Green(), col.Blue())
-    if ct.GetColor(shape, XCAFDoc_ColorType.XCAFDoc_ColorGen, col):
-        return (col.Red(), col.Green(), col.Blue())
+    try:
+        if shape.IsNull():
+            return None
+        col = Quantity_Color()
+        if ct.GetColor(shape, XCAFDoc_ColorType.XCAFDoc_ColorSurf, col):
+            return (col.Red(), col.Green(), col.Blue())
+        if ct.GetColor(shape, XCAFDoc_ColorType.XCAFDoc_ColorGen, col):
+            return (col.Red(), col.Green(), col.Blue())
+    except Exception:
+        pass
     return None
 
 
@@ -182,7 +190,8 @@ def collect_solid_colors(st, ct, labels):
 
     def visit(label, parent_color=None):
         shape = XCAFDoc_ShapeTool.GetShape_s(label)
-        color = get_shape_color(ct, shape) or parent_color
+        # shape can be null for reference labels — skip color query in that case
+        color = (get_shape_color(ct, shape) if not shape.IsNull() else None) or parent_color
 
         # If this label is a component (reference), resolve its referred shape
         referred_labels = TDF_LabelSequence()
@@ -203,6 +212,8 @@ def collect_solid_colors(st, ct, labels):
         for i in range(1, labels.Size() + 1):
             label = labels.Value(i)
             shape = XCAFDoc_ShapeTool.GetShape_s(label)
+            if shape.IsNull():
+                continue
             color = get_shape_color(ct, shape) or DEFAULT_COLOR
             result.append((shape, color))
 
@@ -342,8 +353,8 @@ def main():
     if not os.path.exists(input_file):
         sys.exit("Error: input file not found: %s" % input_file)
 
-    # Read STEP
-    st, ct, labels = read_step(input_file)
+    # Read STEP — doc must be kept alive until build_glb completes
+    doc, st, ct, labels = read_step(input_file)
 
     # Collect solid/color pairs
     solid_colors = collect_solid_colors(st, ct, labels)
