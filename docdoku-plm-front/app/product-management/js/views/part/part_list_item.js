@@ -24,7 +24,8 @@ define([
             'click .collapsable': 'clearRootNodesChildren',
             'click .embeddedExpandable': 'expandEmbeddedNodesChildren',
             'click .embeddedCollapsable': 'clearEmbeddedNodesChildren',
-            'click .product_title': 'doNothing'
+            'click .product_title': 'doNothing',
+            'click .part-3d-preview-toggle': 'toggle3DPreview'
         },
 
         tagName: 'tr',
@@ -203,6 +204,37 @@ define([
 
             event.stopPropagation();
         },
+
+        /**
+         * 切换内联 3D 预览面板（在当前行下方插入/移除一个 iframe 行）。
+         * 使用 visualization/index.html#assembly 路由，只含 3D 视图，无 BOM 树。
+         */
+        toggle3DPreview: function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            var $row = this.$el;
+            var $existingViewer = $row.next('tr.part-3d-viewer-row');
+
+            if ($existingViewer.length) {
+                // 已展开，收起
+                $existingViewer.remove();
+                $row.find('.part-3d-preview-toggle i').removeClass('fa-times-circle').addClass('fa-video-camera');
+            } else {
+                // 展开，插入 iframe 行
+                var colCount = $row.find('td').length;
+                var url = this.model.getVisualizationUrl();
+                var $viewerRow = $('<tr class="part-3d-viewer-row">' +
+                    '<td colspan="' + colCount + '" style="padding:0;border-top:none;">' +
+                    '<iframe src="' + url + '" ' +
+                    'style="width:100%;height:480px;border:none;display:block;" ' +
+                    'allowfullscreen></iframe>' +
+                    '</td></tr>');
+                $row.after($viewerRow);
+                $row.find('.part-3d-preview-toggle i').removeClass('fa-video-camera').addClass('fa-times-circle');
+            }
+        },
+
         moveAllCellsInTRtag: function () {
 
             this.$el.find('td').each(function (index, element) {

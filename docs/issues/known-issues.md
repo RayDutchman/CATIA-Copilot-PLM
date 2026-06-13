@@ -424,12 +424,27 @@
 
 - **影响范围：** 所有通过 `.stp`/`.step` 上传的零件，在 3D 预览中颜色信息完全丢失，所有零件统一显示为灰色（`#cccccc`）
 - **根本原因：** 颜色丢失跨三个阶段（详见历史记录）
-- **修复状态：** `已修复`
-- **修复内容：**
-  1. **`convert_step_obj.py`**：重写转换脚本，在调用 FreeCAD 转换前先解析 STEP 文件中的 `COLOUR_RGB`→`STYLED_ITEM` 颜色链，为每个 `MANIFOLD_SOLID_BREP` 提取颜色，对每个 FreeCAD Object 分别导出带 `g`/`usemtl` 分组的 OBJ，并生成配套 `.mtl` 文件。支持多 body 多色零件；无颜色信息时退回原始单 mesh 导出。
-  2. **`StepFileConverterImpl.java`**：转换完成后检测同名 `.mtl` 文件，若存在则加入 `materials` 列表返回，使 `ConverterBean` 将其存入 `attachedfiles`。新增 `ArrayList`/`List` import。
-  3. **`LoaderManager.js`**：新增 `mtlloader` 依赖，`parseFile()` 改为先用 `MTLLoader` 加载 `.mtl`，成功后再用 `OBJLoader + setMaterials()` 加载 `.obj`；加载失败时退化为无材质加载，不影响可用性。同步修改了 `dist/product-structure/main.js` 中的 minified 版本。
+- **修复状态：** `已修复（GLB 管线）`
+- **修复内容（当前版本：STEP → GLB 单文件管线）：**
+  1. **`convert_step_glb.py`**（替换旧 `convert_step_obj.py`）：使用 `cadquery-ocp`（OpenCASCADE 7.8）的 XDE `XCAFDoc_ColorTool` 在 headless 环境下读取 STEP 颜色；`BRepMesh_IncrementalMesh` 精度可控（相对弦差 5%）三角化；`pygltflib` 组装单一 `.glb` 文件（几何 + 材质颜色自包含）；多 solid 多色支持。关键修复：`read_step()` 必须将 `TDocStd_Document` 返回给调用方持有，否则 GC 会使所有 `TDF_Label` 失效（`shape.IsNull()` 返回 `true`，`collect_solid_colors` 返回 `[]`）。
+  2. **`StepFileConverterImpl.java`**：调用 `convert_step_glb.py`，输出 `.glb`；修复 stdout/stderr 串行读取死锁（改为双线程并发消费，防止大文件 OS 管道缓冲区满时进程挂起）；完善 `pythonInterpreter=null` 时的错误提示；`InterruptedException` 后恢复线程中断标志。
+  3. **`GeometryParser.java`**：扩展支持 GLB 包围盒解析（读取 glTF JSON chunk 中 accessor 的 `min`/`max` 字段聚合全局 AABB）；修复前包围盒全零导致 `InstancesWorker` 永远不加载几何（零件不可见）。
+  4. **`GLTFLoader.js`**（新增）：Three.js r90 GLTFLoader 包装为 AMD 模块，放置于 `app/js/dmu/loaders/` 和 `dist/js/dmu/loaders/`。
+  5. **`LoaderManager.js`**：替换 OBJLoader+MTLLoader 为 GLTFLoader，`parseFile()` 大幅简化；AMD factory 末尾必须有 `return`（遗漏会导致 `b is not a constructor` 运行时错误）。
+  6. **`Dockerfile.jvm`**：基础镜像从已下架的 `openjdk:8-jre` 迁移到 `debian:bookworm-slim`，Python 从 2.7+FreeCAD 0.18 迁移到 3.11+cadquery-ocp；所有 wheels 离线打包进 repo（`wheels/` 目录）。
 - **注意事项：**
-  - FreeCAD 0.18 headless 模式下颜色需从 STEP 文件文本直接解析（无法通过 ViewObject API 读取），当前方案为 BREP 级别颜色（整体单色），面级别多色暂不支持
-  - 颜色生效需零件处于 **checkout 状态**触发转换，回调时才能写入 geometry 和 MTL（`ConverterBean:172` 的 checkout 检查限制，见 BUG 方案B 修复建议）
-  - 转换服务容器当前为热更新方式（直接替换 jar），若容器删除重建需重新构建（`openjdk:8-jre` 基础镜像已下架，需替换为 `eclipse-temurin:8-jre` 后重建）
+  - 颜色颗粒度为 BREP solid 级别（整体色），face 级别多色暂不支持
+  - Decimater LOD 降采样对 GLB 格式失效（仅支持 OBJ），日志出现 `Decimation failed`，不影响 LOD 0 正常显示
+  - checkout 打断转换的问题已另行修复（见下方 BUG-43）
+
+---
+
+## 十四、转换回调被 checkout 状态打断
+
+### [BUG-43] STEP 转换回调时零件已 checkin，几何写入被拒绝
+
+- **影响范围：** 上传 STEP 后手动或自动 checkin，转换回调到达时 `isCheckedOut()=false`，几何和颜色数据全部丢弃，`conversion.succeed=false`
+- **根本原因：** `ConverterBean.java:172` 的原始检查要求零件处于 checkout 状态才允许写入几何，逻辑上正确（防止覆盖已发布版本），但转换是异步的，用户或自动化流程在等待期间可能已 checkin
+- **修复状态：** `已修复`
+- **修复方案：** 若回调时零件未 checkout，先尝试自动 checkout（以当前用户身份）→ 写入几何 → 自动 checkin；若 checkout 因另一用户持锁而失败（`NotAllowedException`），则跳过写入并记录 WARN 日志（该情况极罕见，两用户同时操作同一零件版本）
+- **修复文件：** `ConverterBean.java`（`handleConversionResultCallback` 方法，原 172 行附近）

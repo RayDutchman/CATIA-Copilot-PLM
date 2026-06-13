@@ -1,5 +1,10 @@
 # STEP → glTF/GLB 迁移方案
 
+> **状态：已完成（2026-06-13）**
+>
+> 本文档为迁移过程中的设计规划，实际实施结果见 [`3d-preview-pipeline.md`](./3d-preview-pipeline.md)。
+> 与规划的主要差异：Python 库从 `pythonocc-core`（apt）改为 `cadquery-ocp`（离线 wheels），基础镜像从 bullseye 改为 bookworm。
+
 > 目标：用 glTF/GLB 替换现有的 OBJ+MTL 转换管线，解决几何精度不足（三角面粗糙）和颜色丢失两个问题。
 
 ---
