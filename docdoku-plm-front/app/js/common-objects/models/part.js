@@ -211,6 +211,15 @@ define([
             return false;
         },
 
+        // 最新迭代是否已有转换好的 geometry 文件（geometryFileURI 非空）
+        // 这是能否显示 3D 预览的精确判据：有 geometry 才意味着转换成功、可以渲染
+        hasGeometry: function () {
+            if (this.hasIterations()) {
+                return !!this.getLastIteration().get('geometryFileURI');
+            }
+            return false;
+        },
+
         hasLastIterationAttachedFiles: function () {
             if (this.hasIterations()) {
                 return this.getLastIteration().getAttachedFiles().length > 0 || this.getLastIteration().get('nativeCADFile');
