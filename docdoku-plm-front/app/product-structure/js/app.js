@@ -24,11 +24,12 @@ define([
     'dmu/collaborativeController',
     'dmu/InstancesManager',
     'common-objects/models/part',
+    'common-objects/utils/visualization_url_builder',
     'views/path_data_modal',
     'views/path_to_path_link_modal',
     'common-objects/views/alert',
     'common-objects/log'
-], function (Backbone, Mustache, template, SearchView, PartsTreeView, BomView, CollaborativeView, PartMetadataView, PartInstanceView, ExportSceneModalView, ControlNavigationView, ControlModesView, ControlTransformView, ControlMarkersView, ControlLayersView, ControlOptionsView, ControlClippingView, ControlExplodeView, ControlMeasureView, BaselineSelectView, SceneManager, CollaborativeController, InstancesManager, Part, PathDataModalView, PathToPathLinkModalView, AlertView, Logger) {
+], function (Backbone, Mustache, template, SearchView, PartsTreeView, BomView, CollaborativeView, PartMetadataView, PartInstanceView, ExportSceneModalView, ControlNavigationView, ControlModesView, ControlTransformView, ControlMarkersView, ControlLayersView, ControlOptionsView, ControlClippingView, ControlExplodeView, ControlMeasureView, BaselineSelectView, SceneManager, CollaborativeController, InstancesManager, Part, VisualizationUrlBuilder, PathDataModalView, PathToPathLinkModalView, AlertView, Logger) {
 
     'use strict';
 
@@ -291,22 +292,14 @@ define([
         },
 
         exportScene: function () {
-            // Def url
-            var splitUrl = window.location.href.split('/');
-            var urlRoot = splitUrl[0] + '//' + splitUrl[2];
-
-            var iframeSrc = urlRoot + '/visualization/index.html#product/' + App.config.workspaceId + '/' + App.config.productId +
-                '/' + App.sceneManager.cameraObject.position.x +
-                '/' + App.sceneManager.cameraObject.position.y +
-                '/' + App.sceneManager.cameraObject.position.z;
-
-            if (App.partsTreeView.componentSelected.getPath()) {
-                iframeSrc += '/' + App.partsTreeView.componentSelected.getEncodedPath();
-            } else {
-                iframeSrc += '/-1';
-            }
-
-            iframeSrc += '/' + App.config.productConfigSpec;
+            var iframeSrc = VisualizationUrlBuilder.buildProductUrl(
+                App.config.workspaceId,
+                App.config.productId,
+                App.sceneManager.cameraObject.position,
+                App.partsTreeView.componentSelected.getPath() ? App.partsTreeView.componentSelected.getEncodedPath() : null,
+                App.config.productConfigSpec,
+                true
+            );
 
             // Open modal
             var esmv = new ExportSceneModalView({iframeSrc: iframeSrc});

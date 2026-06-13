@@ -4,8 +4,9 @@ define([
     'common-objects/utils/date',
     'common-objects/collections/part_iteration_collection',
     'common-objects/collections/modification_notification_collection',
-    'common-objects/utils/acl-checker'
-], function (Backbone, date, PartIterationList, ModificationNotificationCollection, ACLChecker) {
+    'common-objects/utils/acl-checker',
+    'common-objects/utils/visualization_url_builder'
+], function (Backbone, date, PartIterationList, ModificationNotificationCollection, ACLChecker, VisualizationUrlBuilder) {
     'use strict';
 
     var Part = Backbone.Model.extend({
@@ -211,13 +212,22 @@ define([
             return false;
         },
 
-        // 最新迭代是否已有转换好的 geometry 文件（geometryFileURI 非空）
-        // 这是能否显示 3D 预览的精确判据：有 geometry 才意味着转换成功、可以渲染
+        // 最新迭代是否已有转换好的 geometry 文件（非空表示转换成功）
         hasGeometry: function () {
             if (this.hasIterations()) {
                 return !!this.getLastIteration().get('geometryFileURI');
             }
             return false;
+        },
+
+        // 已签入（checkOutDate 为 null）—— 只有签入状态才可预览
+        isCheckedIn: function () {
+            return !this.isCheckout();
+        },
+
+        // 是否可显示 3D 预览：已签入，且（有 geometry 或是装配体）
+        canPreview3D: function () {
+            return this.isCheckedIn() && (this.hasGeometry() || this.isLastIterationAssembly());
         },
 
         hasLastIterationAttachedFiles: function () {
@@ -526,7 +536,10 @@ define([
         },
 
         getVisualizationUrl: function () {
-            return App.config.contextPath + 'visualization/index.html#assembly/' + App.config.workspaceId + '/' + this.getEncodedPartKey() + '/0/0/0';
+            return VisualizationUrlBuilder.buildPartMasterUrl(
+                App.config.workspaceId,
+                this.getEncodedPartKey()
+            );
         },
 
         url: function () {

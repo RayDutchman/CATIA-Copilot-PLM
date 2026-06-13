@@ -33,6 +33,8 @@ define([
         initialize: function () {
             _.bindAll(this);
             this._isChecked = false;
+            this._isPreviewOpen = false;
+            this._previewRow = null;
 
             this.listenTo(this.model, 'change', this.render);
             this.listenTo(this.model, 'sync', this.render);
@@ -43,6 +45,7 @@ define([
         },
 
         render: function () {
+            this.removePreviewRow();
             this.$el.html(Mustache.render(template, {model: this.model, i18n: App.config.i18n}));
             this.$checkbox = this.$('input[type=checkbox]');
             if (this.isChecked()) {
@@ -55,8 +58,17 @@ define([
             this.bindUserPopover();
             this.bindDescriptionPopover();
             date.dateHelper(this.$('.date-popover'));
+            this.syncPreviewIcon();
+            if (this._isPreviewOpen) {
+                this.insertPreviewRow(this.$el);
+            }
             this.trigger('rendered', this);
             return this;
+        },
+
+        remove: function () {
+            this.removePreviewRow();
+            return Backbone.View.prototype.remove.call(this);
         },
 
         selectionChanged: function () {
@@ -207,32 +219,54 @@ define([
 
         /**
          * 切换内联 3D 预览面板（在当前行下方插入/移除一个 iframe 行）。
-         * 使用 visualization/index.html#assembly 路由，只含 3D 视图，无 BOM 树。
+         * 用 visualization/index.html#assembly 路由，只含 3D 视图，无 BOM 树。
+         *
+         * 注意：不能用 this.$el 找行，因为 render() 后 this.$el 是新节点，
+         * 而 viewer row 挂在 DOM 里旧节点之后。从事件目标向上找真实 DOM 的 <tr>。
          */
         toggle3DPreview: function (event) {
             event.preventDefault();
             event.stopPropagation();
 
-            var $row = this.$el;
-            var $existingViewer = $row.next('tr.part-3d-viewer-row');
-
-            if ($existingViewer.length) {
-                // 已展开，收起
-                $existingViewer.remove();
-                $row.find('.part-3d-preview-toggle i').removeClass('fa-times-circle').addClass('fa-video-camera');
+            var $row = $(event.target).closest('tr');
+            if (this._isPreviewOpen) {
+                this._isPreviewOpen = false;
+                this.removePreviewRow();
             } else {
-                // 展开，插入 iframe 行
-                var colCount = $row.find('td').length;
-                var url = this.model.getVisualizationUrl();
-                var $viewerRow = $('<tr class="part-3d-viewer-row">' +
-                    '<td colspan="' + colCount + '" style="padding:0;border-top:none;">' +
-                    '<iframe src="' + url + '" ' +
-                    'style="width:100%;height:480px;border:none;display:block;" ' +
-                    'allowfullscreen></iframe>' +
-                    '</td></tr>');
-                $row.after($viewerRow);
-                $row.find('.part-3d-preview-toggle i').removeClass('fa-video-camera').addClass('fa-times-circle');
+                this._isPreviewOpen = true;
+                this.insertPreviewRow($row);
             }
+            this.syncPreviewIcon();
+        },
+
+        insertPreviewRow: function ($row) {
+            var colCount = $row.find('td').length;
+            var url = this.model.getVisualizationUrl();
+            this._previewRow = $(
+                '<tr class="part-3d-viewer-row">' +
+                '<td colspan="' + colCount + '" style="padding:0;border-top:none;">' +
+                '<iframe src="' + url + '" ' +
+                'style="width:100%;height:480px;border:none;display:block;" ' +
+                'allowfullscreen></iframe>' +
+                '</td></tr>'
+            );
+            $row.after(this._previewRow);
+        },
+
+        removePreviewRow: function () {
+            if (this._previewRow && this._previewRow.length) {
+                this._previewRow.remove();
+            }
+            this._previewRow = null;
+        },
+
+        syncPreviewIcon: function () {
+            var $icon = this.$('.part-3d-preview-toggle i');
+            if (!$icon.length) {
+                return;
+            }
+            $icon.toggleClass('fa-video-camera', !this._isPreviewOpen);
+            $icon.toggleClass('fa-compress', this._isPreviewOpen);
         },
 
         moveAllCellsInTRtag: function () {

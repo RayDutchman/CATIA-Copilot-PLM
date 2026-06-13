@@ -85,7 +85,7 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
 
     App.WorkerManagedValues = {
         maxInstances: 500,
-        maxAngle: Math.PI / 4,
+        maxAngle: Math.PI,
         maxDist: 100000,
         minProjectedSize: 0.000001,//100,
         distanceRating: 0.6,//0.7,

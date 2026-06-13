@@ -842,17 +842,28 @@ define([
          */
 
         this.getControlsContext = function () {
+            var cameraPosition = controlsObject.getCamPos().clone();
+            var controlTarget = controlsObject.getTarget ? controlsObject.getTarget() : null;
+            var forward = new THREE.Vector3();
+            _this.cameraObject.getWorldDirection(forward);
+            var targetDistance = controlTarget && controlTarget.distanceTo ? Math.max(cameraPosition.distanceTo(controlTarget), 1) : 1000;
+
             return {
-                target: controlsObject.getTarget(),
-                camPos: controlsObject.getCamPos(),
-                camOrientation: _this.cameraObject.up
+                target: cameraPosition.clone().add(forward.multiplyScalar(targetDistance)),
+                camPos: cameraPosition,
+                camOrientation: _this.cameraObject.up.clone()
             };
         };
 
         this.setControlsContext = function (context) {
             _this.cameraObject.position.copy(context.camPos);
-            controlsObject.target.copy(context.target);
+            if (controlsObject.setTarget) {
+                controlsObject.setTarget(context.target);
+            } else {
+                controlsObject.target.copy(context.target);
+            }
             _this.cameraObject.up.copy(context.camOrientation);
+            _this.cameraObject.lookAt(context.target);
             _this.reDraw();
         };
 

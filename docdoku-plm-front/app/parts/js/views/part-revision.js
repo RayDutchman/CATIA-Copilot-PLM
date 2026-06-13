@@ -5,8 +5,9 @@ define([
     'text!templates/part-revision.html',
     'views/cad-file-view',
     'common-objects/utils/date',
-    'common-objects/views/viewers/viewers-factory'
-], function (Backbone, Mustache, template, CADFileView, date, ViewersFactory) {
+    'common-objects/views/viewers/viewers-factory',
+    'common-objects/utils/visualization_url_builder'
+], function (Backbone, Mustache, template, CADFileView, date, ViewersFactory, VisualizationUrlBuilder) {
     'use strict';
 
     var PartRevisionView = Backbone.View.extend({
@@ -81,7 +82,12 @@ define([
                 i18n: App.config.i18n,
                 contextPath: App.config.contextPath,
                 part: part,
-                lastIteration: lastIteration
+                lastIteration: lastIteration,
+                visualizationUrl: VisualizationUrlBuilder.buildPartMasterUrl(part.workspaceId, part.partKey, {
+                    x: 0,
+                    y: 0,
+                    z: 0
+                })
             })).show();
 
             date.dateHelper(this.$('.date-popover'));
