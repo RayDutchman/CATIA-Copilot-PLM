@@ -12,6 +12,10 @@
 #   - run-java.sh: copied from local (no longer pulls from fabric8 image)
 FROM debian:bookworm-slim
 
+ARG CONVERTER_WHEELHOUSE_URL=""
+ARG CONVERTER_PIP_INDEX_URL=""
+ARG CONVERTER_PIP_EXTRA_INDEX_URL=""
+
 ENV JAVA_OPTIONS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
 ENV AB_ENABLED=jmx_exporter
 ENV IFCCONVERT_URL=https://github.com/IfcOpenShell/IfcOpenShell/releases/download/v0.5.0-preview2/IfcConvert-master-9ad68db-linux64.zip
@@ -41,10 +45,18 @@ RUN apt-get update -qqy \
       unzip \
  && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages for STEP->GLB conversion from pinned requirements.
-# This keeps large wheel artifacts out of Git history and downloads packages at build time.
+# Install Python packages for STEP->GLB conversion.
+# Strategy:
+#   1) Prefer internal wheelhouse (if CONVERTER_WHEELHOUSE_URL is set)
+#   2) Fallback to package index (PyPI or configured mirror)
 COPY requirements-converter.txt /tmp/requirements-converter.txt
-RUN pip3 install --break-system-packages --no-cache-dir -r /tmp/requirements-converter.txt \
+COPY install-python-deps.sh /tmp/install-python-deps.sh
+RUN chmod +x /tmp/install-python-deps.sh \
+ && CONVERTER_WHEELHOUSE_URL="${CONVERTER_WHEELHOUSE_URL}" \
+   CONVERTER_PIP_INDEX_URL="${CONVERTER_PIP_INDEX_URL}" \
+   CONVERTER_PIP_EXTRA_INDEX_URL="${CONVERTER_PIP_EXTRA_INDEX_URL}" \
+   /tmp/install-python-deps.sh /tmp/requirements-converter.txt \
+ && rm -f /tmp/install-python-deps.sh \
  && rm -f /tmp/requirements-converter.txt
 
 # Create directories and download third-party conversion tools
