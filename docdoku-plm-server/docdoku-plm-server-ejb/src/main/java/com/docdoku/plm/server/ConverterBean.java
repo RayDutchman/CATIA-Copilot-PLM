@@ -229,7 +229,7 @@ public class ConverterBean implements IConverterManagerLocal {
             throws UserNotFoundException, UserNotActiveException, WorkspaceNotEnabledException,
             WorkspaceNotFoundException, PartRevisionNotFoundException, PartMasterNotFoundException,
             ListOfValuesNotFoundException, PartUsageLinkNotFoundException, DocumentRevisionNotFoundException,
-            AccessRightException, NotAllowedException, EntityConstraintException {
+            AccessRightException, NotAllowedException, EntityConstraintException, PartIterationNotFoundException {
 
         boolean succeed = true;
 
@@ -254,11 +254,10 @@ public class ConverterBean implements IConverterManagerLocal {
                 succeed = false;
             }
         }
-        // Replace usage links (erase old structure)
-        partToConvert.setComponents(partUsageLinks);
-        productService.updatePartIteration(partToConvert.getKey(), partToConvert.getIterationNote(),
-                partToConvert.getSource(), partToConvert.getComponents(), partToConvert.getInstanceAttributes(),
-                partToConvert.getInstanceAttributeTemplates(), null, null, null);
+        // 替换组件列表（清除旧装配结构）。
+        // 使用 updateUsageLinksInConvertedIteration 而不是 updatePartIteration，
+        // 因为转换是异步的，回调时零件可能已经被签入，不应要求签出状态。
+        productService.updateUsageLinksInConvertedIteration(partToConvert.getKey(), partUsageLinks);
         if (succeed) {
             LOGGER.log(Level.INFO, "Assembly synchronized");
         }

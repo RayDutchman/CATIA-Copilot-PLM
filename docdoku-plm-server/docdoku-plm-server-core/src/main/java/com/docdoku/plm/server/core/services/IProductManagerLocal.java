@@ -70,6 +70,12 @@ public interface IProductManagerLocal {
 
     BinaryResource saveFileInConvertedIteration(PartIterationKey pPartIPK, String pName, String subType, long pSize) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, NotAllowedException, PartRevisionNotFoundException, FileAlreadyExistsException, CreationException, WorkspaceNotEnabledException, PartIterationNotFoundException, AccessRightException;
 
+    /**
+     * 在转换回调中更新零件迭代的组件列表（UsageLinks），不要求零件处于签出状态。
+     * 专为 CAD 转换后的装配结构同步设计（syncAssembly），绕过 checkout 检查。
+     */
+    void updateUsageLinksInConvertedIteration(PartIterationKey pKey, List<PartUsageLink> pUsageLinks) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, NotAllowedException, PartRevisionNotFoundException, AccessRightException, PartIterationNotFoundException, EntityConstraintException, PartUsageLinkNotFoundException, PartMasterNotFoundException, DocumentRevisionNotFoundException, ListOfValuesNotFoundException, WorkspaceNotEnabledException;
+
     void removeFileInPartIteration(PartIterationKey pPartIPK, String pSubType, String pName) throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, PartIterationNotFoundException, FileNotFoundException, WorkspaceNotEnabledException;
 
     void setPublicSharedPart(PartRevisionKey pPartRPK, boolean isPublicShared) throws UserNotFoundException, WorkspaceNotFoundException, UserNotActiveException, PartRevisionNotFoundException, AccessRightException, WorkspaceNotEnabledException;

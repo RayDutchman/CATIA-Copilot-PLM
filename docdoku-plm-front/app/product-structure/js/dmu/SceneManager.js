@@ -155,14 +155,16 @@ define([
 
         function addLightsToCamera(camera) {
 
-            var dirLight1 = new THREE.DirectionalLight(App.SceneOptions.cameraLight1Color);
+            // 主光源：从右上前方照射，强度适中
+            var dirLight1 = new THREE.DirectionalLight(App.SceneOptions.cameraLight1Color, 0.6);
             dirLight1.position.set(200, 200, 1000).normalize();
             dirLight1.name = 'CameraLight1';
             camera.add(dirLight1);
             camera.add(dirLight1.target);
 
-            var dirLight2 = new THREE.DirectionalLight(App.SceneOptions.cameraLight2Color, 1);
-            dirLight2.color.setHSL(0.1, 1, 0.95);
+            // 辅光源：从左侧略上方补光，降低强度避免过亮
+            var dirLight2 = new THREE.DirectionalLight(App.SceneOptions.cameraLight2Color, 0.3);
+            dirLight2.color.setHSL(0.1, 0.3, 0.85);
             dirLight2.position.set(-1, 1.75, 1);
             dirLight2.position.multiplyScalar(50);
             dirLight2.name = 'CameraLight2';
@@ -183,9 +185,10 @@ define([
             dirLight2.shadow.camera.far = 3500;
             dirLight2.shadow.bias = -0.0001;
 
-            var hemiLight = new THREE.HemisphereLight(App.SceneOptions.ambientLightColor, App.SceneOptions.ambientLightColor, 0.6);
-            hemiLight.color.setHSL(0.6, 1, 0.6);
-            hemiLight.groundColor.setHSL(0.095, 1, 0.75);
+            // 半球光：降低强度，使暗面不至于死黑
+            var hemiLight = new THREE.HemisphereLight(App.SceneOptions.ambientLightColor, App.SceneOptions.ambientLightColor, 0.3);
+            hemiLight.color.setHSL(0.6, 0.5, 0.5);
+            hemiLight.groundColor.setHSL(0.095, 0.5, 0.4);
             hemiLight.position.set(0, 0, 500);
             hemiLight.name = 'AmbientLight';
             camera.add(hemiLight);
@@ -214,22 +217,29 @@ define([
          */
         function createPointerLockControls() {
             _this.pointerLockCamera = new THREE.PerspectiveCamera(45, _this.$container.width() / _this.$container.height(), App.SceneOptions.cameraNear, App.SceneOptions.cameraFar);
+            _this.pointerLockCamera.up.set(0, 0, 1);
             _this.pointerLockControls = new PointerLockControls(_this.pointerLockCamera);
             addLightsToCamera(_this.pointerLockCamera);
         }
 
         function createOrbitControls() {
             _this.orbitCamera = new THREE.PerspectiveCamera(45, _this.$container.width() / _this.$container.height(), App.SceneOptions.cameraNear, App.SceneOptions.cameraFar);
+            _this.orbitCamera.up.set(0, 0, 1);
             _this.orbitCamera.position.copy(App.SceneOptions.defaultCameraPosition);
+            _this.orbitCamera.lookAt(App.SceneOptions.defaultTargetPosition);
             addLightsToCamera(_this.orbitCamera);
             _this.orbitControls = new OrbitControls(_this.orbitCamera, _this.$container[0]);
+            _this.orbitControls.target.copy(App.SceneOptions.defaultTargetPosition);
         }
 
         function createTrackBallControls() {
             _this.trackBallCamera = new THREE.PerspectiveCamera(45, _this.$container.width() / _this.$container.height(), App.SceneOptions.cameraNear, App.SceneOptions.cameraFar);
+            _this.trackBallCamera.up.set(0, 0, 1);
             _this.trackBallCamera.position.copy(App.SceneOptions.defaultCameraPosition);
+            _this.trackBallCamera.lookAt(App.SceneOptions.defaultTargetPosition);
             addLightsToCamera(_this.trackBallCamera);
             _this.trackBallControls = new TrackballControls(_this.trackBallCamera, _this.$container[0]);
+            _this.trackBallControls.target.copy(App.SceneOptions.defaultTargetPosition);
             _this.trackBallControls.keys = [65 /*A*/, 83 /*S*/, 68 /*D*/];
         }
 
@@ -619,6 +629,20 @@ define([
 
                     _this.scene.add(newObject);
 
+                    // 为每个 Mesh 添加边线（EdgesGeometry），增强立体感
+                    newObject.traverse(function (child) {
+                        if (child instanceof THREE.Mesh && child.geometry) {
+                            var edges = new THREE.EdgesGeometry(child.geometry, 30);
+                            var lineMat = new THREE.LineBasicMaterial({
+                                color: 0x222222,
+                                linewidth: 1
+                            });
+                            var edgeLines = new THREE.LineSegments(edges, lineMat);
+                            edgeLines.name = '_edges';
+                            child.add(edgeLines);
+                        }
+                    });
+
                 }
                 _this.reDraw();
             });
@@ -631,12 +655,14 @@ define([
             var curTar = controlsObject.target;
             var endTarPos = target;
 
-            new TWEEN.Tween(curTar)
+            // 动画期间禁用控制器，防止用户操作与 TWEEN 冲突
+            controlsObject.enabled = false;
+
+            var tweenTarget = new TWEEN.Tween(curTar)
                 .to({x: endTarPos.x, y: endTarPos.y, z: endTarPos.z}, duration)
                 .interpolation(TWEEN.Interpolation.CatmullRom)
                 .easing(TWEEN.Easing.Quintic.InOut)
-                .onUpdate(_this.reDraw)
-                .start();
+                .onUpdate(_this.reDraw);
 
             if (position) {
                 var endCamPos = position;
@@ -648,6 +674,13 @@ define([
                     .interpolation(TWEEN.Interpolation.CatmullRom)
                     .easing(TWEEN.Easing.Quintic.InOut)
                     .onUpdate(_this.reDraw)
+                    .onComplete(function () { controlsObject.enabled = true; })
+                    .start();
+
+                tweenTarget.start();
+            } else {
+                tweenTarget
+                    .onComplete(function () { controlsObject.enabled = true; })
                     .start();
             }
         }
@@ -655,15 +688,16 @@ define([
         function resetCameraAnimation(target, duration, position, camUp) {
 
             // Not working with pointer lock controls, pointer lock doesn't have a target
-            // TODO : We must reset it an other way
             if (controlsObject instanceof PointerLockControls) {
                 return;
             }
 
+            // 动画期间禁用控制器
+            controlsObject.enabled = false;
+
             var curTar = controlsObject.target;
             var curCamUp = _this.cameraObject.up;
             var endTarPos = target;
-
 
             var endCamPos = position;
             var camera = _this.cameraObject;
@@ -675,7 +709,6 @@ define([
                 .easing(TWEEN.Easing.Linear.None)
                 .onUpdate(_this.reDraw);
 
-
             var tween2 = new TWEEN.Tween(curCamPos)
                 .to({x: endCamPos.x, y: endCamPos.y, z: endCamPos.z}, duration)
                 .interpolation(TWEEN.Interpolation.CatmullRom)
@@ -686,7 +719,8 @@ define([
                 .to({x: camUp.x, y: camUp.y, z: camUp.z}, duration)
                 .interpolation(TWEEN.Interpolation.CatmullRom)
                 .easing(TWEEN.Easing.Linear.None)
-                .onUpdate(_this.reDraw);
+                .onUpdate(_this.reDraw)
+                .onComplete(function () { controlsObject.enabled = true; });
 
             tween1.start();
             tween2.start();
@@ -822,19 +856,19 @@ define([
             var distance = radius ? radius * 2 : 1000;
             distance = distance < App.SceneOptions.cameraNear ? App.SceneOptions.cameraNear + 100 : distance;
             var endCamPos = new THREE.Vector3().copy(cog).sub(dir.multiplyScalar(distance));
-            cameraAnimation(cog, 2000, endCamPos);
+            cameraAnimation(cog, 1000, endCamPos);
         };
 
         this.lookAt = function (object) {
             var mesh = object.children[0];
             var boundingBox = mesh.geometry.boundingBox;
             var cog = boundingBox.getCenter().clone().applyMatrix4(object.matrix);
-            cameraAnimation(cog, 2000);
+            cameraAnimation(cog, 1000);
         };
 
         this.resetCameraPlace = function () {
             var camPos = App.SceneOptions.defaultCameraPosition;
-            resetCameraAnimation(new THREE.Vector3(0, 0, 0), 1000, camPos, new THREE.Vector3(0, 1, 0));
+            resetCameraAnimation(new THREE.Vector3(0, 0, 0), 1000, camPos, new THREE.Vector3(0, 0, 1));
         };
 
         /**
@@ -1268,7 +1302,7 @@ define([
                 var distance = radius ? radius * 2 : 1000;
                 distance = distance < App.SceneOptions.cameraNear ? App.SceneOptions.cameraNear + 100 : distance;
                 var endCamPos = new THREE.Vector3().copy(cog).sub(dir.multiplyScalar(distance));
-                cameraAnimation(cog, 2000, endCamPos);
+                cameraAnimation(cog, 1000, endCamPos);
                 _this.cameraObject.updateProjectionMatrix();
             }
 

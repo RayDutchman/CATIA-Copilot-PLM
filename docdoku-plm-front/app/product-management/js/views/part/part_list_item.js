@@ -50,6 +50,11 @@ define([
                 this.trigger('selectionChanged', this);
             }
 
+            // 已签出的零件不提供 3D 预览，只隐藏按钮，保留 td 占位避免列错位
+            if (this.model.isCheckout()) {
+                this.$('.part-3d-preview-toggle').hide();
+            }
+
             this.addCustomColumns();
 
             this.bindUserPopover();

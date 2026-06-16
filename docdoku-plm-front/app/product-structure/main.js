@@ -143,11 +143,11 @@ require(['common-objects/contextResolver', 'i18n!localization/nls/common', 'i18n
             panSpeed: 0.3,
             cameraNear: 0.1,
             cameraFar: 5E4,
-            defaultCameraPosition: {x: -1000, y: 800, z: 1100},
+            defaultCameraPosition: {x: -1000, y: -1000, z: 1000},
             defaultTargetPosition: {x: 0, y: 0, z: 0},
-            ambientLightColor: 0xffffff,
-            cameraLight1Color: 0xbcbcbc,
-            cameraLight2Color: 0xffffff,
+            ambientLightColor: 0x888888,
+            cameraLight1Color: 0x888888,
+            cameraLight2Color: 0xaaaaaa,
             transformControls: true
         };
 

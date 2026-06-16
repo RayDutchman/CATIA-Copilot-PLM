@@ -397,7 +397,7 @@
 
 ---
 
-*最后更新：2026-06-13*
+*最后更新：2026-06-16*
 
 ---
 
@@ -448,3 +448,55 @@
 - **修复状态：** `已修复`
 - **修复方案：** 若回调时零件未 checkout，先尝试自动 checkout（以当前用户身份）→ 写入几何 → 自动 checkin；若 checkout 因另一用户持锁而失败（`NotAllowedException`），则跳过写入并记录 WARN 日志（该情况极罕见，两用户同时操作同一零件版本）
 - **修复文件：** `ConverterBean.java`（`handleConversionResultCallback` 方法，原 172 行附近）
+
+---
+
+## 十五、零件签出数据一致性 Bug
+
+### [BUG-44] undoCheckOutPart 遗漏删除 BinaryResource DB 记录，导致再次签出报 CreationException
+
+- **文件：** `docdoku-plm-server-ejb/.../ProductManagerBean.java`（`undoCheckOutPart` 方法，约第 415-438 行）
+- **根本原因：**
+  `undoCheckOutPart` 撤销签出时，会删除最新迭代（`partR.removeLastIteration()`）及其关联文件的存储数据（`storageManager.deleteData()`），但**遗漏了调用 `binaryResourceDAO.removeBinaryResource()`** 删除 `binaryresource` 表中对应的主键记录。
+  导致文件路径形如 `{workspace}/parts/{partNumber}/{version}/{iteration}/nativecad/{fileName}` 的记录成为孤儿数据（`partiteration` 引用已删，`binaryresource` 记录残留）。
+  下次签出时 `checkOutPart` 再次调用 `binaryResourceDAO.createBinaryResource()` 尝试插入同一主键，触发 PostgreSQL 唯一约束冲突：
+  ```
+  PSQLException: ERROR: duplicate key value violates unique constraint "binaryresource_pkey"
+  ```
+  该异常被 `CreationExceptionMapper` 捕获，前端收到 HTTP 400 `CreationException` 提示"创建对象时出错，该对象可能不唯一"。
+- **影响：**
+  - 受影响操作：对含 nativeCADFile 的零件执行"撤销签出" → 再次"签出"时必定报错
+  - 装配体不受影响（无 nativeCADFile，不走该代码路径）
+  - geometries / attachedFiles 同样存在相同 bug 模式，但路径包含迭代号，实际触发需特定条件
+- **修复状态：** `已修复`（2026-06-16）
+- **修复方案（代码）：** 在 `undoCheckOutPart` 中，对三类文件循环体内均补充 `binaryResourceDAO.removeBinaryResource(file)` 调用：
+  ```java
+  // geometries
+  for (Geometry file : partIte.getGeometries()) {
+      storageManager.deleteData(file);
+      binaryResourceDAO.removeBinaryResource(file);  // 新增
+  }
+  // attachedFiles
+  for (BinaryResource file : partIte.getAttachedFiles()) {
+      storageManager.deleteData(file);
+      binaryResourceDAO.removeBinaryResource(file);  // 新增
+  }
+  // nativeCADFile
+  if (nativeCAD != null) {
+      storageManager.deleteData(nativeCAD);
+      binaryResourceDAO.removeBinaryResource(nativeCAD);  // 新增（根因所在）
+  }
+  ```
+- **数据修复（已执行）：** 执行以下 SQL 清除存量孤儿记录（19 条）：
+  ```sql
+  DELETE FROM binaryresource
+  WHERE fullname IN (
+      SELECT br.fullname FROM binaryresource br
+      LEFT JOIN partiteration pi ON pi.nativecadfile_fullname = br.fullname
+      WHERE br.fullname LIKE '%/nativecad/%' AND pi.iteration IS NULL
+  );
+  ```
+
+---
+
+*最后更新：2026-06-16*

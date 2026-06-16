@@ -37,9 +37,12 @@ services:
       - ./data/vault:/var/lib/docdoku/vault
       - conversion-volume:/var/lib/docdoku/conversions
     depends_on:
-      - db
-      - es
-      - smtp   
+      db:
+        condition: service_healthy
+      es:
+        condition: service_healthy
+      smtp:
+        condition: service_started   
     networks:
       - network
     ports:
@@ -55,8 +58,10 @@ services:
       - ./data/vault:/data/vault
       - conversion-volume:/data/conversions
     depends_on: 
-      - kafka
-      - back
+      kafka:
+        condition: service_healthy
+      back:
+        condition: service_started
 
   es:
     image: docker.elastic.co/elasticsearch/elasticsearch:6.6.1
@@ -70,6 +75,12 @@ services:
       - network    
     volumes:
       - es-volume:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
   
   kibana:
      image: docker.elastic.co/kibana/kibana:6.6.1
@@ -78,18 +89,27 @@ services:
      networks:
        - network
      depends_on:
-       - es
+       es:
+         condition: service_healthy
      ports:
        - 8002:5601
 
   db:
     image: postgres:13.1-alpine
     restart: unless-stopped
-    env_file: ./env/db.env     
+    env_file: ./env/db.env
+    ports:
+      - "5432:5432"
     volumes:
       - db-volume:/var/lib/postgresql/data
     networks:
-      - network    
+      - network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docdokuplm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s    
 
   smtp:
     image: mailhog/mailhog:v1.0.1
@@ -126,7 +146,13 @@ services:
     networks:
       - network
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 &>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
 
   ssl-proxy:
     image: nginx:1.19.1-alpine

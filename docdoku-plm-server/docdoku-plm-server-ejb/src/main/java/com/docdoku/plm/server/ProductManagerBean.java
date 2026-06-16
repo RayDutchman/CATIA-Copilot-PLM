@@ -418,6 +418,9 @@ public class ProductManagerBean implements IProductManagerLocal {
                 } catch (StorageException e) {
                     LOGGER.log(Level.INFO, null, e);
                 }
+                // 修复：删除文件存储的同时也必须删除数据库中的 BinaryResource 记录，
+                // 否则下次签出时 createBinaryResource 会因主键重复抛 CreationException
+                binaryResourceDAO.removeBinaryResource(file);
             }
 
             for (BinaryResource file : partIte.getAttachedFiles()) {
@@ -426,6 +429,8 @@ public class ProductManagerBean implements IProductManagerLocal {
                 } catch (StorageException e) {
                     LOGGER.log(Level.INFO, null, e);
                 }
+                // 修复：同上，attachedFiles 也需要删除 DB 记录
+                binaryResourceDAO.removeBinaryResource(file);
             }
 
             BinaryResource nativeCAD = partIte.getNativeCADFile();
@@ -435,6 +440,8 @@ public class ProductManagerBean implements IProductManagerLocal {
                 } catch (StorageException e) {
                     LOGGER.log(Level.INFO, null, e);
                 }
+                // 修复：nativeCADFile 也需要删除 DB 记录（原始 bug 根因）
+                binaryResourceDAO.removeBinaryResource(nativeCAD);
             }
 
             return partR;
@@ -812,6 +819,36 @@ public class ProductManagerBean implements IProductManagerLocal {
             binaryResource.setLastModified(new Date());
         }
         return binaryResource;
+    }
+
+    /**
+     * 在 CAD 转换回调中更新零件迭代的组件列表（UsageLinks）。
+     * 不检查签出状态，专为 syncAssembly 场景设计：
+     * 转换是异步的，回调时用户可能已完成签入，但装配结构信息仍需写回。
+     */
+    @RolesAllowed({UserGroupMapping.REGULAR_USER_ROLE_ID})
+    @Override
+    public void updateUsageLinksInConvertedIteration(PartIterationKey pKey, List<PartUsageLink> pUsageLinks)
+            throws UserNotFoundException, UserNotActiveException, WorkspaceNotFoundException, NotAllowedException,
+            PartRevisionNotFoundException, AccessRightException, PartIterationNotFoundException,
+            EntityConstraintException, PartUsageLinkNotFoundException, PartMasterNotFoundException,
+            DocumentRevisionNotFoundException, ListOfValuesNotFoundException, WorkspaceNotEnabledException {
+
+        // 复用 loadConvertiblePartIteration：仅检查 ACL 写权限 + 转换记录存在，不检查签出状态
+        PartIteration partI = loadConvertiblePartIteration(pKey);
+
+        if (pUsageLinks != null) {
+            List<PartUsageLink> links = new ArrayList<>();
+            for (PartUsageLink usageLink : pUsageLinks) {
+                PartUsageLink partUsageLink = findOrCreatePartLink(usageLink);
+                links.add(partUsageLink);
+            }
+            partI.setComponents(links);
+
+            partUsageLinkDAO.removeOrphanPartLinks();
+            removeObsoletePathToPathLinks(pKey.getWorkspaceId());
+            checkCyclicAssemblyForPartIteration(partI);
+        }
     }
 
     @RolesAllowed({UserGroupMapping.REGULAR_USER_ROLE_ID, UserGroupMapping.ADMIN_ROLE_ID})

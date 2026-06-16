@@ -67,8 +67,8 @@ require.config({
     }
 });
 
-require(['common-objects/contextResolver','i18n!localization/nls/common','i18n!localization/nls/product-structure', 'common-objects/views/error'],
-function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
+require(['common-objects/contextResolver','i18n!localization/nls/common','i18n!localization/nls/product-structure', 'common-objects/views/error', 'tween'],
+function (ContextResolver,  commonStrings, productStructureStrings, ErrorView, TWEEN) {
 
     'use strict';
     App.config.i18n = _.extend(commonStrings,productStructureStrings);
@@ -100,11 +100,11 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
         panSpeed: 0.3,
         cameraNear: 1,
         cameraFar: 5E4,
-        defaultCameraPosition: {x: -1000, y: 1000, z: 1000},
+        defaultCameraPosition: {x: -1000, y: -1000, z: 1000},
         defaultTargetPosition: {x: 0, y: 0, z: 0},
-        ambientLightColor:0xffffff,
-        cameraLight1Color:0xbcbcbc,
-        cameraLight2Color:0xffffff,
+        ambientLightColor:0x888888,
+        cameraLight1Color:0x888888,
+        cameraLight2Color:0xaaaaaa,
         transformControls:false
     };
 
@@ -201,16 +201,48 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
                     return (maxDimension || 1) / 2 / Math.tan(fov / 2) * 1.8;
                 }
 
-                function applyCamera(center, direction, distance, up) {
-                    App.sceneManager.setControlsContext({
-                        camPos: {
-                            x: center.x - direction.x * distance,
-                            y: center.y - direction.y * distance,
-                            z: center.z - direction.z * distance
-                        },
-                        target: center,
-                        camOrientation: up || App.sceneManager.cameraObject.up
-                    });
+                function applyCamera(center, direction, distance, up, duration) {
+                    var sm = App.sceneManager;
+                    var camera = sm.cameraObject;
+                    var controls = sm.trackBallControls || sm.orbitControls;
+
+                    var endCamPos = {
+                        x: center.x - direction.x * distance,
+                        y: center.y - direction.y * distance,
+                        z: center.z - direction.z * distance
+                    };
+                    var endUp = up || {x: camera.up.x, y: camera.up.y, z: camera.up.z};
+
+                    var curCamPos = camera.position;
+                    var curTarget = controls ? controls.target : {x: 0, y: 0, z: 0};
+                    var curUp = camera.up;
+
+                    // 动画期间禁用旋转/平移，防止操作与 TWEEN 冲突
+                    if (controls) { controls.enabled = false; }
+
+                    new TWEEN.Tween(curCamPos)
+                        .to({x: endCamPos.x, y: endCamPos.y, z: endCamPos.z}, duration)
+                        .interpolation(TWEEN.Interpolation.CatmullRom)
+                        .easing(TWEEN.Easing.Quintic.InOut)
+                        .onUpdate(sm.reDraw)
+                        .start();
+
+                    new TWEEN.Tween(curTarget)
+                        .to({x: center.x, y: center.y, z: center.z}, duration)
+                        .interpolation(TWEEN.Interpolation.CatmullRom)
+                        .easing(TWEEN.Easing.Quintic.InOut)
+                        .onUpdate(sm.reDraw)
+                        .start();
+
+                    new TWEEN.Tween(curUp)
+                        .to({x: endUp.x, y: endUp.y, z: endUp.z}, duration)
+                        .interpolation(TWEEN.Interpolation.CatmullRom)
+                        .easing(TWEEN.Easing.Quintic.InOut)
+                        .onUpdate(sm.reDraw)
+                        .onComplete(function () {
+                            if (controls) { controls.enabled = true; }
+                        })
+                        .start();
                 }
 
                 function normalizeDirection(direction) {
@@ -238,7 +270,7 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
                         });
                         var maxDimension = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
 
-                        applyCamera(bounds.center, direction, getFitDistance(maxDimension), App.sceneManager.cameraObject.up);
+                        applyCamera(bounds.center, direction, getFitDistance(maxDimension), App.sceneManager.cameraObject.up, 1000);
                     } catch (err) {
                     }
                 };
@@ -254,17 +286,17 @@ function (ContextResolver,  commonStrings, productStructureStrings, ErrorView) {
 
                         var defaultDirection = normalizeDirection({
                             x: 1,
-                            y: -1,
+                            y: 1,
                             z: -1
                         });
                         var maxDimension = Math.max(bounds.size.x, bounds.size.y, bounds.size.z);
                         var defaultUp = {
                             x: 0,
-                            y: 1,
-                            z: 0
+                            y: 0,
+                            z: 1
                         };
 
-                        applyCamera(bounds.center, defaultDirection, getFitDistance(maxDimension), defaultUp);
+                        applyCamera(bounds.center, defaultDirection, getFitDistance(maxDimension), defaultUp, 1000);
                     } catch (err) {
                     }
                 };
