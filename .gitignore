@@ -31,6 +31,12 @@ docdoku-plm-docker/proxy/ssl/*.key
 # OpenCode / Playwright 工具目录（本地运行产生，非项目代码）
 .playwright-mcp/
 .sisyphus/
+thoughts/
+opencode-page.yml
+
+# Windows 副本文件（Zone.Identifier 附件流、"副本" 等）
+**/*副本*
+**/*.Zone.Identifier
 
 # 根目录临时截图文件
 /*.png

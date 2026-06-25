@@ -70,29 +70,34 @@ docker compose up -d
 ### 转换流程
 
 1. 上传原生 CAD 文件（STP/STEP/OBJ 等）到 `nativecad` 附件
-2. 后端触发 Kafka 消息，转换服务（Quarkus 容器）调用 FreeCAD 转换为 `.obj`
-3. 转换完成后回调后端，写入 `geometryFileURI` 和 bounding box
-4. 前端加载 `.obj` 文件，使用 Three.js 渲染
+2. 后端（`ConverterBean`）创建 Conversion 记录（`pending=true`），发送 Kafka 消息到 topic `CONVERT`
+3. conversion 服务消费 Kafka，调用内置转换工具将 STEP 转换为 `.glb`（GLB 格式，不是 OBJ）
+4. conversion 服务完成后 PUT 回调后端 `/api/.../conversion`
+5. 后端 `handleConversionResultCallback` 将 `.glb` 写入 vault，更新 DB（`pending=false, succeed=true`）
+6. 前端加载 `.glb` 文件，使用 Three.js 渲染（WebGL）
+
+> 注意：Decimation（减面优化）步骤一直失败（`code=1 read error`），这是已知问题，**不影响 GLB 文件生成**。
+> 不含实体几何的 STEP（如运动学约束件）会报 `no geometry generated`，后端已处理为 `succeed=true` 跳过，前端不会显示错误图标。
 
 ### 转换成功的必要条件
 
-- **零件必须处于 Checkout 状态**（上传时和回调时都要检查）
 - 文件格式在白名单内（obj/stl/stp/step/igs/iges/ifc/dae 等）
-- 转换服务正常运行
+- conversion 服务和 Kafka 正常运行
+- ~~零件必须处于 Checkout 状态~~（已通过 `updateUsageLinksInConvertedIteration` 绕过此限制）
 
 ### 3D 查看器入口
 
 | 入口 | 说明 |
 |------|------|
 | **入口 A：产品结构查看器** | 加载整棵装配树，递归合成变换矩阵，渲染所有叶子零件 |
-| **入口 B：零件详情 CAD 预览** | 只渲染该零件自身的 `.obj`，不包含子零件 |
+| **入口 B：零件详情 CAD 预览** | 只渲染该零件自身的 `.glb`，不包含子零件 |
 | **入口 C：iFrame 嵌入** | 生成独立 URL，可嵌入外部页面 |
 
 ### 坐标单位
 
 | 字段 | 单位 |
 |------|------|
-| `.obj` 顶点坐标 | **毫米（mm）** |
+| `.glb` 顶点坐标 | **毫米（mm）** |
 | `tx / ty / tz` | **毫米（mm）** |
 | `rx / ry / rz` | **弧度（rad）** |
 

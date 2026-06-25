@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [".opencode/instructions.md"],
+  "references": {
+    "architecture": {
+      "path": "docs/architecture",
+      "description": "容器架构、CAD 转换流程、装配体位置信息、数据管理结构等架构文档，遇到系统架构或数据流相关问题时查阅"
+    },
+    "issues": {
+      "path": "docs/issues",
+      "description": "已知 Bug 追踪和修复记录，遇到疑似已知问题时先查阅"
+    },
+    "reference": {
+      "path": "docs/reference",
+      "description": "REST API 参考、认证与账号、用户手册等参考文档"
+    },
+    "setup": {
+      "path": "docs/setup",
+      "description": "部署指南和运维操作手册"
+    }
+  }
+}
