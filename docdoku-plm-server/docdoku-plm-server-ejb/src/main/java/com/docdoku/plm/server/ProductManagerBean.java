@@ -1046,6 +1046,11 @@ public class ProductManagerBean implements IProductManagerLocal {
 
         PartRevision partR = partRevisionDAO.loadPartR(pPartRPK);
 
+        // loadPartR 可能返回 null（如 JPA 缓存不一致），需显式抛异常而非 NPE
+        if (partR == null) {
+            throw new PartRevisionNotFoundException(pPartRPK);
+        }
+
         if (isCheckoutByAnotherUser(user, partR)) {
             em.detach(partR);
             partR.removeLastIteration();
@@ -3619,8 +3624,10 @@ public class ProductManagerBean implements IProductManagerLocal {
     }
 
     private boolean isCheckoutByAnotherUser(User user, PartRevision partRevision) {
-        // 使用 user.equals() 避免 checkOutUser 为 null 时的 NPE
-        return partRevision.isCheckedOut() && !user.equals(partRevision.getCheckOutUser());
+        if (user == null || partRevision == null) return false;
+        User checkOutUser = partRevision.getCheckOutUser();
+        // checkOutUser 为 null 时 isCheckedOut() 应为 false，但双重保险避免 NPE
+        return partRevision.isCheckedOut() && checkOutUser != null && !user.equals(checkOutUser);
     }
 
     private void checkNameValidity(String name) throws NotAllowedException {

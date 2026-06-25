@@ -31,6 +31,7 @@ import com.docdoku.plm.server.config.AuthConfig;
 import com.docdoku.plm.server.config.ServerConfig;
 import com.docdoku.plm.server.converters.ConversionOrder;
 import com.docdoku.plm.server.converters.serialization.JsonbSerializer;
+import com.docdoku.plm.server.dao.ConversionDAO;
 import com.docdoku.plm.server.dao.PartRevisionDAO;
 
 import javax.annotation.PostConstruct;
@@ -72,6 +73,8 @@ public class ConverterBean implements IConverterManagerLocal {
     private IContextManagerLocal contextManager;
     @Inject
     private PartRevisionDAO partRevisionDAO;
+    @Inject
+    private ConversionDAO conversionDAO;
     @Inject
     private IUserManagerLocal userService;
     @Inject
@@ -158,12 +161,27 @@ public class ConverterBean implements IConverterManagerLocal {
             return;
         }
 
-        PartIteration partIteration = partRevision.getLastIteration();
+        // 修复 race condition：用 pending=true 的 Conversion 记录找到真正发起转换的 iteration，
+        // 而不是 getLastIteration()（后者在快速连续上传时会指向错误的更新 iteration）。
+        Conversion pendingConversion = conversionDAO.findPendingConversionForRevision(partRevision);
+        if (pendingConversion == null) {
+            LOGGER.severe("No pending conversion found for part revision " + partRevisionKey + ", ignoring callback");
+            return;
+        }
+        PartIteration partIteration = pendingConversion.getPartIteration();
         PartIterationKey partIterationKey = partIteration.getKey();
 
         String errorOutput = conversionResult.getErrorOutput();
 
         if(null != errorOutput && !errorOutput.isEmpty()){
+            // 若 STEP 文件不含实体几何（如运动学约束件、坐标系定义件），转换器报
+            // "no geometry generated"。这属于正常情况，不应显示为转换失败，
+            // 直接标记成功跳过，前端不会显示错误图标。
+            if(errorOutput.contains("no geometry generated")){
+                LOGGER.info("CAD file contains no geometry, marking as succeeded (no 3D model needed): " + partIterationKey);
+                productService.endConversion(partIterationKey, true);
+                return;
+            }
             LOGGER.severe("Conversion ended with errors: \n"+errorOutput);
             productService.endConversion(partIterationKey, false);
             return;

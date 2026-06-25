@@ -85,6 +85,23 @@ public class ConversionDAO {
                 .executeUpdate();
     }
 
+    /**
+     * 查找指定 PartRevision 下处于 pending 状态的 Conversion 记录。
+     * 用于 handleConversionResultCallback 时精确定位发起转换的 iteration，
+     * 避免使用 getLastIteration() 导致的 race condition。
+     */
+    public Conversion findPendingConversionForRevision(PartRevision partRevision) {
+        TypedQuery<Conversion> query = em.createQuery(
+                "SELECT DISTINCT c FROM Conversion c WHERE c.partIteration.partRevision = :partRevision AND c.pending = true",
+                Conversion.class);
+        query.setParameter("partRevision", partRevision);
+        try {
+            return query.getSingleResult();
+        } catch (NoResultException e) {
+            return null;
+        }
+    }
+
     public Integer setPendingConversionsAsFailedIfOver(Integer retentionTimeMs) {
         Calendar calendar = Calendar.getInstance();
         calendar.add(Calendar.MILLISECOND, -retentionTimeMs);

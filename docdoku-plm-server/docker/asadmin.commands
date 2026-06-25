@@ -13,7 +13,10 @@ create-jdbc-connection-pool --restype javax.sql.ConnectionPoolDataSource --datas
  create-custom-resource --restype java.util.Properties --factoryclass org.glassfish.resources.custom.factory.PropertiesFactory oauth.config
  create-jvm-options -- -Dfile.encoding=UTF-8
  delete-jvm-options -- -Xmx512m
+ delete-jvm-options -- -Xmx2g
+ delete-jvm-options -- -Xms2g
  create-jvm-options -- -Xmx${ENV=HEAP_SIZE}
+ create-jvm-options -- -Xms${ENV=HEAP_SIZE}
  create-javamail-resource --mailhost ${ENV=SMTP_HOST} --mailuser ${ENV=SMTP_USER} --fromaddress ${ENV=SMTP_FROM_ADDR} --property mail.smtp.host=${ENV=SMTP_HOST}:mail.smtp.starttls.enable=false:mail.smtp.port=${ENV=SMTP_PORT}:mail.smtp.auth=false mail/docdokuSMTP
  set server.network-config.protocols.protocol.http-listener-1.http.upload-timeout-enabled=false
  set server.network-config.protocols.protocol.http-listener-1.http.connection-upload-timeout-millis=-1
