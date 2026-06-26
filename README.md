@@ -24,7 +24,7 @@
 ### 1. 克隆仓库
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/RayDutchman/CATIA-Copilot-PLM.git
 cd CATIA-Copilot-PLM
 ```
 
@@ -62,9 +62,17 @@ cd ..
 
 ### 5. 构建转换服务镜像
 
-转换服务将 STEP 文件转换为 GLB 格式供 3D 预览使用。仓库内已预置所有 Python wheels（离线安装，无需网络访问 PyPI）：
+转换服务将 STEP 文件转换为 GLB 格式供 3D 预览使用。仓库内已预置所有 Python wheels（离线安装，无需网络访问 PyPI）。
+
+转换服务依赖 `docdoku-plm-api-java`，需先单独构建该模块：
 
 ```bash
+# 先构建 API 模块（约 3-5 分钟）
+cd docdoku-plm-api
+mvn install -DskipTests -pl docdoku-plm-api-base,docdoku-plm-api-java --also-make
+cd ..
+
+# 再构建转换服务
 cd docdoku-plm-conversion-service
 mvn package -DskipTests
 docker build -f Dockerfile.jvm -t docdoku/docdoku-plm-conversion-service:2.6.2 .
@@ -80,9 +88,28 @@ bash start.sh
 
 `start.sh` 会自动创建数据目录、生成密钥库，然后启动全部容器。后端冷启动约需 1-3 分钟。
 
-### 7. 验证
+### 7. 创建第一个管理员账号
 
-访问 `http://localhost:8000`，默认管理员账号：`admin` / `changeit`。
+全新部署的数据库没有任何账号。需要先通过前端注册，再手动提权：
+
+**第一步：注册账号**
+
+访问 `http://localhost:8000`，点击"注册"创建一个账号（登录名自定，例如 `admin`）。
+
+**第二步：通过数据库提权为平台管理员**
+
+注册后该账号只是普通用户。执行以下命令将其提升为平台管理员：
+
+```bash
+# 将 <your-login> 替换为你在第一步注册的登录名
+docker exec -it docdoku-plm-docker-db-1 psql -U changeit -d docdokuplm -c \
+  "INSERT INTO usergroupmapping (login, groupname) VALUES ('<your-login>', 'admin')
+   ON CONFLICT (login) DO UPDATE SET groupname = 'admin';"
+```
+
+**第三步：验证**
+
+用该账号登录 `http://localhost:8000`，进入 **Workspace Management** 后台即可确认管理员权限生效。
 
 ---
 
