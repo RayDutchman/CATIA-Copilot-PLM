@@ -22,9 +22,6 @@ docdoku-plm-front/package-lock.json
 docdoku-plm-docker/keystore
 docdoku-plm-docker/data/
 
-# Conversion service wheel cache (large binary artifacts, build-time download only)
-docdoku-plm-conversion-service/wheels/
-
 # SSL 私钥（钥匙不入库，证书/公钥可以保留）
 docdoku-plm-docker/proxy/ssl/*.key
 

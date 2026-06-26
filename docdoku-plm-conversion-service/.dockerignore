@@ -6,3 +6,4 @@
 !run-java.sh
 !install-python-deps.sh
 !requirements-converter.txt
+!wheels/

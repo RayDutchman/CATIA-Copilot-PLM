@@ -47,17 +47,26 @@ RUN apt-get update -qqy \
 
 # Install Python packages for STEP->GLB conversion.
 # Strategy:
-#   1) Prefer internal wheelhouse (if CONVERTER_WHEELHOUSE_URL is set)
-#   2) Fallback to package index (PyPI or configured mirror)
+#   1) 优先使用仓库内预置的 wheels/ 目录（离线安装，无需网络）
+#   2) 若未提供则尝试 CONVERTER_WHEELHOUSE_URL（内网 wheelhouse）
+#   3) 最终回退到 PyPI / 自定义镜像源
 COPY requirements-converter.txt /tmp/requirements-converter.txt
 COPY install-python-deps.sh /tmp/install-python-deps.sh
+# 将本地预置 wheels 复制进镜像（若目录不存在或为空，COPY 指令自动跳过）
+COPY wheels/ /tmp/wheels/
 RUN chmod +x /tmp/install-python-deps.sh \
- && CONVERTER_WHEELHOUSE_URL="${CONVERTER_WHEELHOUSE_URL}" \
-   CONVERTER_PIP_INDEX_URL="${CONVERTER_PIP_INDEX_URL}" \
-   CONVERTER_PIP_EXTRA_INDEX_URL="${CONVERTER_PIP_EXTRA_INDEX_URL}" \
-   /tmp/install-python-deps.sh /tmp/requirements-converter.txt \
- && rm -f /tmp/install-python-deps.sh \
- && rm -f /tmp/requirements-converter.txt
+ && if [ "$(ls /tmp/wheels/*.whl 2>/dev/null | wc -l)" -gt "0" ]; then \
+      echo "[deps] installing from bundled wheels (offline)"; \
+      python3 -m pip install --break-system-packages --no-cache-dir \
+        --no-index --find-links /tmp/wheels/ \
+        -r /tmp/requirements-converter.txt; \
+    else \
+      CONVERTER_WHEELHOUSE_URL="${CONVERTER_WHEELHOUSE_URL}" \
+      CONVERTER_PIP_INDEX_URL="${CONVERTER_PIP_INDEX_URL}" \
+      CONVERTER_PIP_EXTRA_INDEX_URL="${CONVERTER_PIP_EXTRA_INDEX_URL}" \
+      /tmp/install-python-deps.sh /tmp/requirements-converter.txt; \
+    fi \
+ && rm -rf /tmp/install-python-deps.sh /tmp/requirements-converter.txt /tmp/wheels/
 
 # Create directories and download third-party conversion tools
 RUN mkdir /deployments \

@@ -1,8 +1,21 @@
-# WSL2 + Docker Engine 部署指南
+# 部署指南
 
-> 本指南适用于 **Windows 10 21H2 及以上版本**，无需安装 Docker Desktop，直接在 WSL2 内安装原生 Docker Engine。
->
-> 本项目已对原始 DocDoku PLM 2.6.2 做了若干修改（去除西班牙语、增加中文支持、自动按浏览器语言显示界面等），预构建的 DockerHub 镜像**不包含**这些修改，因此前端和后端都需要从源码本地构建。**请务必按本指南操作**，而非使用上游 README。
+> 本项目已对原始 DocDoku PLM 2.6.2 做了若干修改（增加中文支持、修复多处 Bug），预构建的 DockerHub 镜像**不包含**这些修改，因此前端、后端、转换服务均须从源码本地构建。
+
+---
+
+## 适用环境
+
+本指南分为两部分：
+
+- **Linux / Hyper-V / 其他虚拟机**：直接跳到[第四步：安装 Docker Engine](#第四步在-ubuntu-中安装-docker-engine)，忽略前三步的 WSL2 配置内容。需要满足的前提：已有运行中的 Linux 环境（Ubuntu 22.04+ 或 Debian 12+ 推荐），并可以 `sudo`。
+- **Windows 本机（WSL2）**：按下方步骤从头开始。
+
+---
+
+## WSL2 + Docker Engine 部署指南（Windows）
+
+> 适用于 **Windows 10 21H2 及以上版本**，无需安装 Docker Desktop，直接在 WSL2 内安装原生 Docker Engine。
 
 ---
 

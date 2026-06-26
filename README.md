@@ -6,12 +6,83 @@
 
 ---
 
-## 快速开始
+## 前置依赖
 
-| 步骤 | 文档 |
-|------|------|
-| WSL2 + Docker 环境搭建 | [docs/setup/deployment-wsl2-docker.md](docs/setup/deployment-wsl2-docker.md) |
-| Linux 基础 & 日常运维 | [docs/setup/linux-ops-guide.md](docs/setup/linux-ops-guide.md) |
+| 工具 | 版本要求 | 说明 |
+|------|---------|------|
+| Docker Engine | 24+ | 含 `docker compose`（Compose v2 插件） |
+| JDK | 11 | 后端构建（推荐 Eclipse Temurin 11） |
+| Maven | 3.6+ | 后端构建 |
+| Node.js | 14.x | 前端构建（v16+ 与 grunt 插件不兼容） |
+
+> 在任意 Linux 发行版或 Windows WSL2 下均可部署。如果是 Windows 环境，请参考 [docs/setup/deployment-wsl2-docker.md](docs/setup/deployment-wsl2-docker.md) 完成 WSL2 和 Docker 的初始配置。
+
+---
+
+## 首次部署流程
+
+### 1. 克隆仓库
+
+```bash
+git clone <repo-url>
+cd CATIA-Copilot-PLM
+```
+
+### 2. 构建后端基础镜像（仅首次，或清除 Docker 缓存后）
+
+```bash
+bash scripts/build-base-image.sh
+```
+
+这一步构建私有的 Payara 基础镜像（`docdoku/docdoku-plm-server-base:2.6.2`），包含 LibreOffice 等依赖，首次约需 10-20 分钟（取决于网速）。后续有缓存后可跳过。
+
+### 3. 构建后端镜像
+
+```bash
+cd docdoku-plm-server
+mvn clean install -DskipTests
+docker build --build-arg VERSION=2.6.2 -f docker/Dockerfile -t docdoku/docdoku-plm-server:2.6.2 .
+cd ..
+```
+
+首次 Maven 构建约需 5-15 分钟。
+
+### 4. 构建前端镜像
+
+需要 Node.js 14（推荐用 [nvm](https://github.com/nvm-sh/nvm) 管理版本）：
+
+```bash
+cd docdoku-plm-front
+nvm use 14   # 或 node 14 的其他切换方式
+npm install
+npm run build
+docker build -f docker/Dockerfile -t docdoku/docdoku-plm-front:2.6.2 .
+cd ..
+```
+
+### 5. 构建转换服务镜像
+
+转换服务将 STEP 文件转换为 GLB 格式供 3D 预览使用。仓库内已预置所有 Python wheels（离线安装，无需网络访问 PyPI）：
+
+```bash
+cd docdoku-plm-conversion-service
+mvn package -DskipTests
+docker build -f Dockerfile.jvm -t docdoku/docdoku-plm-conversion-service:2.6.2 .
+cd ..
+```
+
+### 6. 启动所有服务
+
+```bash
+cd docdoku-plm-docker
+bash start.sh
+```
+
+`start.sh` 会自动创建数据目录、生成密钥库，然后启动全部容器。后端冷启动约需 1-3 分钟。
+
+### 7. 验证
+
+访问 `http://localhost:8000`，默认管理员账号：`admin` / `changeit`。
 
 ---
 
@@ -28,16 +99,13 @@
 
 ---
 
-## 常用命令
+## 日常运维命令
 
 ```bash
 # 查看容器状态
 docker ps
 
-# 启动所有服务（首次）
-cd docdoku-plm-docker && bash start.sh
-
-# 后续启动
+# 后续启动（不需要重新初始化）
 cd docdoku-plm-docker && docker compose up -d
 
 # 查看后端日志
@@ -45,17 +113,16 @@ cd docdoku-plm-docker && docker compose logs -f back
 
 # 重启所有服务
 cd docdoku-plm-docker && docker compose restart
-
-# 构建前端镜像
-cd docdoku-plm-front
-nvm use 14 && npm run build
-docker build -f docker/Dockerfile -t docdoku/docdoku-plm-front:2.6.2 .
-
-# 构建后端镜像
-cd docdoku-plm-server
-mvn clean install -DskipTests
-docker build --build-arg VERSION=2.6.2 -f docker/Dockerfile -t docdoku/docdoku-plm-server:2.6.2 .
 ```
+
+构建脚本在 `scripts/` 目录下，修改源码后使用对应脚本重建：
+
+| 脚本 | 用途 |
+|------|------|
+| `scripts/build-base-image.sh` | 构建 Payara 基础镜像（仅首次） |
+| `scripts/build-backend-full.sh` | 完整重建后端 |
+| `scripts/rebuild-front.sh` | 完整重建前端 |
+| `scripts/rebuild-conversion-service.sh` | 重建转换服务 |
 
 ---
 
