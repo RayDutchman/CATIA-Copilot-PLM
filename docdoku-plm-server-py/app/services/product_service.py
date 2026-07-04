@@ -209,12 +209,12 @@ class ProductService:
 
     def checkout(self, db: Session, workspace_id: str,
                  number: str, version: str, user_login: str) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
         pr = self.get_revision(db, workspace_id, number, version)
         if pr.checkout_user_login:
-            raise HTTPException(409,
-                f"Already checked out by {pr.checkout_user_login}")
+            raise NotAllowedException("NotAllowedException37")
         if pr.status != 0:
-            raise HTTPException(403, "Cannot check out a released/obsolete revision")
+            raise NotAllowedException("NotAllowedException47")
         now = datetime.utcnow()
         pr.checkout_user_login = user_login
         pr.checkout_user_workspace_id = workspace_id
@@ -237,9 +237,10 @@ class ProductService:
 
     def checkin(self, db: Session, workspace_id: str,
                 number: str, version: str, user_login: str) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
         pr = self.get_revision(db, workspace_id, number, version)
         if pr.checkout_user_login != user_login:
-            raise HTTPException(403, "You have not checked out this part")
+            raise NotAllowedException("NotAllowedException20")
         now = datetime.utcnow()
         # 标记最新迭代为已签入
         last = pr.last_iteration
@@ -255,9 +256,12 @@ class ProductService:
 
     def undo_checkout(self, db: Session, workspace_id: str,
                       number: str, version: str, user_login: str) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
         pr = self.get_revision(db, workspace_id, number, version)
         if pr.checkout_user_login != user_login:
-            raise HTTPException(403, "You have not checked out this part")
+            raise NotAllowedException("NotAllowedException19")
+        if len(pr.iterations) <= 1:
+            raise NotAllowedException("NotAllowedException41")
         # 删除未签入的最新迭代
         last = pr.last_iteration
         if last and last.check_in_date is None:
