@@ -457,3 +457,64 @@ class ProductService:
         db.commit()
         db.refresh(new_pr)
         return new_pr
+
+    def _ensure_tag(self, db: Session, ws: str, label: str) -> None:
+        from app.models.part import Tag
+        t = db.query(Tag).filter(Tag.workspace_id == ws,
+                                 Tag.label == label).first()
+        if t is None:
+            db.add(Tag(workspace_id=ws, label=label))
+            db.flush()
+
+    def set_tags(self, db: Session, ws: str, pn: str, ver: str,
+                 labels: list) -> PartRevision:
+        from app.models.part import part_revision_tags
+        pr = self.get_revision(db, ws, pn, ver)
+        db.execute(part_revision_tags.delete().where(
+            part_revision_tags.c.partmaster_workspace_id == ws,
+            part_revision_tags.c.partmaster_partnumber == pn,
+            part_revision_tags.c.partrevision_version == ver,
+        ))
+        for label in labels:
+            self._ensure_tag(db, ws, label)
+            db.execute(part_revision_tags.insert().values(
+                partmaster_workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, tag_workspace_id=ws, tag_label=label,
+            ))
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def add_tag(self, db: Session, ws: str, pn: str, ver: str,
+                label: str) -> PartRevision:
+        from app.models.part import part_revision_tags
+        pr = self.get_revision(db, ws, pn, ver)
+        self._ensure_tag(db, ws, label)
+        exists = db.execute(part_revision_tags.select().where(
+            part_revision_tags.c.partmaster_workspace_id == ws,
+            part_revision_tags.c.partmaster_partnumber == pn,
+            part_revision_tags.c.partrevision_version == ver,
+            part_revision_tags.c.tag_label == label,
+        )).first()
+        if exists is None:
+            db.execute(part_revision_tags.insert().values(
+                partmaster_workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, tag_workspace_id=ws, tag_label=label,
+            ))
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def remove_tag(self, db: Session, ws: str, pn: str, ver: str,
+                   label: str) -> PartRevision:
+        from app.models.part import part_revision_tags
+        pr = self.get_revision(db, ws, pn, ver)
+        db.execute(part_revision_tags.delete().where(
+            part_revision_tags.c.partmaster_workspace_id == ws,
+            part_revision_tags.c.partmaster_partnumber == pn,
+            part_revision_tags.c.partrevision_version == ver,
+            part_revision_tags.c.tag_label == label,
+        ))
+        db.commit()
+        db.refresh(pr)
+        return pr

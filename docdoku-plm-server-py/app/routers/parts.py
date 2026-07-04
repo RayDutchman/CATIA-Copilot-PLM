@@ -1,6 +1,6 @@
 """零件集合路由（与 Payara 路径完全一致）。"""
 import re
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -247,4 +247,36 @@ def new_version_part(workspace_id: str, part_key: str,
                      db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
     pr = svc.create_new_version(db, workspace_id, number, version, current_user.login)
+    return map_revision(pr, db)
+
+
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/tags",
+            response_model=PartRevisionDTO)
+def set_tags(workspace_id: str, part_key: str,
+             body: dict = Body(...),
+             current_user: Account = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.set_tags(db, workspace_id, number, version, body.get("tags", []))
+    return map_revision(pr, db)
+
+
+@router.post("/workspaces/{workspace_id}/parts/{part_key}/tags",
+             response_model=PartRevisionDTO)
+def add_tag(workspace_id: str, part_key: str,
+            body: dict = Body(...),
+            current_user: Account = Depends(get_current_user),
+            db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.add_tag(db, workspace_id, number, version, body.get("tag", ""))
+    return map_revision(pr, db)
+
+
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/tags/{tag_label}",
+               response_model=PartRevisionDTO)
+def remove_tag(workspace_id: str, part_key: str, tag_label: str,
+               current_user: Account = Depends(get_current_user),
+               db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.remove_tag(db, workspace_id, number, version, tag_label)
     return map_revision(pr, db)
