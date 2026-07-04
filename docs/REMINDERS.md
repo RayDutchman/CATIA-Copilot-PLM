@@ -8,30 +8,24 @@
 
 ### 高优先级
 
-- [ ] **批次 3：P1b 8 方法实现（占位，待细化）**
-  批次 0-2 已完成（i18n 基础设施 + P1a 7 方法错误消息对齐 + DTO 字段对齐）。
-  批次 3 涉及新写端点（文件上传下载、转换回调、发布、废弃、删文件、标签），
-  依赖 P1b 的 vault 文件读写与新 ORM 建模。待另起一份 P1b 实现计划细化。
-  待细化项：
-  - saveNativeCADInPartIteration/saveFileInPartIteration：NotAllowedException4 + CAD 白名单校验
+- [ ] **P1b：零件文件 + 转换回调 + 状态管理（下一阶段，待规划）**
+  P1a-core（CRUD）与 P1a-align（行为对齐批次 0-2）均已完成。下一阶段 P1b：
+  nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索。
+  规划时**必须遵循标准每阶段工作流**（见 `docs/superpowers/fastapi-migration-roadmap.md`）：
+  ORM→端点(用 i18n 异常)→对齐审计→Payara 对拍→前端实测→**通过后才切 Nginx**。
+  待细化的 i18n 校验点：
+  - saveNativeCADInPartIteration/saveFileInPartIteration：NotAllowedException4 + CAD 白名单
   - handleConversionResultCallback：findPendingConversionForRevision 定位 + 空几何跳过
   - createPartRevision：NotAllowedException40/41/56
   - releasePartRevision：NotAllowedException46/41/38
   - markPartRevisionAsObsolete：NotAllowedException36
   - removeFileInPartIteration、标签管理
+  P1b 完成后 Payara back 容器可退出零件相关功能。
 
-- [ ] **deletePartRevision 仍有 3 个约束未实现**
-  EntityConstraintException1（配置项根零件）、Exception5（基线）、Exception21（变更项），
-  因对应表（ProductConfiguration/ProductBaseline/ChangeItem）未在 ORM 中建模，已加 TODO 注释。
-  待对应模块建模后补齐。
-
-- [ ] **notifications 字段仍为空**
-  PartRevisionDTO.notifications 当前始终为空列表。需 ModificationNotification 表建模后补齐。
-
-- [ ] **P1b：文件上传下载 + CAD 转换回调 + 状态管理**
-  P1a 零件核心 CRUD 已完成（14 个端点，38 个测试通过，Nginx parts 路由已切换到 FastAPI）。
-  下一步 P1b：文件上传下载（CAD 文件 + 附件）、CAD 转换回调、状态管理（release/obsolete/tags）、搜索。
-  P1b 完成后 Payara back 容器可以退出零件相关功能。
+- [ ] **对齐债务（跨模块约束/字段，待属主阶段补齐）**
+  详见路线图"对齐债务追踪"表。摘要：
+  - deletePartRevision 3 约束（配置项根/基线→P3，变更项→P4，替代品→P1b/P3），已打 TODO
+  - PartRevisionDTO.notifications 始终空（→P5，需 ModificationNotification 表）
 
 - [ ] **转换服务当前是"混合镜像"临时方案，待迁移为 Python-only**
   ~~重建的 Java runner jar 有 SmallRye 间歇性"消费但不投递"故障。当前生产用混合镜像（旧 runner jar + 新 lib jar）勉强可用。

@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-07-04（续6）— 迁移路线图权威文档
+
+- docs: 新建 `docs/superpowers/fastapi-migration-roadmap.md` 作为迁移路线图唯一事实来源
+- docs: 根据 P0/P1a/对齐审计执行教训调整路线图——引入"标准每阶段工作流"（对齐审计+Payara 对拍在切 Nginx 之前）
+- docs: 沉淀 i18n/异常基础设施为跨阶段共享地基与强制规范
+- docs: 新增"对齐债务追踪"表（跨模块约束打桩+TODO，标注属主阶段 P3/P4/P5）
+- docs: 显式化阶段依赖关系（P3/P4/P5 落地时回补 parts 对齐债务）
+- docs: REMINDERS 同步——批次 0-2 归档、P1b 待规划、对齐债务条目
+
 ## 2026-07-04（续5）— 零件模块 Payara→FastAPI 行为对齐（批次 0-2）
 
 - feat: i18n 基础设施——复制 Java 4 语言 properties 文件，实现 `app/core/i18n.py` 加载器
