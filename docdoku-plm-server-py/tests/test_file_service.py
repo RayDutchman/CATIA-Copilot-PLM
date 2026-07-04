@@ -10,6 +10,32 @@ svc = ProductService()
 
 def _make_part(db, num):
     from app.schemas.part import PartCreationDTO
+    from app.models.part import Conversion, PartIteration, PartRevision, PartMaster, BinaryResource, part_iteration_geometry
+    # 预清理
+    db.query(Conversion).filter(
+        Conversion.workspace_id == WS,
+        Conversion.partmaster_partnumber == num,
+    ).delete()
+    db.execute(part_iteration_geometry.delete().where(
+        part_iteration_geometry.c.workspace_id == WS,
+        part_iteration_geometry.c.partmaster_partnumber == num,
+    ))
+    db.query(BinaryResource).filter(
+        BinaryResource.full_name.like(f'{WS}/parts/{num}%'),
+    ).delete()
+    db.query(PartIteration).filter(
+        PartIteration.workspace_id == WS,
+        PartIteration.partmaster_partnumber == num,
+    ).delete()
+    db.query(PartRevision).filter(
+        PartRevision.workspace_id == WS,
+        PartRevision.partmaster_partnumber == num,
+    ).delete()
+    db.query(PartMaster).filter(
+        PartMaster.workspace_id == WS,
+        PartMaster.number == num,
+    ).delete()
+    db.commit()
     return svc.create_part(db, WS, "test1",
                            PartCreationDTO(number=num, name="t"))
 

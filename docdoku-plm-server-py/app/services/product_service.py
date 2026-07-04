@@ -518,3 +518,18 @@ class ProductService:
         db.commit()
         db.refresh(pr)
         return pr
+
+    def search_parts(self, db: Session, ws: str, name=None,
+                     number=None, type_=None) -> list:
+        q = db.query(PartMaster).filter(PartMaster.workspace_id == ws)
+        if name:
+            q = q.filter(PartMaster.name.ilike(f"%{name}%"))
+        if number:
+            q = q.filter(PartMaster.number.ilike(f"%{number}%"))
+        if type_:
+            q = q.filter(PartMaster.type.ilike(f"%{type_}%"))
+        masters = q.limit(100).all()
+        result = []
+        for m in masters:
+            result.extend(m.revisions)
+        return result

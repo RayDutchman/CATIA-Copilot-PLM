@@ -79,6 +79,21 @@ def count_checked_out(
     return CountDTO(count=len(svc.list_checked_out(db, workspace_id)))
 
 
+@router.get("/workspaces/{workspace_id}/parts/search",
+            response_model=list[PartRevisionDTO])
+def search_parts(
+    workspace_id: str,
+    name: str = Query(None),
+    number: str = Query(None),
+    type: str = Query(None),
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    revisions = svc.search_parts(db, workspace_id, name=name,
+                                 number=number, type_=type)
+    return [map_revision(pr, db) for pr in revisions]
+
+
 @router.get("/workspaces/{workspace_id}/parts/{part_number}/latest-revision",
              response_model=PartRevisionDTO)
 def get_latest_revision(
