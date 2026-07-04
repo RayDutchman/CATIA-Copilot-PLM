@@ -397,3 +397,63 @@ class ProductService:
                     component_order=order,
                 )
             )
+
+    def release(self, db: Session, ws: str, pn: str, ver: str,
+                user_login: str) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
+        pr = self.get_revision(db, ws, pn, ver)
+        if pr.checkout_user_login:
+            raise NotAllowedException("NotAllowedException46")
+        if not pr.iterations:
+            raise NotAllowedException("NotAllowedException41")
+        if pr.status == 2:
+            raise NotAllowedException("NotAllowedException38")
+        pr.status = 1
+        pr.release_date = datetime.utcnow()
+        pr.release_user_login = user_login
+        pr.release_user_workspace = ws
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def mark_obsolete(self, db: Session, ws: str, pn: str, ver: str,
+                      user_login: str) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
+        pr = self.get_revision(db, ws, pn, ver)
+        if pr.status != 1:
+            raise NotAllowedException("NotAllowedException36")
+        pr.status = 2
+        pr.obsolete_date = datetime.utcnow()
+        pr.obsolete_user_login = user_login
+        pr.obsolete_user_workspace = ws
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def create_new_version(self, db: Session, ws: str, pn: str, ver: str,
+                           user_login: str) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
+        pr = self.get_revision(db, ws, pn, ver)
+        if pr.checkout_user_login:
+            raise NotAllowedException("NotAllowedException40")
+        if not pr.iterations:
+            raise NotAllowedException("NotAllowedException41")
+        now = datetime.utcnow()
+        new_ver = self._next_version(ver)
+        new_pr = PartRevision(
+            workspace_id=ws, partmaster_partnumber=pn, version=new_ver,
+            description=pr.description, status=0, creation_date=now,
+            author_workspace_id=ws, author_login=user_login,
+            checkout_user_workspace_id=ws, checkout_user_login=user_login,
+            check_out_date=now,
+        )
+        db.add(new_pr)
+        db.flush()
+        db.add(PartIteration(
+            workspace_id=ws, partmaster_partnumber=pn,
+            partrevision_version=new_ver, iteration=1,
+            creation_date=now, author_workspace_id=ws, author_login=user_login,
+        ))
+        db.commit()
+        db.refresh(new_pr)
+        return new_pr

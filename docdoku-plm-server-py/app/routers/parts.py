@@ -218,3 +218,33 @@ def conversion_callback(
     conversion_service.handle_callback(db, workspace_id, number, version, body)
     db.commit()
     return {"status": "ok"}
+
+
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/release",
+            response_model=PartRevisionDTO)
+def release_part(workspace_id: str, part_key: str,
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.release(db, workspace_id, number, version, current_user.login)
+    return map_revision(pr, db)
+
+
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/obsolete",
+            response_model=PartRevisionDTO)
+def obsolete_part(workspace_id: str, part_key: str,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.mark_obsolete(db, workspace_id, number, version, current_user.login)
+    return map_revision(pr, db)
+
+
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/newVersion",
+            response_model=PartRevisionDTO)
+def new_version_part(workspace_id: str, part_key: str,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.create_new_version(db, workspace_id, number, version, current_user.login)
+    return map_revision(pr, db)
