@@ -279,12 +279,14 @@ class DocumentService:
         db.add(folder); db.commit()
         return folder
 
-    def list_folders(self, db, parent_path=None):
+    def list_folders(self, db, ws, parent_path=None):
         if parent_path:
             return db.query(Folder).filter(
                 Folder.parentfolder_completepath == parent_path).all()
+        # 根文件夹：completepath = workspace_id（如 Workspace_2）
         return db.query(Folder).filter(
-            Folder.parentfolder_completepath.is_(None)).all()
+            Folder.completepath == ws,
+        ).all()
 
     def rename_folder(self, db, completepath, new_name):
         folder = db.query(Folder).filter(

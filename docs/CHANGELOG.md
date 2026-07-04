@@ -6,7 +6,7 @@
 
 ---
 
-## 2026-07-05 — P1b 零件文件+转换回调+状态+搜索 全部完成
+## 2026-07-05 — P2 文档/文件夹 + 前端兼容修复
 
 - feat(py): Kafka 转换消息重构为嵌套结构+userToken，topic 改 CONVERT
 - feat(py): file_service——vault 写读 + BinaryResource 记录（save_nativecad/save_attached/get_file_bytes）

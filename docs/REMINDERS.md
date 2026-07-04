@@ -93,5 +93,7 @@
 - [x] **P0 FastAPI 后端基础设施**：7 个 Task 全部完成，17 个测试通过，`back-py` 容器运行，Nginx auth 路由切换验证通过（2026-07-04）
 - [x] **P1a 零件核心 CRUD**：6 个 Task 全部完成，38 个测试通过，14 个零件端点，Nginx parts 路由切换到 FastAPI back-py（2026-07-04）
 - [x] **零件模块 Payara→FastAPI 行为对齐（批次 0-2）**：i18n 基础设施 + ApplicationException 体系 + 全局 handler + 用户语言中间件 + 对拍脚本 + P1a 7 方法错误消息对齐 + DTO 字段固化测试。测试从 38 个增加到 57 个全部通过（2026-07-04）
-- [x] **P1b 零件文件+转换回调+状态+搜索**：9 个 Task 全部完成，73 个测试通过。Kafka 消息重构为嵌套结构+userToken、文件上传下载、转换回调（race/空几何修复）、release/obsolete/newVersion、标签管理 set/add/remove、DB 搜索 MVP。Nginx files 路由切到 back-py，conversion ENDPOINT 切到 back-py。Payara back 容器已退出全部零件相关功能（2026-07-05）
+- [x] **P1b 零件文件+转换回调+状态+搜索**：73 测试通过，Payara back 已退出零件功能（2026-07-05）
+- [x] **P2 文档与文件夹+模板**：80 测试通过，Nginx 4 路由块已切，Payara 对拍通过（2026-07-05）
+- [x] **前端兼容修复**：尾斜杠、文档响应 format、文件夹过滤、缺失端点（2026-07-05）
 - [x] **delete 创建/删除修复**：models/part.py 补 ForeignKeyConstraint；delete_revision raw SQL 清关联表；create_part 移除多余 workspace 检查（2026-07-05，4 edge 测试待调 flush 顺序）

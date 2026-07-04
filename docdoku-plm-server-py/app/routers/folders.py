@@ -14,7 +14,7 @@ svc = DocumentService()
 def list_root(ws: str, current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     return [{"path": f.completepath, "name": f.completepath}
-            for f in svc.list_folders(db)]
+            for f in svc.list_folders(db, ws)]
 
 
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders")
