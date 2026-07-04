@@ -8,6 +8,16 @@
 
 ### 高优先级
 
+- [ ] **3D 预览不显示（已定位，待修复）**
+  零件数据+GLB文件均由 FastAPI 提供时，Three.js r90 不加载 GLB。已确认 GLB 文件有效、
+  geometryFileURI 正确、CORS 头正常、字节与 Payara 完全一致。
+  隔离测试 parts→FA+files→Payara 时 3D 正常，全 FA 时不正常。
+  推测为 Nginx/uvicorn HTTP 代理层行为差异 (chunked传输/keepalive/buffer flush) 与
+  Three.js r90 XHR 加载交互问题。需 tcpdump 抓包或升级 Three.js 版本解决。
+
+- [ ] **part_files.py GLB 响应头已改未提交**
+  `docdoku-plm-server-py/app/routers/part_files.py` 有 GLB 下载响应头对齐改动未 commit。
+
 - [ ] **JWT 过期风险提醒**：上传 nativecad 时将当前请求 token 透传给 Kafka 消息 userToken，转换服务用此 token 回调。若 token 在转换完成前过期（默认 3h），转换服务回调会 401 失败。建议后续改为服务间 token（如生成长期 API key 或在 conversion_service 内置白名单）。
 
 - [ ] **装配同步（_sync_components）未做**：P1b 不含装配同步迁移，当前仍在 Payara 处理（update_iteration endpoint）。下一步 P2 迁移到 FastAPI。
@@ -95,5 +105,8 @@
 - [x] **零件模块 Payara→FastAPI 行为对齐（批次 0-2）**：i18n 基础设施 + ApplicationException 体系 + 全局 handler + 用户语言中间件 + 对拍脚本 + P1a 7 方法错误消息对齐 + DTO 字段固化测试。测试从 38 个增加到 57 个全部通过（2026-07-04）
 - [x] **P1b 零件文件+转换回调+状态+搜索**：73 测试通过，Payara back 已退出零件功能（2026-07-05）
 - [x] **P2 文档与文件夹+模板**：80 测试通过，Nginx 4 路由块已切，Payara 对拍通过（2026-07-05）
-- [x] **前端兼容修复**：尾斜杠、文档响应 format、文件夹过滤、缺失端点（2026-07-05）
+- [x] **系统化 Payara 对拍**：零件+文档 全部端点对拍+修复——路由顺序补5处、缺失端点补9处、字段差异修复（2026-07-05）
+- [x] **尾斜杠 307 修复**：parts/documents/nativecad/attachedfiles/doc-upload 加双路由（2026-07-05）
+- [x] **3D预览 Nginx 修复**：CORS headers 补全 + Content-Disposition/ETag/Cache-Control/Last-Modified 对齐 Payara（2026-07-05）
+- [x] **delete 创建/删除修复**：models/part.py 补 ForeignKeyConstraint；delete_revision raw SQL 清关联表；create_part 移除多余 workspace 检查（2026-07-05）
 - [x] **delete 创建/删除修复**：models/part.py 补 ForeignKeyConstraint；delete_revision raw SQL 清关联表；create_part 移除多余 workspace 检查（2026-07-05，4 edge 测试待调 flush 顺序）

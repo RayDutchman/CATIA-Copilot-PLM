@@ -10,6 +10,7 @@ from app.models.auth import Account
 from app.services import file_service
 from app.services.product_service import ProductService
 from app.services.kafka_producer import send_conversion_order
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
 svc = ProductService()
@@ -74,7 +75,15 @@ def download_with_subtype(
         data = file_service.get_file_bytes(ws, pn, ver, iteration, sub_type, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
-    return Response(content=data, media_type="application/octet-stream")
+    return Response(content=data, media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"',
+            "Cache-Control": "max-age=86400",
+            "Last-Modified": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+            "ETag": f'"{file_name}_{len(data)}"',
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+        })
 
 
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}")
@@ -87,4 +96,12 @@ def download_direct(
         data = file_service.get_file_bytes(ws, pn, ver, iteration, None, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
-    return Response(content=data, media_type="application/octet-stream")
+    return Response(content=data, media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"',
+            "Cache-Control": "max-age=86400",
+            "Last-Modified": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
+            "ETag": f'"{file_name}_{len(data)}"',
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+        })

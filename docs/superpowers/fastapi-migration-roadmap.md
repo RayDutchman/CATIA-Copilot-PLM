@@ -106,7 +106,7 @@
 | deletePartRevision: 基线检查 | 同上 | P3 | `EntityConstraintException5`，需 ProductBaseline 表 |
 | deletePartRevision: 替代品检查 | 同上 | P3 | `EntityConstraintException22`，需 PartSubstituteLink 表 |
 | deletePartRevision: 变更项检查 | 同上 | P4 | `EntityConstraintException21`，需 ChangeItem 表 |
-| PartRevisionDTO.notifications | `part_mapper.map_revision` | P5 | 当前始终空列表，需 ModificationNotification 表 |
+| 3D预览 r90 HTTP代理差异 | GLB响应 | 未知 | Three.js r90 + FastAPI/uvicorn 代理层交互导致 GLB 不加载（字节/headers 已对齐）。需抓包或升级 Three.js。
 | 转换回调 JWT 过期风险 | `kafka_producer.send_conversion_order` | P2+ | userToken 透传上传时 token，长时间转换后可能过期。后续改为服务间 token |
 | 装配同步未迁移 | `update_iteration` | P2 | P1b 仅做零件单体，装配 BOM 同步仍在 Payara |
 | 搜索为 DB LIKE MVP | `search_parts` | P3+ | 无 ES 全文搜索，用 `ilike` 模糊匹配

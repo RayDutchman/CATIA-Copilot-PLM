@@ -6,7 +6,20 @@
 
 ---
 
-## 2026-07-05 — P2 文档/文件夹 + 前端兼容修复
+## 2026-07-05 — P2 文档/文件夹 + 系统化对拍
+
+- feat: P2 文档/文件夹/模板——ORM(5模型+2关联表)、document_service(14方法)、4路由(27端点)、80测试通过
+- feat: Nginx 4路由块切换(documents/folders/document-templates/files/documents)
+- feat: 系统化 Payara 对拍——零件端点(P0路由5处+P1补端点4处+P2字段差异exclude_none)、文档端点(P0 search camelCase+P0 folder ID+P1补端点5处+P1字段)
+- fix: 尾斜杠307——POST /parts/ /documents/ /nativecad/ /attachedfiles/ /documents/upload/ 加双路由
+- fix: CAD转换无文件→204 No Content(Payara对齐)
+- fix: 零件列表 exclude_none 回滚(删acl/checkOutUser致前端无权限)
+- fix: 文件夹返回Payara格式(id/name/path/home)含子文件夹
+- fix: 文档创建响应 camelCase 含 documentIterations+id 格式
+- fix: 文档缺失端点补全(checkedout/countCheckedOut/doc_revs/aborted-workflows/inverse-links)
+- fix: 零件缺失端点补全(used-by/tags/instances/baselines/aborted-workflows)
+- fix: CATIA Copilot端点 8001→8000(Payara→FastAPI)
+- known: 3D预览不显示——Nginx/uvicorn HTTP代理层与Three.js r90交互问题(bytely一致/headers对齐/Payara→FA切换可复现,需抓包或升级Three.js)
 
 - feat(py): Kafka 转换消息重构为嵌套结构+userToken，topic 改 CONVERT
 - feat(py): file_service——vault 写读 + BinaryResource 记录（save_nativecad/save_attached/get_file_bytes）
