@@ -42,3 +42,21 @@ def test_checkout_already_checked_out_returns_403():
     # 清理：直接通过 API 删除（先签入再删，或直接 UNDO+DROP）
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     client.request("DELETE", f"{PREFIX}/workspaces/{WS}/parts/{num}-A", headers=h)
+
+
+# ── Task 9: createPartMaster/updatePartIteration 对齐 ──────────
+
+def test_create_duplicate_part_returns_409():
+    token = _token()
+    h = {"Authorization": f"Bearer {token}"}
+    num = "ERRPATH-DUP-" + uuid.uuid4().hex[:8]
+    client.post(f"{PREFIX}/workspaces/{WS}/parts",
+                json={"number": num, "name": "t"}, headers=h)
+    # 重复创建
+    resp = client.post(f"{PREFIX}/workspaces/{WS}/parts",
+                       json={"number": num, "name": "t"}, headers=h)
+    assert resp.status_code == 409
+    assert resp.json()["message"] == f'零件"{num}"已存在'
+    # 清理
+    client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
+    client.request("DELETE", f"{PREFIX}/workspaces/{WS}/parts/{num}-A", headers=h)

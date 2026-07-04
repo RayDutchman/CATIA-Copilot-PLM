@@ -128,6 +128,7 @@ class ProductService:
 
     def create_part(self, db: Session, workspace_id: str,
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
+        from app.core.exceptions import EntityAlreadyExistsException
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)
@@ -136,8 +137,8 @@ class ProductService:
             .first()
         )
         if existing:
-            raise HTTPException(status_code=409,
-                                detail=f"Part {body.number} already exists")
+            raise EntityAlreadyExistsException(
+                "PartMasterAlreadyExistsException", body.number)
         now = datetime.utcnow()
         # 创建 PartMaster
         master = PartMaster(
@@ -277,9 +278,10 @@ class ProductService:
                          number: str, version: str, iteration_num: int,
                          user_login: str,
                          body: PartIterationUpdateDTO) -> PartRevision:
+        from app.core.exceptions import NotAllowedException
         pr = self.get_revision(db, workspace_id, number, version)
         if pr.checkout_user_login != user_login:
-            raise HTTPException(403, "Part is not checked out by you")
+            raise NotAllowedException("NotAllowedException25", number)
         # 找目标迭代
         target = next(
             (it for it in pr.iterations if it.iteration == iteration_num), None
