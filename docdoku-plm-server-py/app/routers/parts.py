@@ -33,7 +33,7 @@ def list_parts(
     db: Session = Depends(get_db),
 ):
     revisions = svc.list_revisions(db, workspace_id, start, length)
-    return [map_revision(pr) for pr in revisions]
+    return [map_revision(pr, db) for pr in revisions]
 
 
 @router.get("/workspaces/{workspace_id}/parts/count", response_model=CountDTO)
@@ -65,7 +65,7 @@ def list_checked_out(
     db: Session = Depends(get_db),
 ):
     revisions = svc.list_checked_out(db, workspace_id)
-    return [map_revision(pr) for pr in revisions]
+    return [map_revision(pr, db) for pr in revisions]
 
 
 @router.get("/workspaces/{workspace_id}/parts/countCheckedOut",
@@ -87,7 +87,7 @@ def get_latest_revision(
     db: Session = Depends(get_db),
 ):
     pr = svc.get_latest_revision(db, workspace_id, part_number)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.post("/workspaces/{workspace_id}/parts",
@@ -99,7 +99,7 @@ def create_part(
     db: Session = Depends(get_db),
 ):
     pr = svc.create_part(db, workspace_id, current_user.login, body)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}",
@@ -112,7 +112,7 @@ def get_part_revision(
 ):
     number, version = _split_part_key(part_key)
     pr = svc.get_revision(db, workspace_id, number, version)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.delete("/workspaces/{workspace_id}/parts/{part_key}",
@@ -137,7 +137,7 @@ def checkout_part(
 ):
     number, version = _split_part_key(part_key)
     pr = svc.checkout(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/checkin",
@@ -150,7 +150,7 @@ def checkin_part(
 ):
     number, version = _split_part_key(part_key)
     pr = svc.checkin(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/undocheckout",
@@ -163,7 +163,7 @@ def undo_checkout_part(
 ):
     number, version = _split_part_key(part_key)
     pr = svc.undo_checkout(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}",
@@ -179,7 +179,7 @@ def update_iteration(
     number, version = _split_part_key(part_key)
     pr = svc.update_iteration(db, workspace_id, number, version,
                                iteration, current_user.login, body)
-    return map_revision(pr)
+    return map_revision(pr, db)
 
 
 @router.get(

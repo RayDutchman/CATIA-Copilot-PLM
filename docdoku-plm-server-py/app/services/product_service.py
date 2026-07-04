@@ -189,6 +189,13 @@ class ProductService:
             raise HTTPException(403, "Part is checked out by another user")
         if pr.status == 1:
             raise HTTPException(403, "Cannot delete a released revision")
+        # TODO(对齐审计): 补齐 Payara deletePartRevision 的完整约束检查
+        #   - EntityConstraintException1  配置项根零件
+        #   - EntityConstraintException2  被用作组件
+        #   - EntityConstraintException22 被用作替代品
+        #   - EntityConstraintException5  已在基线中
+        #   - EntityConstraintException21 已分配到变更项
+        # 待 i18n + ApplicationException 基础设施就绪后用异常架构实现
         db.delete(pr)
         db.commit()
 

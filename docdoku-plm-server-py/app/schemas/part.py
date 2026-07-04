@@ -9,6 +9,7 @@ class UserDTO(BaseModel):
     login: str
     name: Optional[str] = None
     email: Optional[str] = None
+    language: Optional[str] = None
     workspaceId: Optional[str] = None
 
     class Config:
