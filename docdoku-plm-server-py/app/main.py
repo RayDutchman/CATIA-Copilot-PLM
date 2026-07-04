@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, parts
+from app.core.exception_handlers import register_exception_handlers
 
 # 路径前缀与 Payara 完全一致，Backbone 前端无需任何修改
 API_PREFIX = "/docdoku-plm-server-rest/api"
@@ -21,6 +22,8 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["jwt"],  # 前端需要读取响应头中的 jwt
 )
+
+register_exception_handlers(app)
 
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(parts.router, prefix=API_PREFIX)
