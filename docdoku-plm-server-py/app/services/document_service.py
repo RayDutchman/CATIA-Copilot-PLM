@@ -249,6 +249,24 @@ class DocumentService:
             result.extend(m.revisions)
         return result
 
+    def list_checked_out(self, db, ws):
+        return db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.checkout_user_login.isnot(None),
+        ).all()
+
+    def count_checked_out_documents(self, db, ws):
+        return db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.checkout_user_login.isnot(None),
+        ).count()
+
+    def list_documents_in_folder(self, db, ws, folder_path):
+        return db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.location_completepath == folder_path,
+        ).all()
+
     def create_folder(self, db, parent_path, name):
         completepath = f"{parent_path}/{name}" if parent_path else name
         existing = db.query(Folder).filter(

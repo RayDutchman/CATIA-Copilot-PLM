@@ -58,3 +58,20 @@ def delete(ws: str, folder_path: str,
            db: Session = Depends(get_db)):
     svc.delete_folder(db, folder_path)
     return {"status": "deleted"}
+
+
+@router.get("/workspaces/{ws}/folders/{folder_id:path}/documents")
+def list_folder_docs(ws: str, folder_id: str,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    return svc.list_documents_in_folder(db, ws, folder_id)
+
+
+@router.post("/workspaces/{ws}/folders/{folder_id:path}/documents", status_code=201)
+def create_in_folder(ws: str, folder_id: str, body: dict,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    doc_id = body.get("reference", "")
+    title = body.get("title", "")
+    return svc.create_document(db, ws, doc_id, title,
+                                current_user.login, folder_path=folder_id)

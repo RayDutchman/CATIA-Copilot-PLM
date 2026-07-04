@@ -33,10 +33,33 @@ def search(ws: str, q: str = Query(""),
 
 @router.get("/workspaces/{ws}/documents")
 def list_docs(ws: str, start: int = Query(0, ge=0),
-              length: int = Query(50, ge=1, le=500),
+              max: int = Query(50, ge=1, le=500),
+              length: int = Query(None, ge=1, le=500),
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
-    return svc.list_revisions(db, ws, start, length)
+    limit = length or max  # 兼容 Payara 前端 `max` 参数
+    return svc.list_revisions(db, ws, start, limit)
+
+
+@router.get("/workspaces/{ws}/documents/checkedout")
+def list_checked_out(ws: str,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    return svc.list_checked_out(db, ws)
+
+
+@router.get("/workspaces/{ws}/documents/countCheckedOut")
+def count_checked_out(ws: str,
+                      current_user: Account = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    return {"count": svc.count_checked_out_documents(db, ws)}
+
+
+@router.get("/workspaces/{ws}/documents/doc_revs")
+def search_doc_revs(ws: str, q: str = Query(""),
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    return svc.search(db, ws, doc_id=q)
 
 
 @router.post("/workspaces/{ws}/documents", status_code=201)
