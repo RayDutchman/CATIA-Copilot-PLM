@@ -177,6 +177,13 @@ class ConversionDTO(BaseModel):
     endDate: Optional[datetime] = None
 
 
+class ConversionResultDTO(BaseModel):
+    tempDir: Optional[str] = None
+    convertedFileLODs: Optional[dict] = None
+    box: Optional[list[float]] = None
+    errorOutput: Optional[str] = None
+
+
 class CountDTO(BaseModel):
     count: int = 0
 

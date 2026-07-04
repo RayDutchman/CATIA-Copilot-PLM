@@ -7,10 +7,11 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.schemas.part import (
     PartRevisionDTO, PartCreationDTO, PartIterationUpdateDTO,
-    ConversionDTO, CountDTO, LightPartMasterDTO,
+    ConversionDTO, ConversionResultDTO, CountDTO, LightPartMasterDTO,
 )
 from app.services.product_service import ProductService
 from app.services.part_mapper import map_revision
+from app.services import conversion_service
 
 router = APIRouter()
 svc = ProductService()
@@ -203,3 +204,17 @@ def get_conversion_status(
         startDate=conv.start_date,
         endDate=conv.end_date,
     )
+
+
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion")
+def conversion_callback(
+    workspace_id: str,
+    part_key: str,
+    body: ConversionResultDTO,
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    number, version = _split_part_key(part_key)
+    conversion_service.handle_callback(db, workspace_id, number, version, body)
+    db.commit()
+    return {"status": "ok"}
