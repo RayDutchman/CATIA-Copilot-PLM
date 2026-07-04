@@ -95,6 +95,39 @@ def search_parts(
     return [map_revision(pr, db) for pr in revisions]
 
 
+@router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}")
+def get_parts_by_tag(workspace_id: str, tag_id: str,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/queries")
+def get_queries(workspace_id: str,
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/parts_last_iter")
+def parts_last_iter(workspace_id: str, q: str = Query(""),
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/imports/{filename}")
+def imports_get(workspace_id: str, filename: str,
+                current_user: Account = Depends(get_current_user)):
+    return {}
+
+
+@router.get("/workspaces/{workspace_id}/parts/import/{import_id}")
+def import_get(workspace_id: str, import_id: str,
+               current_user: Account = Depends(get_current_user)):
+    return {}
+
+
 @router.get("/workspaces/{workspace_id}/parts/{part_number}/latest-revision",
              response_model=PartRevisionDTO)
 def get_latest_revision(
@@ -132,6 +165,34 @@ def used_by_component(workspace_id: str, part_key: str,
 def used_by_substitute(workspace_id: str, part_key: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances")
+def get_instances(workspace_id: str, part_key: str,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines")
+def get_baselines(workspace_id: str, part_key: str,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows")
+def get_aborted_workflows(workspace_id: str, part_key: str,
+                          current_user: Account = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters")
+def used_by_product(workspace_id: str, part_key: str,
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
     return []
 
 

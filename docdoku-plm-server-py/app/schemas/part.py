@@ -1,7 +1,8 @@
 """零件相关 Pydantic DTO，字段名与 DocdokuPLM JSON 响应完全一致（camelCase）。"""
 from __future__ import annotations
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, model_serializer
 from pydantic import BaseModel, model_validator
 
 
@@ -147,6 +148,11 @@ class PartRevisionDTO(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @model_serializer(mode='wrap')
+    def _exclude_none(self, handler):
+        result = handler(self)
+        return {k: v for k, v in result.items() if v is not None}
 
 
 class PartCreationDTO(BaseModel):
