@@ -64,7 +64,8 @@ def delete(ws: str, folder_path: str,
 def list_folder_docs(ws: str, folder_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    return svc.list_documents_in_folder(db, ws, folder_id)
+    from app.routers.documents import _doc_to_dict
+    return [_doc_to_dict(r) for r in svc.list_documents_in_folder(db, ws, folder_id)]
 
 
 @router.post("/workspaces/{ws}/folders/{folder_id:path}/documents", status_code=201)

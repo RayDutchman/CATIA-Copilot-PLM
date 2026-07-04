@@ -14,19 +14,44 @@ svc = DocumentService()
 def _doc_to_dict(rev):
     iterations = []
     for it in (rev.iterations or []):
-        iterations.append({
+        it_dict = {
+            "id": f"{rev.documentmaster_id}-{rev.version}-{it.iteration}",
             "iteration": it.iteration,
             "workspaceId": it.workspace_id,
             "documentMasterId": it.documentmaster_id,
-            "version": it.documentrevision_version,
+            "documentRevisionVersion": it.documentrevision_version,
+            "version": rev.version,
             "title": rev.title,
             "revisionNote": it.revision_note,
             "creationDate": str(it.creation_date) if it.creation_date else None,
+            "modificationDate": str(it.modification_date) if it.modification_date else None,
+            "checkInDate": str(it.check_in_date) if it.check_in_date else None,
             "instanceAttributes": [],
             "attachedFiles": [],
             "linkedDocuments": [],
-            "author": {"login": it.author_login, "name": it.author_login},
-        })
+            "author": {
+                "login": it.author_login, "name": it.author_login,
+                "email": None, "language": None, "workspaceId": it.workspace_id,
+            },
+            "documentRevision": {
+                "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
+                "workspaceId": rev.workspace_id,
+                "version": rev.version,
+                "documentMasterId": f"{rev.documentmaster_id}-{rev.version}",
+                "status": None,
+                "publicShared": False,
+                "acl": None,
+                "attributesLocked": False,
+                "checkOutUser": None,
+                "checkOutDate": None,
+                "releaseAuthor": None,
+                "releaseDate": None,
+                "iterationSubscription": False,
+                "stateSubscription": False,
+                "commentLink": None,
+            },
+        }
+        iterations.append(it_dict)
     return {
         "id": f"{rev.documentmaster_id}-{rev.version}",
         "version": rev.version,
@@ -38,15 +63,21 @@ def _doc_to_dict(rev):
         "creationDate": str(rev.creation_date) if rev.creation_date else None,
         "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else None,
         "checkOutDate": str(rev.check_out_date) if rev.check_out_date else None,
+        "releaseDate": str(rev.release_date) if rev.release_date else None,
+        "obsoleteDate": str(rev.obsolete_date) if rev.obsolete_date else None,
         "lastIteration": rev.last_iteration_number,
         "documentIterations": iterations,
         "tags": [],
         "acl": None,
         "path": rev.location_completepath,
-        "lifeCycleState": None,
+        "lifeCycleState": "WIP",
         "workflow": None,
         "publicShared": False,
         "attributesLocked": False,
+        "author": {
+            "login": rev.author_login, "name": rev.author_login,
+            "email": None, "workspaceId": rev.workspace_id,
+        },
     }
 
 
@@ -84,7 +115,7 @@ def list_docs(ws: str, start: int = Query(0, ge=0),
 def list_checked_out(ws: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    return svc.list_checked_out(db, ws)
+    return [_doc_to_dict(r) for r in svc.list_checked_out(db, ws)]
 
 
 @router.get("/workspaces/{ws}/documents/countCheckedOut")
@@ -98,7 +129,7 @@ def count_checked_out(ws: str,
 def search_doc_revs(ws: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
-    return svc.search(db, ws, doc_id=q)
+    return [_doc_to_dict(r) for r in svc.search(db, ws, doc_id=q)]
 
 
 @router.post("/workspaces/{ws}/documents", status_code=201)
