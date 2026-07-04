@@ -6,7 +6,21 @@
 
 ---
 
-## 2026-07-04（续4）
+## 2026-07-04（续5）— 零件模块 Payara→FastAPI 行为对齐（批次 0-2）
+
+- feat: i18n 基础设施——复制 Java 4 语言 properties 文件，实现 `app/core/i18n.py` 加载器
+- feat: 业务异常体系——`ApplicationException` 基类 + 6 子类，镜像 Payara 异常 key 约定
+- feat: 全局 exception handler——异常→HTTP 状态码映射（403/404/409/500），按用户语言翻译 i18n
+- feat: 用户语言中间件——从 JWT 解析 Account.language 注入 `request.state.user_language`
+- test: 与 Payara 对拍脚本 `scripts/compare_with_payara.py`
+- feat: deletePartRevision——`EntityConstraintException2` 被用作组件时返回中文错误消息
+- feat: checkout/checkin/undo_checkout——全部替换为 i18n 异常（NotAllowedException37/47/20/19/41）
+- feat: createPartMaster/updatePartIteration——EntityAlreadyExistsException/NotAllowedException25
+- test: 固化 geometryFileURI/UserDTO/datetime 对齐行为
+- test: 批次 1 错误路径集成测试（test_parts_error_paths.py，3 个测试场景）
+- 测试统计：从 38 个增加到 57 个，全部通过
+
+---
 
 - feat: P1a 零件核心 CRUD 全部完成（6 个 Task，38 个测试全通过）
   - ORM 模型：9 张零件表 + 5 张关联表完整映射（`app/models/part.py`）

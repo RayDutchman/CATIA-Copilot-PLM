@@ -8,6 +8,26 @@
 
 ### 高优先级
 
+- [ ] **批次 3：P1b 8 方法实现（占位，待细化）**
+  批次 0-2 已完成（i18n 基础设施 + P1a 7 方法错误消息对齐 + DTO 字段对齐）。
+  批次 3 涉及新写端点（文件上传下载、转换回调、发布、废弃、删文件、标签），
+  依赖 P1b 的 vault 文件读写与新 ORM 建模。待另起一份 P1b 实现计划细化。
+  待细化项：
+  - saveNativeCADInPartIteration/saveFileInPartIteration：NotAllowedException4 + CAD 白名单校验
+  - handleConversionResultCallback：findPendingConversionForRevision 定位 + 空几何跳过
+  - createPartRevision：NotAllowedException40/41/56
+  - releasePartRevision：NotAllowedException46/41/38
+  - markPartRevisionAsObsolete：NotAllowedException36
+  - removeFileInPartIteration、标签管理
+
+- [ ] **deletePartRevision 仍有 3 个约束未实现**
+  EntityConstraintException1（配置项根零件）、Exception5（基线）、Exception21（变更项），
+  因对应表（ProductConfiguration/ProductBaseline/ChangeItem）未在 ORM 中建模，已加 TODO 注释。
+  待对应模块建模后补齐。
+
+- [ ] **notifications 字段仍为空**
+  PartRevisionDTO.notifications 当前始终为空列表。需 ModificationNotification 表建模后补齐。
+
 - [ ] **P1b：文件上传下载 + CAD 转换回调 + 状态管理**
   P1a 零件核心 CRUD 已完成（14 个端点，38 个测试通过，Nginx parts 路由已切换到 FastAPI）。
   下一步 P1b：文件上传下载（CAD 文件 + 附件）、CAD 转换回调、状态管理（release/obsolete/tags）、搜索。
@@ -84,3 +104,4 @@
 - [x] **转换服务迁移为 Python-only**：`2.7.0-py` 镜像上线，aiokafka 手动 commit，回归验证通过（2026-07-04）
 - [x] **P0 FastAPI 后端基础设施**：7 个 Task 全部完成，17 个测试通过，`back-py` 容器运行，Nginx auth 路由切换验证通过（2026-07-04）
 - [x] **P1a 零件核心 CRUD**：6 个 Task 全部完成，38 个测试通过，14 个零件端点，Nginx parts 路由切换到 FastAPI back-py（2026-07-04）
+- [x] **零件模块 Payara→FastAPI 行为对齐（批次 0-2）**：i18n 基础设施 + ApplicationException 体系 + 全局 handler + 用户语言中间件 + 对拍脚本 + P1a 7 方法错误消息对齐 + DTO 字段固化测试。测试从 38 个增加到 57 个全部通过（2026-07-04）
