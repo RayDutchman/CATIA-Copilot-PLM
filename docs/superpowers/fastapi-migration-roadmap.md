@@ -1,7 +1,7 @@
 # Payara → FastAPI 完整迁移路线图
 
 > **权威文档**：本文件是迁移路线图的唯一事实来源。取代散落在各 plan 文档和对话中的描述。每次规划新阶段前先读本文件。
-> **最后更新**：2026-07-04
+> **最后更新**：2026-07-05
 
 ---
 
@@ -75,7 +75,7 @@
 | **P0** | 基础设施（FastAPI 骨架、JWT、DB、vault、Kafka） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p0-infrastructure.md` |
 | **P1a-core** | 零件核心 CRUD（ORM + 14 端点 + 签出签入 + BOM 更新） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p1a-parts-core.md` |
 | **P1a-align** | 零件行为对齐（i18n 基础设施 + 7 方法错误消息 + DTO 字段） | ✅ 完成 | `plans/2026-07-04-payara-fastapi-parts-alignment.md` |
-| **P1b** | 零件文件（nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索） | ⬜ 待规划 | — |
+| **P1b** | 零件文件（nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索） | ✅ 完成 | `plans/2026-07-04-p1b-parts-files.md` |
 | **P2** | 文档与文件夹（Documents/Folders/Tags/文档模板） | ⬜ 待规划 | — |
 | **P3** | 产品结构（Products/ConfigurationItems/Baselines/ProductInstances/3D 装配树） | ⬜ 待规划 | — |
 | **P4** | 变更管理（ChangeIssues/ChangeRequests/ChangeOrders/Milestones） | ⬜ 待规划 | — |
@@ -86,6 +86,7 @@
 ```
 /docdoku-plm-server-rest/api/auth/                         → FastAPI back-py:8000  （P0 已切）
 /docdoku-plm-server-rest/api/workspaces/{ws}/parts...      → FastAPI back-py:8000  （P1a 已切）
+/docdoku-plm-server-rest/api/files/{ws}/parts...           → FastAPI back-py:8000  （P1b 已切）
 其余全部                                                     → Payara back:8080
 ```
 
@@ -99,9 +100,12 @@
 |------|------|----------|------|
 | deletePartRevision: 配置项根零件检查 | `product_service.delete_revision` | P3 | `EntityConstraintException1`，需 ProductConfiguration 表建模 |
 | deletePartRevision: 基线检查 | 同上 | P3 | `EntityConstraintException5`，需 ProductBaseline 表 |
-| deletePartRevision: 替代品检查 | 同上 | P1b/P3 | `EntityConstraintException22`，需 PartSubstituteLink 表 |
+| deletePartRevision: 替代品检查 | 同上 | P3 | `EntityConstraintException22`，需 PartSubstituteLink 表 |
 | deletePartRevision: 变更项检查 | 同上 | P4 | `EntityConstraintException21`，需 ChangeItem 表 |
 | PartRevisionDTO.notifications | `part_mapper.map_revision` | P5 | 当前始终空列表，需 ModificationNotification 表 |
+| 转换回调 JWT 过期风险 | `kafka_producer.send_conversion_order` | P2+ | userToken 透传上传时 token，长时间转换后可能过期。后续改为服务间 token |
+| 装配同步未迁移 | `update_iteration` | P2 | P1b 仅做零件单体，装配 BOM 同步仍在 Payara |
+| 搜索为 DB LIKE MVP | `search_parts` | P3+ | 无 ES 全文搜索，用 `ilike` 模糊匹配
 
 ---
 

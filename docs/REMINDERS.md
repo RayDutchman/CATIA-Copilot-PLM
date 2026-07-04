@@ -8,19 +8,13 @@
 
 ### 高优先级
 
-- [ ] **P1b：零件文件 + 转换回调 + 状态管理（下一阶段，待规划）**
-  P1a-core（CRUD）与 P1a-align（行为对齐批次 0-2）均已完成。下一阶段 P1b：
-  nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索。
-  规划时**必须遵循标准每阶段工作流**（见 `docs/superpowers/fastapi-migration-roadmap.md`）：
-  ORM→端点(用 i18n 异常)→对齐审计→Payara 对拍→前端实测→**通过后才切 Nginx**。
-  待细化的 i18n 校验点：
-  - saveNativeCADInPartIteration/saveFileInPartIteration：NotAllowedException4 + CAD 白名单
-  - handleConversionResultCallback：findPendingConversionForRevision 定位 + 空几何跳过
-  - createPartRevision：NotAllowedException40/41/56
-  - releasePartRevision：NotAllowedException46/41/38
-  - markPartRevisionAsObsolete：NotAllowedException36
-  - removeFileInPartIteration、标签管理
-  P1b 完成后 Payara back 容器可退出零件相关功能。
+- [ ] **JWT 过期风险提醒**：上传 nativecad 时将当前请求 token 透传给 Kafka 消息 userToken，转换服务用此 token 回调。若 token 在转换完成前过期（默认 3h），转换服务回调会 401 失败。建议后续改为服务间 token（如生成长期 API key 或在 conversion_service 内置白名单）。
+
+- [ ] **装配同步（_sync_components）未做**：P1b 不含装配同步迁移，当前仍在 Payara 处理（update_iteration endpoint）。下一步 P2 迁移到 FastAPI。
+
+- [ ] **搜索为 DB MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。后续 P3 迁移 ES。
+
+### 中优先级
 
 - [ ] **对齐债务（跨模块约束/字段，待属主阶段补齐）**
   详见路线图"对齐债务追踪"表。摘要：
@@ -99,3 +93,4 @@
 - [x] **P0 FastAPI 后端基础设施**：7 个 Task 全部完成，17 个测试通过，`back-py` 容器运行，Nginx auth 路由切换验证通过（2026-07-04）
 - [x] **P1a 零件核心 CRUD**：6 个 Task 全部完成，38 个测试通过，14 个零件端点，Nginx parts 路由切换到 FastAPI back-py（2026-07-04）
 - [x] **零件模块 Payara→FastAPI 行为对齐（批次 0-2）**：i18n 基础设施 + ApplicationException 体系 + 全局 handler + 用户语言中间件 + 对拍脚本 + P1a 7 方法错误消息对齐 + DTO 字段固化测试。测试从 38 个增加到 57 个全部通过（2026-07-04）
+- [x] **P1b 零件文件+转换回调+状态+搜索**：9 个 Task 全部完成，73 个测试通过。Kafka 消息重构为嵌套结构+userToken、文件上传下载、转换回调（race/空几何修复）、release/obsolete/newVersion、标签管理 set/add/remove、DB 搜索 MVP。Nginx files 路由切到 back-py，conversion ENDPOINT 切到 back-py。Payara back 容器已退出全部零件相关功能（2026-07-05）

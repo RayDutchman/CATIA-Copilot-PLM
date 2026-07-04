@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-05 — P1b 零件文件+转换回调+状态+搜索 全部完成
+
+- feat(py): Kafka 转换消息重构为嵌套结构+userToken，topic 改 CONVERT
+- feat(py): file_service——vault 写读 + BinaryResource 记录（save_nativecad/save_attached/get_file_bytes）
+- feat(py): 文件上传/下载端点 + 触发转换（nativecad 上传带 CAD 白名单校验，attachedfiles 上传下载，GLB 直下）
+- feat(py): 转换回调服务+端点——handle_callback 含 race 修复（findPendingConversion）和空几何跳过逻辑，对齐 Payara ConverterBean
+- feat(py): release/obsolete/newVersion 端点对齐 Payara i18n（NotAllowedException46/41/38/36）
+- feat(py): 标签管理端点（set/add/remove tags，_ensure_tag upsert）
+- feat(py): 零件搜索端点（DB LIKE MVP，按 name/number/type 模糊匹配）
+- chore(docker): Nginx files 路由指向 back-py，conversion.env ENDPOINT 切换为 back-py:8000
+- chore: requirements 新增 python-multipart 依赖
+- test: 73 个测试全部通过（新增 test_part_files_api/test_file_service/test_conversion_service/test_part_status/test_part_tags/test_part_search）
+
 ## 2026-07-04（续6）— 迁移路线图权威文档
 
 - docs: 新建 `docs/superpowers/fastapi-migration-roadmap.md` 作为迁移路线图唯一事实来源
