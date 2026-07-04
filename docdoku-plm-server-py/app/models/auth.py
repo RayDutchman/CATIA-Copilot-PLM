@@ -7,11 +7,10 @@ class Account(Base):
     __tablename__ = "account"
 
     login = Column(String, primary_key=True)
-    email = Column(String, nullable=False)
+    email = Column(String)
     name = Column(String)
     language = Column(String)
     timezone = Column(String)
-    admin = Column(Boolean, default=False)
     enabled = Column(Boolean, default=True)
 
 
@@ -20,4 +19,12 @@ class Credential(Base):
     __tablename__ = "credential"
 
     login = Column(String, primary_key=True)
-    password = Column(String, nullable=False)
+    password = Column(String)
+
+
+class UserGroupMapping(Base):
+    """对应 usergroupmapping 表，login → groupname 映射。"""
+    __tablename__ = "usergroupmapping"
+
+    login = Column(String, primary_key=True)
+    groupname = Column(String, primary_key=True)
