@@ -1,8 +1,12 @@
 """FastAPI 应用入口。"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.routers import auth, parts
 from app.core.exception_handlers import register_exception_handlers
+from app.core.security import verify_token
+from app.core.database import SessionLocal
+from app.models.auth import Account
 
 # 路径前缀与 Payara 完全一致，Backbone 前端无需任何修改
 API_PREFIX = "/docdoku-plm-server-rest/api"
@@ -24,6 +28,30 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
+
+
+class UserLanguageMiddleware(BaseHTTPMiddleware):
+
+    async def dispatch(self, request, call_next):
+        request.state.user_language = None
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                payload = verify_token(auth[7:])
+                db = SessionLocal()
+                try:
+                    acct = db.query(Account).filter(
+                        Account.login == payload["login"]).first()
+                    if acct:
+                        request.state.user_language = acct.language
+                finally:
+                    db.close()
+            except Exception:
+                pass
+        return await call_next(request)
+
+
+app.add_middleware(UserLanguageMiddleware)
 
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(parts.router, prefix=API_PREFIX)

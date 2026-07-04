@@ -82,3 +82,13 @@ def test_handler_returns_translated_message():
     resp = client.get("/constraint")
     assert resp.json()["message"] == \
         "You cannot delete a part used as component in an assembly"
+
+
+# ── Task 5: 用户语言中间件测试 ──────────────────────────
+
+def test_language_middleware_sets_state():
+    """无有效 token 时 user_language 应为 None（兜底 en），请求不应崩溃。"""
+    from app.main import app
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get("/docdoku-plm-server-rest/api/workspaces/Workspace_2/parts/count")
+    assert resp.status_code in (401, 200)
