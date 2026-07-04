@@ -107,7 +107,9 @@ def get_latest_revision(
 
 
 @router.post("/workspaces/{workspace_id}/parts",
-             response_model=PartRevisionDTO, status_code=201)
+            response_model=PartRevisionDTO, status_code=201)
+@router.post("/workspaces/{workspace_id}/parts/",
+            response_model=PartRevisionDTO, status_code=201, include_in_schema=False)
 def create_part(
     workspace_id: str,
     body: PartCreationDTO,
