@@ -1,6 +1,7 @@
 """零件集合路由（与 Payara 路径完全一致）。"""
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -214,7 +215,7 @@ def get_conversion_status(
     number, version = _split_part_key(part_key)
     conv = svc.get_conversion(db, workspace_id, number, version, iteration)
     if conv is None:
-        return ConversionDTO()
+        return Response(status_code=204)
     return ConversionDTO(
         pending=conv.pending or False,
         succeed=conv.succeed or False,

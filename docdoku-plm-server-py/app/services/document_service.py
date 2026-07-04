@@ -283,10 +283,10 @@ class DocumentService:
         if parent_path:
             return db.query(Folder).filter(
                 Folder.parentfolder_completepath == parent_path).all()
-        # 根文件夹：completepath = workspace_id（如 Workspace_2）
+        # 返回该 workspace 下所有子文件夹（匹配 Payara 行为）
         return db.query(Folder).filter(
-            Folder.completepath == ws,
-        ).all()
+            Folder.completepath.startswith(f"{ws}/"),
+        ).order_by(Folder.completepath).all()
 
     def rename_folder(self, db, completepath, new_name):
         folder = db.query(Folder).filter(

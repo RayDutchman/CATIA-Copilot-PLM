@@ -13,16 +13,19 @@ svc = DocumentService()
 @router.get("/workspaces/{ws}/folders")
 def list_root(ws: str, current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
-    return [{"path": f.completepath, "name": f.completepath}
-            for f in svc.list_folders(db, ws)]
+    folders = svc.list_folders(db, ws)
+    # Payara 格式: id="ws:path", name, path, home=false
+    return [{"id": f"{ws}:{f.completepath}", "name": f.completepath.split('/')[-1],
+             "path": f.completepath, "home": False} for f in folders]
 
 
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders")
 def list_sub(ws: str, folder_path: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
-    return [{"path": f.completepath, "name": f.completepath}
-            for f in svc.list_folders(db, folder_path)]
+    folders = svc.list_folders(db, ws, folder_path)
+    return [{"id": f"{ws}:{f.completepath}", "name": f.completepath.split('/')[-1],
+             "path": f.completepath, "home": False} for f in folders]
 
 
 @router.post("/workspaces/{ws}/folders", status_code=201)
