@@ -1,7 +1,7 @@
 """FastAPI 应用入口。"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth
+from app.routers import auth, parts
 
 # 路径前缀与 Payara 完全一致，Backbone 前端无需任何修改
 API_PREFIX = "/docdoku-plm-server-rest/api"
@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix=API_PREFIX)
+app.include_router(parts.router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health")

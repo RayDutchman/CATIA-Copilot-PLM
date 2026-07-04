@@ -190,6 +190,7 @@ class PartRevision(Base):
         ),
         order_by="PartIteration.iteration",
         back_populates="revision",
+        cascade="all, delete-orphan",
     )
     tags: Mapped[List["Tag"]] = relationship(
         "Tag",
