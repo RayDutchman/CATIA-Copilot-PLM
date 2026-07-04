@@ -32,3 +32,29 @@ def test_part_revision_status_field():
         name="x", status="RELEASED"
     )
     assert dto.status == "RELEASED"
+
+
+# ── Task 10: DTO 字段固化测试 ────────────────────────────
+
+def test_geometry_uri_format(db):
+    """有 GLB 的 iteration 应返回 /api/files/{fullname} 格式的 geometryFileURI。"""
+    from app.services.part_mapper import map_revision
+    from app.services.product_service import ProductService
+    svc = ProductService()
+    pr = svc.get_revision(db, "Workspace_2", "Differential Axle 2010", "A")
+    dto = map_revision(pr, db)
+    it1 = next(i for i in dto.partIterations if i.iteration == 1)
+    assert it1.geometryFileURI is not None
+    assert it1.geometryFileURI.startswith("/api/files/Workspace_2/parts/")
+    assert it1.geometryFileURI.endswith(".glb")
+
+
+def test_user_dto_has_name_email_language(db):
+    from app.services.part_mapper import map_revision
+    from app.services.product_service import ProductService
+    svc = ProductService()
+    pr = svc.get_revision(db, "Workspace_2", "Differential Axle 2010", "A")
+    dto = map_revision(pr, db)
+    assert dto.author.name is not None
+    assert dto.author.email is not None
+    assert dto.author.language is not None
