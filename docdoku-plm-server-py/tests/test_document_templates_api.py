@@ -1,0 +1,26 @@
+from fastapi.testclient import TestClient
+from app.main import app
+PREFIX = "/docdoku-plm-server-rest/api"
+WS = "Workspace_2"
+client = TestClient(app)
+
+
+def _token():
+    r = client.post(f"{PREFIX}/auth/login", json={"login":"test1","password":"password"})
+    return r.headers.get("jwt")
+
+
+def test_create_list_delete():
+    token = _token(); h = {"Authorization": f"Bearer {token}"}
+    tid = f"P2TPL-{hash(token) % 100000}"
+    # 创建
+    resp = client.post(f"{PREFIX}/workspaces/{WS}/document-templates",
+                       json={"reference": tid, "documentType": "doc"}, headers=h)
+    assert resp.status_code == 201
+    # 列表
+    resp2 = client.get(f"{PREFIX}/workspaces/{WS}/document-templates", headers=h)
+    assert any(t["id"] == tid for t in resp2.json())
+    # 删除
+    resp3 = client.request("DELETE",
+                           f"{PREFIX}/workspaces/{WS}/document-templates/{tid}", headers=h)
+    assert resp3.status_code == 200
