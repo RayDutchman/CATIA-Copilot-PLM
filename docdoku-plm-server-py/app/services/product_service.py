@@ -1,0 +1,338 @@
+"""零件业务逻辑服务：CRUD、签出签入、装配同步。"""
+from datetime import datetime
+from typing import Optional
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+from app.models.part import (
+    PartMaster, PartRevision, PartIteration,
+    PartUsageLink, CADInstance, Conversion,
+    part_iteration_usagelink, usage_link_cadinstances,
+)
+from app.schemas.part import PartCreationDTO, PartIterationUpdateDTO
+
+
+class ProductService:
+
+    # ── 查询 ──────────────────────────────────────────────────
+
+    def list_revisions(self, db: Session, workspace_id: str,
+                       start: int = 0, length: int = 50) -> list:
+        return (
+            db.query(PartRevision)
+            .filter(PartRevision.workspace_id == workspace_id)
+            .order_by(PartRevision.partmaster_partnumber, PartRevision.version)
+            .offset(start).limit(length).all()
+        )
+
+    def count_parts(self, db: Session, workspace_id: str) -> int:
+        return (
+            db.query(PartMaster)
+            .filter(PartMaster.workspace_id == workspace_id)
+            .count()
+        )
+
+    def get_revision(self, db: Session, workspace_id: str,
+                     number: str, version: str) -> PartRevision:
+        pr = (
+            db.query(PartRevision)
+            .filter(
+                PartRevision.workspace_id == workspace_id,
+                PartRevision.partmaster_partnumber == number,
+                PartRevision.version == version,
+            )
+            .first()
+        )
+        if pr is None:
+            raise HTTPException(status_code=404,
+                                detail=f"Part {number}-{version} not found")
+        return pr
+
+    def get_latest_revision(self, db: Session, workspace_id: str,
+                            number: str) -> PartRevision:
+        master = (
+            db.query(PartMaster)
+            .filter(PartMaster.workspace_id == workspace_id,
+                    PartMaster.number == number)
+            .first()
+        )
+        if master is None or not master.revisions:
+            raise HTTPException(status_code=404,
+                                detail=f"Part {number} not found")
+        return master.last_revision
+
+    def search_numbers(self, db: Session, workspace_id: str,
+                       q: str, limit: int = 8) -> list:
+        pattern = f"%{q}%"
+        return (
+            db.query(PartMaster)
+            .filter(
+                PartMaster.workspace_id == workspace_id,
+                PartMaster.number.ilike(pattern),
+            )
+            .limit(limit).all()
+        )
+
+    def list_checked_out(self, db: Session, workspace_id: str) -> list:
+        return (
+            db.query(PartRevision)
+            .filter(
+                PartRevision.workspace_id == workspace_id,
+                PartRevision.checkout_user_login.isnot(None),
+            )
+            .all()
+        )
+
+    def get_conversion(self, db: Session, workspace_id: str,
+                       number: str, version: str, iteration: int
+                       ) -> Optional[Conversion]:
+        return (
+            db.query(Conversion)
+            .filter(
+                Conversion.workspace_id == workspace_id,
+                Conversion.partmaster_partnumber == number,
+                Conversion.partrevision_version == version,
+                Conversion.iteration == iteration,
+            )
+            .first()
+        )
+
+    # ── 辅助 ──────────────────────────────────────────────────
+
+    def find_or_create_part_master(self, db: Session,
+                                   workspace_id: str, number: str) -> PartMaster:
+        master = (
+            db.query(PartMaster)
+            .filter(PartMaster.workspace_id == workspace_id,
+                    PartMaster.number == number)
+            .first()
+        )
+        if master is None:
+            master = PartMaster(
+                workspace_id=workspace_id,
+                number=number,
+                creation_date=datetime.utcnow(),
+            )
+            db.add(master)
+            db.flush()
+        return master
+
+    def _next_version(self, current: str) -> str:
+        if not current:
+            return "A"
+        last_char = current[-1]
+        if last_char == "Z":
+            return current + "A"
+        return current[:-1] + chr(ord(last_char) + 1)
+
+    # ── 写操作 ────────────────────────────────────────────────
+
+    def create_part(self, db: Session, workspace_id: str,
+                    creator_login: str, body: PartCreationDTO) -> PartRevision:
+        # 检查零件号唯一性
+        existing = (
+            db.query(PartMaster)
+            .filter(PartMaster.workspace_id == workspace_id,
+                    PartMaster.number == body.number)
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=409,
+                                detail=f"Part {body.number} already exists")
+        now = datetime.utcnow()
+        # 创建 PartMaster
+        master = PartMaster(
+            workspace_id=workspace_id,
+            number=body.number,
+            name=body.name,
+            standard_part=body.standard_part,
+            creation_date=now,
+            author_workspace_id=workspace_id,
+            author_login=creator_login,
+        )
+        db.add(master)
+        db.flush()
+        # 创建首个 PartRevision（版本 A）
+        revision = PartRevision(
+            workspace_id=workspace_id,
+            partmaster_partnumber=body.number,
+            version="A",
+            description=body.description,
+            status=0,
+            creation_date=now,
+            author_workspace_id=workspace_id,
+            author_login=creator_login,
+            checkout_user_workspace_id=workspace_id,
+            checkout_user_login=creator_login,
+            check_out_date=now,
+        )
+        db.add(revision)
+        db.flush()
+        # 创建首个 PartIteration（iteration=1）
+        iteration = PartIteration(
+            workspace_id=workspace_id,
+            partmaster_partnumber=body.number,
+            partrevision_version="A",
+            iteration=1,
+            creation_date=now,
+            author_workspace_id=workspace_id,
+            author_login=creator_login,
+        )
+        db.add(iteration)
+        db.commit()
+        db.refresh(revision)
+        return revision
+
+    def delete_revision(self, db: Session, workspace_id: str,
+                        number: str, version: str, user_login: str) -> None:
+        pr = self.get_revision(db, workspace_id, number, version)
+        if pr.checkout_user_login and pr.checkout_user_login != user_login:
+            raise HTTPException(403, "Part is checked out by another user")
+        if pr.status == 1:
+            raise HTTPException(403, "Cannot delete a released revision")
+        db.delete(pr)
+        db.commit()
+
+    def checkout(self, db: Session, workspace_id: str,
+                 number: str, version: str, user_login: str) -> PartRevision:
+        pr = self.get_revision(db, workspace_id, number, version)
+        if pr.checkout_user_login:
+            raise HTTPException(409,
+                f"Already checked out by {pr.checkout_user_login}")
+        if pr.status != 0:
+            raise HTTPException(403, "Cannot check out a released/obsolete revision")
+        now = datetime.utcnow()
+        pr.checkout_user_login = user_login
+        pr.checkout_user_workspace_id = workspace_id
+        pr.check_out_date = now
+        # 新建迭代（iteration+1）
+        last_iter = pr.last_iteration_number
+        new_iter = PartIteration(
+            workspace_id=workspace_id,
+            partmaster_partnumber=number,
+            partrevision_version=version,
+            iteration=last_iter + 1,
+            creation_date=now,
+            author_workspace_id=workspace_id,
+            author_login=user_login,
+        )
+        db.add(new_iter)
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def checkin(self, db: Session, workspace_id: str,
+                number: str, version: str, user_login: str) -> PartRevision:
+        pr = self.get_revision(db, workspace_id, number, version)
+        if pr.checkout_user_login != user_login:
+            raise HTTPException(403, "You have not checked out this part")
+        now = datetime.utcnow()
+        # 标记最新迭代为已签入
+        last = pr.last_iteration
+        if last:
+            last.check_in_date = now
+        # 清空签出信息
+        pr.checkout_user_login = None
+        pr.checkout_user_workspace_id = None
+        pr.check_out_date = None
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def undo_checkout(self, db: Session, workspace_id: str,
+                      number: str, version: str, user_login: str) -> PartRevision:
+        pr = self.get_revision(db, workspace_id, number, version)
+        if pr.checkout_user_login != user_login:
+            raise HTTPException(403, "You have not checked out this part")
+        # 删除未签入的最新迭代
+        last = pr.last_iteration
+        if last and last.check_in_date is None:
+            db.delete(last)
+        pr.checkout_user_login = None
+        pr.checkout_user_workspace_id = None
+        pr.check_out_date = None
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def update_iteration(self, db: Session, workspace_id: str,
+                         number: str, version: str, iteration_num: int,
+                         user_login: str,
+                         body: PartIterationUpdateDTO) -> PartRevision:
+        pr = self.get_revision(db, workspace_id, number, version)
+        if pr.checkout_user_login != user_login:
+            raise HTTPException(403, "Part is not checked out by you")
+        # 找目标迭代
+        target = next(
+            (it for it in pr.iterations if it.iteration == iteration_num), None
+        )
+        if target is None:
+            raise HTTPException(404, f"Iteration {iteration_num} not found")
+        now = datetime.utcnow()
+        target.modification_date = now
+        if body.iterationNote is not None:
+            target.iteration_note = body.iterationNote
+        # 更新子件列表
+        if body.components is not None:
+            self._sync_components(db, target, body.components, workspace_id)
+        db.commit()
+        db.refresh(pr)
+        return pr
+
+    def _sync_components(self, db: Session, iteration: PartIteration,
+                          components_dto: list, workspace_id: str) -> None:
+        # 清空旧关联
+        db.execute(
+            part_iteration_usagelink.delete().where(
+                part_iteration_usagelink.c.workspace_id == iteration.workspace_id,
+                part_iteration_usagelink.c.partmaster_partnumber == iteration.partmaster_partnumber,
+                part_iteration_usagelink.c.partrevision_version == iteration.partrevision_version,
+                part_iteration_usagelink.c.iteration == iteration.iteration,
+            )
+        )
+        for order, comp_dto in enumerate(components_dto):
+            comp_number = comp_dto.component.number if comp_dto.component else None
+            if not comp_number:
+                continue
+            # 确保子件 PartMaster 存在
+            self.find_or_create_part_master(db, workspace_id, comp_number)
+            # 创建 PartUsageLink
+            link = PartUsageLink(
+                amount=comp_dto.amount,
+                comment=comp_dto.comment,
+                optional=comp_dto.optional,
+                reference_description=comp_dto.referenceDescription,
+                unit=comp_dto.unit,
+                component_workspace_id=workspace_id,
+                component_partnumber=comp_number,
+            )
+            db.add(link)
+            db.flush()
+            # 处理 CAD 实例
+            for cad_dto in (comp_dto.cadInstances or []):
+                cad = CADInstance(
+                    rotation_type=cad_dto.rotationType,
+                    rx=cad_dto.rx, ry=cad_dto.ry, rz=cad_dto.rz,
+                    tx=cad_dto.tx, ty=cad_dto.ty, tz=cad_dto.tz,
+                    m00=cad_dto.m00, m01=cad_dto.m01, m02=cad_dto.m02,
+                    m10=cad_dto.m10, m11=cad_dto.m11, m12=cad_dto.m12,
+                    m20=cad_dto.m20, m21=cad_dto.m21, m22=cad_dto.m22,
+                )
+                db.add(cad)
+                db.flush()
+                db.execute(
+                    usage_link_cadinstances.insert().values(
+                        partusagelink_id=link.id,
+                        cadinstance_id=cad.id,
+                    )
+                )
+            # 建立迭代→链接关联
+            db.execute(
+                part_iteration_usagelink.insert().values(
+                    workspace_id=iteration.workspace_id,
+                    partmaster_partnumber=iteration.partmaster_partnumber,
+                    partrevision_version=iteration.partrevision_version,
+                    iteration=iteration.iteration,
+                    component_id=link.id,
+                    component_order=order,
+                )
+            )
