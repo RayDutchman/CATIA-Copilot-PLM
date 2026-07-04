@@ -30,7 +30,7 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
 
     # 从 usergroupmapping 表查询角色组（与 Payara UserGroupMapping 一致）
     mapping = db.query(UserGroupMapping).filter(UserGroupMapping.login == account.login).first()
-    group_name = mapping.groupname if mapping else "users"
+    group_name = mapping.groupname if mapping else "REGULAR_USER_ROLE_ID"
     token = create_token(account.login, group_name)
 
     # JWT 通过响应头返回，与 Payara AuthResource 行为一致
@@ -42,6 +42,12 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
 def logout():
     """登出。JWT 无状态，客户端删除本地 token 即可。返回 204。"""
     return None
+
+
+@router.get("/auth/providers")
+def list_providers():
+    """返回外部认证提供商列表（与 Payara 一致，当前为空）。"""
+    return []
 
 
 @router.get("/accounts/me", response_model=AccountDTO)
