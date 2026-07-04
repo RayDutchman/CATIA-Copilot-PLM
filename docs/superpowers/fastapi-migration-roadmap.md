@@ -72,8 +72,8 @@
 
 | 子项目 | 内容 | 状态 | 计划文档 |
 |--------|------|------|----------|
-| **P0** | 基础设施（FastAPI 骨架、JWT、DB、vault、Kafka） | ✅ 完成 | `2026-07-04-fastapi-migration-p0-infrastructure.md` |
-| **P1a-core** | 零件核心 CRUD（ORM + 14 端点 + 签出签入 + BOM 更新） | ✅ 完成 | `2026-07-04-fastapi-migration-p1a-parts-core.md` |
+| **P0** | 基础设施（FastAPI 骨架、JWT、DB、vault、Kafka） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p0-infrastructure.md` |
+| **P1a-core** | 零件核心 CRUD（ORM + 14 端点 + 签出签入 + BOM 更新） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p1a-parts-core.md` |
 | **P1a-align** | 零件行为对齐（i18n 基础设施 + 7 方法错误消息 + DTO 字段） | ✅ 完成 | `plans/2026-07-04-payara-fastapi-parts-alignment.md` |
 | **P1b** | 零件文件（nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索） | ⬜ 待规划 | — |
 | **P2** | 文档与文件夹（Documents/Folders/Tags/文档模板） | ⬜ 待规划 | — |
