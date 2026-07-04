@@ -26,17 +26,31 @@ def send_conversion_order(
     version: str,
     iteration: int,
     filename: str,
+    user_token: str,
 ) -> None:
     """
-    发送 CAD 转换任务到 Kafka。
-    消息格式与 Payara ConverterBean.convertFile() 兼容，conversion 容器能直接消费。
+    发送 CAD 转换任务到 Kafka topic CONVERT。
+    消息为嵌套结构，与 conversion-service-py handle_order 契约一致：
+      partIterationKey{workspaceId,partMasterNumber,partRevisionVersion,iteration}
+      binaryResource{fullName(vault相对路径), name}
+      userToken(回调 Bearer 认证用)
     """
+    full_name = (
+        f"{workspace_id}/parts/{part_number}/{version}/{iteration}"
+        f"/nativecad/{filename}"
+    )
     message = {
-        "workspaceId": workspace_id,
-        "partNumber": part_number,
-        "version": version,
-        "iteration": iteration,
-        "filename": filename,
+        "partIterationKey": {
+            "workspaceId": workspace_id,
+            "partMasterNumber": part_number,
+            "partRevisionVersion": version,
+            "iteration": iteration,
+        },
+        "binaryResource": {
+            "fullName": full_name,
+            "name": filename,
+        },
+        "userToken": user_token,
     }
     producer = _get_producer()
     producer.send(

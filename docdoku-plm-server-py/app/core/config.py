@@ -27,7 +27,10 @@ class Settings(BaseSettings):
 
     # Kafka
     KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
-    KAFKA_CONVERSION_TOPIC: str = "docdoku-conversions"
+    KAFKA_CONVERSION_TOPIC: str = "CONVERT"
+
+    # 转换临时目录（与 conversion 服务共享 conversion-volume）
+    CONVERSIONS_PATH: str = "/var/lib/docdoku/conversions"
 
     class Config:
         env_file = ".env"

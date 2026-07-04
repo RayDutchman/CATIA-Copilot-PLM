@@ -7,23 +7,27 @@ def test_send_conversion_order_calls_producer():
         mock_producer = MagicMock()
         mock_get.return_value = mock_producer
 
-        send_conversion_order("WS1", "PART-001", "A", 1, "model.stp")
+        send_conversion_order("WS1", "PART-001", "A", 1, "model.stp", "tok123")
 
         mock_producer.send.assert_called_once()
         call_args = mock_producer.send.call_args
-        # 第一个参数是 topic 名称
-        assert call_args[0][0] == "docdoku-conversions"
+        assert call_args[0][0] == "CONVERT"
 
 def test_conversion_order_message_structure():
-    """发送的消息体包含必要的字段。"""
+    """发送的消息为嵌套结构，含 partIterationKey/binaryResource/userToken。"""
     with patch("app.services.kafka_producer._get_producer") as mock_get:
         mock_producer = MagicMock()
         mock_get.return_value = mock_producer
 
-        send_conversion_order("WS1", "PART-001", "A", 1, "model.stp")
+        send_conversion_order("WS1", "PART-001", "A", 2, "model.stp", "tok123")
 
         msg = mock_producer.send.call_args[1]["value"]
-        assert msg["workspaceId"] == "WS1"
-        assert msg["partNumber"] == "PART-001"
-        assert msg["version"] == "A"
-        assert msg["iteration"] == 1
+        key = msg["partIterationKey"]
+        assert key["workspaceId"] == "WS1"
+        assert key["partMasterNumber"] == "PART-001"
+        assert key["partRevisionVersion"] == "A"
+        assert key["iteration"] == 2
+        assert msg["binaryResource"]["fullName"] == \
+            "WS1/parts/PART-001/A/2/nativecad/model.stp"
+        assert msg["binaryResource"]["name"] == "model.stp"
+        assert msg["userToken"] == "tok123"
