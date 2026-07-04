@@ -143,15 +143,17 @@ public class PartBinaryResource {
             int dotIdx = lowerName.lastIndexOf('.');
             String ext = dotIdx >= 0 ? lowerName.substring(dotIdx + 1) : "";
             Set<String> supportedCadExtensions = new HashSet<>(Arrays.asList(
-                    "obj", "stl", "off", "ply", "3ds", "wrl",
-                    "dae", "dxf", "lwo", "x", "ac", "cob", "scn", "ms3d",
+                    // STEP/IGES：OpenCASCADE 精确颜色转换
                     "stp", "step", "igs", "iges",
+                    // 网格格式：trimesh 转换
+                    "stl", "off", "ply", "obj", "dae",
+                    // BIM 格式：ifcopenshell 转换
                     "ifc"
             ));
             if (!supportedCadExtensions.contains(ext)) {
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity("Unsupported CAD file format: ." + ext +
-                                ". Supported formats: obj, stl, off, ply, 3ds, wrl, dae, dxf, stp, step, igs, iges, ifc")
+                                ". Supported formats: stp, step, igs, iges, stl, off, ply, obj, dae, ifc")
                         .build();
             }
             BinaryResource binaryResource = productService.saveNativeCADInPartIteration(partPK, fileName, 0);

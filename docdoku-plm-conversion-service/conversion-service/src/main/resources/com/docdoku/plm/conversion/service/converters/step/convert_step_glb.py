@@ -481,6 +481,69 @@ def build_glb(solid_colors, deflection, angular):
 
 
 # ---------------------------------------------------------------------------
+# 可被外部编排层导入的函数式入口
+# ---------------------------------------------------------------------------
+
+class ConversionError(RuntimeError):
+    """STEP 转换失败时抛出（供 main.py 编排层捕获）。"""
+    pass
+
+
+def convert(input_path, output_path, deflection=0.05, angular=0.3):
+    """
+    将 STEP/IGES 文件转换为 GLB，供外部 Python 编排层直接调用（不需要子进程）。
+
+    参数:
+        input_path  (str): 输入 STEP/IGES 文件的绝对路径
+        output_path (str): 输出 GLB 文件的绝对路径
+        deflection  (float): 弦差偏差，影响三角化精度（默认 0.05）
+        angular     (float): 角度偏差（弧度），默认 0.3 ≈ 17°
+
+    返回:
+        dict: {
+            "glb_path": str,            # 输出 GLB 的绝对路径（同 output_path）
+            "bbox": [xmin,ymin,zmin,xmax,ymax,zmax],  # 包围盒，单位与 STEP 一致
+            "solid_count": int,         # 有效 solid 数量
+        }
+
+    抛出:
+        ConversionError: 文件不存在、STEP 读取失败或无几何体生成时
+    """
+    if not os.path.exists(input_path):
+        raise ConversionError("输入文件不存在: %s" % input_path)
+
+    doc, st, ct, labels = read_step(input_path)
+    solid_colors = collect_solid_colors(st, ct, labels, filepath=input_path)
+
+    gltf = build_glb(solid_colors, deflection, angular)
+    if gltf is None:
+        raise ConversionError("no geometry generated from %s" % input_path)
+
+    gltf.save_binary(output_path)
+
+    # 计算整体包围盒（遍历所有 accessor 的 min/max）
+    all_min = [float('inf')]  * 3
+    all_max = [float('-inf')] * 3
+    for acc in gltf.accessors:
+        if acc.min and acc.max and len(acc.min) == 3:
+            for i in range(3):
+                all_min[i] = min(all_min[i], acc.min[i])
+                all_max[i] = max(all_max[i], acc.max[i])
+    # 如果没有 accessor（极少数情况），包围盒退化为零
+    if all_min[0] == float('inf'):
+        all_min = [0.0, 0.0, 0.0]
+        all_max = [0.0, 0.0, 0.0]
+
+    bbox = all_min + all_max
+
+    return {
+        "glb_path":    output_path,
+        "bbox":        bbox,
+        "solid_count": len(solid_colors),
+    }
+
+
+# ---------------------------------------------------------------------------
 # 入口
 # ---------------------------------------------------------------------------
 

@@ -55,6 +55,48 @@
 
 ---
 
+## GET /workspaces/{workspaceId}/parts/{partNumber}/latest-revision
+
+按零件编号查询最新版本，**不需要知道版本字母**。
+
+> 适用场景：客户端只有 `partNumber`，需要一次请求确认零件是否存在并获取当前状态，无需逐个尝试 `-A`、`-B`……
+
+### 实现位置
+
+`PartsResource.java:333-360` — 通过 `PartMasterKey` 加载 `PartMaster`，取 `getLastRevision()`，调用 `productService.canAccess()` 做权限校验后返回 `PartRevisionDTO`。
+
+### 参数
+
+| 参数 | 位置 | 说明 |
+|---|---|---|
+| `workspaceId` | path | 工作区 ID |
+| `partNumber` | path | 零件编号（需 URL encode，同上） |
+
+### 返回值
+
+- **200**：与 `GET /parts/{partNumber}-{version}` 完全相同的 `PartRevisionDTO` 结构
+- **404**：零件不存在（`EntityNotFoundException`）
+- **403**：零件存在但当前用户无访问权限
+
+### 示例
+
+```python
+import urllib.parse
+
+encoded = urllib.parse.quote(part_number, safe='')
+url = f"/api/workspaces/{workspace_id}/parts/{encoded}/latest-revision"
+resp = session.get(url)
+
+if resp.status_code == 404:
+    # 零件不存在
+elif resp.status_code == 200:
+    data = resp.json()
+    version = data["version"]          # "A", "B", ...
+    status  = data["status"]           # "WIP" / "RELEASED" / "OBSOLETE"
+```
+
+---
+
 ## URL 编码注意事项
 
 路径模板为：

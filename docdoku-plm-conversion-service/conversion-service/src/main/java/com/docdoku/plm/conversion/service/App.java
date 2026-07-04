@@ -201,7 +201,7 @@ public class App {
             partApi.sendConversionResult(workspaceId, partNumber, partVersion, conversionResult);
             LOGGER.info("Conversion callback success");
         } catch (ApiException e) {
-            LOGGER.severe("Conversion callback error");
+            LOGGER.severe("Conversion callback error: " + e.getCode() + " " + e.getMessage() + " " + e.getResponseBody());
         }
     }
 

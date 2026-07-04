@@ -8,6 +8,15 @@
 
 ### 高优先级
 
+- [ ] **转换服务当前是"混合镜像"临时方案，待迁移为 Python-only**
+  ~~重建的 Java runner jar 有 SmallRye 间歇性"消费但不投递"故障。当前生产用混合镜像（旧 runner jar + 新 lib jar）勉强可用。
+  完整迁移方案见 `docs/architecture/conversion-service-python-migration-plan.md`（待评审，~5 人天）。
+  **回滚资产**：镜像 tag `docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback` + `docdoku-plm-conversion-service/rollback-artifacts/app.jar.hybrid-rollback`。
+  遗留：Inner Plate 2010 / Pinion 2010 / Thrust Washer 三个件转换失败（旧 unAccent 阻塞 + JWT 叠加），需重新上传。~~
+  **已完成（2026-07-04）**：迁移为 Python-only（`2.7.0-py`），回归验证通过。
+  回滚方式：`docker-compose.yml` 中 `image:` 改为 `2.6.2-jvm-hybrid-rollback` 一行即可。
+  遗留：Inner Plate 2010 / Pinion 2010 / Thrust Washer 需重新上传（旧 token 已失效）。
+
 - [ ] **REST API 认证 401 问题未解决**
   `admin:password` 通过 BasicAuth 调用 REST API 始终返回 401，密码 hash 和 DB 匹配（MD5），账号 enabled=true，根因未排查清楚。
   目前绕过方案：直接 DB 操作。
@@ -63,3 +72,8 @@
 - [x] **后端 JVM 堆内存 OOM 风险**：2g → 4g（2026-06-18）
 - [x] **空几何体转换报失败**：`no geometry generated` 改为标记 `succeed=true`（2026-06-22）
 - [x] **装配结构 amount=0**：`sync.py _sync_node()` 补充 `"amount"` 字段（2026-06-22）
+- [x] **项目融合规划完成**：已创建新仓库 `RayDutchman/plm-unified`，本地路径 `/home/chenweibo/plm-unified`，M0 全部完成（2026-06-26）。后续开发在新仓库进行，本项目进入维护模式。
+- [x] **vault 路径空格转下划线碰撞**：`Tools.unAccent()` 去掉空格→下划线转换（2026-07-04）
+- [x] **3D 预览按钮对无 GLB 单零件误显示**：`part_list_item.js` 加 `hasGeometry()` 判断（2026-07-04）
+- [x] **转换服务重建后消息不投递**：定位为 Java runner jar 的 SmallRye bug，用混合镜像临时绕过（2026-07-04），根治方案见迁移 plan
+- [x] **转换服务迁移为 Python-only**：`2.7.0-py` 镜像上线，aiokafka 手动 commit，回归验证通过（2026-07-04）

@@ -256,7 +256,7 @@ define([
 
         initCadFileUploadView: function () {
             // 支持的 CAD 格式扩展名（与后端转换服务白名单保持一致）
-            var cadAcceptExtensions = '.obj,.stl,.off,.ply,.3ds,.wrl,.dae,.dxf,.lwo,.x,.ac,.cob,.scn,.ms3d,.stp,.step,.igs,.iges,.ifc';
+            var cadAcceptExtensions = '.stp,.step,.igs,.iges,.stl,.off,.ply,.obj,.dae,.ifc';
             this.cadFileView = new FileListView({
                 title: App.config.i18n.CAD_FILE,
                 baseName: this.iteration.getBaseName('nativecad'),

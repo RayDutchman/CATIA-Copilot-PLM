@@ -6,6 +6,55 @@
 
 ---
 
+## 2026-07-04（续2）
+
+- feat: `conversion-service-py/` 完全自包含，不再依赖 `docdoku-plm-conversion-service/` 路径
+  - `convert_step_glb.py`、`wheels/`、`install-python-deps.sh` 已复制进来
+  - `build.sh` 重写为 `docker build .`，无跨目录复制
+- feat: 转换服务新增网格格式支持（STL/OFF/PLY/OBJ/DAE/IFC），基于 trimesh+ifcopenshell
+  - 新文件 `convert_mesh.py`，统一 `converter.py` 入口按扩展名路由
+- fix: 去除 DXF 格式（2D 格式，无法生成 3D GLB）
+  - 前端 `part_modal_view.js`、后端 `PartBinaryResource.java`、转换服务同步移除
+- fix: 空几何体成功路径未清理 temp_dir（main.py）
+- fix: 包围盒计算对 NaN/Inf 顶点的保护（convert_mesh.py）
+- chore: 重建前后端 + 转换服务镜像，重启所有服务
+
+---
+
+## 2026-07-04（续）
+
+- feat: 转换服务 Java/Quarkus 编排层迁移为 Python-only（`conversion-service-py/`）
+  - 新镜像 `docdoku/docdoku-plm-conversion-service:2.7.0-py`（python:3.11-slim，aiokafka + httpx，无 JVM）
+  - `convert_step_glb.py` 新增 `convert()` 函数（Phase 1，保留 CLI 入口兼容）
+  - `main.py`：aiokafka 手动 commit，`max_poll_records=1`，显式 offset 提交，根治"消费但不投递"问题
+  - `converter.py`：`unaccent()` 对齐修复后的 Java `Tools.unAccent()`（不转下划线）
+  - `docker-compose.yml` 切换至新镜像，回滚注释保留
+  - 删除其他格式转换器（STL/DAE/IFC/OBJ，CATIA 场景仅用 STEP）
+  - 回归验证：`Bevel Gear Formula Student 2008 - 2009` GLB 转换成功，HTTP 200，DB `succeed=true`
+
+---
+
+## 2026-07-04
+
+- fix: `Tools.unAccent()`（`docdoku-plm-server-core`）去掉 `.replaceAll("\\p{javaSpaceChar}", "_")`，vault 路径不再将空格转下划线，消除零件号 "A B" 与 "A_B" 的存储路径碰撞
+- fix: 前端 `part_list_item.js` 单零件无 GLB 时隐藏 3D 预览按钮（装配体不受影响，可通过子件组装场景）
+- fix: 转换服务改用"混合镜像"——旧 `plm-unified-conversion` 的 runner jar（Kafka 消息投递可靠）+ 重建的 lib jar（含 `unAccent` 修复），解决重建后 SmallRye Reactive Messaging 间歇性"消费但不投递"故障
+- chore: 备份回滚资产 `docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback` 镜像 tag 及 `rollback-artifacts/app.jar.hybrid-rollback`
+- docs: 新增 `docs/architecture/conversion-service-python-migration-plan.md`（转换服务 Java→Python 迁移完整方案，待评审）
+
+---
+
+## 2026-06-26
+
+- docs: 完成构型管理五大职能覆盖分析（EIA-649 / GJB 3206B 对标）
+- docs: 完成与 myPDM 项目的多维度对比分析报告
+- docs: 完成 `thoughts/新一代 PLM 系统融合路径规划.md`（六阶段融合 roadmap）
+- docs: 完成 `thoughts/collaboration-and-milestones.md`（协作约定 + M0–M11 里程碑计划）
+- chore: 创建新项目仓库 https://github.com/RayDutchman/plm-unified，完成 M0 全部初始化任务
+- chore: 新仓库本地路径：`/home/chenweibo/plm-unified`，后续开发在新仓库进行
+
+---
+
 ## 2026-06-25
 
 - fix: 删除 Windows portproxy 规则（8000/8001），解决 front/back 容器因端口被 iphlpsvc 占用而卡在 `Created` 状态无法启动的问题

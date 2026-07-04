@@ -49,7 +49,9 @@ services:
       - 8001:8080
 
   conversion:
-    image: docdoku/docdoku-plm-conversion-service:2.6.2
+    # Python-only 转换服务（2.7.0-py）：替代原 Java/Quarkus 编排层
+    # 回滚方式：将 image 改回 docdoku/docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback
+    image: docdoku/docdoku-plm-conversion-service:2.7.0-py
     restart: unless-stopped
     env_file: ./env/conversion.env
     networks:

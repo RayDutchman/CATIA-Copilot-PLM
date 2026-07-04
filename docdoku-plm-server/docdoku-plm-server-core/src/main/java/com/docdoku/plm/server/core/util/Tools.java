@@ -64,7 +64,7 @@ public class Tools {
     public static String unAccent(String s) {
         String temp = Normalizer.normalize(s, Normalizer.Form.NFD);
         Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
-        return pattern.matcher(temp).replaceAll("").replaceAll("\\p{javaSpaceChar}", "_");
+        return pattern.matcher(temp).replaceAll("");
     }
 
     public static String increaseId(String id, String mask) throws ParseException {

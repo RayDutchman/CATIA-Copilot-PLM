@@ -42,10 +42,16 @@ public class ConversionOrderDeserializer implements Deserializer<ConversionOrder
 
     @Override
     public ConversionOrder deserialize(String s, byte[] bytes) {
+        LOGGER.info("Deserializing message from topic " + s);
         try {
-            return jsonb.fromJson(new String(bytes), ConversionOrder.class);
+            ConversionOrder order = jsonb.fromJson(new String(bytes), ConversionOrder.class);
+            LOGGER.info("Deserialized successfully: " + order.getPartIterationKey());
+            return order;
         } catch (JsonbException e){
-            LOGGER.warning("Cannot deserialize " + s);
+            LOGGER.warning("Cannot deserialize " + s + ": " + e.getMessage());
+            return null;
+        } catch (Exception e) {
+            LOGGER.severe("Unexpected error deserializing " + s + ": " + e.getMessage());
             return null;
         }
     }

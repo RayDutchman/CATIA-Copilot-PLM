@@ -54,6 +54,10 @@ define([
             if (this.model.isCheckout()) {
                 this.$('.part-3d-preview-toggle').hide();
             }
+            // 单零件无 GLB 时隐藏按钮；装配体不判断（可通过子件 GLB 组装 3D 场景）
+            if (!this.model.isLastIterationAssembly() && !this.model.hasGeometry()) {
+                this.$('.part-3d-preview-toggle').hide();
+            }
 
             this.addCustomColumns();
 

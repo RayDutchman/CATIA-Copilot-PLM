@@ -1,0 +1,15 @@
+# STEP/IGES → GLB 转换核心依赖（保持不变）
+cadquery-ocp==7.8.1.1.post1
+vtk==9.3.1
+matplotlib==3.11.0
+pygltflib==1.16.5
+numpy==2.2.6
+
+# 网格格式 → GLB（STL/OFF/PLY/OBJ/DXF/DAE/IFC）
+trimesh==4.4.3      # STL/OFF/PLY/OBJ/DXF/DAE（需 pycollada）
+pycollada==0.9.3    # trimesh 的 DAE (Collada) loader 依赖
+ifcopenshell==0.8.5 # IFC → 三角网格
+
+# Python 编排层
+aiokafka==0.10.0
+httpx==0.27.2
