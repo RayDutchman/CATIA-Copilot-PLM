@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-07-04（续4）
+
+- feat: P1a 零件核心 CRUD 全部完成（6 个 Task，38 个测试全通过）
+  - ORM 模型：9 张零件表 + 5 张关联表完整映射（`app/models/part.py`）
+  - Pydantic Schemas：PartRevisionDTO/PartCreationDTO/ComponentDTO 等（`app/schemas/part.py`）
+  - ProductService：CRUD + 签出签入 + 装配同步（`app/services/product_service.py`）
+  - DTO 映射工具：ORM → Pydantic 转换（`app/services/part_mapper.py`）
+  - 14 个零件端点：list/count/search/checkedout/create/get/delete/checkout/checkin/undo/update/conversion
+  - Nginx 零件路由切换到 FastAPI back-py（正则只匹配 parts 路径）
+- fix: ORM 关联表列名修正——`partrevision_tag` 用 `partmaster_workspace_id`/`partmaster_partnumber`（非 `partrevision_` 前缀）
+- fix: ORM 关联表列名修正——`partusagelink_cadinstance` 用 `cadinstance_id`（单数，非 `cadinstances_id`）
+- fix: SQLAlchemy 字符串表达式无法引用 Table 对象，改用 lambda 传递 primaryjoin/secondaryjoin
+- fix: PartRevision.iterations 添加 `cascade=all,delete-orphan`（删除 revision 时级联删除 iterations）
+- fix: 测试用 `test1` 登录（Workspace_2 成员），admin 不是该 workspace 成员
+- fix: 测试密码用 `password`（非 `changeit`），workspace 用 `Workspace_2`（DB 中实际存在）
+
+---
+
 ## 2026-07-04（续3）
 
 - feat: P0 FastAPI 后端基础设施全部完成（7 个 Task，17 个测试全通过）
