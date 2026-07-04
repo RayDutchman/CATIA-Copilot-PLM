@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-04（续3）
+
+- feat: P0 FastAPI 后端基础设施全部完成（7 个 Task，17 个测试全通过）
+  - `docdoku-plm-server-py/`：FastAPI 骨架 + SQLAlchemy ORM + JWT 安全模块 + 认证端点 + vault 文件服务 + Kafka 生产者
+  - JWT 兼容 Payara（HS256 + MD5 密码 + 嵌套 JSON subject），共享 JWT_KEY=changeit
+  - `back-py` 容器（端口 8009），Nginx 将 `/docdoku-plm-server-rest/api/auth/` 路由到 FastAPI
+  - 端到端验证：Nginx → back-py 登录成功，JWT 响应头正常
+- fix: Account ORM 模型修正——`account` 表无 `admin` 列，角色组改从 `usergroupmapping` 表查询
+- fix: admin 账号密码为 `password`（非 `changeit`）
+- chore: 添加 `pytest.ini`（pythonpath=.）、`kafka-python==2.0.2` 依赖
+
+---
+
 ## 2026-07-04（续2）
 
 - feat: `conversion-service-py/` 完全自包含，不再依赖 `docdoku-plm-conversion-service/` 路径

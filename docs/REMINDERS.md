@@ -8,6 +8,11 @@
 
 ### 高优先级
 
+- [ ] **P1：零件核心端点待实现**
+  P0 FastAPI 基础设施已完成（auth/login/logout/me + vault + kafka producer）。
+  下一步 P1：实现 PartsResource 和 PartResource 全部端点（BOM、签出/签入、CAD 文件上传、Kafka 触发转换）。
+  P1 完成后 CATIA Copilot 可完全切换到 FastAPI 后端。
+
 - [ ] **转换服务当前是"混合镜像"临时方案，待迁移为 Python-only**
   ~~重建的 Java runner jar 有 SmallRye 间歇性"消费但不投递"故障。当前生产用混合镜像（旧 runner jar + 新 lib jar）勉强可用。
   完整迁移方案见 `docs/architecture/conversion-service-python-migration-plan.md`（待评审，~5 人天）。
@@ -77,3 +82,4 @@
 - [x] **3D 预览按钮对无 GLB 单零件误显示**：`part_list_item.js` 加 `hasGeometry()` 判断（2026-07-04）
 - [x] **转换服务重建后消息不投递**：定位为 Java runner jar 的 SmallRye bug，用混合镜像临时绕过（2026-07-04），根治方案见迁移 plan
 - [x] **转换服务迁移为 Python-only**：`2.7.0-py` 镜像上线，aiokafka 手动 commit，回归验证通过（2026-07-04）
+- [x] **P0 FastAPI 后端基础设施**：7 个 Task 全部完成，17 个测试通过，`back-py` 容器运行，Nginx auth 路由切换验证通过（2026-07-04）
