@@ -12,17 +12,41 @@ svc = DocumentService()
 
 
 def _doc_to_dict(rev):
+    iterations = []
+    for it in (rev.iterations or []):
+        iterations.append({
+            "iteration": it.iteration,
+            "workspaceId": it.workspace_id,
+            "documentMasterId": it.documentmaster_id,
+            "version": it.documentrevision_version,
+            "title": rev.title,
+            "revisionNote": it.revision_note,
+            "creationDate": str(it.creation_date) if it.creation_date else None,
+            "instanceAttributes": [],
+            "attachedFiles": [],
+            "linkedDocuments": [],
+            "author": {"login": it.author_login, "name": it.author_login},
+        })
     return {
-        "id": rev.documentmaster_id,
+        "id": f"{rev.documentmaster_id}-{rev.version}",
         "version": rev.version,
         "workspaceId": rev.workspace_id,
+        "documentMasterId": rev.documentmaster_id,
         "title": rev.title,
         "description": rev.description,
         "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
         "creationDate": str(rev.creation_date) if rev.creation_date else None,
         "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else None,
+        "checkOutDate": str(rev.check_out_date) if rev.check_out_date else None,
         "lastIteration": rev.last_iteration_number,
+        "documentIterations": iterations,
         "tags": [],
+        "acl": None,
+        "path": rev.location_completepath,
+        "lifeCycleState": None,
+        "workflow": None,
+        "publicShared": False,
+        "attributesLocked": False,
     }
 
 
@@ -85,9 +109,7 @@ def create(ws: str, body: dict,
     doc_id = body.get("reference", "")
     title = body.get("title", "")
     rev = svc.create_document(db, ws, doc_id, title, current_user.login)
-    return {"id": rev.documentmaster_id, "version": rev.version,
-            "workspaceId": rev.workspace_id, "title": rev.title,
-            "status": "WIP", "checkOutUser": {"login": rev.checkout_user_login}}
+    return _doc_to_dict(rev)
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}")

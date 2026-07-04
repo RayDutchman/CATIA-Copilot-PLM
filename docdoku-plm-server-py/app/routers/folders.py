@@ -75,6 +75,5 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
     title = body.get("title", "")
     rev = svc.create_document(db, ws, doc_id, title,
                               current_user.login, folder_path=folder_id)
-    return {"id": rev.documentmaster_id, "version": rev.version,
-            "workspaceId": rev.workspace_id, "title": rev.title,
-            "status": "WIP", "checkOutUser": {"login": rev.checkout_user_login}}
+    from app.routers.documents import _doc_to_dict
+    return _doc_to_dict(rev)
