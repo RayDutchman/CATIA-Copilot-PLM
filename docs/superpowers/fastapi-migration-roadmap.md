@@ -76,7 +76,7 @@
 | **P1a-core** | 零件核心 CRUD（ORM + 14 端点 + 签出签入 + BOM 更新） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p1a-parts-core.md` |
 | **P1a-align** | 零件行为对齐（i18n 基础设施 + 7 方法错误消息 + DTO 字段） | ✅ 完成 | `plans/2026-07-04-payara-fastapi-parts-alignment.md` |
 | **P1b** | 零件文件（nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索） | ✅ 完成 | `plans/2026-07-04-p1b-parts-files.md` |
-| **P2** | 文档与文件夹（Documents/Folders/Tags/文档模板） | ⬜ 待规划 | — |
+| **P2** | 文档与文件夹（Documents/Folders/Tags/文档模板） | ✅ 完成 | — |
 | **P3** | 产品结构（Products/ConfigurationItems/Baselines/ProductInstances/3D 装配树） | ⬜ 待规划 | — |
 | **P4** | 变更管理（ChangeIssues/ChangeRequests/ChangeOrders/Milestones） | ⬜ 待规划 | — |
 | **P5** | 工作流与权限（Workflow/WorkflowModel/Tasks/ACL/角色/用户组/Webhook/通知） | ⬜ 待规划 | — |
@@ -87,6 +87,10 @@
 /docdoku-plm-server-rest/api/auth/                         → FastAPI back-py:8000  （P0 已切）
 /docdoku-plm-server-rest/api/workspaces/{ws}/parts...      → FastAPI back-py:8000  （P1a 已切）
 /docdoku-plm-server-rest/api/files/{ws}/parts...           → FastAPI back-py:8000  （P1b 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/documents...  → FastAPI back-py:8000  （P2 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/folders...    → FastAPI back-py:8000  （P2 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/document-templates... → FastAPI back-py:8000  （P2 已切）
+/docdoku-plm-server-rest/api/files/{ws}/documents...       → FastAPI back-py:8000  （P2 已切）
 其余全部                                                     → Payara back:8080
 ```
 
@@ -125,3 +129,34 @@
 
 - **REST API BasicAuth 401 未解决**：`admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）。影响依赖 REST API 认证的工具集成（如 CATIA Copilot sync）。根因未查清，当前绕过方案是直接 DB 操作。规划涉及 REST API 认证的阶段前需先排查。
 - **WSL mirrored 网络重启后端口失效**：`wsl --shutdown` 重启可恢复，详见 REMINDERS。
+
+---
+
+## 实际执行经验（从 P0/P1a/P1b/P2 执行中提炼）
+
+**新阶段启动前必读本节。** 以下 bug 不是个别阶段的偶然问题——它们会在每个新阶段重复出现，因为根源相同。
+
+### 防御性检查清单（每阶段实现端点后逐项检查）
+
+1. **尾斜杠（Trailing Slash）**：前端 Backbone.js 的 `collection.create()` 会在 URL 后加 `/`。FastAPI 默认把 `/parts/` redirect 307 到 `/parts`，AJAX POST 不跟随 307 → **创建永远失败**。**每个 POST/PUT 端点必须同时注册带 `/` 和不带 `/` 的双路由。**
+
+2. **前端发送 camelCase**：前端发 `standardPart`、`workspaceId`、`reference`（非 `standard_part`、`workspace_id`、`number`）。Pydantic v2 默认 case-insensitive 匹配可以应对简单字段，但 `populate_by_name=True` 仅在定义了 `alias` 时才生效。**DTO 字段要么用前端相同的 camelCase 命名，要么显式加 `alias`。**
+
+3. **响应字段格式**：前端 Backbone model 的 `parse()` 方法依赖特定字段名和结构。零件需要 `partKey`/`partIterations`、文档需要 `id="{ref}-{ver}"` 格式 + `documentIterations` 数组。**缺少这些字段不会报错在 API 层，而是前端静默失败（窗口不关、列表不刷新）。**每阶段实现后必须用浏览器实测，不能只靠 pytest。
+
+4. **缺失端点的 405 陷阱**：前端可能调用 spec 里没覆盖的端点（如 `checkedout`、`countCheckedOut`、`doc_revs`）。如果 Nginx 已把路径切到 FastAPI 但 FastAPI 没实现该端点，某个 `{id}` 参数化路由会误匹配并返回 400/405，前端显示红色错误条。**切 Nginx 之前必须确认该路径前缀下所有端点都已实现。**
+
+### 最有效的调试手段
+
+**Payara vs FastAPI 对拍**——对同一操作分别请求 Payara（`:8001`）和 FastAPI（`:8000`），比较响应体、状态码、header。P2 所有 bug 都是这样发现的。**建议把对拍写进每阶段的 definition of done。**
+
+### 执行教训总结
+
+| 教训 | 来源 | 防止方法 |
+|------|------|----------|
+| Nginx 在对齐审计之前切 → 前端炸 | P1a | 标准工作流：对齐审计→对拍→切 Nginx |
+| 尾斜杠 307 导致静默失败 | P2 | 双路由注册 |
+| 响应少字段导致前端静默异常 | P2 | 浏览器实测 + Payara 对拍响应体 |
+| 缺端点误匹配为路径参数路由 | P2 | 全端点清单审查 |
+| Workspace 重建导致种子测试数据丢失 | P2 | 测试数据独立于 workspace 操作 |
+| SQLAlchemy flush 顺序不可靠 | P1b | 关联表 FK 声明 + 双 transaction 删除 |
