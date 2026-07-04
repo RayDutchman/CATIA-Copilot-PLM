@@ -77,6 +77,22 @@ part_revision_tags = Table(
 )
 
 
+# partiteration → 变更通知（M:N，仅 FK 声明以支持级联删除，无完整 ORM 模型）
+modification_notification = Table(
+    "modificationnotification", Base.metadata,
+    Column("impacted_workspace_id", String, primary_key=True),
+    Column("impacted_partmaster_partnumber", String, primary_key=True),
+    Column("impacted_partrevision_version", String, primary_key=True),
+    Column("impacted_iteration", Integer, primary_key=True),
+    ForeignKeyConstraint(
+        ["impacted_workspace_id", "impacted_partmaster_partnumber",
+         "impacted_partrevision_version", "impacted_iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
+)
+
+
 # ── 主实体 ──────────────────────────────────────────────────
 
 class BinaryResource(Base):
