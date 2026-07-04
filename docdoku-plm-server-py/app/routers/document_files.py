@@ -12,6 +12,8 @@ svc = DocumentService()
 
 
 @router.post("/files/{ws}/documents/{doc_id}/{version}/{iteration}", status_code=201)
+@router.post("/files/{ws}/documents/{doc_id}/{version}/{iteration}/",
+             status_code=201, include_in_schema=False)
 def upload(ws: str, doc_id: str, version: str, iteration: int,
            upload: UploadFile = File(...),
            current_user: Account = Depends(get_current_user),

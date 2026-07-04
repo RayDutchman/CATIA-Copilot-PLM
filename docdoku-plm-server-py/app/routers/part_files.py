@@ -26,6 +26,8 @@ def _check_writable(db: Session, ws: str, pn: str, ver: str,
 
 
 @router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/nativecad", status_code=201)
+@router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/nativecad/",
+             status_code=201, include_in_schema=False)
 def upload_nativecad(
     ws: str, pn: str, ver: str, iteration: int,
     request: Request,
@@ -48,6 +50,8 @@ def upload_nativecad(
 
 
 @router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles", status_code=201)
+@router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/",
+             status_code=201, include_in_schema=False)
 def upload_attached(
     ws: str, pn: str, ver: str, iteration: int,
     upload: UploadFile = File(...),
