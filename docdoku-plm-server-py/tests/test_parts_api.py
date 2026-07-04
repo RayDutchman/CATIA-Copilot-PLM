@@ -100,3 +100,59 @@ def test_checkout_checkin_cycle():
     # 清理
     client.delete(f"{PREFIX}/workspaces/{WS}/parts/{number}-A",
                   headers=headers)
+
+
+def test_update_iteration_with_components():
+    """验收标准 #3：更新迭代含子件的完整流程。"""
+    import uuid
+    token = get_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    parent = f"ASM-{uuid.uuid4().hex[:6].upper()}"
+    child = f"CHILD-{uuid.uuid4().hex[:6].upper()}"
+    # 创建父件（自动签出）和子件
+    client.post(f"{PREFIX}/workspaces/{WS}/parts",
+                json={"number": parent, "name": "Assembly"}, headers=headers)
+    client.post(f"{PREFIX}/workspaces/{WS}/parts",
+                json={"number": child, "name": "Child"}, headers=headers)
+    # 签入子件（创建时自动签出）
+    client.put(f"{PREFIX}/workspaces/{WS}/parts/{child}-A/checkin",
+               headers=headers)
+    # 更新父件迭代，添加子件为 BOM 组件
+    resp = client.put(
+        f"{PREFIX}/workspaces/{WS}/parts/{parent}-A/iterations/1",
+        json={"components": [{
+            "amount": 2,
+            "component": {"number": child, "name": "Child"},
+        }]},
+        headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    # 验证 BOM 写入
+    assert len(data["partIterations"]) >= 1
+    comps = data["partIterations"][-1]["components"]
+    assert len(comps) == 1
+    assert comps[0]["component"]["number"] == child
+    assert comps[0]["amount"] == 2
+    # 再次更新（替换 BOM），验证旧关联被清理
+    child2 = f"CHILD2-{uuid.uuid4().hex[:6].upper()}"
+    client.post(f"{PREFIX}/workspaces/{WS}/parts",
+                json={"number": child2}, headers=headers)
+    client.put(f"{PREFIX}/workspaces/{WS}/parts/{child2}-A/checkin",
+               headers=headers)
+    resp2 = client.put(
+        f"{PREFIX}/workspaces/{WS}/parts/{parent}-A/iterations/1",
+        json={"components": [{
+            "amount": 1,
+            "component": {"number": child2, "name": "Child2"},
+        }]},
+        headers=headers)
+    assert resp2.status_code == 200
+    comps2 = resp2.json()["partIterations"][-1]["components"]
+    assert len(comps2) == 1
+    assert comps2[0]["component"]["number"] == child2
+    # 清理
+    client.put(f"{PREFIX}/workspaces/{WS}/parts/{parent}-A/checkin",
+               headers=headers)
+    client.delete(f"{PREFIX}/workspaces/{WS}/parts/{parent}-A", headers=headers)
+    client.delete(f"{PREFIX}/workspaces/{WS}/parts/{child}-A", headers=headers)
+    client.delete(f"{PREFIX}/workspaces/{WS}/parts/{child2}-A", headers=headers)

@@ -301,6 +301,7 @@ usage_link_cadinstances = Table(
     "partusagelink_cadinstance", Base.metadata,
     Column("partusagelink_id", Integer, ForeignKey("partusagelink.id"), primary_key=True),
     Column("cadinstance_id", Integer, ForeignKey("cadinstance.id"), primary_key=True),
+    Column("cadinstance_order", Integer),
 )
 
 

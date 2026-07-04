@@ -47,7 +47,7 @@ def map_usage_link(link: PartUsageLink) -> PartUsageLinkDTO:
         )
     return PartUsageLinkDTO(
         id=link.id,
-        amount=link.amount or 1.0,
+        amount=link.amount if link.amount is not None else 1.0,
         comment=link.comment,
         referenceDescription=link.reference_description,
         unit=link.unit,

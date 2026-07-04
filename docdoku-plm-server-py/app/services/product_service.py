@@ -1,7 +1,7 @@
 """零件业务逻辑服务：CRUD、签出签入、装配同步。"""
 from datetime import datetime
 from typing import Optional
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.part import (
     PartMaster, PartRevision, PartIteration,
@@ -280,6 +280,21 @@ class ProductService:
 
     def _sync_components(self, db: Session, iteration: PartIteration,
                           components_dto: list, workspace_id: str) -> None:
+        # 注意：高并发下同一 iteration 同时更新可能导致孤儿记录，
+        # 未来多用户场景需加 SELECT ... FOR UPDATE 保护
+        # 收集旧 link id，清理关联后删除孤儿 PartUsageLink
+        old_link_ids = [
+            row[0] for row in db.execute(
+                part_iteration_usagelink.select().with_only_columns(
+                    part_iteration_usagelink.c.component_id
+                ).where(
+                    part_iteration_usagelink.c.workspace_id == iteration.workspace_id,
+                    part_iteration_usagelink.c.partmaster_partnumber == iteration.partmaster_partnumber,
+                    part_iteration_usagelink.c.partrevision_version == iteration.partrevision_version,
+                    part_iteration_usagelink.c.iteration == iteration.iteration,
+                )
+            )
+        ]
         # 清空旧关联
         db.execute(
             part_iteration_usagelink.delete().where(
@@ -289,6 +304,11 @@ class ProductService:
                 part_iteration_usagelink.c.iteration == iteration.iteration,
             )
         )
+        # 删除孤儿 PartUsageLink（关联表 partusagelink_cadinstance 会自动级联清理）
+        if old_link_ids:
+            db.query(PartUsageLink).filter(
+                PartUsageLink.id.in_(old_link_ids)
+            ).delete(synchronize_session=False)
         for order, comp_dto in enumerate(components_dto):
             comp_number = comp_dto.component.number if comp_dto.component else None
             if not comp_number:
