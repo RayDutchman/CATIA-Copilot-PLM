@@ -121,8 +121,22 @@ def create_part(
     return map_revision(pr, db)
 
 
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component")
+def used_by_component(workspace_id: str, part_key: str,
+                      current_user: Account = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute")
+def used_by_substitute(workspace_id: str, part_key: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    return []
+
+
 @router.get("/workspaces/{workspace_id}/parts/{part_key}",
-             response_model=PartRevisionDTO)
+            response_model=PartRevisionDTO)
 def get_part_revision(
     workspace_id: str,
     part_key: str,
@@ -298,3 +312,12 @@ def remove_tag(workspace_id: str, part_key: str, tag_label: str,
     number, version = _split_part_key(part_key)
     pr = svc.remove_tag(db, workspace_id, number, version, tag_label)
     return map_revision(pr, db)
+
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags")
+def get_tags(workspace_id: str, part_key: str,
+             current_user: Account = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    number, version = _split_part_key(part_key)
+    pr = svc.get_revision(db, workspace_id, number, version)
+    return [t.label for t in (pr.tags or [])]
