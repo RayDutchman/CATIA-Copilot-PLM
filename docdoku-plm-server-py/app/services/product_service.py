@@ -27,7 +27,10 @@ class ProductService:
     def count_parts(self, db: Session, workspace_id: str) -> int:
         return (
             db.query(PartMaster)
-            .filter(PartMaster.workspace_id == workspace_id)
+            .filter(
+                PartMaster.workspace_id == workspace_id,
+                PartMaster.revisions.any(),
+            )
             .count()
         )
 
