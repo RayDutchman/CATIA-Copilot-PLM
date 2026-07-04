@@ -71,7 +71,7 @@ def test_release_checked_out_returns_403():
     # 新建即签出，直接 release 应报已签出 46
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/release", headers=h)
     assert resp.status_code == 403
-    assert resp.json()["message"] == i18n.get("NotAllowedException46", "zh")
+    assert resp.text == i18n.get("NotAllowedException46", "zh")
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     _cleanup(num, h)
 
@@ -95,5 +95,5 @@ def test_obsolete_unreleased_returns_403():
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/obsolete", headers=h)
     assert resp.status_code == 403
-    assert resp.json()["message"] == i18n.get("NotAllowedException36", "zh")
+    assert resp.text == i18n.get("NotAllowedException36", "zh")
     _cleanup(num, h)

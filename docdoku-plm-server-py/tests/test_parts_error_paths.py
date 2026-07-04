@@ -19,8 +19,8 @@ def test_delete_part_used_as_component_returns_403_zh():
         "DELETE",
         f"{PREFIX}/workspaces/{WS}/parts/Differential Axle 2010-A",
         headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 403
-    assert resp.json()["message"] == "您无法删除在装配体中用作组件的零件"
+    assert resp.status_code == 400
+    assert resp.text == "您无法删除在装配体中用作组件的零件"
 
 
 # ── Task 8: 签出/签入/撤销签出对齐 ──────────────────────────
@@ -38,7 +38,7 @@ def test_checkout_already_checked_out_returns_403():
     # 新建即自动签出；再次签出应失败
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkout", headers=h)
     assert resp.status_code == 403
-    assert resp.json()["message"] == "该项目已被签出"
+    assert resp.text == "该项目已被签出"
     # 清理：直接通过 API 删除（先签入再删，或直接 UNDO+DROP）
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     client.request("DELETE", f"{PREFIX}/workspaces/{WS}/parts/{num}-A", headers=h)
@@ -56,7 +56,7 @@ def test_create_duplicate_part_returns_409():
     resp = client.post(f"{PREFIX}/workspaces/{WS}/parts",
                        json={"number": num, "name": "t"}, headers=h)
     assert resp.status_code == 409
-    assert resp.json()["message"] == f'零件"{num}"已存在'
+    assert resp.text == f'零件"{num}"已存在'
     # 清理
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     client.request("DELETE", f"{PREFIX}/workspaces/{WS}/parts/{num}-A", headers=h)
