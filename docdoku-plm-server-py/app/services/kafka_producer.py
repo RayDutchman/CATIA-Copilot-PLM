@@ -41,7 +41,7 @@ def send_conversion_order(
     producer = _get_producer()
     producer.send(
         settings.KAFKA_CONVERSION_TOPIC,
-        value=json.dumps(message),
+        value=message,
     )
     producer.flush()
     logger.info(

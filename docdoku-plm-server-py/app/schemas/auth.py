@@ -12,7 +12,6 @@ class AccountDTO(BaseModel):
     name: Optional[str] = None
     language: Optional[str] = None
     timezone: Optional[str] = None
-    admin: bool = False
 
     class Config:
         from_attributes = True

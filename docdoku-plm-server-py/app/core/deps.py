@@ -1,6 +1,6 @@
 """FastAPI 依赖项：数据库会话、当前用户认证。"""
 from typing import Annotated
-from fastapi import Depends, HTTPException, status, Request, Response
+from fastapi import Depends, HTTPException, status, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -12,7 +12,6 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    request: Request,
     response: Response,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)] = None,
     db: Session = Depends(get_db),

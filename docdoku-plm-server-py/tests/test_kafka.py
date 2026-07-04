@@ -16,15 +16,13 @@ def test_send_conversion_order_calls_producer():
 
 def test_conversion_order_message_structure():
     """发送的消息体包含必要的字段。"""
-    import json
     with patch("app.services.kafka_producer._get_producer") as mock_get:
         mock_producer = MagicMock()
         mock_get.return_value = mock_producer
 
         send_conversion_order("WS1", "PART-001", "A", 1, "model.stp")
 
-        raw = mock_producer.send.call_args[1]["value"]
-        msg = json.loads(raw)
+        msg = mock_producer.send.call_args[1]["value"]
         assert msg["workspaceId"] == "WS1"
         assert msg["partNumber"] == "PART-001"
         assert msg["version"] == "A"
