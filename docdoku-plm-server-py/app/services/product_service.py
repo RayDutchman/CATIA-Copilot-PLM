@@ -225,6 +225,18 @@ class ProductService:
         #   EntityConstraintException22 被用作替代品（PartSubstituteLink 表）
         #   EntityConstraintException5  已在基线中（ProductBaseline 表）
         #   EntityConstraintException21 已分配到变更项（ChangeItem 表）
+
+        from sqlalchemy import text
+        ws, pn, ver = pr.workspace_id, pr.partmaster_partnumber, pr.version
+        if pr.tags:
+            pr.tags[:] = []
+        for it in pr.iterations:
+            if it.conversions:
+                it.conversions[:] = []
+            if it.attached_files:
+                it.attached_files[:] = []
+            if it.geometries:
+                it.geometries[:] = []
         db.delete(pr)
         db.commit()
 

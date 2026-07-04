@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, BigInteger,
-    DateTime, Text, ForeignKey, Table
+    DateTime, Text, ForeignKey, ForeignKeyConstraint, Table
 )
 from sqlalchemy.orm import relationship, Mapped
 from app.core.database import Base
@@ -20,6 +20,11 @@ part_iteration_binres = Table(
     Column("iteration", Integer, primary_key=True),
     Column("attachedfile_fullname", String,
            ForeignKey("binaryresource.fullname"), primary_key=True),
+    ForeignKeyConstraint(
+        ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
 )
 
 # partiteration → GLB 几何体（M:N）
@@ -31,6 +36,11 @@ part_iteration_geometry = Table(
     Column("iteration", Integer, primary_key=True),
     Column("geometry_fullname", String,
            ForeignKey("binaryresource.fullname"), primary_key=True),
+    ForeignKeyConstraint(
+        ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
 )
 
 # partiteration → 子件链接（有序 M:N）
@@ -43,6 +53,11 @@ part_iteration_usagelink = Table(
     Column("component_id", Integer,
            ForeignKey("partusagelink.id"), primary_key=True),
     Column("component_order", Integer),
+    ForeignKeyConstraint(
+        ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
 )
 
 # partrevision → 标签（M:N）
@@ -54,6 +69,11 @@ part_revision_tags = Table(
     Column("partrevision_version", String, primary_key=True),
     Column("tag_workspace_id", String, primary_key=True),
     Column("tag_label", String, primary_key=True),
+    ForeignKeyConstraint(
+        ["partmaster_workspace_id", "partmaster_partnumber", "partrevision_version"],
+        ["partrevision.workspace_id", "partrevision.partmaster_partnumber",
+         "partrevision.version"],
+    ),
 )
 
 
@@ -293,6 +313,16 @@ class PartIteration(Base):
         secondaryjoin=lambda: PartUsageLink.id == part_iteration_usagelink.c.component_id,
         order_by=part_iteration_usagelink.c.component_order,
     )
+    conversions: Mapped[List["Conversion"]] = relationship(
+        "Conversion",
+        primaryjoin=lambda: (
+            (PartIteration.workspace_id == Conversion.workspace_id)
+            & (PartIteration.partmaster_partnumber == Conversion.partmaster_partnumber)
+            & (PartIteration.partrevision_version == Conversion.partrevision_version)
+            & (PartIteration.iteration == Conversion.iteration)
+        ),
+        cascade="all, delete-orphan",
+    )
 
 
 # 子件链接的 CAD 实例关联表
@@ -345,3 +375,11 @@ class Conversion(Base):
     succeed = Column(Boolean, default=False)
     start_date = Column("startdate", DateTime)
     end_date = Column("enddate", DateTime)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+            ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+             "partiteration.partrevision_version", "partiteration.iteration"],
+        ),
+    )
