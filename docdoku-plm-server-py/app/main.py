@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from app.routers import auth, parts
+from app.routers import auth, parts, part_files
 from app.core.exception_handlers import register_exception_handlers
 from app.core.security import verify_token
 from app.core.database import SessionLocal
@@ -55,6 +55,7 @@ app.add_middleware(UserLanguageMiddleware)
 
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(parts.router, prefix=API_PREFIX)
+app.include_router(part_files.router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health")

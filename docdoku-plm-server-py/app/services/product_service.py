@@ -96,6 +96,26 @@ class ProductService:
             .first()
         )
 
+    def create_conversion(self, db: Session, ws: str, pn: str,
+                          ver: str, iteration: int) -> Conversion:
+        """建 pending Conversion（已存在则复用并重置为 pending）。"""
+        conv = self.get_conversion(db, ws, pn, ver, iteration)
+        now = datetime.utcnow()
+        if conv is None:
+            conv = Conversion(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=iteration,
+                pending=True, succeed=False, start_date=now,
+            )
+            db.add(conv)
+        else:
+            conv.pending = True
+            conv.succeed = False
+            conv.start_date = now
+            conv.end_date = None
+        db.flush()
+        return conv
+
     # ── 辅助 ──────────────────────────────────────────────────
 
     def find_or_create_part_master(self, db: Session,
