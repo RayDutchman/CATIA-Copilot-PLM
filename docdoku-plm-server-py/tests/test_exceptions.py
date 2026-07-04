@@ -8,7 +8,13 @@ from app.core.exceptions import (
 def test_base_stores_key_and_args():
     e = ApplicationException("SomeKey", "a", "b")
     assert e.key == "SomeKey"
-    assert e.args == ("a", "b")
+    assert e.fmt_args == ("a", "b")
+    assert str(e) == "SomeKey"
+
+
+def test_base_no_args_str_works():
+    e = NotAllowedException("NotAllowedException37")
+    assert str(e) == "NotAllowedException37"
 
 
 def test_translate_uses_i18n():
