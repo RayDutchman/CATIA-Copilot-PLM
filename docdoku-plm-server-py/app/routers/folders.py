@@ -14,12 +14,15 @@ svc = DocumentService()
 def list_root(ws: str, current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     folders = svc.list_folders(db, ws)
-    # Payara 格式: id="ws:path", name, path, home=false
-    return [{"id": f"{ws}:{f.completepath}", "name": f.completepath.split('/')[-1],
+    # Payara 格式: id="ws:folderName", name=folderName, path=completePath
+    return [{"id": f"{ws}:{f.completepath.split('/')[-1] if '/' in f.completepath else f.completepath}",
+             "name": f.completepath.split('/')[-1],
              "path": f.completepath, "home": False} for f in folders]
 
 
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders")
+@router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/",
+            include_in_schema=False)
 def list_sub(ws: str, folder_path: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):

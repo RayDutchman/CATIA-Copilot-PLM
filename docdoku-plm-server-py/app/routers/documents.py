@@ -52,7 +52,7 @@ def _doc_to_dict(rev):
             },
         }
         iterations.append(it_dict)
-    return {
+    dict_fields = {
         "id": f"{rev.documentmaster_id}-{rev.version}",
         "version": rev.version,
         "workspaceId": rev.workspace_id,
@@ -61,24 +61,30 @@ def _doc_to_dict(rev):
         "description": rev.description,
         "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
         "creationDate": str(rev.creation_date) if rev.creation_date else None,
-        "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else None,
         "checkOutDate": str(rev.check_out_date) if rev.check_out_date else None,
         "releaseDate": str(rev.release_date) if rev.release_date else None,
         "obsoleteDate": str(rev.obsolete_date) if rev.obsolete_date else None,
         "lastIteration": rev.last_iteration_number,
         "documentIterations": iterations,
         "tags": [],
-        "acl": None,
+        "acl": None, "workflow": None, "lifeCycleState": "WIP",
         "path": rev.location_completepath,
-        "lifeCycleState": "WIP",
-        "workflow": None,
-        "publicShared": False,
-        "attributesLocked": False,
+        "publicShared": False, "attributesLocked": False,
+        "commentLink": None, "iterationSubscription": False,
+        "stateSubscription": False, "routePath": None,
         "author": {
             "login": rev.author_login, "name": rev.author_login,
             "email": None, "workspaceId": rev.workspace_id,
         },
     }
+    if rev.checkout_user_login:
+        dict_fields["checkOutUser"] = {"login": rev.checkout_user_login}
+    if rev.release_user_login:
+        dict_fields["releaseAuthor"] = {
+            "login": rev.release_user_login, "name": rev.release_user_login,
+            "email": None, "workspaceId": rev.workspace_id,
+        }
+    return dict_fields
 
 
 def _split_doc_key(doc_key: str) -> tuple[str, str]:
@@ -98,7 +104,7 @@ def count(ws: str, current_user: Account = Depends(get_current_user),
 def search(ws: str, q: str = Query(""),
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
-    return svc.search(db, ws, title=q)
+    return [_doc_to_dict(r) for r in svc.search(db, ws, title=q)]
 
 
 @router.get("/workspaces/{ws}/documents")
@@ -157,6 +163,36 @@ def delete(ws: str, doc_key: str,
            db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     svc.delete_revision(db, ws, doc_id, ver, current_user.login)
+
+
+@router.get("/workspaces/{ws}/documents/{doc_key}/aborted-workflows")
+def aborted_workflows(ws: str, doc_key: str,
+                      current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-document-link")
+def inverse_doc_link(ws: str, doc_key: str, iteration: int,
+                     current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-part-link")
+def inverse_part_link(ws: str, doc_key: str, iteration: int,
+                      current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-product-instances-link")
+def inverse_product_link(ws: str, doc_key: str, iteration: int,
+                         current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-path-data-link")
+def inverse_path_link(ws: str, doc_key: str, iteration: int,
+                      current_user: Account = Depends(get_current_user)):
+    return []
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkout")
