@@ -48,6 +48,26 @@ services:
     ports:
       - 8001:8080
 
+  back-py:
+    # FastAPI 后端（P0）：目前仅处理 /auth/ 路由，其余仍走 Payara back
+    build:
+      context: ../docdoku-plm-server-py
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ./env/back-py.env
+    volumes:
+      - ./data/vault:/var/lib/docdoku/vault
+      - conversion-volume:/var/lib/docdoku/conversions
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - network
+    ports:
+      - 8009:8000
+
   conversion:
     # Python-only 转换服务（2.7.0-py）：替代原 Java/Quarkus 编排层
     # 回滚方式：将 image 改回 docdoku/docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback
