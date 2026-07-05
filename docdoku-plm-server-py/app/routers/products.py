@@ -107,6 +107,25 @@ def list_baselines(ws: str, ci_id: str,
             for b in svc.list_baselines(db, ws, ci_id)]
 
 
+@router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
+def get_baseline(ws: str, ci_id: str, bl_id: int,
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    from app.models.product import ProductBaseline
+    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    if not bl:
+        from app.core.exceptions import EntityNotFoundException
+        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
+    return {"id": bl.id, "name": bl.name, "type": bl.type,
+            "configurationItemId": bl.configurationitem_id,
+            "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
+            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
+            "description": bl.description or "",
+            "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
+            "baselinedParts": [], "substituteLinks": [], "optionalUsageLinks": [],
+            "pathToPathLinks": []}
+
+
 @router.post("/workspaces/{ws}/products/{ci_id}/baselines", status_code=201)
 @router.post("/workspaces/{ws}/products/{ci_id}/baselines/", status_code=201, include_in_schema=False)
 def create_baseline(ws: str, ci_id: str, body: dict,
@@ -127,6 +146,21 @@ def delete_baseline(ws: str, ci_id: str, bl_id: int,
                     db: Session = Depends(get_db)):
     svc.delete_baseline(db, ws, bl_id)
     return {"status": "deleted"}
+
+
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}")
+def get_workspace_baseline(ws: str, bl_id: int,
+                           current_user: Account = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    from app.models.product import ProductBaseline
+    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    if not bl:
+        from app.core.exceptions import EntityNotFoundException
+        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
+    return {"id": bl.id, "name": bl.name, "type": bl.type,
+            "configurationItemId": bl.configurationitem_id,
+            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
+            "description": bl.description or ""}
 
 
 @router.get("/workspaces/{ws}/product-baselines")
