@@ -287,6 +287,10 @@ def get_share(ws: str, doc_key: str,
 def publish(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    dr = svc.get_revision(db, ws, doc_id, ver)
+    dr.public_shared = True
+    db.commit()
     return {"publicShared": True}
 
 
@@ -295,6 +299,10 @@ def publish(ws: str, doc_key: str,
 def unpublish(ws: str, doc_key: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    dr = svc.get_revision(db, ws, doc_id, ver)
+    dr.public_shared = False
+    db.commit()
     return {"publicShared": False}
 
 

@@ -10,6 +10,19 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
+def _parse_task_id(task_id: str):
+    """解析 Java 复合 task ID: "workflowId-step-taskIndex" → (wf_id, step, num)"""
+    if isinstance(task_id, int):
+        return None, None, task_id  # 旧版单 int
+    parts = task_id.split("-")
+    if len(parts) == 3:
+        try:
+            return int(parts[0]), int(parts[1]), int(parts[2])
+        except ValueError:
+            return None, None, task_id
+    return None, None, task_id
+
+
 def _doc_to_dict_short(rev):
     return {
         "id": f"{rev.documentmaster_id}-{rev.version}",
@@ -32,22 +45,46 @@ def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
 
 @router.get(f"{PREFIX}/tasks/{{task_id}}")
 @router.get(f"{PREFIX}/tasks/{{task_id}}/", include_in_schema=False)
-def get_task(ws: str, task_id: int, db: Session = Depends(get_db),
+def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
-    t = workflow_service.get_task(db, ws, task_id)
-    return {"num": t[0], "title": t[4],
-            "status": STATUS_MAP.get(t[7], "NOT_STARTED")}
+    wf_id, step, num = _parse_task_id(task_id)
+    if wf_id is not None and step is not None:
+        t = workflow_service.get_task(db, ws, workflow_id=wf_id,
+                                      activity_step=step, task_num=num)
+    else:
+        t = workflow_service.get_task(db, ws, task_id=int(num) if isinstance(num, int) else num)
+    # t 是 row tuple，构建响应
+    return {
+        "num": t[0],
+        "title": t[9] if len(t) > 9 else None,
+        "instructions": t[4] if len(t) > 4 else None,
+        "status": STATUS_MAP.get(t[7], "NOT_STARTED"),
+        "worker": {"login": t[13]} if len(t) > 13 and t[13] else None,
+        "closureComment": t[1] if len(t) > 1 else None,
+        "signature": t[5] if len(t) > 5 else None,
+        "closureDate": str(t[2]) if len(t) > 2 and t[2] else None,
+    }
 
 
 @router.put(f"{PREFIX}/tasks/{{task_id}}/process")
 @router.put(f"{PREFIX}/tasks/{{task_id}}/process/", include_in_schema=False)
-def process_task(ws: str, task_id: int, body: dict, db: Session = Depends(get_db),
+def process_task(ws: str, task_id: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
-    holder = workflow_service.process_task(db, ws, task_id,
-                                           body.get("action", ""),
-                                           body.get("comment", ""),
-                                           body.get("signature", ""),
-                                           current_user.login)
+    wf_id, step, num = _parse_task_id(task_id)
+    if wf_id is not None and step is not None:
+        holder = workflow_service.process_task(
+            db, ws, action=body.get("action", ""),
+            comment=body.get("comment", ""),
+            signature=body.get("signature", ""),
+            user_login=current_user.login,
+            workflow_id=wf_id, activity_step=step, task_num=num)
+    else:
+        holder = workflow_service.process_task(
+            db, ws, task_id=int(num) if isinstance(num, int) else num,
+            action=body.get("action", ""),
+            comment=body.get("comment", ""),
+            signature=body.get("signature", ""),
+            user_login=current_user.login)
     return holder
 
 

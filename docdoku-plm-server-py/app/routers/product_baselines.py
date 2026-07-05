@@ -1,5 +1,6 @@
 """产品基线（ProductBaseline）端点路由。"""
 from fastapi import APIRouter, Depends
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -50,6 +51,19 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
     return {"id": bl.id, "name": bl.name}
 
 
+def _query_baselined_parts(db: Session, partcollection_id: int | None) -> list:
+    if partcollection_id is None:
+        return []
+    rows = db.execute(sql_text(
+        "SELECT bp.target_partmaster_partnumber, bp.target_partrevision_version, bp.target_iteration "
+        "FROM baselinedpart bp WHERE bp.partcollection_id = :pc_id"
+    ), {"pc_id": partcollection_id}).fetchall()
+    return [
+        {"partNumber": r[0], "version": r[1], "iteration": r[2]}
+        for r in rows
+    ]
+
+
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}")
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
 def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
@@ -66,7 +80,8 @@ def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
             "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
             "description": bl.description or "",
             "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
-            "baselinedParts": [], "substituteLinks": [], "optionalUsageLinks": [],
+            "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
+            "substituteLinks": [], "optionalUsageLinks": [],
             "pathToPathLinks": []}
 
 
@@ -136,7 +151,8 @@ def get_baseline(ws: str, ci_id: str, bl_id: int,
             "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
             "description": bl.description or "",
             "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
-            "baselinedParts": [], "substituteLinks": [], "optionalUsageLinks": [],
+            "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
+            "substituteLinks": [], "optionalUsageLinks": [],
             "pathToPathLinks": []}
 
 

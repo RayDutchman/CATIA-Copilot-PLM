@@ -60,8 +60,41 @@ def list_wwf(ws: str, db: Session = Depends(get_db),
              "finalLifecycleState": r[2]} for r in rows]
 
 
+# ========== workspace-workflow 实例化与管理 ==========
+
+@router.get(f"{PREFIX}/workspace-workflows/{{id}}")
+@router.get(f"{PREFIX}/workspace-workflows/{{id}}/", include_in_schema=False)
+def get_workspace_workflow(ws: str, id: str, db: Session = Depends(get_db),
+                           current_user: Account = Depends(get_current_user)):
+    """获取 workspace_workflow 实例详情（含 activities/tasks 嵌套）"""
+    _check_workspace_access(db, ws, current_user.login)
+    return workflow_service.get_workspace_workflow(db, ws, id)
+
+
+@router.post(f"{PREFIX}/workspace-workflows", status_code=201)
+@router.post(f"{PREFIX}/workspace-workflows/", status_code=201, include_in_schema=False)
+def create_workspace_workflow(ws: str, body: dict, db: Session = Depends(get_db),
+                              current_user: Account = Depends(get_current_user)):
+    """从 workflow model 实例化 workspace_workflow"""
+    _check_workspace_access(db, ws, current_user.login)
+    return workflow_service.instantiate_workflow(
+        db, ws, body.get("workflowModelId", ""),
+        role_mapping=body.get("roleMapping", {}))
+
+
+@router.delete(f"{PREFIX}/workspace-workflows/{{id}}", status_code=204)
+@router.delete(f"{PREFIX}/workspace-workflows/{{id}}/", status_code=204, include_in_schema=False)
+def delete_workspace_workflow(ws: str, id: str, db: Session = Depends(get_db),
+                              current_user: Account = Depends(get_current_user)):
+    """删除 workspace_workflow 及其关联的 workflow"""
+    _check_workspace_access(db, ws, current_user.login)
+    workflow_service.delete_workspace_workflow(db, ws, id)
+
+
 @router.get(f"{PREFIX}/workspace-workflows/{{workflowId}}/aborted")
 @router.get(f"{PREFIX}/workspace-workflows/{{workflowId}}/aborted/", include_in_schema=False)
 def workflow_aborted(ws: str, workflowId: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    return []
+    """查询 workspace_workflow 对应的 workflow 是否已中止"""
+    _check_workspace_access(db, ws, current_user.login)
+    return workflow_service.get_aborted_workflows_for_workspace_workflow(db, ws, workflowId)

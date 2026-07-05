@@ -1,5 +1,6 @@
 """产品实例端点（ProductInstancesResource）。"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -27,6 +28,110 @@ def create_instance(ws: str, ci_id: str, body: dict,
     inst = svc.create_instance(db, ws, ci_id, body.get("serialNumber", ""),
                                 body.get("baselineId", 0), current_user.login)
     return {"serialNumber": inst.serialnumber}
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}")
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/", include_in_schema=False)
+def update_instance(ws: str, ci_id: str, sn: str, body: dict,
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    from app.models.product import ProductInstanceMaster, ProductInstanceIteration
+    inst = db.query(ProductInstanceMaster).filter(
+        ProductInstanceMaster.workspace_id == ws,
+        ProductInstanceMaster.configurationitem_id == ci_id,
+        ProductInstanceMaster.serialnumber == sn,
+    ).first()
+    if not inst:
+        raise HTTPException(404, "Instance not found")
+    last_it = db.query(ProductInstanceIteration).filter(
+        ProductInstanceIteration.workspace_id == ws,
+        ProductInstanceIteration.configurationitem_id == ci_id,
+        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+    ).order_by(ProductInstanceIteration.iteration.desc()).first()
+    if last_it and "description" in body:
+        last_it.iteration_note = body["description"]
+    if "linkedDocuments" in body and last_it:
+        db.execute(sql_text(
+            "DELETE FROM productinstanceiteration_documentlink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration})
+        for dl in body["linkedDocuments"]:
+            dm_id = dl.get("documentMasterId", "")
+            ver = dl.get("version", "")
+            iter_num = dl.get("iteration", 1)
+            db.execute(sql_text(
+                "INSERT INTO productinstanceiteration_documentlink "
+                "(workspace_id, configurationitem_id, prdinstancemaster_serialnumber, "
+                "iteration, target_workspace_id, target_documentmaster_id, "
+                "target_docrevision_version, target_iteration, commentdata) "
+                "VALUES (:ws, :ci, :sn, :it, :tws, :dm, :ver, :iter, :comment)"
+            ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration,
+                "tws": ws, "dm": dm_id, "ver": ver, "iter": iter_num,
+                "comment": dl.get("comment", "")})
+    db.commit()
+    return {"serialNumber": inst.serialnumber}
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations")
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations/", include_in_schema=False)
+def list_instance_iterations(ws: str, ci_id: str, sn: str,
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    from app.models.product import ProductInstanceIteration
+    iterations = db.query(ProductInstanceIteration).filter(
+        ProductInstanceIteration.workspace_id == ws,
+        ProductInstanceIteration.configurationitem_id == ci_id,
+        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+    ).order_by(ProductInstanceIteration.iteration).all()
+    return [
+        {
+            "iteration": it.iteration,
+            "iterationNote": it.iteration_note,
+            "creationDate": it.creation_date.isoformat() + "Z" if it.creation_date else None,
+            "modificationDate": it.modification_date.isoformat() + "Z" if it.modification_date else None,
+            "author": {"login": it.author_login or "", "name": it.author_login or ""},
+            "productBaselineId": it.productbaseline_id,
+        }
+        for it in iterations
+    ]
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}")
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/", include_in_schema=False)
+def get_instance_iteration(ws: str, ci_id: str, sn: str, it: int,
+                            current_user: Account = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    from app.models.product import ProductInstanceIteration
+    iteration = db.query(ProductInstanceIteration).filter(
+        ProductInstanceIteration.workspace_id == ws,
+        ProductInstanceIteration.configurationitem_id == ci_id,
+        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+        ProductInstanceIteration.iteration == it,
+    ).first()
+    if not iteration:
+        raise HTTPException(404, "Iteration not found")
+    doc_rows = db.execute(sql_text(
+        "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
+        "dl.target_docrevision_version, dl.commentdata "
+        "FROM productinstanceiteration_documentlink pidl "
+        "JOIN documentlink dl ON dl.id = pidl.documentlink_id "
+        "WHERE pidl.workspace_id=:ws AND pidl.configurationitem_id=:ci "
+        "AND pidl.prdinstancemaster_serialnumber=:sn AND pidl.iteration=:it"
+    ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it}).fetchall()
+    return {
+        "iteration": iteration.iteration,
+        "iterationNote": iteration.iteration_note,
+        "creationDate": iteration.creation_date.isoformat() + "Z" if iteration.creation_date else None,
+        "modificationDate": iteration.modification_date.isoformat() + "Z" if iteration.modification_date else None,
+        "author": {"login": iteration.author_login or "", "name": iteration.author_login or ""},
+        "productBaselineId": iteration.productbaseline_id,
+        "linkedDocuments": [
+            {"id": r[0], "workspaceId": r[1], "documentMasterId": r[2],
+             "version": r[3], "commentLink": r[4]}
+            for r in doc_rows
+        ],
+    }
 
 
 @router.delete("/workspaces/{ws}/products/{ci_id}/instances/{sn}")
