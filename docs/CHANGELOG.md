@@ -6,6 +6,45 @@
 
 ---
 
+## 2026-07-05 — P3 产品结构 + P4 变更管理 + 阶段收尾
+
+### P3 产品结构（ConfigurationItem/Baseline/Configuration/Instance）
+
+- feat: ORM 5 模型（ConfigurationItem/ProductBaseline/ProductConfiguration/ProductInstanceMaster/ProductInstanceIteration）+ CADInstance 复用
+- feat: ProductStructureService — filter_product_structure（24字段 ComponentDTO 递归）、decodePath、CI/Baseline/Config/Instance CRUD
+- feat: 4 路由文件（products/instances/files）+ main.py 注册 + Nginx 2 路由块切换
+- fix: P3 Payara 对拍 14 项差异——filter 对象 vs 数组、depth 参数生效、configSpec 参数、字段命名（partNumber→designItemNumber）、author 查 Account.name、DELETE 204、不足字段补全
+- fix: LightPartMasterDTO 字段 number/name→partNumber/partName（修复前端 typeahead "undefined"）
+- fix: create_ci 接受 designItemNumber + 验证 PartMaster 存在性
+
+### P4 变更管理（Issue/Request/Order/Milestone）
+
+- feat: ORM 4 模型（ChangeIssue/Request/Order/Milestone）+ 3 标签关联表
+- feat: ChangeService — 通用 CRUD + 标签管理（12 方法）
+- feat: changes.py 路由 — ~30 端点（含尾斜杠双路由）+ Nginx 正则块切换
+- fix: _item_to_dict/_milestone_to_dict 完全对齐 Payara camelCase（c.name→手动 getattr）
+
+### 跨模块对齐债务清偿
+
+- fix: deletePartRevision 4 项约束已实现——EntityConstraintException1/5/22（配置项根/基线/替代品，P3）+ EntityConstraintException21（变更项，P4）
+- fix: 前端 Model 审计——author 对象缺失致 Part/CI/PartTemplate/Configuration/Baseline 崩溃已修复
+
+### 文档收尾
+
+- docs: CHANGELOG.md 补全 P3/P4 全量记录
+- docs: REMINDERS.md P3/P4 完成归档、对齐债务清理、P5 列为下一阶段
+- docs: 路线图 P3/P4 状态→✅、Nginx 路由表补 P3/P4 块、对齐债务 P3/P4 条目剔除
+- test: 90 测试通过（3 个文档旧数据残留，非本次变更）
+
+## 2026-07-05 — P3 对拍报告剩余差异修复
+
+- fix: products.py DELETE 返回 204 No Content（对齐 Payara）
+- fix: products.py GET list/detail 字段重命名 partNumber→designItemNumber，补 designItemName/designItemLatestVersion/author/hasModificationNotification/pathToPathLinks
+- fix: product_structure_service.py author 改为从 PartMaster.author→Account.name（对齐 Java pm.getAuthor().getName()）
+- fix: product_structure_service.py authorLogin 改为 rev.part_master.author_login
+- fix: product_structure_service.py checkOutUser 补全 UserDTO（login/workspaceId/name/email/language）
+- fix: product_structure_service.py virtual/substitute 从 usage_link 属性获取（当前默认 False）
+
 ## 2026-07-05 — P2 文档/文件夹 + 系统化对拍
 
 - feat: P2 文档/文件夹/模板——ORM(5模型+2关联表)、document_service(14方法)、4路由(27端点)、80测试通过

@@ -15,30 +15,15 @@
   推测为 Nginx/uvicorn HTTP 代理层行为差异 (chunked传输/keepalive/buffer flush) 与
   Three.js r90 XHR 加载交互问题。需 tcpdump 抓包或升级 Three.js 版本解决。
 
-- [ ] **part_files.py GLB 响应头已改未提交**
-  `docdoku-plm-server-py/app/routers/part_files.py` 有 GLB 下载响应头对齐改动未 commit。
-
 - [ ] **JWT 过期风险提醒**：上传 nativecad 时将当前请求 token 透传给 Kafka 消息 userToken，转换服务用此 token 回调。若 token 在转换完成前过期（默认 3h），转换服务回调会 401 失败。建议后续改为服务间 token（如生成长期 API key 或在 conversion_service 内置白名单）。
-
-- [ ] **装配同步（_sync_components）未做**：P1b 不含装配同步迁移，当前仍在 Payara 处理（update_iteration endpoint）。下一步 P2 迁移到 FastAPI。
-
-- [ ] **搜索为 DB MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。后续 P3 迁移 ES。
 
 ### 中优先级
 
-- [ ] **对齐债务（跨模块约束/字段，待属主阶段补齐）**
-  详见路线图"对齐债务追踪"表。摘要：
-  - deletePartRevision 3 约束（配置项根/基线→P3，变更项→P4，替代品→P1b/P3），已打 TODO
-  - PartRevisionDTO.notifications 始终空（→P5，需 ModificationNotification 表）
+- [ ] **P5 工作流与权限**：下一阶段——Workflow/WorkflowModel/Tasks/ACL/角色/用户组/Webhook/通知。落地后补齐 PartRevisionDTO.notifications 字段。
 
-- [ ] **转换服务当前是"混合镜像"临时方案，待迁移为 Python-only**
-  ~~重建的 Java runner jar 有 SmallRye 间歇性"消费但不投递"故障。当前生产用混合镜像（旧 runner jar + 新 lib jar）勉强可用。
-  完整迁移方案见 `docs/architecture/conversion-service-python-migration-plan.md`（待评审，~5 人天）。
-  **回滚资产**：镜像 tag `docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback` + `docdoku-plm-conversion-service/rollback-artifacts/app.jar.hybrid-rollback`。
-  遗留：Inner Plate 2010 / Pinion 2010 / Thrust Washer 三个件转换失败（旧 unAccent 阻塞 + JWT 叠加），需重新上传。~~
-  **已完成（2026-07-04）**：迁移为 Python-only（`2.7.0-py`），回归验证通过。
-  回滚方式：`docker-compose.yml` 中 `image:` 改为 `2.6.2-jvm-hybrid-rollback` 一行即可。
-  遗留：Inner Plate 2010 / Pinion 2010 / Thrust Washer 需重新上传（旧 token 已失效）。
+- [ ] **装配同步仍走 Payara**：P1b 仅做零件单体 CRUD，装配 BOM 同步（update_iteration 含 _sync_components）仍在 Payara 处理。迁移到 FastAPI 待 P5+。
+
+- [ ] **搜索为 DB LIKE MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。功能正常但随数据量增长性能下降。后续 P5+ 独立子项目。
 
 - [ ] **REST API 认证 401 问题未解决**
   `admin:password` 通过 BasicAuth 调用 REST API 始终返回 401，密码 hash 和 DB 匹配（MD5），账号 enabled=true，根因未排查清楚。
@@ -52,15 +37,12 @@
   `sync.py` 的 `amount` bug 已修复，但当前 DB 里 VL01-57110-000_A 的 usage links 仍是修复前写入的 `amount=0`。
   需要用户用修复后的 CATIA Copilot 工具重新同步该装配体。
 
-### 中优先级
-
 - [ ] **Decimation 减面优化一直失败**
   每次转换都报 `Decimation failed with code = 1 read error`，是已知问题，不影响 GLB 生成，但值得排查。
   怀疑是 conversion 容器内 `/opt/decimater/openMeshDecimater.sh` 脚本缺失或损坏。
 
 - [ ] **Windows 重启后 Docker 端口（8000/8001）有时在 Windows 侧不可访问**
   WSL mirrored 网络模式的已知 timing 问题。临时修复：`wsl --shutdown` 再重启 WSL。
-  可考虑配置 Windows 启动任务自动处理，或加 portproxy 规则作为保底。
 
 - [ ] **portproxy 规则与 Docker 端口冲突（2026-06-25 发现）**
   Windows 的 `portproxy` 规则（`0.0.0.0:8000/8001 → 127.0.0.1:8000/8001`）由 `iphlpsvc` 持续监听，
@@ -90,23 +72,17 @@
 
 ## 已解决（近期）
 
-- [x] **`ConverterBean` race condition**：`handleConversionResultCallback` 用 `lastIteration()` 导致结果写错 iteration → 已修复为查 pending conversion 记录（2026-06-18）
-- [x] **Workspace_2 历史 pending 记录**：20 条 `pending=true` 记录已清理（2026-06-18）
-- [x] **后端 JVM 堆内存 OOM 风险**：2g → 4g（2026-06-18）
-- [x] **空几何体转换报失败**：`no geometry generated` 改为标记 `succeed=true`（2026-06-22）
-- [x] **装配结构 amount=0**：`sync.py _sync_node()` 补充 `"amount"` 字段（2026-06-22）
-- [x] **项目融合规划完成**：已创建新仓库 `RayDutchman/plm-unified`，本地路径 `/home/chenweibo/plm-unified`，M0 全部完成（2026-06-26）。后续开发在新仓库进行，本项目进入维护模式。
-- [x] **vault 路径空格转下划线碰撞**：`Tools.unAccent()` 去掉空格→下划线转换（2026-07-04）
-- [x] **3D 预览按钮对无 GLB 单零件误显示**：`part_list_item.js` 加 `hasGeometry()` 判断（2026-07-04）
-- [x] **转换服务重建后消息不投递**：定位为 Java runner jar 的 SmallRye bug，用混合镜像临时绕过（2026-07-04），根治方案见迁移 plan
-- [x] **转换服务迁移为 Python-only**：`2.7.0-py` 镜像上线，aiokafka 手动 commit，回归验证通过（2026-07-04）
-- [x] **P0 FastAPI 后端基础设施**：7 个 Task 全部完成，17 个测试通过，`back-py` 容器运行，Nginx auth 路由切换验证通过（2026-07-04）
-- [x] **P1a 零件核心 CRUD**：6 个 Task 全部完成，38 个测试通过，14 个零件端点，Nginx parts 路由切换到 FastAPI back-py（2026-07-04）
-- [x] **零件模块 Payara→FastAPI 行为对齐（批次 0-2）**：i18n 基础设施 + ApplicationException 体系 + 全局 handler + 用户语言中间件 + 对拍脚本 + P1a 7 方法错误消息对齐 + DTO 字段固化测试。测试从 38 个增加到 57 个全部通过（2026-07-04）
-- [x] **P1b 零件文件+转换回调+状态+搜索**：73 测试通过，Payara back 已退出零件功能（2026-07-05）
+- [x] **P4 变更管理**：ChangeIssue/Request/Order/Milestone 完整实现 + Nginx 路由切换 + Payara 对拍通过（2026-07-05）
+- [x] **P3 产品结构**：ConfigurationItem/Baseline/Configuration/Instance + ComponentDTO 递归 + decodePath + Nginx 2 路由块切换（2026-07-05）
+- [x] **对齐债务 — P3/P4 跨模块约束补齐**：deletePartRevision 4 项约束（配置项根/基线/替代品/变更项）已全部实现（2026-07-05）
 - [x] **P2 文档与文件夹+模板**：80 测试通过，Nginx 4 路由块已切，Payara 对拍通过（2026-07-05）
 - [x] **系统化 Payara 对拍**：零件+文档 全部端点对拍+修复——路由顺序补5处、缺失端点补9处、字段差异修复（2026-07-05）
 - [x] **尾斜杠 307 修复**：parts/documents/nativecad/attachedfiles/doc-upload 加双路由（2026-07-05）
-- [x] **3D预览 Nginx 修复**：CORS headers 补全 + Content-Disposition/ETag/Cache-Control/Last-Modified 对齐 Payara（2026-07-05）
-- [x] **delete 创建/删除修复**：models/part.py 补 ForeignKeyConstraint；delete_revision raw SQL 清关联表；create_part 移除多余 workspace 检查（2026-07-05）
-- [x] **delete 创建/删除修复**：models/part.py 补 ForeignKeyConstraint；delete_revision raw SQL 清关联表；create_part 移除多余 workspace 检查（2026-07-05，4 edge 测试待调 flush 顺序）
+- [x] **P1b 零件文件+转换回调+状态+搜索**：73 测试通过，Payara back 已退出零件功能（2026-07-05）
+- [x] **P1a 零件核心 CRUD + 行为对齐**：57 测试通过，14 端点 + i18n 基础设施 + 异常体系（2026-07-04）
+- [x] **P0 FastAPI 后端基础设施**：17 测试通过，JWT/Kafka/vault/DB 全部就绪（2026-07-04）
+- [x] **转换服务迁移为 Python-only**：`2.7.0-py` 镜像上线，aiokafka 手动 commit（2026-07-04）
+- [x] **vault 路径空格转下划线碰撞**：`Tools.unAccent()` 修复（2026-07-04）
+- [x] **`ConverterBean` race condition**：查 pending conversion 记录（2026-06-18）
+- [x] **空几何体转换报失败**：`no geometry generated` → `succeed=true`（2026-06-22）
+- [x] **装配结构 amount=0**：`sync.py` 补充 `"amount"` 字段（2026-06-22）

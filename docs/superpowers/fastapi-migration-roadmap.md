@@ -77,8 +77,8 @@
 | **P1a-align** | 零件行为对齐（i18n 基础设施 + 7 方法错误消息 + DTO 字段） | ✅ 完成 | `plans/2026-07-04-payara-fastapi-parts-alignment.md` |
 | **P1b** | 零件文件（nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索） | ✅ 完成 | `plans/2026-07-04-p1b-parts-files.md` |
 | **P2** | 文档与文件夹（Documents/Folders/Tags/文档模板） | ✅ 完成 | — |
-| **P3** | 产品结构（Products/ConfigurationItems/Baselines/ProductInstances/3D 装配树） | ⬜ 待规划 | — |
-| **P4** | 变更管理（ChangeIssues/ChangeRequests/ChangeOrders/Milestones） | ⬜ 待规划 | — |
+| **P3** | 产品结构（Products/ConfigurationItems/Baselines/ProductInstances/3D 装配树） | ✅ 完成 | — |
+| **P4** | 变更管理（ChangeIssues/ChangeRequests/ChangeOrders/Milestones） | ✅ 完成 | — |
 | **P5** | 工作流与权限（Workflow/WorkflowModel/Tasks/ACL/角色/用户组/Webhook/通知） | ⬜ 待规划 | — |
 
 ### 当前 Nginx 路由
@@ -91,6 +91,9 @@
 /docdoku-plm-server-rest/api/workspaces/{ws}/folders...    → FastAPI back-py:8000  （P2 已切）
 /docdoku-plm-server-rest/api/workspaces/{ws}/document-templates... → FastAPI back-py:8000  （P2 已切）
 /docdoku-plm-server-rest/api/files/{ws}/documents...       → FastAPI back-py:8000  （P2 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/products...  → FastAPI back-py:8000  （P3 已切）
+/docdoku-plm-server-rest/api/files/{ws}/products...       → FastAPI back-py:8000  （P3 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/changes...   → FastAPI back-py:8000  （P4 已切）
 其余全部                                                     → Payara back:8080
 ```
 
@@ -102,14 +105,14 @@
 
 | 债务 | 位置 | 属主阶段 | 说明 |
 |------|------|----------|------|
-| deletePartRevision: 配置项根零件检查 | `product_service.delete_revision` | P3 | `EntityConstraintException1`，需 ProductConfiguration 表建模 |
-| deletePartRevision: 基线检查 | 同上 | P3 | `EntityConstraintException5`，需 ProductBaseline 表 |
-| deletePartRevision: 替代品检查 | 同上 | P3 | `EntityConstraintException22`，需 PartSubstituteLink 表 |
-| deletePartRevision: 变更项检查 | 同上 | P4 | `EntityConstraintException21`，需 ChangeItem 表 |
+| ~~deletePartRevision: 配置项根零件检查~~ | ~~P3~~ | ✅ 已补齐 | `EntityConstraintException1` — P3 落地后已实现 |
+| ~~deletePartRevision: 基线检查~~ | ~~P3~~ | ✅ 已补齐 | `EntityConstraintException5` — P3 落地后已实现 |
+| ~~deletePartRevision: 替代品检查~~ | ~~P3~~ | ✅ 已补齐 | `EntityConstraintException22` — P3 落地后已实现 |
+| ~~deletePartRevision: 变更项检查~~ | ~~P4~~ | ✅ 已补齐 | `EntityConstraintException21` — P4 落地后已实现 |
 | 3D预览 r90 HTTP代理差异 | GLB响应 | 未知 | Three.js r90 + FastAPI/uvicorn 代理层交互导致 GLB 不加载（字节/headers 已对齐）。需抓包或升级 Three.js。
-| 转换回调 JWT 过期风险 | `kafka_producer.send_conversion_order` | P2+ | userToken 透传上传时 token，长时间转换后可能过期。后续改为服务间 token |
-| 装配同步未迁移 | `update_iteration` | P2 | P1b 仅做零件单体，装配 BOM 同步仍在 Payara |
-| 搜索为 DB LIKE MVP | `search_parts` | P3+ | 无 ES 全文搜索，用 `ilike` 模糊匹配
+| 转换回调 JWT 过期风险 | `kafka_producer.send_conversion_order` | 未知 | userToken 透传上传时 token，长时间转换后可能过期。后续改为服务间 token |
+| 装配同步未迁移 | `update_iteration` | P5+ | P1b 仅做零件单体，装配 BOM 同步仍在 Payara |
+| 搜索为 DB 模糊匹配 | `search_parts` | P5+ | 无 ES 全文搜索，用 `ilike` 模糊匹配。不影响功能但性能随数据量下降 |
 
 ---
 
@@ -117,8 +120,8 @@
 
 后续阶段会解锁早期阶段的对齐债务：
 
-- **P3（产品结构）** 落地后 → 补齐 parts 删除的配置项根零件 / 基线检查
-- **P4（变更管理）** 落地后 → 补齐 parts 删除的变更项检查
+- **P3（产品结构）** ✅ 已落地 → 配置项根零件 / 基线 / 替代品 检查已补齐
+- **P4（变更管理）** ✅ 已落地 → 变更项检查已补齐
 - **P5（工作流/通知）** 落地后 → 补齐 PartRevisionDTO.notifications 字段
 
 规划这些阶段时，务必在计划中包含"回补对齐债务"任务。
