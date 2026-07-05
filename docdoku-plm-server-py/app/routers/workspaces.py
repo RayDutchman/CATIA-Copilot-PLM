@@ -84,13 +84,41 @@ def disk_usage_stats(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/checked-out-documents-stats")
 def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
-    return []
+    from sqlalchemy import text
+    from datetime import datetime
+    rows = db.execute(text(
+        "SELECT checkoutuser_login, checkoutdate "
+        "FROM documentrevision "
+        "WHERE workspace_id = :ws AND checkoutuser_login IS NOT NULL"
+    ), {"ws": ws}).fetchall()
+    result = {}
+    for r in rows:
+        login = r[0] or "unknown"
+        ts = int(r[1].timestamp() * 1000) if r[1] else 0
+        if login not in result:
+            result[login] = []
+        result[login].append({"date": ts})
+    return result
 
 
 @router.get("/workspaces/{ws}/checked-out-parts-stats")
 def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
                             current_user: Account = Depends(get_current_user)):
-    return []
+    from sqlalchemy import text
+    from datetime import datetime
+    rows = db.execute(text(
+        "SELECT checkoutuser_login, checkoutdate "
+        "FROM partrevision "
+        "WHERE workspace_id = :ws AND checkoutuser_login IS NOT NULL"
+    ), {"ws": ws}).fetchall()
+    result = {}
+    for r in rows:
+        login = r[0] or "unknown"
+        ts = int(r[1].timestamp() * 1000) if r[1] else 0
+        if login not in result:
+            result[login] = []
+        result[login].append({"date": ts})
+    return result
 
 
 @router.get("/workspaces/{ws}/front-options")
