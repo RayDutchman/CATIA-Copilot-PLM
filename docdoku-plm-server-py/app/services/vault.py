@@ -52,3 +52,10 @@ def write_file(path: Path, data: bytes) -> None:
     """写入 vault 文件，自动创建父目录。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+
+
+def move_file(old_path: Path, new_path: Path) -> None:
+    """移动/重命名 vault 文件。源文件不存在时不报错（幂等）。"""
+    if old_path.exists():
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        old_path.rename(new_path)
