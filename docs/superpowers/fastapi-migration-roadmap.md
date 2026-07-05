@@ -98,6 +98,7 @@
 /docdoku-plm-server-rest/api/workspaces/{ws}/(add-user|admin|user-access|...) → FastAPI back-py:8000  （P5 已切）
 /docdoku-plm-server-rest/api/accounts...                   → FastAPI back-py:8000  （P5 已切）
 /docdoku-plm-server-rest/api/workspaces(...)?...             → FastAPI back-py:8000  （补充：工作区 CRUD）
+/docdoku-plm-server-rest/api/(admin|organizations|languages|timezones|platform|shared)... → FastAPI back-py:8000  （补充：Admin/Orgs/Misc/Shared）
 其余全部                                                     → Payara back:8080
 ```
 
