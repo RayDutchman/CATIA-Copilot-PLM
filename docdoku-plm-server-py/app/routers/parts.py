@@ -14,6 +14,7 @@ from app.services.product_service import ProductService
 from app.services.part_mapper import map_revision
 from app.services import conversion_service
 from app.services.acl_helper import apply_acl
+from app.services.workflow_service import workflow_service
 
 router = APIRouter()
 svc = ProductService()
@@ -187,7 +188,9 @@ def get_baselines(workspace_id: str, part_key: str,
 def get_aborted_workflows(workspace_id: str, part_key: str,
                           current_user: Account = Depends(get_current_user),
                           db: Session = Depends(get_db)):
-    return []
+    number, version = _split_part_key(part_key)
+    return workflow_service.get_aborted_workflows_for_part(
+        db, workspace_id, number, version)
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters")

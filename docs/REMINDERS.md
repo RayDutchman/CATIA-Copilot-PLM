@@ -70,6 +70,7 @@
 
 ## 已解决（近期）
 
+- [x] **P5 前端 Model 对齐审计修复**：6 问题全部修复——task status 字符串映射/author.name 查 Account/activities 非空/acl 非 null/aborted-workflows 端点/workspace-workflows 端点（2026-07-05）
 - [x] **P5 工作流与权限**：全部完成——66 端点 / 6 功能域 / 16 张表 / 4 ORM 模型文件，Nginx 10+ 路由块切换，121 测试通过（2026-07-05）
 - [x] **PartRevisionDTO.notifications 对齐债务清偿**：P5 落地后 notifications 字段已补齐
 - [x] **P4 变更管理**：ChangeIssue/Request/Order/Milestone 完整实现 + Nginx 路由切换 + Payara 对拍通过（2026-07-05）

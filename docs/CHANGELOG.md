@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-07-05 — P5 前端 Model 对齐审计修复
+
+- fix(py): task status 整数→字符串映射（0=NOT_STARTED/1=IN_PROGRESS/2=APPROVED/3=REJECTED），防止前端 `status.toLowerCase()` 对整数调用抛出 TypeError
+- fix(py): workflow-models 的 author.name 从 Account 表查询真实 name（不再用 login 代替）
+- fix(py): workflow-instances 的 activities 从 Activity 表查询（不再硬编码 []）
+- fix(py): aborted-workflows 端点实现——parts.py 查询 part_aborted_workflow join workflow、workflows.py 实现 workspace-workflows 和 aborted-instance
+- fix(py): workflow-model ACL 从 acl/acluserentry/aclusergroupentry 表查询（不再返回 null）
+- fix(py): _model_to_dict 所有调用点传入 db 参数
+
 ## 2026-07-05 — P5 工作流与权限（完成）
 
 - feat: P5 完整迁移——66 端点 / 6 功能域 / 16 张表 / 4 ORM 模型文件

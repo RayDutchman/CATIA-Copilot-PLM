@@ -3,34 +3,62 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.services.workflow_service import workflow_service
+from app.models.workflow import Activity
+from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+from app.services.workflow_service import workflow_service, STATUS_MAP
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
-def _model_to_dict(m) -> dict:
+def _model_to_dict(m, db: Session = None) -> dict:
+    author_login = m.author_login or ""
+    author_name = author_login
+    if db and author_login:
+        acc = db.query(Account).filter(Account.login == author_login).first()
+        if acc:
+            author_name = acc.name or author_login
+
+    acl_data = None
+    if db and m.acl_id:
+        acl = db.query(ACL).filter(ACL.id == m.acl_id).first()
+        if acl:
+            user_entries = db.query(AclUserEntry).filter(
+                AclUserEntry.acl_id == m.acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(
+                AclUserGroupEntry.acl_id == m.acl_id).all()
+            acl_data = {
+                "userEntries": {
+                    f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+                    for e in user_entries
+                },
+                "groupEntries": {
+                    f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+                    for e in group_entries
+                },
+            }
+
     return {
         "id": m.id,
         "workspaceId": m.workspace_id,
         "finalLifecycleState": m.finalLifecycleState or "",
         "creationDate": m.creationdate.isoformat() + "Z" if m.creationdate else None,
-        "author": {"login": m.author_login or "", "name": m.author_login or ""},
+        "author": {"login": author_login, "name": author_name, "email": ""},
         "activityModels": [],
-        "acl": None,
+        "acl": acl_data,
     }
 
 
 @router.get(f"{PREFIX}/workflow-models")
 def list_models(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
-    return [_model_to_dict(m) for m in workflow_service.list_models(db, ws)]
+    return [_model_to_dict(m, db) for m in workflow_service.list_models(db, ws)]
 
 
 @router.get(f"{PREFIX}/workflow-models/{{model_id}}")
 def get_model(ws: str, model_id: str, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user)):
-    return _model_to_dict(workflow_service.get_model(db, ws, model_id))
+    return _model_to_dict(workflow_service.get_model(db, ws, model_id), db)
 
 
 @router.post(f"{PREFIX}/workflow-models", status_code=201)
@@ -38,9 +66,9 @@ def get_model(ws: str, model_id: str, db: Session = Depends(get_db),
 def create_model(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     m = workflow_service.create_model(db, ws, body.get("id", ""),
-                                      body.get("finalLifecycleState", ""),
-                                      current_user.login)
-    return _model_to_dict(m)
+                                       body.get("finalLifecycleState", ""),
+                                       current_user.login)
+    return _model_to_dict(m, db)
 
 
 @router.put(f"{PREFIX}/workflow-models/{{model_id}}")
@@ -48,8 +76,8 @@ def create_model(ws: str, body: dict, db: Session = Depends(get_db),
 def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     m = workflow_service.update_model(db, ws, model_id,
-                                      body.get("finalLifecycleState", ""))
-    return _model_to_dict(m)
+                                       body.get("finalLifecycleState", ""))
+    return _model_to_dict(m, db)
 
 
 @router.delete(f"{PREFIX}/workflow-models/{{model_id}}", status_code=204)
@@ -63,34 +91,51 @@ def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
 def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     w = workflow_service.get_instance(db, ws, workflow_id)
-    return {"id": w.id, "abortedDate": w.aborteddate, "finalLifecycleState": w.finallifecyclestate,
-            "activities": [], "currentStep": 0}
+    activities = db.query(Activity).filter(
+        Activity.workflow_id == workflow_id).all()
+    activity_dicts = [{
+        "step": a.step,
+        "type": a.dtype,
+        "lifeCycleState": a.lifecyclestate,
+        "tasksToComplete": a.taskstocomplete,
+    } for a in activities]
+    return {
+        "id": w.id,
+        "abortedDate": str(w.aborteddate) if w.aborteddate else None,
+        "finalLifecycleState": w.finallifecyclestate,
+        "activities": activity_dicts,
+        "currentStep": 0,
+    }
 
 
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}/aborted")
 def get_aborted(ws: str, workflow_id: int, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
-    return []
+    return workflow_service.get_aborted_workflow_instance(db, ws, workflow_id)
 
 
 @router.get(f"{PREFIX}/workspace-workflows")
 def list_wwf(ws: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
-    return []
+    rows = workflow_service.list_workspace_workflows(db, ws)
+    return [{"id": r[0], "abortedDate": str(r[1]) if r[1] else None,
+             "finalLifecycleState": r[2]} for r in rows]
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/assigned")
 def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     tasks = workflow_service.get_assigned_tasks(db, ws, login)
-    return [{"num": t[0], "title": t[4], "status": t[7]} for t in tasks]
+    return [{"num": t[0], "title": t[4],
+             "status": STATUS_MAP.get(t[7], "NOT_STARTED")} for t in tasks]
 
 
 @router.get(f"{PREFIX}/tasks/{{task_id}}")
 def get_task(ws: str, task_id: int, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     t = workflow_service.get_task(db, ws, task_id)
-    return {"num": t[0], "title": t[4], "status": t[7]}
+    return {"num": t[0], "title": t[4],
+            "status": STATUS_MAP.get(t[7], "NOT_STARTED")}
 
 
 @router.put(f"{PREFIX}/tasks/{{task_id}}/process")
