@@ -6,15 +6,18 @@ P1-P5 全模块测试数据生成器（增强版）。
 覆盖：多账号、多所有者、附件、角色、ACL、受影响项关联。
 
 使用方法:
-    cd docdoku-plm-server-py
-    source venv/bin/activate
-    python scripts/seed_test_data.py
+    python scripts/seed_test_data.py              # 创建新数据（不清理旧数据）
+    python scripts/seed_test_data.py --cleanup     # 清理所有旧 SEED 数据后创建新数据
+
+清理范围：partmaster/partrevision/partiteration/partusagelink/cadinstance/
+documentmaster/documentrevision/documentiteration/usergroup/usergroupmapping/
+workflowmodel/configurationitem/productbaseline/changeissue/changerequest/
+changeorder/milestone/role/account 以及关联表
 """
 
 import json
 import sys
 import uuid
-import base64
 from datetime import datetime, timedelta
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -23,14 +26,103 @@ API = "http://localhost:8009/docdoku-plm-server-rest/api"
 WS = "Workspace_2"
 TIMESTAMP = datetime.now().strftime("%Y%m%d-%H%M%S")
 PREFIX = f"SEED-{TIMESTAMP}-"
+SEED_PREFIX = "SEED-"  # 用于清理所有旧 SEED 数据
 
 passed = 0
 failed = 0
 created = []
 
 
-def _call(method: str, path: str, data: dict | None = None, check=(200, 201, 204),
-          files: dict | None = None) -> dict:
+def cleanup():
+    """通过 raw SQL 清理所有 SEED- 前缀的数据（需直接连接 DB）。"""
+    print(f"Cleaning up old SEED- data...")
+    import psycopg2
+    conn = psycopg2.connect("host=localhost port=5432 dbname=docdokuplm user=changeit password=changeit")
+    cur = conn.cursor()
+    tables = [
+        # 最深层关联表（无其他表引用它们）
+        ("modificationnotification", "impacted_partmaster_partnumber"),
+        ("partiteration_geometry", "partmaster_partnumber"),
+        ("partiteration_binres", "partmaster_partnumber"),
+        ("partiteration_partusagelink", "partmaster_partnumber"),
+        ("partusagelink_cadinstance", None),
+        ("cadinstance", None),
+        ("partiteration_attribute", None),
+        ("partiteration_documentlink", None),
+        ("partusagelink", "component_partnumber"),
+        ("partrevision_tag", "partmaster_partnumber"),
+        ("conversion", "partmaster_partnumber"),
+        ("partrevision_effectivity", None),
+        # 变更关联表
+        ("changeorder_affected_document", None),
+        ("changeorder_affected_part", None),
+        ("changeissue_affected_document", None),
+        ("changeissue_affected_part", None),
+        ("changereq_affected_document", None),
+        ("changereq_affected_part", None),
+        ("changeorder_tag", None),
+        ("changerequest_tag", None),
+        ("changeissue_tag", None),
+        ("changerequest_changeissue", None),
+        ("changeorder_changerequest", None),
+        ("changeorder", None),
+        ("changerequest", None),
+        ("changeissue", None),
+        ("milestone", None),
+        # 产品结构
+        ("productbaseline_optional", None),
+        ("productbaseline_substitute", None),
+        ("baselinedpart", None),
+        ("productbaseline", None),
+        ("productconfiguration", None),
+        ("productinstanceiteration", None),
+        ("productinstancemaster", None),
+        ("configurationitem", "id"),
+        # 文档
+        ("documentiteration_binres", "documentmaster_id"),
+        ("documentiteration_documentlink", None),
+        ("documentiteration", "documentmaster_id"),
+        ("documentrevision_tag", "documentmaster_id"),
+        ("documentrevision", "documentmaster_id"),
+        ("documentmaster", "id"),
+        # 零件（CI删除后安全）
+        ("partiteration", "partmaster_partnumber"),
+        ("partrevision", "partmaster_partnumber"),
+        ("partmaster", "partnumber"),
+        # 工作流与权限
+        ("workflow", None),
+        ("activity", None),
+        ("task", None),
+        ("workflowmodel", "id"),
+        ("role_user", None),
+        ("role_usergroup", None),
+        ("role", "name"),
+        ("usergroupmapping", "groupname"),
+        ("usergroup", "id"),
+        ("acluserentry", None),
+        ("aclusergroupentry", None),
+        ("acl", None),
+        # 账号
+        ("userdata", "login"),
+        ("credential", "login"),
+        ("account", "login"),
+    ]
+    conn.autocommit = True  # 逐条提交，避免 FK 回滚阻断后续
+    deleted = 0
+    for table, col in tables:
+        try:
+            if col:
+                cur.execute(f"DELETE FROM {table} WHERE {col} LIKE %s", (f"{SEED_PREFIX}%",))
+            else:
+                cur.execute(f"DELETE FROM {table}")
+            deleted += cur.rowcount
+        except Exception:
+            pass  # 跳过失败的表（空表、无权限等）
+    conn.close()
+    print(f"  Cleaned ~{deleted} rows")
+
+
+def _call(method, path, data=None, check=(200, 201, 204)):
     global passed, failed
     url = f"{API}{path}"
     headers = {"Authorization": f"Bearer {_call.token}", "Content-Type": "application/json"}
@@ -323,6 +415,11 @@ def seed_changes(part_nums, doc_ids):
 
 # ═══ MAIN ═══
 def main():
+    if "--cleanup" in sys.argv:
+        cleanup()
+        print("Cleanup done. Run without --cleanup to seed data.")
+        sys.exit(0)
+
     print(f"Seed — {TIMESTAMP}")
     try:
         login()
