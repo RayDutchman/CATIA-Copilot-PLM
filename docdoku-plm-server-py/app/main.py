@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from app.routers import auth, parts, part_files, document_files, folders, documents, document_templates, products, product_instances, product_files, changes, roles, users, accounts, notifications, webhooks, workflows, workspaces
+from app.routers import auth, parts, part_files, document_files, folders, documents, document_templates, products, product_instances, product_files, changes, roles, users, accounts, notifications, webhooks, workflows, workspaces, organizations, misc, shared
 from app.core.exception_handlers import register_exception_handlers
 from app.core.security import verify_token
 from app.core.database import SessionLocal
@@ -71,6 +71,9 @@ app.include_router(notifications.router)
 app.include_router(webhooks.router)
 app.include_router(workflows.router)
 app.include_router(workspaces.router)
+app.include_router(organizations.router)
+app.include_router(misc.router)
+app.include_router(shared.router)
 
 
 @app.get(f"{API_PREFIX}/health")
