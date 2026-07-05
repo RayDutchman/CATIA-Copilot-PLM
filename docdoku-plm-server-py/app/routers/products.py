@@ -201,6 +201,23 @@ def delete_ci(ws: str, ci_id: str,
     return Response(status_code=204)
 
 
+@router.put("/workspaces/{ws}/products/{ci_id}")
+@router.put("/workspaces/{ws}/products/{ci_id}/", include_in_schema=False)
+def update_ci(ws: str, ci_id: str, body: dict,
+              current_user: Account = Depends(get_current_user),
+              db: Session = Depends(get_db)):
+    ci = svc.update_ci(db, ws, ci_id, body)
+    return {"id": ci.id, "workspaceId": ci.workspace_id,
+             "designItemNumber": ci.partmaster_partnumber,
+             "designItemName": "",
+             "designItemLatestVersion": "",
+             "description": ci.description,
+             "author": _get_user_dto(db, ci.author_login, ws),
+             "creationDate": _fmt_date(ci.creation_date),
+             "hasModificationNotification": False,
+             "pathToPathLinks": []}
+
+
 @router.get("/workspaces/{ws}/products/{ci_id}/filter")
 def filter_structure(ws: str, ci_id: str,
                      configSpec: str = Query(None), path: str = Query(None),

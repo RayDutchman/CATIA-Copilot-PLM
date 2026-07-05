@@ -353,7 +353,20 @@ def set_request_affected_parts(ws: str, item_id: int, body: dict,
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues")
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues/", include_in_schema=False)
-def set_request_affected_issues(ws: str, item_id: int, body: dict):
+def set_request_affected_issues(ws: str, item_id: int, body: dict,
+                                 db: Session = Depends(get_db)):
+    db.execute(sql_text(
+        "DELETE FROM changerequest_changeissue WHERE changerequest_id=:iid"
+    ), {"iid": item_id})
+    issues = body.get("issues", [])
+    for issue_data in issues:
+        issue_id = issue_data.get("id") if isinstance(issue_data, dict) else issue_data
+        if issue_id:
+            db.execute(sql_text(
+                "INSERT INTO changerequest_changeissue (changerequest_id, changeissue_id) "
+                "VALUES (:rid, :iid)"
+            ), {"rid": item_id, "iid": issue_id})
+    db.commit()
     return {"status": "ok"}
 
 
@@ -464,7 +477,20 @@ def set_order_affected_parts(ws: str, item_id: int, body: dict,
 
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests")
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests/", include_in_schema=False)
-def set_order_affected_requests(ws: str, item_id: int, body: dict):
+def set_order_affected_requests(ws: str, item_id: int, body: dict,
+                                 db: Session = Depends(get_db)):
+    db.execute(sql_text(
+        "DELETE FROM changeorder_changerequest WHERE changeorder_id=:iid"
+    ), {"iid": item_id})
+    requests = body.get("requests", [])
+    for req_data in requests:
+        req_id = req_data.get("id") if isinstance(req_data, dict) else req_data
+        if req_id:
+            db.execute(sql_text(
+                "INSERT INTO changeorder_changerequest (changeorder_id, changerequest_id) "
+                "VALUES (:oid, :rid)"
+            ), {"oid": item_id, "rid": req_id})
+    db.commit()
     return {"status": "ok"}
 
 

@@ -55,6 +55,24 @@ class ProductStructureService:
         # TODO(对齐审计): EntityConstraintException4(有基线)/13(有实例)/23(有配置)
         db.delete(ci); db.commit()
 
+    def update_ci(self, db: Session, ws: str, ci_id: str, body: dict) -> ConfigurationItem:
+        ci = self.get_ci(db, ws, ci_id)
+        if "description" in body:
+            ci.description = body["description"]
+        design_item = body.get("designItemNumber") or body.get("partNumber") or body.get("partMasterNumber")
+        if design_item:
+            master = db.query(PartMaster).filter(
+                PartMaster.workspace_id == ws,
+                PartMaster.number == design_item,
+            ).first()
+            if master is None:
+                raise HTTPException(404, f"未找到零件\"{design_item}\"")
+            ci.partmaster_partnumber = design_item
+            ci.partmaster_workspace_id = ws
+        db.commit()
+        db.refresh(ci)
+        return ci
+
     def filter_product_structure(self, db: Session, ws: str, ci_id: str,
                                   config_spec=None, path=None, depth=None):
         """返回递归 ComponentDTO 列表。每节点含 24 字段 + components[] 递归。"""
