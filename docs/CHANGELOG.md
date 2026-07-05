@@ -6,6 +6,53 @@
 
 ---
 
+## 2026-07-06 — Documents audit: stats SQL/delete constraints/DocumentMaster cleanup/auth condition/checkout file copy
+
+### 修复内容
+
+- fix(py): **count_documents SQL 统计修正** (`services/document_service.py`) — `count_documents` 从 `DocumentMaster` 改为直接 `COUNT(*) FROM documentrevision`，对齐 Java `SELECT COUNT(*) FROM documentrevision WHERE workspace_id=?`
+- fix(py): **delete 6 项约束检查** (`services/document_service.py`) — 删除 revision 前检查 baseline(EntityConstraintException6)、逆文档链接(17)、逆零件链接(18)、逆产品实例链接(19)、逆路径数据链接(20)、变更项(7)
+- fix(py): **delete DocumentMaster 清理** (`services/document_service.py`) — 删除最后一条 revision 后自动删除 DocumentMaster，对齐 Java 行为
+- fix(py): **delete 权限条件** (`services/document_service.py`) — 非管理员不能删除其他用户 home 文件夹中的文档(NotAllowedException22)，对齐 Java `isInAnotherUserHomeFolder`
+- fix(py): **checkout 复制 attached_files** (`services/document_service.py`) — checkout 创建新迭代时复制上一迭代的 attached_files 关联
+- chore(test): **测试数据库回滚** (`tests/conftest.py`) — `db` fixture 改用 `_RollbackSession`+`connection.rollback()`，测试结束后自动清理数据
+
+### 影响
+- 2 个文件，46 行新增，19 行删除
+- 137/139 测试通过（2 个预存文件服务测试环境问题）
+
+## 2026-07-06 — Parts audit: stats SQL/checkout/undo/vault/files/used-by
+
+### 修复内容
+
+- fix(py): **count_parts SQL 统计修正** (`services/product_service.py`) — `count_parts` 从 `PartMaster`+JOIN 改为直接 `COUNT(*) FROM partrevision`，对齐 Java 语义
+- fix(py): **checkout NotAllowedException72** (`models/part.py`, `services/product_service.py`) — 新增 `PartRevision.is_last_revision` 属性，checkout 时校验仅最新版本可签出
+- fix(py): **checkout 复制迭代数据** (`services/product_service.py`) — checkout 创建新迭代时复制上一迭代的 attached_files、geometries、components 关联
+- fix(py): **undo_checkout vault 清理** (`services/product_service.py`) — 删除末次迭代后清理 vault 物理目录
+- fix(py): **delete/rename 文件端点** (`routers/part_files.py`) — 已有 DELETE 删除+PUT 改名端点，支持 nativecad/attachedfiles/geometry 子类型
+- fix(py): **instanceAttributes / linkedDocuments 真实查询** (`services/part_mapper.py`) — `map_iteration` JOIN `partiteration_attribute`+`instanceattribute` 和 `partiteration_documentlink`+`documentlink`
+- fix(py): **used-by-as-component/substitute 真实查询** (`routers/parts.py`) — JOIN `PartUsageLink`/`PartSubstituteLink` 返回实际使用方
+- fix(py): **geometryFileURI 全部几何体** (`services/part_mapper.py`) — 从仅返回首个改为逗号分隔所有 GLB 几何体的 URI
+
+### 影响
+- 4 个文件，211 行新增，12 行删除
+- 130/139 测试通过（9 个预存文档/文件服务测试环境问题）
+
+## 2026-07-06 — Changes audit: addressedItems/ACL/milestone删除约束/search limit/assignee校验
+
+### 修复内容
+
+- fix(py): **addressedChangeIssues 真实查询** (`routers/changes.py`) — ChangeRequest 序列化时查询 `changerequest_changeissue` 表，返回真实的关联 Issue 列表
+- fix(py): **addressedChangeRequests 真实查询** (`routers/changes.py`) — ChangeOrder 序列化时查询 `changeorder_changerequest` 表，返回真实的关联 Request 列表
+- fix(py): **变更端点 workspace 访问权限检查** (`routers/changes.py`) — 所有 change item 端点新增 `_check_workspace_access` 校验，非工作区成员返回 403
+- fix(py): **milestone 删除约束检查** (`services/change_service.py`) — 删除 milestone 前检查是否有 ChangeRequest/ChangeOrder 引用，有则抛 EntityConstraintException8/9
+- fix(py): **search link 限制 maxResults** (`routers/changes.py`) — issues/requests/orders 搜索端点添加 `.limit(8)`
+- fix(py): **assignee 存在性/启用状态检查** (`services/change_service.py`) — 创建/更新变更项时校验 assignee 账户存在且 enabled，否则抛 NotAllowedException
+- fix(py): **affected-documents 变量命名修正** (`routers/changes.py`) — `_set_affected_documents` 中 `parts_split` 重命名为 `doc_split`
+
+### 影响
+- 2 个文件，79 行新增，16 行删除
+
 ## 2026-07-06 — Documents/Folders audit: baselines CRUD/folder cascade/checkout auth/iteration update
 
 ### 修复内容

@@ -159,23 +159,38 @@ class DocumentService:
             raise EntityConstraintException("EntityConstraintException7")
 
         # 清理关联表
-        for tbl in ("documentrevision_tag",):
-            db.execute(text(f"DELETE FROM {tbl} WHERE documentmaster_workspace_id=:ws "
-                "AND documentmaster_id=:did AND documentrevision_version=:ver"),
-                {"ws": ws, "did": doc_id, "ver": ver})
-        for it in pr.iterations:
-            db.execute(text(
-                "DELETE FROM documentiteration_binres WHERE workspace_id=:ws "
-                "AND documentmaster_id=:did AND documentrevision_version=:ver "
-                "AND iteration=:i"),
-                {"ws": ws, "did": doc_id, "ver": ver, "i": it.iteration})
-        db.flush()
+        db.execute(text(
+            "DELETE FROM documentrevision_tag "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+        db.execute(text(
+            "DELETE FROM documentiteration_binres "
+            "WHERE workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+        db.execute(text(
+            "DELETE FROM documentiteration "
+            "WHERE workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
 
+        # 删除 revision，如为最后一个 revision 则连 master 一起删
         is_last_revision = len(master.revisions) == 1
+        db.execute(text(
+            "DELETE FROM documentrevision "
+            "WHERE workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
         if is_last_revision:
-            db.delete(master)
-        else:
-            db.delete(pr)
+            db.execute(text(
+                "DELETE FROM documentmaster "
+                "WHERE workspace_id=:ws AND id=:did"),
+                {"ws": ws, "did": doc_id})
         db.commit()
 
     def _is_in_another_user_home(self, user_login, ws, location_path):
