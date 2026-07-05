@@ -24,10 +24,29 @@ def _row_to_dict(r) -> dict:
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace ORDER BY id"
+        "SELECT id, description, admin_login FROM workspace ORDER BY id"
     )).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    all_ws = [{"id": r[0], "description": r[1] or "", "admin": r[2] or ""} for r in rows]
+    admin_ws = [w for w in all_ws if w["admin"] == current_user.login]
+    return {"administratedWorkspaces": admin_ws, "allWorkspaces": all_ws}
+
+
+@router.get("/workspaces/reachable-users")
+def reachable_users(db: Session = Depends(get_db),
+                    current_user: Account = Depends(get_current_user)):
+    """Payara 的 getReachableUsersForCaller。返回除当前用户外的所有账号。"""
+    from app.models.auth import Account as Acct
+    users = db.query(Acct).filter(Acct.login != current_user.login).all()
+    return [{"login": u.login, "name": u.name, "email": u.email} for u in users]
+
+
+@router.get("/workspaces/{ws}/stats-overview")
+def stats_overview(ws: str, db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    parts = db.execute(text("SELECT COUNT(*) FROM partmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+    docs = db.execute(text("SELECT COUNT(*) FROM documentmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+    users = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+    return {"parts": parts, "documents": docs, "users": users}
 
 
 @router.get("/workspaces/{ws}")
