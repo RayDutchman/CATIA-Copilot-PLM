@@ -39,7 +39,15 @@ class ChangeIssue(Base):
     author_login = Column(String)
     workspace_id = Column(String)
     acl_id = Column(Integer)
-    tags: Mapped[List["Tag"]] = relationship("Tag", secondary=change_issue_tags)
+    tags: Mapped[List["Tag"]] = relationship(
+        "Tag",
+        secondary=change_issue_tags,
+        primaryjoin=lambda: ChangeIssue.id == change_issue_tags.c.changeissue_id,
+        secondaryjoin=lambda: (
+            (Tag.workspace_id == change_issue_tags.c.tag_workspace_id)
+            & (Tag.label == change_issue_tags.c.tag_label)
+        ),
+    )
 
 class ChangeRequest(Base):
     __tablename__ = "changerequest"
@@ -56,7 +64,15 @@ class ChangeRequest(Base):
     author_login = Column(String)
     workspace_id = Column(String)
     acl_id = Column(Integer)
-    tags: Mapped[List["Tag"]] = relationship("Tag", secondary=change_request_tags)
+    tags: Mapped[List["Tag"]] = relationship(
+        "Tag",
+        secondary=change_request_tags,
+        primaryjoin=lambda: ChangeRequest.id == change_request_tags.c.changerequest_id,
+        secondaryjoin=lambda: (
+            (Tag.workspace_id == change_request_tags.c.tag_workspace_id)
+            & (Tag.label == change_request_tags.c.tag_label)
+        ),
+    )
 
 class ChangeOrder(Base):
     __tablename__ = "changeorder"
@@ -73,7 +89,15 @@ class ChangeOrder(Base):
     author_login = Column(String)
     workspace_id = Column(String)
     acl_id = Column(Integer)
-    tags: Mapped[List["Tag"]] = relationship("Tag", secondary=change_order_tags)
+    tags: Mapped[List["Tag"]] = relationship(
+        "Tag",
+        secondary=change_order_tags,
+        primaryjoin=lambda: ChangeOrder.id == change_order_tags.c.changeorder_id,
+        secondaryjoin=lambda: (
+            (Tag.workspace_id == change_order_tags.c.tag_workspace_id)
+            & (Tag.label == change_order_tags.c.tag_label)
+        ),
+    )
 
 class Milestone(Base):
     __tablename__ = "milestone"
