@@ -28,7 +28,13 @@ def list_workspaces(db: Session = Depends(get_db),
     )).fetchall()
     all_ws = [{"id": r[0], "description": r[1] or "", "admin": r[2] or ""} for r in rows]
     admin_ws = [w for w in all_ws if w["admin"] == current_user.login]
-    return {"administratedWorkspaces": admin_ws, "allWorkspaces": all_ws}
+    # Payara: allWorkspaces 只列出用户是成员的 workspace（userdata 中有记录）
+    user_ws_ids = db.execute(text(
+        "SELECT workspace_id FROM userdata WHERE login=:l"
+    ), {"l": current_user.login}).fetchall()
+    user_ws = {r[0] for r in user_ws_ids}
+    return {"administratedWorkspaces": admin_ws,
+            "allWorkspaces": [w for w in all_ws if w["id"] in user_ws]}
 
 
 @router.get("/workspaces/reachable-users")
