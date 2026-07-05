@@ -1,5 +1,9 @@
 """杂项端点：语言、时区、平台健康检查。"""
-from fastapi import APIRouter
+import time
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.core.database import get_db
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -18,6 +22,11 @@ def list_timezones():
 
 @router.get("/platform/health")
 @router.get("/platform/health/", include_in_schema=False)
-def platform_health():
-    return {"executionTime": 0, "status": "UP"}
-
+def platform_health(db: Session = Depends(get_db)):
+    start = time.time()
+    try:
+        db.execute(text("SELECT 1")).scalar()
+        elapsed = int((time.time() - start) * 1000)
+        return {"executionTime": elapsed, "status": "UP"}
+    except Exception:
+        return {"executionTime": 0, "status": "DOWN"}

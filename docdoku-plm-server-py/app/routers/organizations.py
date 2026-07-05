@@ -1,7 +1,8 @@
-"""组织管理端点（stub 实现）。"""
+"""组织管理端点。"""
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
@@ -9,83 +10,177 @@ from app.models.auth import Account
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
+def _org_to_dict(r) -> dict:
+    return {"name": r[0], "description": r[1] or ""}
+
+
 @router.get("/organizations")
 @router.get("/organizations/", include_in_schema=False)
 def list_organizations(
+    db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    return Response(status_code=204)
+    rows = db.execute(text(
+        "SELECT name, description FROM organization ORDER BY name"
+    )).fetchall()
+    return [_org_to_dict(r) for r in rows]
 
 
-@router.post("/organizations")
-@router.post("/organizations/", include_in_schema=False)
+@router.post("/organizations", status_code=201)
+@router.post("/organizations/", status_code=201, include_in_schema=False)
 def create_organization(
     body: dict,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    return {"status": "ok"}
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="组织名称不能为空")
+    existing = db.execute(text(
+        "SELECT name FROM organization WHERE name = :name"
+    ), {"name": name}).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="组织已存在")
+    description = body.get("description", "")
+    owner = current_user.login
+    db.execute(text(
+        "INSERT INTO organization (name, description, owner_login) "
+        "VALUES (:name, :description, :owner)"
+    ), {"name": name, "description": description, "owner": owner})
+    db.commit()
+    return {"name": name, "description": description, "owner": owner}
 
 
-@router.get("/organizations/{org_id}")
-@router.get("/organizations/{org_id}/", include_in_schema=False)
+@router.get("/organizations/{org_name}")
+@router.get("/organizations/{org_name}/", include_in_schema=False)
 def get_organization(
-    org_id: str,
+    org_name: str,
+    db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    from fastapi import HTTPException
-    raise HTTPException(status_code=404, detail="组织不存在")
+    r = db.execute(text(
+        "SELECT name, description FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="组织不存在")
+    return _org_to_dict(r)
 
 
-@router.put("/organizations/{org_id}")
-@router.put("/organizations/{org_id}/", include_in_schema=False)
+@router.put("/organizations/{org_name}")
+@router.put("/organizations/{org_name}/", include_in_schema=False)
 def update_organization(
-    org_id: str,
+    org_name: str,
     body: dict,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    return {"status": "ok"}
+    existing = db.execute(text(
+        "SELECT name FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="组织不存在")
+    description = body.get("description", "")
+    db.execute(text(
+        "UPDATE organization SET description = :description WHERE name = :name"
+    ), {"description": description, "name": org_name})
+    db.commit()
+    r = db.execute(text(
+        "SELECT name, description FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    return _org_to_dict(r)
 
 
-@router.delete("/organizations/{org_id}", status_code=204)
+@router.delete("/organizations/{org_name}", status_code=204)
+@router.delete("/organizations/{org_name}/", status_code=204, include_in_schema=False)
 def delete_organization(
-    org_id: str,
+    org_name: str,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    pass
+    existing = db.execute(text(
+        "SELECT name FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="组织不存在")
+    db.execute(text(
+        "DELETE FROM organization_account WHERE organization_name = :name"
+    ), {"name": org_name})
+    db.execute(text(
+        "DELETE FROM organization WHERE name = :name"
+    ), {"name": org_name})
+    db.commit()
 
 
-@router.put("/organizations/{org_id}/add-member")
-@router.put("/organizations/{org_id}/add-member/", include_in_schema=False)
+@router.put("/organizations/{org_name}/add-member")
+@router.put("/organizations/{org_name}/add-member/", include_in_schema=False)
 def add_member(
-    org_id: str,
+    org_name: str,
     body: dict,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
+    existing = db.execute(text(
+        "SELECT name FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="组织不存在")
+    login = body.get("login", "").strip()
+    if not login:
+        raise HTTPException(status_code=400, detail="用户登录名不能为空")
+    user = db.execute(text(
+        "SELECT login FROM account WHERE login = :login"
+    ), {"login": login}).fetchone()
+    if not user:
+        raise HTTPException(status_code=400, detail="用户不存在")
+    existing_member = db.execute(text(
+        "SELECT account_login FROM organization_account "
+        "WHERE organization_name = :org AND account_login = :login"
+    ), {"org": org_name, "login": login}).fetchone()
+    if existing_member:
+        return {"status": "already_member"}
+    max_order = db.execute(text(
+        "SELECT COALESCE(MAX(account_order), 0) FROM organization_account "
+        "WHERE organization_name = :org"
+    ), {"org": org_name}).scalar()
+    db.execute(text(
+        "INSERT INTO organization_account "
+        "(organization_name, account_login, account_order) "
+        "VALUES (:org, :login, :ord)"
+    ), {"org": org_name, "login": login, "ord": max_order + 1})
+    db.commit()
     return {"status": "ok"}
 
 
-@router.put("/organizations/{org_id}/remove-member")
-@router.put("/organizations/{org_id}/remove-member/", include_in_schema=False)
+@router.put("/organizations/{org_name}/remove-member")
+@router.put("/organizations/{org_name}/remove-member/", include_in_schema=False)
 def remove_member(
-    org_id: str,
+    org_name: str,
     body: dict,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
+    existing = db.execute(text(
+        "SELECT name FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="组织不存在")
+    login = body.get("login", "").strip()
+    if not login:
+        raise HTTPException(status_code=400, detail="用户登录名不能为空")
+    db.execute(text(
+        "DELETE FROM organization_account "
+        "WHERE organization_name = :org AND account_login = :login"
+    ), {"org": org_name, "login": login})
+    db.commit()
     return {"status": "ok"}
 
 
-@router.put("/organizations/{org_id}/move-member")
-@router.put("/organizations/{org_id}/move-member/", include_in_schema=False)
+@router.put("/organizations/{org_name}/move-member")
+@router.put("/organizations/{org_name}/move-member/", include_in_schema=False)
 def move_member(
-    org_id: str,
+    org_name: str,
     body: dict,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
     return {"status": "ok"}
-

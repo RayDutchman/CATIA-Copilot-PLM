@@ -195,16 +195,55 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
 
 # ============ Platform Options ============
 
+_STRATEGY_MAP = {0: "NONE", 1: "ADMIN_VALIDATION", None: "NONE"}
+_STRATEGY_REVERSE = {"NONE": 0, "ADMIN_VALIDATION": 1}
+
+
+def _to_strategy(val) -> str:
+    return _STRATEGY_MAP.get(val, "NONE")
+
+
+def _from_strategy(val: str) -> int:
+    return _STRATEGY_REVERSE.get(val, 0)
+
+
 @router.get("/admin/platform-options")
 @router.get("/admin/platform-options/", include_in_schema=False)
-def get_platform_options():
+def get_platform_options(db: Session = Depends(get_db)):
+    row = db.execute(text(
+        "SELECT workspacecreationstrategy, registrationstrategy "
+        "FROM platformoptions LIMIT 1"
+    )).first()
+    if row:
+        return {
+            "workspaceCreationStrategy": _to_strategy(row[0]),
+            "registrationStrategy": _to_strategy(row[1]),
+        }
     return {"workspaceCreationStrategy": "NONE", "registrationStrategy": "NONE"}
 
 
 @router.put("/admin/platform-options")
 @router.put("/admin/platform-options/", include_in_schema=False)
-def put_platform_options():
-    return Response(status_code=204)
+def put_platform_options(body: dict, db: Session = Depends(get_db)):
+    existing = db.execute(text(
+        "SELECT id FROM platformoptions LIMIT 1"
+    )).first()
+    ws = _from_strategy(body.get("workspaceCreationStrategy", "NONE"))
+    rs = _from_strategy(body.get("registrationStrategy", "NONE"))
+    if existing:
+        db.execute(text(
+            "UPDATE platformoptions SET "
+            "workspacecreationstrategy = :wcs, "
+            "registrationstrategy = :rs"
+        ), {"wcs": ws, "rs": rs})
+    else:
+        db.execute(text(
+            "INSERT INTO platformoptions "
+            "(id, workspacecreationstrategy, registrationstrategy) "
+            "VALUES (1, :wcs, :rs)"
+        ), {"wcs": ws, "rs": rs})
+    db.commit()
+    return get_platform_options(db)
 
 
 # ============ Index ============
