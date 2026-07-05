@@ -12,19 +12,23 @@ import hashlib
 class UserMgmtService:
     def list_users(self, db: Session, ws: str) -> list:
         rows = db.execute(text(
-            "SELECT u.login, u.workspace_id, a.name, a.email, a.enabled "
+            "SELECT u.login, u.workspace_id, a.name, a.email, a.enabled, a.language "
             "FROM userdata u JOIN account a ON u.login = a.login "
             "WHERE u.workspace_id = :ws"
         ), {"ws": ws}).fetchall()
         return [{"login": r[0], "workspaceId": r[1], "name": r[2],
-                 "email": r[3], "enabled": r[4]} for r in rows]
+                 "email": r[3], "enabled": r[4], "language": r[5] or ""}
+                for r in rows]
 
     def who_am_i(self, db: Session, ws: str, login: str) -> dict:
         acc = db.query(Account).filter(Account.login == login).first()
         if not acc:
             raise EntityNotFoundException("UserNotFoundException", login)
-        return {"login": acc.login, "name": acc.name, "email": acc.email,
-                "language": acc.language, "timezone": acc.timezone}
+        return {
+            "login": acc.login, "name": acc.name, "email": acc.email,
+            "language": acc.language, "timezone": acc.timezone,
+            "workspaceId": ws,
+        }
 
     def list_groups(self, db: Session, ws: str) -> list[UserGroup]:
         return db.query(UserGroup).filter(UserGroup.workspace_id == ws).all()
@@ -96,12 +100,18 @@ class UserMgmtService:
 
     def list_memberships(self, db: Session, ws: str) -> list:
         rows = db.execute(text(
-            "SELECT u.login, u.workspace_id, a.name, a.enabled "
+            "SELECT u.login, u.workspace_id, a.name, a.email, a.language, a.enabled "
             "FROM userdata u JOIN account a ON u.login = a.login "
-            "WHERE u.workspace_id = :ws"
+            "WHERE u.workspace_id = :ws AND a.enabled = true "
+            "AND u.login NOT IN (SELECT login FROM usergroupmapping WHERE groupname = 'admin')"
         ), {"ws": ws}).fetchall()
-        return [{"workspaceId": ws, "member": {"login": r[0], "name": r[2]},
-                 "readOnly": not r[3]} for r in rows]
+        return [{"workspaceId": ws,
+                 "member": {
+                     "login": r[0], "name": r[2] or "",
+                     "email": r[3] or "", "language": r[4] or "",
+                     "workspaceId": ws,
+                 },
+                 "readOnly": not r[5]} for r in rows]
 
     def create_account(self, db: Session, login: str, password: str,
                        email: str, name: str, lang: str) -> Account:

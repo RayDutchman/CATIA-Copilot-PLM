@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -11,7 +11,7 @@ PREFIX = "/workspaces/{ws}"
 
 @router.put(f"{PREFIX}/notifications/{{notification_id}}")
 @router.put(f"{PREFIX}/notifications/{{notification_id}}/", include_in_schema=False)
-def acknowledge_notification(ws: str, notification_id: int, body: dict,
+def acknowledge_notification(ws: str, notification_id: int, body: dict = Body(...),
                              db: Session = Depends(get_db),
                              current_user: Account = Depends(get_current_user)):
     n = notification_service.acknowledge(

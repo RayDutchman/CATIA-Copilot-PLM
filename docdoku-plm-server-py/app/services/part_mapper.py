@@ -109,6 +109,66 @@ def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO
     master = pr.part_master
     iterations = sorted(pr.iterations or [], key=lambda x: x.iteration)
     last_it = iterations[-1] if iterations else None
+
+    workspace_id = pr.workspace_id
+    number = pr.partmaster_partnumber
+    version = pr.version
+    notification_list = []
+    if db is not None:
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT mn.id, mn.acknowledged, mn.acknowledgementcomment, mn.acknowledgementdate, "
+            "mn.ackauthor_login, mn.ackauthor_workspace_id, "
+            "mn.impacted_partrevision_version, mn.impacted_iteration, "
+            "mn.impacted_workspace_id, mn.impacted_partmaster_partnumber, "
+            "mn.modified_workspace_id, mn.modified_partmaster_partnumber, "
+            "mn.modified_iteration, mn.modified_partrevision_version, "
+            "pm.name AS modified_part_name, "
+            "pi.iterationnote AS modified_iteration_note, "
+            "pi.checkindate AS modified_check_in_date, "
+            "pi.author_login AS modified_author_login, "
+            "pi.author_workspace_id AS modified_author_workspace_id "
+            "FROM modificationnotification mn "
+            "LEFT JOIN partmaster pm ON pm.partnumber = mn.modified_partmaster_partnumber "
+            "  AND pm.workspace_id = mn.modified_workspace_id "
+            "LEFT JOIN partiteration pi ON pi.partmaster_partnumber = mn.modified_partmaster_partnumber "
+            "  AND pi.partrevision_version = mn.modified_partrevision_version "
+            "  AND pi.workspace_id = mn.modified_workspace_id "
+            "  AND pi.iteration = mn.modified_iteration "
+            "WHERE mn.impacted_workspace_id = :ws "
+            "  AND mn.impacted_partmaster_partnumber = :pn "
+            "  AND mn.impacted_partrevision_version = :ver "
+            "ORDER BY mn.id"
+        ), {"ws": workspace_id, "pn": number, "ver": version}).fetchall()
+        for row in rows:
+            row_d = dict(row._mapping)
+            author_dto = _user_dto(
+                row_d.get("modified_author_workspace_id"),
+                row_d.get("modified_author_login"), db,
+            )
+            ack_author_dto = None
+            if row_d.get("ackauthor_login"):
+                ack_author_dto = _user_dto(
+                    row_d.get("ackauthor_workspace_id"),
+                    row_d.get("ackauthor_login"), db,
+                )
+            notification_list.append({
+                "id": row_d["id"],
+                "impactedPartNumber": row_d["impacted_partmaster_partnumber"],
+                "impactedPartVersion": row_d["impacted_partrevision_version"],
+                "modifiedPartNumber": row_d["modified_partmaster_partnumber"],
+                "modifiedPartName": row_d.get("modified_part_name") or "",
+                "modifiedPartVersion": row_d["modified_partrevision_version"],
+                "modifiedPartIteration": row_d["modified_iteration"],
+                "checkInDate": _to_utc(row_d.get("modified_check_in_date")),
+                "iterationNote": row_d.get("modified_iteration_note") or "",
+                "author": author_dto.model_dump() if author_dto else {},
+                "acknowledged": row_d.get("acknowledged", False) or False,
+                "ackComment": row_d.get("acknowledgementcomment") or "",
+                "ackAuthor": ack_author_dto.model_dump() if ack_author_dto else {},
+                "ackDate": _to_utc(row_d.get("acknowledgementdate")),
+            })
+
     return PartRevisionDTO(
         workspaceId=pr.workspace_id,
         number=pr.partmaster_partnumber,
@@ -134,4 +194,5 @@ def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO
         obsoleteDate=_to_utc(pr.obsolete_date),
         obsoleteAuthor=_user_dto(pr.obsolete_user_workspace, pr.obsolete_user_login, db),
         tags=[t.label for t in (pr.tags or [])],
+        notifications=notification_list,
     )
