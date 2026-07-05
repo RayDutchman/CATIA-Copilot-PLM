@@ -10,6 +10,7 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
 @router.get("/organizations")
+@router.get("/organizations/", include_in_schema=False)
 def list_organizations(
     current_user: Account = Depends(get_current_user),
 ):
@@ -27,6 +28,7 @@ def create_organization(
 
 
 @router.get("/organizations/{org_id}")
+@router.get("/organizations/{org_id}/", include_in_schema=False)
 def get_organization(
     org_id: str,
     current_user: Account = Depends(get_current_user),
@@ -86,3 +88,4 @@ def move_member(
     current_user: Account = Depends(get_current_user),
 ):
     return {"status": "ok"}
+

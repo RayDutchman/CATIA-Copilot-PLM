@@ -24,6 +24,7 @@ def upload(ws: str, doc_id: str, version: str, iteration: int,
 
 
 @router.get("/files/{ws}/documents/{doc_id}/{version}/{iteration}/{file_name}")
+@router.get("/files/{ws}/documents/{doc_id}/{version}/{iteration}/{file_name}/", include_in_schema=False)
 def download(ws: str, doc_id: str, version: str, iteration: int, file_name: str,
              current_user: Account = Depends(get_current_user)):
     try:
@@ -31,3 +32,4 @@ def download(ws: str, doc_id: str, version: str, iteration: int, file_name: str,
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
     return Response(content=data, media_type="application/octet-stream")
+

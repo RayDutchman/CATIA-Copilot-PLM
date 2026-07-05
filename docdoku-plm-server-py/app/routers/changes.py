@@ -155,6 +155,7 @@ def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
 # ── Issues ──
 
 @router.get("/workspaces/{ws}/changes/issues")
+@router.get("/workspaces/{ws}/changes/issues/", include_in_schema=False)
 def list_issues(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     return [_item_to_dict(i, db) for i in svc.list_items(db, ws, "issues")]
@@ -170,6 +171,7 @@ def create_issue(ws: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/changes/issues/link")
+@router.get("/workspaces/{ws}/changes/issues/link/", include_in_schema=False)
 def search_issues(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -181,6 +183,7 @@ def search_issues(ws: str, q: str = "",
 
 
 @router.get("/workspaces/{ws}/changes/issues/{item_id}")
+@router.get("/workspaces/{ws}/changes/issues/{item_id}/", include_in_schema=False)
 def get_issue(ws: str, item_id: int,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
@@ -263,6 +266,7 @@ def set_issue_acl(ws: str, item_id: int, body: dict,
 # ── Requests ──
 
 @router.get("/workspaces/{ws}/changes/requests")
+@router.get("/workspaces/{ws}/changes/requests/", include_in_schema=False)
 def list_requests(ws: str, current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     return [_item_to_dict(r, db) for r in svc.list_items(db, ws, "requests")]
@@ -278,6 +282,7 @@ def create_request(ws: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/changes/requests/link")
+@router.get("/workspaces/{ws}/changes/requests/link/", include_in_schema=False)
 def search_requests(ws: str, q: str = "",
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -289,6 +294,7 @@ def search_requests(ws: str, q: str = "",
 
 
 @router.get("/workspaces/{ws}/changes/requests/{item_id}")
+@router.get("/workspaces/{ws}/changes/requests/{item_id}/", include_in_schema=False)
 def get_request(ws: str, item_id: int,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -387,6 +393,7 @@ def set_request_acl(ws: str, item_id: int, body: dict,
 # ── Orders ──
 
 @router.get("/workspaces/{ws}/changes/orders")
+@router.get("/workspaces/{ws}/changes/orders/", include_in_schema=False)
 def list_orders(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     return [_item_to_dict(o, db) for o in svc.list_items(db, ws, "orders")]
@@ -402,6 +409,7 @@ def create_order(ws: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/changes/orders/link")
+@router.get("/workspaces/{ws}/changes/orders/link/", include_in_schema=False)
 def search_orders(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -413,6 +421,7 @@ def search_orders(ws: str, q: str = "",
 
 
 @router.get("/workspaces/{ws}/changes/orders/{item_id}")
+@router.get("/workspaces/{ws}/changes/orders/{item_id}/", include_in_schema=False)
 def get_order(ws: str, item_id: int,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
@@ -511,6 +520,7 @@ def set_order_acl(ws: str, item_id: int, body: dict,
 # ── Milestones ──
 
 @router.get("/workspaces/{ws}/changes/milestones")
+@router.get("/workspaces/{ws}/changes/milestones/", include_in_schema=False)
 def list_milestones(ws: str, current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     return [_milestone_to_dict(m, db) for m in svc.list_items(db, ws, "milestones")]
@@ -526,6 +536,7 @@ def create_milestone(ws: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/changes/milestones/{item_id}")
+@router.get("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def get_milestone(ws: str, item_id: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -547,6 +558,7 @@ def delete_milestone(ws: str, item_id: int,
 
 
 @router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/requests")
+@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/requests/", include_in_schema=False)
 def get_milestone_requests(ws: str, milestone_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
@@ -558,6 +570,7 @@ def get_milestone_requests(ws: str, milestone_id: int,
 
 
 @router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders")
+@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders/", include_in_schema=False)
 def get_milestone_orders(ws: str, milestone_id: int,
                          current_user: Account = Depends(get_current_user),
                          db: Session = Depends(get_db)):
@@ -580,3 +593,4 @@ def set_milestone_acl(ws: str, milestone_id: int, body: dict,
     item.acl_id = new_acl_id
     db.commit()
     return {"aclId": new_acl_id}
+

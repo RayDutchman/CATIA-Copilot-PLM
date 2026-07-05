@@ -35,6 +35,7 @@ def _workspace_to_dict(r) -> dict:
 # ============ Account CRUD ============
 
 @router.get("/admin/accounts")
+@router.get("/admin/accounts/", include_in_schema=False)
 def list_accounts(db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -49,6 +50,7 @@ def list_accounts(db: Session = Depends(get_db),
 
 
 @router.get("/admin/accounts/{login}")
+@router.get("/admin/accounts/{login}/", include_in_schema=False)
 def get_account(login: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     r = db.execute(text(
@@ -122,6 +124,7 @@ def delete_account(login: str, db: Session = Depends(get_db),
 # ============ Workspace CRUD ============
 
 @router.get("/admin/workspaces")
+@router.get("/admin/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -132,6 +135,7 @@ def list_workspaces(db: Session = Depends(get_db),
 
 
 @router.get("/admin/workspaces/{ws}")
+@router.get("/admin/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     r = db.execute(text(
@@ -191,6 +195,7 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
 # ============ Platform Options (stubs) ============
 
 @router.get("/admin/platform-options")
+@router.get("/admin/platform-options/", include_in_schema=False)
 def get_platform_options():
     return {}
 
@@ -204,6 +209,7 @@ def put_platform_options():
 # ============ Index (stubs) ============
 
 @router.get("/admin/index")
+@router.get("/admin/index/", include_in_schema=False)
 def get_index():
     return {"status": "ok"}
 
@@ -212,3 +218,4 @@ def get_index():
 @router.post("/admin/index/", include_in_schema=False)
 def post_index():
     return {"status": "ok"}
+

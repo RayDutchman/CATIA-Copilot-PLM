@@ -50,6 +50,7 @@ def _tag_subscription_to_dict(r, field_prefix="subscriber_login"):
 # ============ 用户统计 ============
 
 @router.get(f"{PREFIX}/users-stats")
+@router.get(f"{PREFIX}/users-stats/", include_in_schema=False)
 def users_stats(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     users = db.execute(text(
@@ -78,18 +79,21 @@ def users_stats(ws: str, db: Session = Depends(get_db),
 # ============ 用户列表 & 详情 ============
 
 @router.get(f"{PREFIX}/users")
+@router.get(f"{PREFIX}/users/", include_in_schema=False)
 def list_users(ws: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     return [_user_to_dict(u) for u in user_mgmt_service.list_users(db, ws)]
 
 
 @router.get(f"{PREFIX}/users/me")
+@router.get(f"{PREFIX}/users/me/", include_in_schema=False)
 def who_am_i(ws: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     return user_mgmt_service.who_am_i(db, ws, current_user.login)
 
 
 @router.get(f"{PREFIX}/users/admin")
+@router.get(f"{PREFIX}/users/admin/", include_in_schema=False)
 def get_admin(ws: str, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user)):
     """返回工作区管理员用户信息（Payara: GET /workspaces/{ws}/users/admin）"""
@@ -105,6 +109,7 @@ def get_admin(ws: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/users/{{login}}")
+@router.get(f"{PREFIX}/users/{{login}}/", include_in_schema=False)
 def get_user(ws: str, login: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
@@ -122,6 +127,7 @@ def get_user(ws: str, login: str, db: Session = Depends(get_db),
 # ============ 用户组 CRUD ============
 
 @router.get(f"{PREFIX}/groups")
+@router.get(f"{PREFIX}/groups/", include_in_schema=False)
 def list_groups(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     return [_group_to_dict(g) for g in user_mgmt_service.list_groups(db, ws)]
@@ -142,6 +148,7 @@ def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/groups/{{group_id}}/users")
+@router.get(f"{PREFIX}/groups/{{group_id}}/users/", include_in_schema=False)
 def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -200,12 +207,14 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
 # ============ 成员关系 ============
 
 @router.get(f"{PREFIX}/memberships/users")
+@router.get(f"{PREFIX}/memberships/users/", include_in_schema=False)
 def list_user_memberships(ws: str, db: Session = Depends(get_db),
                           current_user: Account = Depends(get_current_user)):
     return user_mgmt_service.list_memberships(db, ws)
 
 
 @router.get(f"{PREFIX}/memberships/users/me")
+@router.get(f"{PREFIX}/memberships/users/me/", include_in_schema=False)
 def my_memberships(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     all_m = user_mgmt_service.list_memberships(db, ws)
@@ -213,6 +222,7 @@ def my_memberships(ws: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/memberships/usergroups")
+@router.get(f"{PREFIX}/memberships/usergroups/", include_in_schema=False)
 def list_group_memberships(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -228,6 +238,7 @@ def list_group_memberships(ws: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/memberships/usergroups/me")
+@router.get(f"{PREFIX}/memberships/usergroups/me/", include_in_schema=False)
 def my_group_memberships(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -392,6 +403,7 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
 # ============ 用户 tag 订阅 ============
 
 @router.get(f"{PREFIX}/users/{{login}}/tag-subscriptions")
+@router.get(f"{PREFIX}/users/{{login}}/tag-subscriptions/", include_in_schema=False)
 def user_tag_subscriptions(ws: str, login: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
@@ -453,6 +465,7 @@ def user_tag_subscription_delete(ws: str, login: str, tagName: str,
 # ============ 工作组 tag 订阅 ============
 
 @router.get(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions")
+@router.get(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/", include_in_schema=False)
 def group_tag_subscriptions(ws: str, groupId: str, db: Session = Depends(get_db),
                             current_user: Account = Depends(get_current_user)):
     group = db.execute(text(
@@ -518,6 +531,7 @@ def group_tag_subscription_delete(ws: str, groupId: str, tagName: str,
 # ============ 用户组查询 ============
 
 @router.get(f"{PREFIX}/user-group")
+@router.get(f"{PREFIX}/user-group/", include_in_schema=False)
 def workspace_user_group(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -529,6 +543,8 @@ def workspace_user_group(ws: str, db: Session = Depends(get_db),
 # ============ 工作流 & 其他 ============
 
 @router.get(f"{PREFIX}/workspace-workflows/{{workflowId}}/aborted")
+@router.get(f"{PREFIX}/workspace-workflows/{{workflowId}}/aborted/", include_in_schema=False)
 def workflow_aborted(ws: str, workflowId: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
     return []
+

@@ -18,3 +18,4 @@ def acknowledge_notification(ws: str, notification_id: int, body: dict = Body(..
         db, ws, notification_id,
         body.get("ackComment", ""), current_user.login)
     return {"id": n.id, "acknowledged": n.acknowledged}
+

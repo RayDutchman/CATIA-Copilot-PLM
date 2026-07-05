@@ -15,6 +15,8 @@
   推测为 Nginx/uvicorn HTTP 代理层行为差异 (chunked传输/keepalive/buffer flush) 与
   Three.js r90 XHR 加载交互问题。需 tcpdump 抓包或升级 Three.js 版本解决。
 
+- [ ] **WebSocket 502 导致前端模块区不加载**：`ws://192.168.100.140:8000/docdoku-plm-server-rest/ws` 返回 502，Nginx 缺少 WebSocket 代理配置。前端在 WebSocket 握手失败后可能阻止模块渲染。
+
 - [ ] **JWT 过期风险提醒**：上传 nativecad 时将当前请求 token 透传给 Kafka 消息 userToken，转换服务用此 token 回调。若 token 在转换完成前过期（默认 3h），转换服务回调会 401 失败。建议后续改为服务间 token（如生成长期 API key 或在 conversion_service 内置白名单）。
 
 ### 中优先级
@@ -72,6 +74,8 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **FastAPI Stub Handler 真实 DB 写入修复（9 Bug）** — front-options PUT 持久化、stats-overview products/checkedOut 统计、disk-usage 路径、文档高级搜索 content/date 参数、document-baselines DB 查询、tasks/{login}/documents+parts 实现、workflow-models activityModels 持久化、product-configurations 尾斜杠+ACL 完整对象（2026-07-06）
 
 - [x] **full_compare_v2 对拍修复**：6端点 try/except 防502 + front-options PUT 204 + GET 补字段 + document 补 acl/routePath/checkOutUser/author.language + CI author.language + health status（2026-07-05）
 

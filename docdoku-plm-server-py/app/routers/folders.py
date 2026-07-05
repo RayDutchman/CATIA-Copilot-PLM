@@ -11,6 +11,7 @@ svc = DocumentService()
 
 
 @router.get("/workspaces/{ws}/folders")
+@router.get("/workspaces/{ws}/folders/", include_in_schema=False)
 def list_root(ws: str, current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     folders = svc.list_folders(db, ws)
@@ -21,6 +22,7 @@ def list_root(ws: str, current_user: Account = Depends(get_current_user),
 
 
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders")
+@router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/", include_in_schema=False)
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/",
             include_in_schema=False)
 def list_sub(ws: str, folder_path: str,
@@ -67,6 +69,7 @@ def delete(ws: str, folder_path: str,
 
 
 @router.get("/workspaces/{ws}/folders/{folder_id:path}/documents")
+@router.get("/workspaces/{ws}/folders/{folder_id:path}/documents/", include_in_schema=False)
 def list_folder_docs(ws: str, folder_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -84,3 +87,4 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
                               current_user.login, folder_path=folder_id)
     from app.routers.documents import _doc_to_dict
     return _doc_to_dict(rev)
+

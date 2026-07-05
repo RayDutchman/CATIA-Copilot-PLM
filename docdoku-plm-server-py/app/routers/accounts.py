@@ -26,6 +26,7 @@ def _account_to_dict(acc, db):
 
 
 @router.get("/accounts/me")
+@router.get("/accounts/me/", include_in_schema=False)
 def get_account(db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     """返回当前登录用户信息（与 Payara getMyAccount 一致）。"""
@@ -50,12 +51,14 @@ def create_account(body: dict, db: Session = Depends(get_db)):
 
 
 @router.get("/accounts/workspaces")
+@router.get("/accounts/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     return user_mgmt_service.list_workspaces_for_user(db, current_user.login)
 
 
 @router.get("/admin/accounts-stats")
+@router.get("/admin/accounts-stats/", include_in_schema=False)
 def accounts_stats(db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     from sqlalchemy import text
@@ -67,9 +70,11 @@ def accounts_stats(db: Session = Depends(get_db),
 
 
 @router.get("/admin/workspace-stats")
+@router.get("/admin/workspace-stats/", include_in_schema=False)
 def workspace_stats(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     from sqlalchemy import text
     total = db.execute(text("SELECT COUNT(*) FROM workspace")).scalar()
     enabled = db.execute(text("SELECT COUNT(*) FROM workspace WHERE enabled = true")).scalar()
     return {"totalWorkspaces": total or 0, "enabledWorkspaces": enabled or 0}
+

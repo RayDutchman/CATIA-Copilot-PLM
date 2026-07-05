@@ -86,12 +86,14 @@ def _model_to_dict(m, db: Session = None) -> dict:
 
 
 @router.get(f"{PREFIX}/workflow-models")
+@router.get(f"{PREFIX}/workflow-models/", include_in_schema=False)
 def list_models(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     return [_model_to_dict(m, db) for m in workflow_service.list_models(db, ws)]
 
 
 @router.get(f"{PREFIX}/workflow-models/{{model_id}}")
+@router.get(f"{PREFIX}/workflow-models/{{model_id}}/", include_in_schema=False)
 def get_model(ws: str, model_id: str, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user)):
     return _model_to_dict(workflow_service.get_model(db, ws, model_id), db)
@@ -129,6 +131,7 @@ def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}")
+@router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}/", include_in_schema=False)
 def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     _check_workspace_access(db, ws, current_user.login)
@@ -151,6 +154,7 @@ def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}/aborted")
+@router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}/aborted/", include_in_schema=False)
 def get_aborted(ws: str, workflow_id: int, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     _check_workspace_access(db, ws, current_user.login)
@@ -158,6 +162,7 @@ def get_aborted(ws: str, workflow_id: int, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/workspace-workflows")
+@router.get(f"{PREFIX}/workspace-workflows/", include_in_schema=False)
 def list_wwf(ws: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     rows = workflow_service.list_workspace_workflows(db, ws)
@@ -166,6 +171,7 @@ def list_wwf(ws: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/assigned")
+@router.get(f"{PREFIX}/tasks/{{login}}/assigned/", include_in_schema=False)
 def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     tasks = workflow_service.get_assigned_tasks(db, ws, login)
@@ -174,6 +180,7 @@ def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
 
 
 @router.get(f"{PREFIX}/tasks/{{task_id}}")
+@router.get(f"{PREFIX}/tasks/{{task_id}}/", include_in_schema=False)
 def get_task(ws: str, task_id: int, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     t = workflow_service.get_task(db, ws, task_id)
@@ -251,3 +258,4 @@ def _doc_to_dict_short(rev):
         "checkOutUser": None,
         "checkOutDate": None,
     }
+

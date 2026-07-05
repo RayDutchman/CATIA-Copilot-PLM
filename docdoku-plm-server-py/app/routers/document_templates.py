@@ -13,6 +13,7 @@ svc = DocumentService()
 
 
 @router.get("/workspaces/{ws}/document-templates")
+@router.get("/workspaces/{ws}/document-templates/", include_in_schema=False)
 def list_templates(ws: str, current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     templates = svc.list_templates(db, ws)
@@ -52,6 +53,7 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
 
 
 @router.get("/workspaces/{ws}/document-templates/{template_id}")
+@router.get("/workspaces/{ws}/document-templates/{template_id}/", include_in_schema=False)
 def get_template(ws: str, template_id: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -125,6 +127,7 @@ def delete(ws: str, template_id: str,
 
 
 @router.get("/workspaces/{ws}/document-templates/{template_id}/generate_id")
+@router.get("/workspaces/{ws}/document-templates/{template_id}/generate_id/", include_in_schema=False)
 def generate_id(ws: str, template_id: str,
                 current_user: Account = Depends(get_current_user)):
     return {"generatedId": f"{template_id}-001"}
@@ -148,3 +151,4 @@ def update_template_acl(ws: str, template_id: str, body: dict,
         tpl.acl_id = new_acl_id
         db.commit()
     return {"aclId": new_acl_id}
+

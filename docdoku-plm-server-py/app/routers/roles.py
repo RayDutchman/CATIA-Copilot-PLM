@@ -28,12 +28,14 @@ def _role_to_dict(r, db: Session) -> dict:
 
 
 @router.get(f"{PREFIX}/roles")
+@router.get(f"{PREFIX}/roles/", include_in_schema=False)
 def list_roles(ws: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     return [_role_to_dict(r, db) for r in security_service.list_roles(db, ws)]
 
 
 @router.get(f"{PREFIX}/roles/inuse")
+@router.get(f"{PREFIX}/roles/inuse/", include_in_schema=False)
 def list_roles_in_use(ws: str, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
     return [_role_to_dict(r, db) for r in security_service.list_roles_in_use(db, ws)]
@@ -63,3 +65,4 @@ def update_role(ws: str, name: str, body: dict, db: Session = Depends(get_db),
 def delete_role(ws: str, name: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     security_service.delete_role(db, ws, name)
+

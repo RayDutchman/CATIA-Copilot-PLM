@@ -98,6 +98,7 @@ def search_parts(
 
 
 @router.get("/workspaces/{workspace_id}/part-templates")
+@router.get("/workspaces/{workspace_id}/part-templates/", include_in_schema=False)
 def list_part_templates(workspace_id: str,
                         current_user: Account = Depends(get_current_user),
                         db: Session = Depends(get_db)):
@@ -108,6 +109,7 @@ def list_part_templates(workspace_id: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}")
+@router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}/", include_in_schema=False)
 def get_parts_by_tag(workspace_id: str, tag_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -115,6 +117,7 @@ def get_parts_by_tag(workspace_id: str, tag_id: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/queries")
+@router.get("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
 def get_queries(workspace_id: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -122,6 +125,7 @@ def get_queries(workspace_id: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/parts_last_iter")
+@router.get("/workspaces/{workspace_id}/parts/parts_last_iter/", include_in_schema=False)
 def parts_last_iter(workspace_id: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -129,12 +133,14 @@ def parts_last_iter(workspace_id: str, q: str = Query(""),
 
 
 @router.get("/workspaces/{workspace_id}/parts/imports/{filename}")
+@router.get("/workspaces/{workspace_id}/parts/imports/{filename}/", include_in_schema=False)
 def imports_get(workspace_id: str, filename: str,
                 current_user: Account = Depends(get_current_user)):
     return {}
 
 
 @router.get("/workspaces/{workspace_id}/parts/import/{import_id}")
+@router.get("/workspaces/{workspace_id}/parts/import/{import_id}/", include_in_schema=False)
 def import_get(workspace_id: str, import_id: str,
                current_user: Account = Depends(get_current_user)):
     return {}
@@ -167,6 +173,7 @@ def create_part(
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component/", include_in_schema=False)
 def used_by_component(workspace_id: str, part_key: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
@@ -174,6 +181,7 @@ def used_by_component(workspace_id: str, part_key: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute/", include_in_schema=False)
 def used_by_substitute(workspace_id: str, part_key: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
@@ -181,6 +189,7 @@ def used_by_substitute(workspace_id: str, part_key: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/instances")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances/", include_in_schema=False)
 def get_instances(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -188,6 +197,7 @@ def get_instances(workspace_id: str, part_key: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines/", include_in_schema=False)
 def get_baselines(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -195,6 +205,7 @@ def get_baselines(workspace_id: str, part_key: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows/", include_in_schema=False)
 def get_aborted_workflows(workspace_id: str, part_key: str,
                           current_user: Account = Depends(get_current_user),
                           db: Session = Depends(get_db)):
@@ -204,6 +215,7 @@ def get_aborted_workflows(workspace_id: str, part_key: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters/", include_in_schema=False)
 def used_by_product(workspace_id: str, part_key: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -390,6 +402,7 @@ def remove_tag(workspace_id: str, part_key: str, tag_label: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/tags")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags/", include_in_schema=False)
 def get_tags(workspace_id: str, part_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
@@ -413,3 +426,4 @@ def update_part_acl(workspace_id: str, part_key: str, body: dict,
         pr.acl_id = new_acl_id
         db.commit()
     return {"aclId": new_acl_id}
+

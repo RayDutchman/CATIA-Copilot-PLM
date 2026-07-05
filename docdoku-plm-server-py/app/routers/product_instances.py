@@ -11,6 +11,7 @@ svc = ProductStructureService()
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/instances")
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/", include_in_schema=False)
 def list_instances(ws: str, ci_id: str,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
@@ -34,3 +35,4 @@ def delete_instance(ws: str, ci_id: str, sn: str,
                     db: Session = Depends(get_db)):
     svc.delete_instance(db, ws, ci_id, sn)
     return {"status": "deleted"}
+

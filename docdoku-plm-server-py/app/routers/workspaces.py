@@ -24,6 +24,7 @@ def _row_to_dict(r) -> dict:
 
 
 @router.get("/workspaces")
+@router.get("/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
@@ -48,6 +49,7 @@ def list_workspaces(db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/more")
+@router.get("/workspaces/more/", include_in_schema=False)
 def list_more_workspaces(db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
     """GetDTO: 返回用户可切换的更多 Workspace 列表。"""
@@ -60,6 +62,7 @@ def list_more_workspaces(db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/reachable-users")
+@router.get("/workspaces/reachable-users/", include_in_schema=False)
 def reachable_users(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     """Payara 的 getReachableUsersForCaller。返回除当前用户外的所有账号。"""
@@ -69,6 +72,7 @@ def reachable_users(db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/stats-overview")
+@router.get("/workspaces/{ws}/stats-overview/", include_in_schema=False)
 def stats_overview(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     parts = db.execute(text("SELECT COUNT(*) FROM partmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
@@ -92,12 +96,14 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/disk-usage")
+@router.get("/workspaces/{ws}/disk-usage/", include_in_schema=False)
 def disk_usage(ws: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     return {"total": 0}
 
 
 @router.get("/workspaces/{ws}/disk-usage-stats")
+@router.get("/workspaces/{ws}/disk-usage-stats/", include_in_schema=False)
 def disk_usage_stats(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
     vault = Path(settings.VAULT_PATH) / ws
@@ -118,6 +124,7 @@ def disk_usage_stats(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/checked-out-documents-stats")
+@router.get("/workspaces/{ws}/checked-out-documents-stats/", include_in_schema=False)
 def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
     from sqlalchemy import text
@@ -138,6 +145,7 @@ def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/checked-out-parts-stats")
+@router.get("/workspaces/{ws}/checked-out-parts-stats/", include_in_schema=False)
 def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
                             current_user: Account = Depends(get_current_user)):
     from sqlalchemy import text
@@ -158,6 +166,7 @@ def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/front-options")
+@router.get("/workspaces/{ws}/front-options/", include_in_schema=False)
 def front_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     part_cols = db.execute(text(
@@ -210,12 +219,14 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/back-options")
+@router.get("/workspaces/{ws}/back-options/", include_in_schema=False)
 def back_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     return {"sendEmails": False, "workspaceId": ws}
 
 
 @router.get("/workspaces/{ws}/tags")
+@router.get("/workspaces/{ws}/tags/", include_in_schema=False)
 def workspace_tags(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     try:
@@ -228,12 +239,14 @@ def workspace_tags(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/tags/{tag_id}/documents")
+@router.get("/workspaces/{ws}/tags/{tag_id}/documents/", include_in_schema=False)
 def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/lov")
+@router.get("/workspaces/{ws}/lov/", include_in_schema=False)
 def list_of_values(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     try:
@@ -243,6 +256,7 @@ def list_of_values(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/attributes/part-iterations")
+@router.get("/workspaces/{ws}/attributes/part-iterations/", include_in_schema=False)
 def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
     try:
@@ -252,6 +266,7 @@ def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}/attributes/path-data")
+@router.get("/workspaces/{ws}/attributes/path-data/", include_in_schema=False)
 def attributes_path_data(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
     try:
@@ -261,6 +276,7 @@ def attributes_path_data(ws: str, db: Session = Depends(get_db),
 
 
 @router.get("/workspaces/{ws}")
+@router.get("/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     r = db.execute(text(
@@ -347,3 +363,4 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="工作区不存在")
     db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
     db.commit()
+

@@ -24,6 +24,7 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
 
 
 @router.get("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{fn}")
+@router.get("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{fn}/", include_in_schema=False)
 def download(ws: str, ci_id: str, sn: str, it: int, fn: str,
              current_user: Account = Depends(get_current_user)):
     try:
@@ -38,3 +39,4 @@ def download(ws: str, ci_id: str, sn: str, it: int, fn: str,
             "Last-Modified": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
             "ETag": f'"{fn}_{len(data)}"',
         })
+

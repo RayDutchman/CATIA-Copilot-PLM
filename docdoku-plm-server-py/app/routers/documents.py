@@ -115,12 +115,14 @@ def _split_doc_key(doc_key: str) -> tuple[str, str]:
 
 
 @router.get("/workspaces/{ws}/documents/count")
+@router.get("/workspaces/{ws}/documents/count/", include_in_schema=False)
 def count(ws: str, current_user: Account = Depends(get_current_user),
           db: Session = Depends(get_db)):
     return {"count": svc.count_documents(db, ws)}
 
 
 @router.get("/workspaces/{ws}/documents/search")
+@router.get("/workspaces/{ws}/documents/search/", include_in_schema=False)
 def search_documents(
     ws: str,
     id: str = Query("", alias="id"),
@@ -214,6 +216,7 @@ def search_documents(
 
 
 @router.get("/workspaces/{ws}/documents")
+@router.get("/workspaces/{ws}/documents/", include_in_schema=False)
 def list_docs(ws: str, start: int = Query(0, ge=0),
               max: int = Query(50, ge=1, le=500),
               length: int = Query(None, ge=1, le=500),
@@ -224,6 +227,7 @@ def list_docs(ws: str, start: int = Query(0, ge=0),
 
 
 @router.get("/workspaces/{ws}/documents/checkedout")
+@router.get("/workspaces/{ws}/documents/checkedout/", include_in_schema=False)
 def list_checked_out(ws: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -231,6 +235,7 @@ def list_checked_out(ws: str,
 
 
 @router.get("/workspaces/{ws}/documents/countCheckedOut")
+@router.get("/workspaces/{ws}/documents/countCheckedOut/", include_in_schema=False)
 def count_checked_out(ws: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
@@ -238,6 +243,7 @@ def count_checked_out(ws: str,
 
 
 @router.get("/workspaces/{ws}/documents/doc_revs")
+@router.get("/workspaces/{ws}/documents/doc_revs/", include_in_schema=False)
 def search_doc_revs(ws: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -256,6 +262,7 @@ def create(ws: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}")
+@router.get("/workspaces/{ws}/documents/{doc_key}/", include_in_schema=False)
 def get_doc(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
@@ -272,30 +279,35 @@ def delete(ws: str, doc_key: str,
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/aborted-workflows")
+@router.get("/workspaces/{ws}/documents/{doc_key}/aborted-workflows/", include_in_schema=False)
 def aborted_workflows(ws: str, doc_key: str,
                       current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-document-link")
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-document-link/", include_in_schema=False)
 def inverse_doc_link(ws: str, doc_key: str, iteration: int,
                      current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-part-link")
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-part-link/", include_in_schema=False)
 def inverse_part_link(ws: str, doc_key: str, iteration: int,
                       current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-product-instances-link")
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-product-instances-link/", include_in_schema=False)
 def inverse_product_link(ws: str, doc_key: str, iteration: int,
                          current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-path-data-link")
+@router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-path-data-link/", include_in_schema=False)
 def inverse_path_link(ws: str, doc_key: str, iteration: int,
                       current_user: Account = Depends(get_current_user)):
     return []
@@ -408,6 +420,7 @@ def move_document(ws: str, doc_key: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/share")
+@router.get("/workspaces/{ws}/documents/{doc_key}/share/", include_in_schema=False)
 def get_share(ws: str, doc_key: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
@@ -502,3 +515,4 @@ def subscribe_state_change(ws: str, doc_key: str,
 def unsubscribe_state_change(ws: str, doc_key: str,
                               current_user: Account = Depends(get_current_user)):
     return {"status": "ok"}
+

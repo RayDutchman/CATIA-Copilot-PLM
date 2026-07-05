@@ -60,12 +60,14 @@ def logout():
 
 
 @router.get("/auth/providers")
+@router.get("/auth/providers/", include_in_schema=False)
 def list_providers():
     """返回外部认证提供商列表（与 Payara 一致，当前为空）。"""
     return []
 
 
 @router.get("/accounts/me")
+@router.get("/accounts/me/", include_in_schema=False)
 def get_me(current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
     """返回当前登录用户的账号信息。"""
@@ -85,6 +87,7 @@ def get_me(current_user: Account = Depends(get_current_user),
 
 
 @router.get("/auth/providers/{provider_id}")
+@router.get("/auth/providers/{provider_id}/", include_in_schema=False)
 def get_provider(provider_id: str):
     """获取单个 OAuth provider。当前无 OAuth 配置，返回 404。"""
     raise EntityNotFoundException("OAuthProviderNotFoundException", provider_id)
@@ -119,3 +122,4 @@ def execute_recover(body: dict, db: Session = Depends(get_db)):
 def oauth_login(body: dict):
     """OAuth 登录。当前无 OAuth 配置，返回 501。"""
     raise HTTPException(status_code=501, detail="OAuth not configured")
+

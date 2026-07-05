@@ -70,6 +70,7 @@ def _config_to_dict(cfg, db) -> dict:
 # ── ProductBaselines（前端实际使用的路径：/product-baselines/{ci_id}/baselines）──
 
 @router.get("/workspaces/{ws}/product-baselines")
+@router.get("/workspaces/{ws}/product-baselines/", include_in_schema=False)
 def ci_scoped_baselines_root(ws: str,
                              current_user: Account = Depends(get_current_user),
                              db: Session = Depends(get_db)):
@@ -83,6 +84,7 @@ def ci_scoped_baselines_root(ws: str,
 
 
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines")
+@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/", include_in_schema=False)
 def list_ci_baselines(ws: str, ci_id: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
@@ -106,6 +108,7 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}")
+@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
 def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
@@ -135,6 +138,7 @@ def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
 # ── Products（CI CRUD，保持向后兼容）──
 
 @router.get("/workspaces/{ws}/products")
+@router.get("/workspaces/{ws}/products/", include_in_schema=False)
 def list_cis(ws: str, current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     cis = svc.list_cis(db, ws)
@@ -150,6 +154,7 @@ def list_cis(ws: str, current_user: Account = Depends(get_current_user),
 
 
 @router.get("/workspaces/{ws}/products/numbers")
+@router.get("/workspaces/{ws}/products/numbers/", include_in_schema=False)
 def search_ci_numbers(ws: str, q: str = Query(""),
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
@@ -178,6 +183,7 @@ def create_ci(ws: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}")
+@router.get("/workspaces/{ws}/products/{ci_id}/", include_in_schema=False)
 def get_ci(ws: str, ci_id: str,
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
@@ -219,6 +225,7 @@ def update_ci(ws: str, ci_id: str, body: dict,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/filter")
+@router.get("/workspaces/{ws}/products/{ci_id}/filter/", include_in_schema=False)
 def filter_structure(ws: str, ci_id: str,
                      configSpec: str = Query(None), path: str = Query(None),
                      depth: int = Query(None),
@@ -232,6 +239,7 @@ def filter_structure(ws: str, ci_id: str,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/decode-path/{p:path}")
+@router.get("/workspaces/{ws}/products/{ci_id}/decode-path/{p:path}/", include_in_schema=False)
 def decode_path(ws: str, ci_id: str, p: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -239,6 +247,7 @@ def decode_path(ws: str, ci_id: str, p: str,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/baselines")
+@router.get("/workspaces/{ws}/products/{ci_id}/baselines/", include_in_schema=False)
 def list_baselines(ws: str, ci_id: str,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
@@ -248,6 +257,7 @@ def list_baselines(ws: str, ci_id: str,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
+@router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
 def get_baseline(ws: str, ci_id: str, bl_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -289,6 +299,7 @@ def delete_baseline(ws: str, ci_id: str, bl_id: int,
 
 
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}")
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
 def get_workspace_baseline(ws: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
@@ -304,6 +315,7 @@ def get_workspace_baseline(ws: str, bl_id: int,
 
 
 @router.get("/workspaces/{ws}/product-baselines")
+@router.get("/workspaces/{ws}/product-baselines/", include_in_schema=False)
 def list_all_baselines(ws: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
@@ -317,6 +329,7 @@ def list_all_baselines(ws: str,
 
 
 @router.get("/workspaces/{ws}/product-configurations")
+@router.get("/workspaces/{ws}/product-configurations/", include_in_schema=False)
 def list_configs(ws: str, current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     configs = svc.list_configs(db, ws)
@@ -406,6 +419,7 @@ def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
 
 
 @router.get("/workspaces/{ws}/product-instances")
+@router.get("/workspaces/{ws}/product-instances/", include_in_schema=False)
 def list_product_instances(ws: str,
                             current_user: Account = Depends(get_current_user),
                             db: Session = Depends(get_db)):
@@ -413,12 +427,14 @@ def list_product_instances(ws: str,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/releases/last")
+@router.get("/workspaces/{ws}/products/{ci_id}/releases/last/", include_in_schema=False)
 def last_release(ws: str, ci_id: str,
                   current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/path-choices")
+@router.get("/workspaces/{ws}/products/{ci_id}/path-choices/", include_in_schema=False)
 def path_choices(ws: str, ci_id: str,
                  type: str = Query(""),
                  current_user: Account = Depends(get_current_user)):
@@ -426,42 +442,49 @@ def path_choices(ws: str, ci_id: str,
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/versions-choices")
+@router.get("/workspaces/{ws}/products/{ci_id}/versions-choices/", include_in_schema=False)
 def versions_choices(ws: str, ci_id: str,
                       current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/products/{pid}/export-files")
+@router.get("/workspaces/{ws}/products/{pid}/export-files/", include_in_schema=False)
 def export_files(ws: str, pid: str,
                  current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links-types")
+@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links-types/", include_in_schema=False)
 def path_to_path_links_types(ws: str, pid: str,
                               current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}")
+@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}/", include_in_schema=False)
 def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
                                current_user: Account = Depends(get_current_user)):
     return {}
 
 
 @router.get("/workspaces/{ws}/products/{pid}/layers")
+@router.get("/workspaces/{ws}/products/{pid}/layers/", include_in_schema=False)
 def layers(ws: str, pid: str,
            current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types")
+@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types/", include_in_schema=False)
 def baseline_path_to_path_links_types(ws: str, pid: str, bid: int,
                                        current_user: Account = Depends(get_current_user)):
     return []
 
 
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}")
+@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}/", include_in_schema=False)
 def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
                                         source: str, target: str,
                                         current_user: Account = Depends(get_current_user)):
@@ -469,6 +492,7 @@ def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
 
 
 @router.get("/workspaces/{ws}/product-configurations/{pid}/configurations")
+@router.get("/workspaces/{ws}/product-configurations/{pid}/configurations/", include_in_schema=False)
 def list_ci_configs(ws: str, pid: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -485,6 +509,7 @@ def list_ci_configs(ws: str, pid: str,
 
 
 @router.get("/workspaces/{ws}/product-instances/{pid}/instances")
+@router.get("/workspaces/{ws}/product-instances/{pid}/instances/", include_in_schema=False)
 def list_ci_instances(ws: str, pid: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
@@ -514,3 +539,4 @@ def cascade_checkin(ws: str, ci_id: str,
 def cascade_undocheckout(ws: str, ci_id: str,
                           current_user: Account = Depends(get_current_user)):
     return {"status": "ok"}
+

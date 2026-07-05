@@ -67,6 +67,7 @@ def upload_attached(
 
 
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}")
+@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}/", include_in_schema=False)
 def download_with_subtype(
     ws: str, pn: str, ver: str, iteration: int, sub_type: str, file_name: str,
     current_user: Account = Depends(get_current_user),
@@ -87,6 +88,7 @@ def download_with_subtype(
 
 
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}")
+@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}/", include_in_schema=False)
 def download_direct(
     ws: str, pn: str, ver: str, iteration: int, file_name: str,
     current_user: Account = Depends(get_current_user),
@@ -105,3 +107,4 @@ def download_direct(
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
         })
+
