@@ -12,6 +12,25 @@ from app.services.acl_helper import apply_acl
 router = APIRouter()
 svc = ProductStructureService()
 
+_NAME_CACHE: dict = {}
+
+def _get_user_dto(db: Session, login: str, ws: str) -> dict:
+    if not login:
+        return {"login": "", "name": "", "email": None, "workspaceId": ws}
+    if login in _NAME_CACHE:
+        cached = _NAME_CACHE[login]
+        return {"login": login, "name": cached, "email": None, "workspaceId": ws}
+    from app.models.auth import Account
+    acc = db.query(Account).filter(Account.login == login).first()
+    name = acc.name if (acc and acc.name) else login
+    _NAME_CACHE[login] = name
+    return {"login": login, "name": name, "email": None, "workspaceId": ws}
+
+def _fmt_date(d) -> str | None:
+    if d is None:
+        return None
+    return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
+
 
 # ── ProductBaselines（前端实际使用的路径：/product-baselines/{ci_id}/baselines）──
 
@@ -89,7 +108,8 @@ def list_cis(ws: str, current_user: Account = Depends(get_current_user),
              "designItemNumber": c.partmaster_partnumber,
              "designItemName": "",
              "designItemLatestVersion": "",
-             "author": {"login": c.author_login, "name": c.author_login},
+             "author": _get_user_dto(db, c.author_login, ws),
+             "creationDate": _fmt_date(c.creation_date),
              "hasModificationNotification": False,
              "pathToPathLinks": []} for c in cis]
 
@@ -112,14 +132,14 @@ def create_ci(ws: str, body: dict,
     part = body.get("designItemNumber", body.get("partNumber", body.get("partMasterNumber", "")))
     ci = svc.create_ci(db, ws, ci_id, desc, part, current_user.login)
     return {"id": ci.id, "workspaceId": ci.workspace_id,
-            "designItemNumber": ci.partmaster_partnumber,
-            "designItemName": "",
-            "designItemLatestVersion": "",
-            "description": ci.description,
-            "author": {"login": ci.author_login, "name": ci.author_login,
-                       "email": None, "workspaceId": ws},
-            "hasModificationNotification": False,
-            "pathToPathLinks": []}
+             "designItemNumber": ci.partmaster_partnumber,
+             "designItemName": "",
+             "designItemLatestVersion": "",
+             "description": ci.description,
+             "author": _get_user_dto(db, ci.author_login, ws),
+             "creationDate": _fmt_date(ci.creation_date),
+             "hasModificationNotification": False,
+             "pathToPathLinks": []}
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}")
@@ -128,13 +148,14 @@ def get_ci(ws: str, ci_id: str,
            db: Session = Depends(get_db)):
     ci = svc.get_ci(db, ws, ci_id)
     return {"id": ci.id, "workspaceId": ci.workspace_id,
-            "description": ci.description,
-            "designItemNumber": ci.partmaster_partnumber,
-            "designItemName": "",
-            "designItemLatestVersion": "",
-            "author": {"login": ci.author_login, "name": ci.author_login},
-            "hasModificationNotification": False,
-            "pathToPathLinks": []}
+             "description": ci.description,
+             "designItemNumber": ci.partmaster_partnumber,
+             "designItemName": "",
+             "designItemLatestVersion": "",
+             "author": _get_user_dto(db, ci.author_login, ws),
+             "creationDate": _fmt_date(ci.creation_date),
+             "hasModificationNotification": False,
+             "pathToPathLinks": []}
 
 
 @router.delete("/workspaces/{ws}/products/{ci_id}", status_code=204)
@@ -249,7 +270,12 @@ def list_configs(ws: str, current_user: Account = Depends(get_current_user),
     configs = svc.list_configs(db, ws)
     return [{"id": c.id, "name": c.name,
              "configurationItemId": c.configurationitem_id,
-             "description": c.description or ""}
+             "description": c.description or "",
+             "author": _get_user_dto(db, c.author_login, ws),
+             "acl": c.acl_id,
+             "creationDate": _fmt_date(c.creation_date),
+             "substituteLinks": [],
+             "optionalUsageLinks": []}
             for c in configs]
 
 
@@ -316,6 +342,70 @@ def path_choices(ws: str, ci_id: str,
 def versions_choices(ws: str, ci_id: str,
                       current_user: Account = Depends(get_current_user)):
     return []
+
+
+@router.get("/workspaces/{ws}/products/{pid}/export-files")
+def export_files(ws: str, pid: str,
+                 current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links-types")
+def path_to_path_links_types(ws: str, pid: str,
+                              current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}")
+def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
+                               current_user: Account = Depends(get_current_user)):
+    return {}
+
+
+@router.get("/workspaces/{ws}/products/{pid}/layers")
+def layers(ws: str, pid: str,
+           current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types")
+def baseline_path_to_path_links_types(ws: str, pid: str, bid: int,
+                                       current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}")
+def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
+                                        source: str, target: str,
+                                        current_user: Account = Depends(get_current_user)):
+    return {}
+
+
+@router.get("/workspaces/{ws}/product-configurations/{pid}/configurations")
+def list_ci_configs(ws: str, pid: str,
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    configs = svc.list_configs(db, ws, pid)
+    return [{"id": c.id, "name": c.name,
+             "configurationItemId": c.configurationitem_id,
+             "description": c.description or "",
+             "author": _get_user_dto(db, c.author_login, ws),
+             "acl": c.acl_id,
+             "creationDate": _fmt_date(c.creation_date),
+             "substituteLinks": [],
+             "optionalUsageLinks": []}
+            for c in configs]
+
+
+@router.get("/workspaces/{ws}/product-instances/{pid}/instances")
+def list_ci_instances(ws: str, pid: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    instances = svc.list_instances(db, ws, pid)
+    return [{"serialNumber": i.serialnumber,
+             "workspaceId": i.workspace_id,
+             "configurationItemId": i.configurationitem_id}
+            for i in instances]
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout")

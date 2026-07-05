@@ -32,6 +32,7 @@ class ProductStructureService:
             raise HTTPException(404, f"未找到零件\"{part_number}\"")
         ci = ConfigurationItem(
             workspace_id=ws, id=ci_id, description=description,
+            creation_date=datetime.utcnow(),
             partmaster_workspace_id=ws, partmaster_partnumber=part_number,
             author_workspace_id=ws, author_login=user_login)
         db.add(ci); db.commit(); db.refresh(ci)
