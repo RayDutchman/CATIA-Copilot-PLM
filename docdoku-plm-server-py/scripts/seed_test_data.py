@@ -336,7 +336,7 @@ def seed_products(part_nums):
         created.append(("product", ci))
         ci_ids.append(ci)
         if i == 1:
-            _call("POST", f"/workspaces/{WS}/products/{ci}/baselines",
+            _call("POST", f"/workspaces/{WS}/product-baselines/{ci}/baselines",
                   {"name": f"{ci}-bl", "type": 0, "description": "Seed baseline"},
                   check=(200, 201))
     _call("GET", f"/workspaces/{WS}/products")
