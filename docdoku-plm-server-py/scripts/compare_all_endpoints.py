@@ -15,7 +15,7 @@ FA = "http://localhost:8009"
 PY = "http://localhost:8005"
 API = "/docdoku-plm-server-rest/api"
 WS = "Workspace_2"
-CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID = "ACLCI-B98DED", "", "", "3", "41"
+CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID, MILESTONE_ID = "ACLCI-B98DED", "", "", "3", "41", "1"
 LOGIN = "test1"
 
 token_fa = None
@@ -25,7 +25,7 @@ token_py_admin = None
 
 def resolve_ids():
     """从 API 动态获取当前数据库中存在的测试数据 ID。"""
-    global CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID
+    global CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID, MILESTONE_ID
     tok = token_fa or token_py
     if not tok:
         return
@@ -71,7 +71,15 @@ def resolve_ids():
             ISSUE_ID = str(data[0].get("id", ISSUE_ID))
     except: pass
 
-    print(f"Resolved: CI={CI} PART_KEY={PART_KEY} DOC_KEY={DOC_KEY} BL={BASELINE_ID} ISS={ISSUE_ID}")
+    # 第一个 milestone
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/changes/milestones", headers=h))
+        data = json.loads(resp.read().decode())
+        if data:
+            MILESTONE_ID = str(data[0].get("id", MILESTONE_ID))
+    except: pass
+
+    print(f"Resolved: CI={CI} PART_KEY={PART_KEY} DOC_KEY={DOC_KEY} BL={BASELINE_ID} ISS={ISSUE_ID} MS={MILESTONE_ID}")
 
 def login(host):
     url = f"{host}{API}/auth/login"
@@ -309,9 +317,9 @@ endpoints = [
 
     # ---- Changes: Milestones ----
     ("GET",  f"/workspaces/{WS}/changes/milestones", "milestones"),
-    ("GET",  f"/workspaces/{WS}/changes/milestones/42", "milestone detail"),
-    ("GET",  f"/workspaces/{WS}/changes/milestones/42/requests", "milestone requests"),
-    ("GET",  f"/workspaces/{WS}/changes/milestones/42/orders", "milestone orders"),
+    ("GET",  lambda: f"/workspaces/{WS}/changes/milestones/{MILESTONE_ID}", "milestone detail"),
+    ("GET",  lambda: f"/workspaces/{WS}/changes/milestones/{MILESTONE_ID}/requests", "milestone requests"),
+    ("GET",  lambda: f"/workspaces/{WS}/changes/milestones/{MILESTONE_ID}/orders", "milestone orders"),
 
     # ---- Tasks ----
     ("GET",  f"/workspaces/{WS}/tasks/1", "task detail"),
@@ -453,6 +461,10 @@ def main():
             body = None
         else:
             continue
+
+        # 支持 lambda：动态 ID 在 resolve_ids() 后求值
+        if callable(path):
+            path = path()
 
         try:
             result = compare(name, method, path, body=body)
