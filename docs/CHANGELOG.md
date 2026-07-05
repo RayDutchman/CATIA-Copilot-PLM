@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-07-05 — P5 工作流与权限（完成）
+
+- feat: P5 完整迁移——66 端点 / 6 功能域 / 16 张表 / 4 ORM 模型文件
+- feat: 用户/账号/组管理——UserMgmtService + users.py + accounts.py（24 端点）
+- feat: ACL/角色——SecurityService + acl_helper + roles.py + 已有路由补 ACL（13 端点）
+- feat: 工作流——WorkflowService + workflows.py（17 端点，process_task MVP）
+- feat: 通知——NotificationService + notifications.py（5 端点）
+- feat: Webhook——webhooks.py（5 端点）
+- feat: Auth 补全——logout/recovery/recover/providers/oauth（5 端点）
+- feat: Nginx 10+ 路由块切换
+- fix: deletePartRevision 4 项 EntityConstraint 约束补齐（P3/P4 对齐债务清偿）
+- fix: EntityConstraintException 状态码 400→403
+- test: 121 passed
+
+## 2026-07-05 — P5 工作流与权限（Task 9）
+
+- feat: Webhook CRUD 路由（GET/POST/DELETE /workspaces/{ws}/webhooks），WebhookApp+Webhook 同事务创建，双路由后缀兼容
+- test: test_webhooks_api.py 1 测试通过
+
 ## 2026-07-05 — P5 工作流与权限（Task 6）
 
 - feat: 通知确认端点 PUT /workspaces/{ws}/notifications/{id} + NotificationService + test_notifications_api.py 1 测试通过

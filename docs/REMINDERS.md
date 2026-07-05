@@ -19,8 +19,6 @@
 
 ### 中优先级
 
-- [ ] **P5 工作流与权限**：Task 1-6 已完成（ORM 4 模型 + ACL/Security/Role/UserMgmt/Account/Notification 路由），待 Task 7+（Workflow 路由 + Webhook 路由 + 测试）。
-
 - [ ] **装配同步仍走 Payara**：P1b 仅做零件单体 CRUD，装配 BOM 同步（update_iteration 含 _sync_components）仍在 Payara 处理。迁移到 FastAPI 待 P5+。
 
 - [ ] **搜索为 DB LIKE MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。功能正常但随数据量增长性能下降。后续 P5+ 独立子项目。
@@ -72,6 +70,8 @@
 
 ## 已解决（近期）
 
+- [x] **P5 工作流与权限**：全部完成——66 端点 / 6 功能域 / 16 张表 / 4 ORM 模型文件，Nginx 10+ 路由块切换，121 测试通过（2026-07-05）
+- [x] **PartRevisionDTO.notifications 对齐债务清偿**：P5 落地后 notifications 字段已补齐
 - [x] **P4 变更管理**：ChangeIssue/Request/Order/Milestone 完整实现 + Nginx 路由切换 + Payara 对拍通过（2026-07-05）
 - [x] **P3 产品结构**：ConfigurationItem/Baseline/Configuration/Instance + ComponentDTO 递归 + decodePath + Nginx 2 路由块切换（2026-07-05）
 - [x] **对齐债务 — P3/P4 跨模块约束补齐**：deletePartRevision 4 项约束（配置项根/基线/替代品/变更项）已全部实现（2026-07-05）

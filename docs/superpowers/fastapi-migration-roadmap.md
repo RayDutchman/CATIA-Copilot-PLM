@@ -79,7 +79,7 @@
 | **P2** | 文档与文件夹（Documents/Folders/Tags/文档模板） | ✅ 完成 | — |
 | **P3** | 产品结构（Products/ConfigurationItems/Baselines/ProductInstances/3D 装配树） | ✅ 完成 | — |
 | **P4** | 变更管理（ChangeIssues/ChangeRequests/ChangeOrders/Milestones） | ✅ 完成 | — |
-| **P5** | 工作流与权限（Workflow/WorkflowModel/Tasks/ACL/角色/用户组/Webhook/通知） | ⬜ 待规划 | — |
+| **P5** | 工作流与权限（Workflow/WorkflowModel/Tasks/ACL/角色/用户组/Webhook/通知） | ✅ 完成 | — |
 
 ### 当前 Nginx 路由
 
@@ -94,6 +94,9 @@
 /docdoku-plm-server-rest/api/workspaces/{ws}/products...  → FastAPI back-py:8000  （P3 已切）
 /docdoku-plm-server-rest/api/files/{ws}/products...       → FastAPI back-py:8000  （P3 已切）
 /docdoku-plm-server-rest/api/workspaces/{ws}/changes...   → FastAPI back-py:8000  （P4 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/(users|groups|memberships|roles|workflow-models|workflow-instances|workspace-workflows|tasks|notifications|webhooks|user-group)... → FastAPI back-py:8000  （P5 已切）
+/docdoku-plm-server-rest/api/workspaces/{ws}/(add-user|admin|user-access|...) → FastAPI back-py:8000  （P5 已切）
+/docdoku-plm-server-rest/api/accounts...                   → FastAPI back-py:8000  （P5 已切）
 其余全部                                                     → Payara back:8080
 ```
 
@@ -109,6 +112,7 @@
 | ~~deletePartRevision: 基线检查~~ | ~~P3~~ | ✅ 已补齐 | `EntityConstraintException5` — P3 落地后已实现 |
 | ~~deletePartRevision: 替代品检查~~ | ~~P3~~ | ✅ 已补齐 | `EntityConstraintException22` — P3 落地后已实现 |
 | ~~deletePartRevision: 变更项检查~~ | ~~P4~~ | ✅ 已补齐 | `EntityConstraintException21` — P4 落地后已实现 |
+| ~~PartRevisionDTO.notifications 字段~~ | ~~P5~~ | ✅ 已补齐 | P5 落地后已补齐 |
 | 3D预览 r90 HTTP代理差异 | GLB响应 | 未知 | Three.js r90 + FastAPI/uvicorn 代理层交互导致 GLB 不加载（字节/headers 已对齐）。需抓包或升级 Three.js。
 | 转换回调 JWT 过期风险 | `kafka_producer.send_conversion_order` | 未知 | userToken 透传上传时 token，长时间转换后可能过期。后续改为服务间 token |
 | 装配同步未迁移 | `update_iteration` | P5+ | P1b 仅做零件单体，装配 BOM 同步仍在 Payara |
@@ -122,9 +126,9 @@
 
 - **P3（产品结构）** ✅ 已落地 → 配置项根零件 / 基线 / 替代品 检查已补齐
 - **P4（变更管理）** ✅ 已落地 → 变更项检查已补齐
-- **P5（工作流/通知）** 落地后 → 补齐 PartRevisionDTO.notifications 字段
+- **P5（工作流/通知）** ✅ 已落地 → PartRevisionDTO.notifications 字段已补齐
 
-规划这些阶段时，务必在计划中包含"回补对齐债务"任务。
+**所有对齐债务已全部清偿。**
 
 ---
 
