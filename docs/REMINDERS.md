@@ -22,23 +22,14 @@
 ### 中优先级
 
 - [ ] **对拍脚本持续维护**：`scripts/compare_all_endpoints.py --fresh` 每次运行前清数据+种子→133端点对拍。新增端点/改字段后必跑。
-- [ ] **2 个文档测试偶尔失败**：`test_create_and_delete`/`test_duplicate_raises`——DocumentMaster 残留需手动清理。`docker exec ... psql -c "DELETE FROM documentmaster WHERE id IN ('P2SVC-1','P2SVC-DUP')"` 修复。
 
-- [ ] **装配同步仍走 Payara**：P1b 仅做零件单体 CRUD，装配 BOM 同步（update_iteration 含 _sync_components）仍在 Payara 处理。迁移到 FastAPI 待 P5+。
+- [ ] **2 个文档测试偶尔失败**：`test_create_and_delete`/`test_duplicate_raises`——DocumentMaster 残留需手动清理。`docker exec ... psql -c "DELETE FROM documentmaster WHERE id IN ('P2SVC-1','P2SVC-DUP')"` 修复。
 
 - [ ] **搜索为 DB LIKE MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。功能正常但随数据量增长性能下降。后续 P5+ 独立子项目。
 
 - [ ] **REST API 认证 401 问题未解决**
   `admin:password` 通过 BasicAuth 调用 REST API 始终返回 401，密码 hash 和 DB 匹配（MD5），账号 enabled=true，根因未排查清楚。
   目前绕过方案：直接 DB 操作。
-
-- [ ] **MGM_VL01-57110/112/114-000_A 三个零件无 3D 预览**
-  这三个零件 STEP 文件不含实体（运动学约束件），转换失败（`no geometry generated`）。后端已修复为 `succeed=true`，但当前 DB 中记录仍是 `succeed=false`（修复前产生的）。
-  需要用户从前端重新上传 `.stp` 文件触发重新转换。
-
-- [ ] **VL01-57110-000_A 装配结构树仍是旧数据（amount=0）**
-  `sync.py` 的 `amount` bug 已修复，但当前 DB 里 VL01-57110-000_A 的 usage links 仍是修复前写入的 `amount=0`。
-  需要用户用修复后的 CATIA Copilot 工具重新同步该装配体。
 
 - [ ] **Decimation 减面优化一直失败**
   每次转换都报 `Decimation failed with code = 1 read error`，是已知问题，不影响 GLB 生成，但值得排查。
