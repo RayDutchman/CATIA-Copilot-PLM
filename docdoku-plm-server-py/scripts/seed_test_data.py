@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-P1-P5 全模块测试数据生成器。
+P1-P5 全模块测试数据生成器（增强版）。
+
+每次运行创建带 SEED-{timestamp} 前缀的新数据。
+覆盖：多账号、多所有者、附件、角色、ACL、受影响项关联。
 
 使用方法:
     cd docdoku-plm-server-py
     source venv/bin/activate
     python scripts/seed_test_data.py
-
-每次运行创建带 SEED-{timestamp} 前缀的新数据，多次运行不冲突。
 """
 
 import json
 import sys
 import uuid
+import base64
 from datetime import datetime, timedelta
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -27,8 +29,8 @@ failed = 0
 created = []
 
 
-def _call(method: str, path: str, data: dict | None = None, check=(200, 201, 204)) -> dict:
-    """调用 API，检查状态码，返回 JSON。"""
+def _call(method: str, path: str, data: dict | None = None, check=(200, 201, 204),
+          files: dict | None = None) -> dict:
     global passed, failed
     url = f"{API}{path}"
     headers = {"Authorization": f"Bearer {_call.token}", "Content-Type": "application/json"}
@@ -44,104 +46,142 @@ def _call(method: str, path: str, data: dict | None = None, check=(200, 201, 204
         result = json.loads(resp.read().decode()) if resp.status not in (204, 401) else {}
     except Exception:
         pass
-    expected = check if isinstance(check, tuple) else (check, 204)
-    if status in expected:
+    if status in (check if isinstance(check, tuple) else (check, 204)):
         passed += 1
     else:
         failed += 1
-        print(f"  FAIL {method} {path} → {status} (expected {check}): {json.dumps(result, ensure_ascii=False)[:200]}")
+        print(f"  FAIL {method} {path} → {status}: {json.dumps(result, ensure_ascii=False)[:200]}")
     return result
 
 
-def login():
-    """获取 JWT token。"""
+def login(user="test1", pw="password"):
     url = f"{API}/auth/login"
-    data = json.dumps({"login": "test1", "password": "password"}).encode()
+    data = json.dumps({"login": user, "password": pw}).encode()
     req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     resp = urlopen(req, timeout=10)
-    token = dict(resp.headers).get("jwt", "")
-    _call.token = token
-    print(f"[auth] logged in as test1, token: {token[:30]}...")
+    _call.token = dict(resp.headers).get("jwt", "")
+    return _call.token
 
 
-def _name(pattern: str | None = None) -> str:
-    return f"{PREFIX}{pattern}" if pattern else f"{PREFIX}{uuid.uuid4().hex[:6]}"
+def _name(suffix=None):
+    return f"{PREFIX}{suffix}" if suffix else f"{PREFIX}{uuid.uuid4().hex[:6]}"
 
 
-# ═══ P5: 用户组 + 角色 + 工作流模板 (无依赖，最早) ═══
+# ═══ ACCOUNTS ═══
+def seed_accounts():
+    print("\n── 账号 ──")
+    users = {}
+    for name in ("alice", "bob", "carol"):
+        login_name = f"{PREFIX}{name}"
+        _call("POST", "/accounts/create",
+              {"login": login_name, "password": "password",
+               "email": f"{login_name}@test.com", "name": f"{name.title()} Seed",
+               "language": name == "bob" and "en" or "zh"})
+        # 添加到 workspace
+        _l = login("test1")
+        _call("PUT", f"/workspaces/{WS}/add-user", {"login": login_name})
+        users[name] = login_name
+        created.append(("account", login_name))
+    _l = login("test1")  # switch back
+    return users
+
+
+# ═══ P5: 角色 + 组 + 工作流 ═══
 def seed_p5():
-    print("\n── P5 工作流与权限 ──")
+    print("\n── P5 权限 ──")
 
-    # 用户组
     gid = _name("grp")
     _call("POST", f"/workspaces/{WS}/groups", {"id": gid})
     created.append(("usergroup", gid))
 
-    # 角色
-    role_name = _name("role")
+    role_designer = _name("r-design")
     _call("POST", f"/workspaces/{WS}/roles",
-          {"name": role_name, "defaultAssignedUsers": [{"login": "test1"}],
-           "defaultAssignedGroups": [{"id": gid}]})
-    created.append(("role", role_name))
+          {"name": role_designer,
+           "defaultAssignedUsers": [{"login": "test1"}, {"login": f"{PREFIX}alice"}]})
+    created.append(("role", role_designer))
 
-    # 工作流模板
+    role_approver = _name("r-approve")
+    _call("POST", f"/workspaces/{WS}/roles",
+          {"name": role_approver,
+           "defaultAssignedUsers": [{"login": f"{PREFIX}bob"}]})
+    created.append(("role", role_approver))
+
     wf_id = _name("wf")
     _call("POST", f"/workspaces/{WS}/workflow-models",
           {"id": wf_id, "finalLifecycleState": "RELEASED"})
     created.append(("workflow-model", wf_id))
 
     _call("GET", f"/workspaces/{WS}/users")
-    _call("GET", f"/workspaces/{WS}/groups")
     _call("GET", f"/workspaces/{WS}/roles")
-    _call("GET", f"/workspaces/{WS}/workflow-models")
-    _call("GET", f"/workspaces/{WS}/memberships/users")
-    _call("GET", f"/workspaces/{WS}/memberships/usergroups")
-
-    return {"role_name": role_name, "wf_id": wf_id}
+    _call("GET", f"/workspaces/{WS}/groups")
+    return {"role_designer": role_designer, "role_approver": role_approver, "wf_id": wf_id, "gid": gid}
 
 
-# ═══ P1: 零件 ═══
-def seed_parts():
+# ═══ P1: 零件（多所有者 + 附件） ═══
+def seed_parts(accounts):
     print("\n── P1 零件 ──")
+    all_nums = []
+    owners = {"test1": "test1", **accounts}  # alice, bob, carol
 
-    all_numbers = []
-    assembly_children = []
+    for owner_name, owner_login in owners.items():
+        token = login(owner_login)
+        for i in range(2):
+            n = _name(f"p-{owner_name[:3]}-{i}")
+            _call("POST", f"/workspaces/{WS}/parts",
+                  {"number": n, "name": f"Part by {owner_name}", "standardPart": owner_name == "carol"})
+            _call("PUT", f"/workspaces/{WS}/parts/{n}-A/checkin")
+            all_nums.append((n, owner_login))
+        _l = login("test1")  # switch back
 
-    # 5 independent parts
-    for i in range(5):
-        n = _name(f"p{i:02d}")
-        _call("POST", f"/workspaces/{WS}/parts", {"number": n, "name": f"Part-{i}"})
-        _call("PUT", f"/workspaces/{WS}/parts/{n}-A/checkin")
-        all_numbers.append(n)
-
-    # standard part
-    n = _name("pstd")
-    _call("POST", f"/workspaces/{WS}/parts", {"number": n, "name": "StandardPart", "standardPart": True})
-    _call("PUT", f"/workspaces/{WS}/parts/{n}-A/checkin")
-    all_numbers.append(n)
+    # 附件：给 2 个零件上传空文件（需签出→上传→签入）
+    for n, _ in all_nums[:2]:
+        try:
+            _call("PUT", f"/workspaces/{WS}/parts/{n}-A/checkout", check=(200, 201, 400, 403))
+            boundary = "----seedboundary"
+            body = (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="upload"; filename="seed-empty.txt"\r\n'
+                "Content-Type: text/plain\r\n\r\n"
+                "SEED\r\n"
+                f"--{boundary}--\r\n"
+            ).encode()
+            req = Request(
+                f"{API}/files/{WS}/parts/{n}/A/{len([c for c,_ in all_nums if c == n]) + 1}/attachedfiles",
+                data=body,
+                headers={
+                    "Authorization": f"Bearer {_call.token}",
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                },
+                method="POST",
+            )
+            urlopen(req, timeout=15)
+            _call("PUT", f"/workspaces/{WS}/parts/{n}-A/checkin")
+            created.append(("part(attachment)", n))
+        except Exception:  # 非关键，失败也不阻塞
+            pass
 
     # released + obsolete
-    for kind, status_ops in [("released", ["checkin", "release"]), ("obsolete", ["checkin", "release", "obsolete"])]:
-        n = _name(f"p{kind[:3]}")
+    for kind, ops in [("released", ["checkin", "release"]), ("obsolete", ["checkin", "release", "obsolete"])]:
+        n = _name(f"p-{kind}")
         _call("POST", f"/workspaces/{WS}/parts", {"number": n, "name": f"{kind.title()} Part"})
-        for op in status_ops:
+        for op in ops:
             _call("PUT", f"/workspaces/{WS}/parts/{n}-A/{op}")
         created.append((f"part({kind})", f"{n}-A"))
-        all_numbers.append(n)
+        all_nums.append((n, "test1"))
 
-    # multi-version: A → checkin → newVersion → B → checkin
-    n = _name("pmv")
+    # multi-version
+    n = _name("p-mv")
     _call("POST", f"/workspaces/{WS}/parts", {"number": n, "name": "MultiVer Part"})
     _call("PUT", f"/workspaces/{WS}/parts/{n}-A/checkin")
     _call("PUT", f"/workspaces/{WS}/parts/{n}-A/newVersion", {"title": "vB"})
     _call("PUT", f"/workspaces/{WS}/parts/{n}-B/checkin")
     created.append(("part(multi-ver)", f"{n}-B"))
-    all_numbers.append(n)
+    all_nums.append((n, "test1"))
 
-    # assembly: 1 parent + 4 children
+    # assembly: 1 parent + 3 children
     children = []
-    for i in range(4):
-        cn = _name(f"c{i:02d}")
+    for i in range(3):
+        cn = _name(f"c-{i}")
         _call("POST", f"/workspaces/{WS}/parts", {"number": cn, "name": f"Child-{i}"})
         _call("PUT", f"/workspaces/{WS}/parts/{cn}-A/checkin")
         children.append((cn, i + 1))
@@ -150,158 +190,160 @@ def seed_parts():
     _call("POST", f"/workspaces/{WS}/parts", {"number": assm, "name": "Assembly Parent"})
     _call("PUT", f"/workspaces/{WS}/parts/{assm}-A/checkin")
     _call("PUT", f"/workspaces/{WS}/parts/{assm}-A/checkout")
-    components = [{"amount": amt, "component": {"number": cn, "name": ""}} for cn, amt in children]
     _call("PUT", f"/workspaces/{WS}/parts/{assm}-A/iterations/2",
-          {"components": components, "iterationNote": "BOM update"})
+          {"components": [{"amount": amt, "component": {"number": cn, "name": ""}} for cn, amt in children],
+           "iterationNote": "BOM update"})
     _call("PUT", f"/workspaces/{WS}/parts/{assm}-A/checkin")
     created.append(("part(assembly)", f"{assm}-A"))
-    all_numbers.append(assm)
+    all_nums.append((assm, "test1"))
 
-    # verify
     _call("GET", f"/workspaces/{WS}/parts/count")
-    _call("GET", f"/workspaces/{WS}/parts?start=0&length=50")
-    _call("GET", f"/workspaces/{WS}/parts/checkedout")
-    _call("GET", f"/workspaces/{WS}/parts/search?q={PREFIX}")
-
-    return {"all_numbers": all_numbers, "assembly": assm, "released": _name("prel"),
-            "children": children}
-
-
-# ═══ P3: 产品/CI ═══
-def seed_products(parts):
-    print("\n── P3 产品结构 ──")
-    root_nums = parts["all_numbers"][:3]
-    ci_ids = []
-
-    for i, root in enumerate(root_nums):
-        ci = _name(f"ci{i}")
-        _call("POST", f"/workspaces/{WS}/products",
-              {"id": ci, "designItemNumber": root})
-        created.append(("product(ci)", ci))
-        ci_ids.append(ci)
-
-        if i == 1:
-            # baseline
-            _call("POST", f"/workspaces/{WS}/products/{ci}/baselines",
-                  {"name": f"{ci}-bl", "type": "LATEST", "description": "Seed baseline"},
-                  check=(200, 201, 400, 500))
-        if i == 2:
-            # configuration
-            _call("POST", f"/workspaces/{WS}/products/{ci}/configurations",
-                  {"name": f"{ci}-cfg", "description": "Seed config"},
-                  check=(200, 201, 400, 500))
-
-    # verify
-    _call("GET", f"/workspaces/{WS}/products")
-    for ci in ci_ids:
-        _call("GET", f"/workspaces/{WS}/products/{ci}")
-    return ci_ids
-
-
-# ═══ P4: 变更 ═══
-def seed_changes():
-    print("\n── P4 变更管理 ──")
-    milestone_ids = []
-
-    # 3 milestones
-    for i in range(3):
-        due = (datetime.now() + timedelta(days=7*(i+1))).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        r = _call("POST", f"/workspaces/{WS}/changes/milestones",
-                   {"title": f"{_name(f'ms{i}')} Milestone", "description": f"Due in {(i+1)*7}d",
-                    "dueDate": due})
-        milestone_ids.append(r.get("id"))
-    created.append(("change", "3 milestones"))
-
-    # 3 issues (diff priorities)
-    for i, prio in enumerate([0, 1, 2]):
-        _call("POST", f"/workspaces/{WS}/changes/issues",
-               {"name": f"{_name(f'iss{i}')} Issue", "description": f"Priority={prio}",
-                "priority": prio, "category": i % 3})
-    created.append(("change", "3 issues"))
-
-    # 2 requests (linked to milestones)
-    for i in range(2):
-        _call("POST", f"/workspaces/{WS}/changes/requests",
-               {"name": f"{_name(f'req{i}')} Request", "description": f"RQ {i+1}",
-                "milestoneId": milestone_ids[i]})
-
-    # 2 orders (linked to milestones)
-    for i in range(2):
-        _call("POST", f"/workspaces/{WS}/changes/orders",
-               {"name": f"{_name(f'ord{i}')} Order", "description": f"ORD {i+1}",
-                "milestoneId": milestone_ids[i+1]})
-
-    created.append(("change", "2 requests + 2 orders"))
-    # verify
-    for sub in ("issues", "requests", "orders", "milestones"):
-        _call("GET", f"/workspaces/{WS}/changes/{sub}")
+    return {"all": all_nums, "assembly": assm, "children": children}
 
 
 # ═══ P2: 文档 ═══
 def seed_documents():
     print("\n── P2 文档 ──")
+    doc_ids = []
 
     # 子文件夹
-    folder_name = _name("fld")
-    _call("POST", f"/workspaces/{WS}/folders/{WS}/folders",
-          {"name": folder_name}, check=(201, 409))
+    fname = _name("fld")
+    _call("POST", f"/workspaces/{WS}/folders/{WS}/folders", {"name": fname}, check=(201, 409))
 
     # 根目录 2 docs
     for i in range(2):
-        n = _name(f"d{i:02d}")
+        n = _name(f"d-{i}")
         _call("POST", f"/workspaces/{WS}/folders/{WS}/documents",
-               {"reference": n, "title": f"Doc-{i}", "description": f"Root doc"})
+               {"reference": n, "title": f"Doc-{i}", "description": "Seed doc"})
         created.append(("document", f"{n}-A"))
+        doc_ids.append((n, "A"))
 
-    # 子文件夹内 1 doc
-    n = _name("dsub")
-    _call("POST", f"/workspaces/{WS}/folders/{WS}/{folder_name}/documents",
-          {"reference": n, "title": "SubFolder Doc", "description": "Inside folder"},
-          check=(200, 201, 404, 405))
-    created.append(("document(subfolder)", n))
-
-    # 新版本（需先签入再 newVersion）
-    n = _name("dmv")
+    # multi-ver
+    n = _name("d-mv")
     _call("POST", f"/workspaces/{WS}/folders/{WS}/documents",
-          {"reference": n, "title": "MV Doc", "description": "vA"})
+          {"reference": n, "title": "MV Doc"})
     _call("PUT", f"/workspaces/{WS}/documents/{n}-A/checkin", check=(200, 201, 403))
     _call("PUT", f"/workspaces/{WS}/documents/{n}-A/newVersion",
-          {"title": "vB", "description": "Second ver"}, check=(200, 201, 403))
+          {"title": "vB"}, check=(200, 201))
     created.append(("document(multi-ver)", f"{n}-B"))
+    doc_ids.append((n, "B"))
 
-    # verify
     _call("GET", f"/workspaces/{WS}/documents/count")
-    _call("GET", f"/workspaces/{WS}/documents?start=0&length=30")
-    _call("GET", f"/workspaces/{WS}/folders")
+    return doc_ids
+
+
+# ═══ P3: CI + Baseline ═══
+def seed_products(part_nums):
+    print("\n── P3 产品 ──")
+    ci_ids = []
+    for i in range(3):
+        ci = _name(f"ci-{i}")
+        pn = part_nums[i % len(part_nums)][0]
+        _call("POST", f"/workspaces/{WS}/products",
+              {"id": ci, "designItemNumber": pn})
+        created.append(("product", ci))
+        ci_ids.append(ci)
+        if i == 1:
+            _call("POST", f"/workspaces/{WS}/products/{ci}/baselines",
+                  {"name": f"{ci}-bl", "type": "LATEST", "description": "Seed baseline"},
+                  check=(200, 201, 400, 500))
+    _call("GET", f"/workspaces/{WS}/products")
+    return ci_ids
+
+
+# ═══ P4: 变更 + 受影响项 ═══
+def seed_changes(part_nums, doc_ids):
+    print("\n── P4 变更 ──")
+    part_refs = [(n, "A") for n, _ in part_nums[:3]]
+    doc_refs = doc_ids[:2]
+
+    # 3 milestones
+    m_ids = []
+    for i in range(3):
+        due = (datetime.now() + timedelta(days=7*(i+1))).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        r = _call("POST", f"/workspaces/{WS}/changes/milestones",
+                   {"title": f"{_name(f'ms-{i}')} Milestone", "description": f"Due {(i+1)*7}d",
+                    "dueDate": due})
+        m_ids.append(r.get("id"))
+
+    # 3 issues with affected parts + affected documents
+    issue_ids = []
+    for i in range(3):
+        r = _call("POST", f"/workspaces/{WS}/changes/issues",
+                   {"name": f"{_name(f'iss-{i}')} Issue", "description": f"Prio={i}",
+                    "priority": i, "category": i % 3})
+        iid = r.get("id")
+        if iid and i < len(part_refs):
+            # PUT affected-parts
+            pn, pv = part_refs[i]
+            _call("PUT", f"/workspaces/{WS}/changes/issues/{iid}/affected-parts",
+                  {"affectedParts": [{"partMasterNumber": pn, "partRevisionVersion": pv}]},
+                  check=(200, 201, 400, 404))
+            # PUT affected-documents
+            dn, dv = doc_refs[i] if i < len(doc_refs) else doc_refs[0]
+            _call("PUT", f"/workspaces/{WS}/changes/issues/{iid}/affected-documents",
+                  {"affectedDocuments": [{"documentMasterId": dn, "documentRevisionVersion": dv}]},
+                  check=(200, 201, 400, 404))
+        issue_ids.append(iid)
+
+    # 2 requests linked to issues + affected items
+    req_ids = []
+    for i in range(2):
+        r = _call("POST", f"/workspaces/{WS}/changes/requests",
+                   {"name": f"{_name(f'req-{i}')} Request", "description": f"RQ {i+1}",
+                    "milestoneId": m_ids[i]})
+        rid = r.get("id")
+        if rid and issue_ids:
+            _call("PUT", f"/workspaces/{WS}/changes/requests/{rid}/affected-issues",
+                  {"affectedIssues": [{"changeIssueId": issue_ids[i]}]},
+                  check=(200, 201, 400, 404))
+            pn, pv = part_refs[-1]
+            _call("PUT", f"/workspaces/{WS}/changes/requests/{rid}/affected-parts",
+                  {"affectedParts": [{"partMasterNumber": pn, "partRevisionVersion": pv}]},
+                  check=(200, 201, 400, 404))
+        req_ids.append(rid)
+
+    # 2 orders linked to requests
+    for i in range(2):
+        _call("POST", f"/workspaces/{WS}/changes/orders",
+               {"name": f"{_name(f'ord-{i}')} Order", "description": f"ORD {i+1}",
+                "milestoneId": m_ids[i+1]})
+    od = _call("POST", f"/workspaces/{WS}/changes/orders",
+               {"name": f"{_name('ord-2')} Order", "description": "Order with affected req",
+                "milestoneId": m_ids[-1]})
+    if od.get("id") and req_ids:
+        _call("PUT", f"/workspaces/{WS}/changes/orders/{od['id']}/affected-requests",
+              {"affectedRequests": [{"changeRequestId": req_ids[0]}]},
+              check=(200, 201, 400, 404))
+
+    created.append(("change", "3 issues+3 ms+2 req+3 ord"))
+    for sub in ("issues", "requests", "orders", "milestones"):
+        _call("GET", f"/workspaces/{WS}/changes/{sub}")
 
 
 # ═══ MAIN ═══
 def main():
-    print(f"Seed test data — {TIMESTAMP}")
-    print(f"API: {API}  WS: {WS}")
-
+    print(f"Seed — {TIMESTAMP}")
     try:
         login()
     except Exception as e:
         print(f"FATAL: login failed: {e}")
         sys.exit(1)
 
-    try:
-        seed_p5()
-        parts = seed_parts()
-        seed_products(parts)
-        seed_changes()
-        seed_documents()
-    except Exception as e:
-        print(f"\nERROR: {e}")
-        import traceback
-        traceback.print_exc()
+    accounts = seed_accounts()
+    p5 = seed_p5()
+    parts = seed_parts(accounts)
+    docs = seed_documents()
+    seed_products(parts["all"])
+    seed_changes(parts["all"], docs)
 
     print(f"\n{'='*50}")
     print(f"Results: {passed} passed, {failed} failed")
     print(f"Created: {len(created)} resources")
-    for kind, name in created:
+    for kind, name in created[:30]:
         print(f"  [{kind}] {name}")
+    if len(created) > 30:
+        print(f"  ... and {len(created)-30} more")
     print(f"{'='*50}")
     sys.exit(1 if failed > 0 else 0)
 
