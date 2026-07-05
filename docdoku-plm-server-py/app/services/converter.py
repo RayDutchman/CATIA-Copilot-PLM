@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.core.config import settings
-from app.services import vault, file_service
+from app.services import vault, binary_storage
 from app.models.part import (
     Conversion, BinaryResource, PartUsageLink, CADInstance,
     part_iteration_geometry, usage_link_cadinstances,
@@ -145,7 +145,7 @@ def sync_assembly(db: Session, ws: str, pn: str, ver: str, iteration: int,
     对齐 Java ConverterBean.syncAssembly()。
     返回 True 表示成功（即使某些组件未找到也继续处理，仅 warn）。
     """
-    from app.services.product_service import ProductService
+    from app.services.product_manager import ProductService
     svc = ProductService()
     succeed = True
     part_usage_links = []

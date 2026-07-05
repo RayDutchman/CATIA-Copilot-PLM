@@ -13,11 +13,11 @@ from app.schemas.part import (
     PartRevisionDTO, PartCreationDTO, PartIterationUpdateDTO,
     ConversionDTO, ConversionResultDTO, CountDTO, LightPartMasterDTO,
 )
-from app.services.product_service import ProductService
+from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision
-from app.services import conversion_service
+from app.services import converter
 from app.services.acl_helper import apply_acl
-from app.services.workflow_service import workflow_service
+from app.services.workflow_manager import workflow_service
 
 router = APIRouter()
 svc = ProductService()
@@ -601,7 +601,7 @@ def conversion_callback(
     db: Session = Depends(get_db),
 ):
     number, version = _split_part_key(part_key)
-    conversion_service.handle_callback(db, workspace_id, number, version, body)
+    converter.handle_callback(db, workspace_id, number, version, body)
     db.commit()
     return {"status": "ok"}
 

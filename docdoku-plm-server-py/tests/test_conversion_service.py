@@ -3,8 +3,8 @@ import os
 import uuid
 import shutil
 from pathlib import Path
-from app.services import conversion_service
-from app.services.product_service import ProductService
+from app.services import converter
+from app.services.product_manager import ProductService
 from app.schemas.part import ConversionResultDTO, PositionDTO
 from app.models.part import (
     BinaryResource, part_iteration_geometry, part_iteration_binres,
@@ -54,7 +54,7 @@ def _make_part_with_conversion(db, num):
 def test_callback_no_geometry_marks_succeed(db):
     num = "P1BCV-EMPTY-1"
     _make_part_with_conversion(db, num)
-    conversion_service.handle_callback(db, WS, num, "A",
+    converter.handle_callback(db, WS, num, "A",
         ConversionResultDTO(errorOutput="no geometry generated"))
     db.commit()
     conv = svc.get_conversion(db, WS, num, "A", 1)
@@ -70,7 +70,7 @@ def test_callback_no_geometry_marks_succeed(db):
 def test_callback_error_marks_failed(db):
     num = "P1BCV-ERR-1"
     _make_part_with_conversion(db, num)
-    conversion_service.handle_callback(db, WS, num, "A",
+    converter.handle_callback(db, WS, num, "A",
         ConversionResultDTO(errorOutput="some real error"))
     db.commit()
     conv = svc.get_conversion(db, WS, num, "A", 1)
@@ -90,7 +90,7 @@ def test_callback_success_writes_glb(db):
     conv_dir = Path(settings.CONVERSIONS_PATH) / temp_dir
     conv_dir.mkdir(parents=True, exist_ok=True)
     (conv_dir / glb_name).write_bytes(b"GLBDATA")
-    conversion_service.handle_callback(db, WS, num, "A",
+    converter.handle_callback(db, WS, num, "A",
         ConversionResultDTO(tempDir=temp_dir,
                             convertedFileLODs={"0": glb_name},
                             box=[-1, -1, -1, 1, 1, 1]))
@@ -131,7 +131,7 @@ def test_callback_multi_lod_saves_all(db):
     conv_dir.mkdir(parents=True, exist_ok=True)
     (conv_dir / glb_0).write_bytes(b"LOD0")
     (conv_dir / glb_1).write_bytes(b"LOD1")
-    conversion_service.handle_callback(db, WS, num, "A",
+    converter.handle_callback(db, WS, num, "A",
         ConversionResultDTO(
             tempDir=temp_dir,
             convertedFileLODs={"0": glb_0, "1": glb_1},
@@ -167,7 +167,7 @@ def test_callback_materials_saved_as_attached(db):
     conv_dir.mkdir(parents=True, exist_ok=True)
     (conv_dir / glb_name).write_bytes(b"GLBDATA")
     (conv_dir / mtl_name).write_bytes(b"MTLDATA")
-    conversion_service.handle_callback(db, WS, num, "A",
+    converter.handle_callback(db, WS, num, "A",
         ConversionResultDTO(
             tempDir=temp_dir,
             convertedFileLODs={"0": glb_name},
@@ -261,7 +261,7 @@ def test_sync_assembly_creates_cad_instances(db):
     svc.create_part(db, WS, "test1", PartCreationDTO(number=num_child, name="Child"))
 
     # 给子零件写入 nativecad（以建立 CAD 文件名→PartMaster 映射）
-    from app.services.file_service import save_nativecad
+    from app.services.binary_storage import save_nativecad
     save_nativecad(db, WS, num_child, "A", 1, child_cad_file, b"dummy stp content")
     db.commit()
 
@@ -284,7 +284,7 @@ def test_sync_assembly_creates_cad_instances(db):
     conv_dir.mkdir(parents=True, exist_ok=True)
     (conv_dir / glb_name).write_bytes(b"GLBDATA")
 
-    conversion_service.handle_callback(db, WS, num_parent, "A",
+    converter.handle_callback(db, WS, num_parent, "A",
         ConversionResultDTO(
             tempDir=temp_dir,
             convertedFileLODs={"0": glb_name},
@@ -360,7 +360,7 @@ def test_find_master_by_cad_filename(db):
         ).delete()
     db.commit()
     from app.schemas.part import PartCreationDTO
-    from app.services.file_service import save_nativecad
+    from app.services.binary_storage import save_nativecad
     svc.create_part(db, WS, "test1", PartCreationDTO(number=num, name="find_test"))
     save_nativecad(db, WS, num, "A", 1, cad_file, b"test content")
     db.commit()
@@ -380,13 +380,13 @@ def test_existing_pending_conversion(db):
     """Fix 2: find_pending_conversion 正确返回已经 pending 的 Conversion。"""
     num = "P1BCV-DUP-1"
     _make_part_with_conversion(db, num)
-    conv = conversion_service.find_pending_conversion(db, WS, num, "A")
+    conv = converter.find_pending_conversion(db, WS, num, "A")
     assert conv is not None
     assert conv.pending is True
     assert conv.partmaster_partnumber == num
     # 结束后不再找到
-    conversion_service.end_conversion(db, conv, True)
-    assert conversion_service.find_pending_conversion(db, WS, num, "A") is None
+    converter.end_conversion(db, conv, True)
+    assert converter.find_pending_conversion(db, WS, num, "A") is None
     db.delete(conv)
     db.commit()
     svc.checkin(db, WS, num, "A", "test1")

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.services.product_structure_service import ProductStructureService
+from app.services.product_structure import ProductStructureService
 
 router = APIRouter()
 svc = ProductStructureService()

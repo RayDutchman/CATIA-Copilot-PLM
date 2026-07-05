@@ -5,7 +5,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.services.user_mgmt_service import user_mgmt_service
+from app.services.user_manager import user_mgmt_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"

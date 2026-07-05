@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import AccessRightException
 from app.models.auth import Account
-from app.services.document_service import DocumentService
+from app.services.document_manager import DocumentService
 
 router = APIRouter()
 svc = DocumentService()

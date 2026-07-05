@@ -1,4 +1,4 @@
-from app.services.document_service import DocumentService
+from app.services.document_manager import DocumentService
 from app.core.exceptions import EntityAlreadyExistsException
 WS = "Workspace_2"
 svc = DocumentService()

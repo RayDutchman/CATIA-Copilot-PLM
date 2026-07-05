@@ -7,7 +7,7 @@ from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.models.workflow import Activity
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
-from app.services.workflow_service import workflow_service, STATUS_MAP
+from app.services.workflow_manager import workflow_service, STATUS_MAP
 from app.services.acl_helper import apply_acl
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")

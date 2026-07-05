@@ -8,7 +8,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.product import ProductConfiguration, ConfigurationItem, ProductInstanceMaster, ProductBaseline, Layer, Marker  # noqa: F811
 from app.models.part import PartMaster, PartRevision
-from app.services.product_structure_service import ProductStructureService
+from app.services.product_structure import ProductStructureService
 from app.services.acl_helper import apply_acl
 
 router = APIRouter()

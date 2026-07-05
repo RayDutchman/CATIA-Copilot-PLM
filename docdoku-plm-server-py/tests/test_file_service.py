@@ -1,7 +1,7 @@
 """file_service 测试：vault 写读 + BinaryResource 记录。"""
 import os
-from app.services import file_service
-from app.services.product_service import ProductService
+from app.services import binary_storage
+from app.services.product_manager import ProductService
 from app.models.part import BinaryResource
 
 WS = "Workspace_2"
@@ -43,7 +43,7 @@ def _make_part(db, num):
 def test_save_nativecad_writes_vault_and_binaryresource(db):
     num = "P1BFS-NATIVE-1"
     _make_part(db, num)
-    br = file_service.save_nativecad(db, WS, num, "A", 1,
+    br = binary_storage.save_nativecad(db, WS, num, "A", 1,
                                      "m.stp", b"STEPDATA")
     db.commit()
     assert br.full_name == f"{WS}/parts/{num}/A/1/nativecad/m.stp"
@@ -62,9 +62,9 @@ def test_save_nativecad_writes_vault_and_binaryresource(db):
 def test_get_file_bytes_reads_back(db):
     num = "P1BFS-READ-1"
     _make_part(db, num)
-    file_service.save_nativecad(db, WS, num, "A", 1, "m.stp", b"HELLO")
+    binary_storage.save_nativecad(db, WS, num, "A", 1, "m.stp", b"HELLO")
     db.commit()
-    data = file_service.get_file_bytes(WS, num, "A", 1, "nativecad", "m.stp")
+    data = binary_storage.get_file_bytes(WS, num, "A", 1, "nativecad", "m.stp")
     assert data == b"HELLO"
     from app.services import vault
     p = vault.part_nativecad_path(WS, num, "A", 1, "m.stp")

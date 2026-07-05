@@ -1,4 +1,4 @@
-from app.services.change_service import ChangeService
+from app.services.change_manager import ChangeService
 from app.models.change import ChangeIssue, Milestone
 WS = "Workspace_2"
 svc = ChangeService()

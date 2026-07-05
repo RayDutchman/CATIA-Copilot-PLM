@@ -7,10 +7,10 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import NotAllowedException
 from app.models.auth import Account
-from app.services import file_service
-from app.services.product_service import ProductService
+from app.services import binary_storage
+from app.services.product_manager import ProductService
 from app.services.kafka_producer import send_conversion_order
-from app.services.conversion_service import find_pending_conversion
+from app.services.converter import find_pending_conversion
 from app.models.part import PartIteration
 from datetime import datetime, timedelta, timezone
 
@@ -43,7 +43,7 @@ def upload_nativecad(
     if ext not in CAD_WHITELIST:
         raise HTTPException(400, "Unsupported CAD file format")
     data = upload.file.read()
-    file_service.save_nativecad(db, ws, pn, ver, iteration, upload.filename, data)
+    binary_storage.save_nativecad(db, ws, pn, ver, iteration, upload.filename, data)
     # Fix 2: 检查是否已有 pending Conversion，避免重复发送 Kafka
     existing = find_pending_conversion(db, ws, pn, ver)
     if existing:
@@ -68,7 +68,7 @@ def upload_attached(
 ):
     _check_writable(db, ws, pn, ver, iteration, current_user.login)
     data = upload.file.read()
-    file_service.save_attached(db, ws, pn, ver, iteration, upload.filename, data)
+    binary_storage.save_attached(db, ws, pn, ver, iteration, upload.filename, data)
     db.commit()
     return {"status": "uploaded"}
 
@@ -201,7 +201,7 @@ def download_with_subtype(
     current_user: Account = Depends(get_current_user),
 ):
     try:
-        data = file_service.get_file_bytes(ws, pn, ver, iteration, sub_type, file_name)
+        data = binary_storage.get_file_bytes(ws, pn, ver, iteration, sub_type, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
     return Response(content=data, media_type="application/octet-stream",
@@ -223,7 +223,7 @@ def download_direct(
 ):
     """几何体 GLB 直下（fullname 无 subType 段）。"""
     try:
-        data = file_service.get_file_bytes(ws, pn, ver, iteration, None, file_name)
+        data = binary_storage.get_file_bytes(ws, pn, ver, iteration, None, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
     return Response(content=data, media_type="application/octet-stream",

@@ -1,6 +1,6 @@
 """ProductService 业务逻辑测试。"""
 import pytest
-from app.services.product_service import ProductService
+from app.services.product_manager import ProductService
 from app.schemas.part import PartCreationDTO
 
 

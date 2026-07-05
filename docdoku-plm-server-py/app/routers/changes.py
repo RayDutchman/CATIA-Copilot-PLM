@@ -8,7 +8,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
-from app.services.change_service import ChangeService
+from app.services.change_manager import ChangeService
 from app.services.acl_helper import apply_acl
 
 router = APIRouter()

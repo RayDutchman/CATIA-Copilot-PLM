@@ -39,7 +39,7 @@ def test_part_revision_status_field():
 def test_geometry_uri_format(db):
     """有 GLB 的 iteration 应返回 /api/files/{fullname} 格式的 geometryFileURI。"""
     from app.services.part_mapper import map_revision
-    from app.services.product_service import ProductService
+    from app.services.product_manager import ProductService
     svc = ProductService()
     pr = svc.get_revision(db, "Workspace_2", "Differential Axle 2010", "A")
     dto = map_revision(pr, db)
@@ -51,7 +51,7 @@ def test_geometry_uri_format(db):
 
 def test_user_dto_has_name_email_language(db):
     from app.services.part_mapper import map_revision
-    from app.services.product_service import ProductService
+    from app.services.product_manager import ProductService
     svc = ProductService()
     pr = svc.get_revision(db, "Workspace_2", "Differential Axle 2010", "A")
     dto = map_revision(pr, db)
