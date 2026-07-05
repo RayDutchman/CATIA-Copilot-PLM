@@ -109,6 +109,28 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
     return {"status": "ok"}
 
 
+@router.get(f"{PREFIX}/users/{{login}}/tag-subscriptions")
+def user_tag_subscriptions(ws: str, login: str, db: Session = Depends(get_db),
+                           current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.put(f"{PREFIX}/users/{{login}}/tag-subscriptions/{{tagName}}")
+@router.put(f"{PREFIX}/users/{{login}}/tag-subscriptions/{{tagName}}/", include_in_schema=False)
+def user_tag_subscription_put(ws: str, login: str, tagName: str,
+                              db: Session = Depends(get_db),
+                              current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.delete(f"{PREFIX}/users/{{login}}/tag-subscriptions/{{tagName}}", status_code=204)
+@router.delete(f"{PREFIX}/users/{{login}}/tag-subscriptions/{{tagName}}/", status_code=204, include_in_schema=False)
+def user_tag_subscription_delete(ws: str, login: str, tagName: str,
+                                 db: Session = Depends(get_db),
+                                 current_user: Account = Depends(get_current_user)):
+    pass
+
+
 @router.get(f"{PREFIX}/groups/{{group_id}}/users")
 def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
@@ -120,6 +142,28 @@ def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
         "WHERE m.groupname = :gid"
     ), {"gid": group_id}).fetchall()
     return [{"login": r[0], "name": r[1], "email": r[2], "language": r[3]} for r in rows]
+
+
+@router.get(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions")
+def group_tag_subscriptions(ws: str, groupId: str, db: Session = Depends(get_db),
+                            current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.put(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}")
+@router.put(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}/", include_in_schema=False)
+def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
+                               db: Session = Depends(get_db),
+                               current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.delete(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}", status_code=204)
+@router.delete(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}/", status_code=204, include_in_schema=False)
+def group_tag_subscription_delete(ws: str, groupId: str, tagName: str,
+                                  db: Session = Depends(get_db),
+                                  current_user: Account = Depends(get_current_user)):
+    pass
 
 
 @router.put(f"{PREFIX}/enable-user")
@@ -159,3 +203,9 @@ def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     user_mgmt_service.disable_user(db, ws, body.get("login", ""))
     return {"status": "ok"}
+
+
+@router.get(f"{PREFIX}/workspace-workflows/{{workflowId}}/aborted")
+def workflow_aborted(ws: str, workflowId: str, db: Session = Depends(get_db),
+                     current_user: Account = Depends(get_current_user)):
+    return []

@@ -12,6 +12,7 @@
 - feat(py): document_service.py 新增 move_document 方法（更新 location_completepath）
 - feat(py): document_templates.py 新增 generate_id 端点
 - feat(py): products.py 新增 7 个子端点——product-instances/releases-last/path-choices/versions-choices/cascade-* stubs
+- feat(py): users.py 新增 9 个端点——用户/组标签订阅 CRUD + workflows/{id}/aborted stubs（8 GET/PUT/DELETE，均尾斜杠双路由）
 - test(py): 3 个测试文件新增 16 个测试用例覆盖所有新端点
 
 ## 2026-07-05 — 工作区 CRUD 端点
