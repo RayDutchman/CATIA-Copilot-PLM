@@ -99,22 +99,23 @@ class UserMgmtService:
         db.commit()
 
     def list_memberships(self, db: Session, ws: str) -> list:
-        """Payara: 非管理员默认 readOnly=True。管理员始终 FULL_ACCESS。"""
+        """Payara 对齐：读 workspaceusermembership 表获取 readOnly 状态。"""
         from sqlalchemy import text
-        # 查 workspace admin
-        admin_row = db.execute(text(
-            "SELECT admin_login FROM workspace WHERE id = :w"
-        ), {"w": ws}).fetchone()
-        admin_login = admin_row[0] if admin_row else ""
-        # 查所有 workspace 成员
         rows = db.execute(text(
-            "SELECT u.login, a.name, a.email, a.language "
-            "FROM userdata u JOIN account a ON u.login = a.login "
-            "WHERE u.workspace_id = :ws"
-        ), {"ws": ws}).fetchall()
+            "SELECT u.login, a.name, a.email, a.language, wm.readonly "
+            "FROM userdata u "
+            "JOIN account a ON u.login = a.login "
+            "LEFT JOIN workspaceusermembership wm "
+            "  ON wm.member_login = u.login "
+            "  AND wm.member_workspace_id = :ws "
+            "  AND wm.workspace_id = :ws2 "
+            "WHERE u.workspace_id = :ws3"
+        ), {"ws": ws, "ws2": ws, "ws3": ws}).fetchall()
         result = []
         for r in rows:
             login = r[0]
+            has_membership = r[4] is not None  # NULL = 无显式记录
+            read_only = bool(r[4]) if has_membership else True  # 无记录默认 READ_ONLY
             result.append({
                 "workspaceId": ws,
                 "member": {
@@ -122,7 +123,7 @@ class UserMgmtService:
                     "email": r[2] or "", "language": r[3] or "",
                     "workspaceId": ws,
                 },
-                "readOnly": login != admin_login,  # 管理员 = False, 非管理员 = True
+                "readOnly": read_only,
             })
         return result
 

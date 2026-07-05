@@ -27,8 +27,15 @@ def list_workspaces(db: Session = Depends(get_db),
         "SELECT id, description, admin_login FROM workspace ORDER BY id"
     )).fetchall()
     all_ws = [{"id": r[0], "description": r[1] or "", "admin": r[2] or ""} for r in rows]
+
+    # 全局管理员（usergroupmapping groupname='admin'）看全部 workspace
+    is_global_admin = db.execute(text(
+        "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).scalar() > 0
+    if is_global_admin:
+        return {"administratedWorkspaces": all_ws, "allWorkspaces": all_ws}
+
     admin_ws = [w for w in all_ws if w["admin"] == current_user.login]
-    # Payara: allWorkspaces 只列出用户是成员的 workspace（userdata 中有记录）
     user_ws_ids = db.execute(text(
         "SELECT workspace_id FROM userdata WHERE login=:l"
     ), {"l": current_user.login}).fetchall()
