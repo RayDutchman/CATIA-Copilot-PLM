@@ -1,4 +1,5 @@
 """认证相关路由：登录、登出、当前用户信息。"""
+import hashlib
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.security import verify_password, create_token
 from app.core.config import settings
+from app.core.exceptions import EntityNotFoundException, CreationException
 from app.models.auth import Account, UserGroupMapping
 from app.models.user_mgmt import Credential
 from app.schemas.auth import LoginRequestDTO, AccountDTO
@@ -55,3 +57,40 @@ def list_providers():
 def get_me(current_user: Account = Depends(get_current_user)):
     """返回当前登录用户的账号信息。"""
     return current_user
+
+
+@router.get("/auth/providers/{provider_id}")
+def get_provider(provider_id: str):
+    """获取单个 OAuth provider。当前无 OAuth 配置，返回 404。"""
+    raise EntityNotFoundException("OAuthProviderNotFoundException", provider_id)
+
+
+@router.post("/auth/recovery")
+def send_password_recovery(body: dict, db: Session = Depends(get_db)):
+    """发送密码恢复邮件。MVP: 不实际发邮件，只返回 204。"""
+    login = body.get("login", "")
+    acc = db.query(Account).filter(Account.login == login).first()
+    if not acc:
+        return Response(status_code=204)
+    return Response(status_code=204)
+
+
+@router.post("/auth/recover")
+def execute_recover(body: dict, db: Session = Depends(get_db)):
+    """执行密码恢复。MVP: 直接更新密码。"""
+    login = body.get("login", "")
+    new_password = body.get("password", "")
+    if not login or not new_password:
+        raise CreationException("CreationException")
+    cred = db.query(Credential).filter(Credential.login == login).first()
+    if not cred:
+        raise EntityNotFoundException("AccountNotFoundException", login)
+    cred.password = hashlib.md5(new_password.encode()).hexdigest()
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/auth/oauth")
+def oauth_login(body: dict):
+    """OAuth 登录。当前无 OAuth 配置，返回 501。"""
+    raise HTTPException(status_code=501, detail="OAuth not configured")
