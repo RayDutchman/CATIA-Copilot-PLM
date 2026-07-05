@@ -52,7 +52,24 @@ class ProductStructureService:
 
     def delete_ci(self, db: Session, ws: str, ci_id: str):
         ci = self.get_ci(db, ws, ci_id)
-        # TODO(对齐审计): EntityConstraintException4(有基线)/13(有实例)/23(有配置)
+        bl_count = db.execute(text(
+            "SELECT COUNT(*) FROM productbaseline "
+            "WHERE configurationitem_id=:ci AND configurationitem_workspace_id=:ws"
+        ), {"ci": ci_id, "ws": ws}).scalar()
+        if bl_count:
+            raise EntityConstraintException("EntityConstraintException4")
+        cfg_count = db.execute(text(
+            "SELECT COUNT(*) FROM productconfiguration "
+            "WHERE configurationitem_id=:ci"
+        ), {"ci": ci_id}).scalar()
+        if cfg_count:
+            raise EntityConstraintException("EntityConstraintException23")
+        inst_count = db.execute(text(
+            "SELECT COUNT(*) FROM productinstancemaster "
+            "WHERE configurationitem_id=:ci"
+        ), {"ci": ci_id}).scalar()
+        if inst_count:
+            raise EntityConstraintException("EntityConstraintException13")
         db.delete(ci); db.commit()
 
     def update_ci(self, db: Session, ws: str, ci_id: str, body: dict) -> ConfigurationItem:
@@ -176,10 +193,14 @@ class ProductStructureService:
                 PartUsageLink.id == link_id).first()
             if link is None:
                 break
+            rev = db.query(PartRevision).filter(
+                PartRevision.workspace_id == ws,
+                PartRevision.partmaster_partnumber == link.component_partnumber,
+            ).order_by(PartRevision.version.desc()).first()
             result.append({
                 "id": link.id,
                 "partNumber": link.component_partnumber,
-                "version": "A",
+                "version": rev.version if rev else "A",
                 "amount": link.amount or 1.0,
                 "unit": link.unit,
                 "optional": link.optional or False,
@@ -202,15 +223,34 @@ class ProductStructureService:
         return q.all()
 
     def create_baseline(self, db: Session, ws: str, ci_id: str, name: str,
-                        desc: str, bl_type: int, user_login: str):
+                        desc: str, bl_type: int, user_login: str,
+                        baselined_parts: list | None = None):
         ci = self.get_ci(db, ws, ci_id)
+        # 创建 PartCollection
+        db.execute(text(
+            "INSERT INTO partcollection (creationdate, author_workspace_id, author_login) "
+            "VALUES (now(), :ws, :login)"), {"ws": ws, "login": user_login})
+        db.flush()
+        pc_id = db.execute(text("SELECT currval('partcollection_id_seq')")).scalar()
         bl = ProductBaseline(
             name=name, description=desc, type=bl_type or 0,
             configurationitem_workspace_id=ws,
             configurationitem_id=ci_id,
             author_workspace_id=ws, author_login=user_login,
+            partcollection_id=pc_id,
             creation_date=datetime.utcnow())
-        db.add(bl); db.commit(); db.refresh(bl)
+        db.add(bl); db.flush()
+        if baselined_parts:
+            for bp in baselined_parts:
+                db.execute(text(
+                    "INSERT INTO baselinedpart "
+                    "(target_workspace_id, target_partmaster_partnumber, "
+                    "target_partrevision_version, target_iteration, partcollection_id) "
+                    "VALUES (:ws, :pn, :ver, :iter, :pcid)"
+                ), {"ws": ws, "pn": bp.get("partNumber", ""),
+                    "ver": bp.get("version", "A"), "iter": bp.get("iteration", 1),
+                    "pcid": pc_id})
+        db.commit(); db.refresh(bl)
         return bl
 
     def delete_baseline(self, db: Session, ws: str, bl_id: int):

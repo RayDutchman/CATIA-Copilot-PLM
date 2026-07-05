@@ -75,6 +75,8 @@
 
 ## 已解决（近期）
 
+- [x] **Products audit 修复（8 项）** — CI delete 约束检查、decode_path 版本号、designItemLatestVersion/designItemName 真实查询、create_baseline baselinedParts 写入、milestone numberOfOrders/Requests 计数、workspace 级 product-instances 列表、GET /product-instances/{sn}（2026-07-06）
+
 - [x] **FastAPI Stub Handler 真实 DB 写入修复（9 Bug）** — front-options PUT 持久化、stats-overview products/checkedOut 统计、disk-usage 路径、文档高级搜索 content/date 参数、document-baselines DB 查询、tasks/{login}/documents+parts 实现、workflow-models activityModels 持久化、product-configurations 尾斜杠+ACL 完整对象（2026-07-06）
 
 - [x] **full_compare_v2 对拍修复**：6端点 try/except 防502 + front-options PUT 204 + GET 补字段 + document 补 acl/routePath/checkOutUser/author.language + CI author.language + health status（2026-07-05）

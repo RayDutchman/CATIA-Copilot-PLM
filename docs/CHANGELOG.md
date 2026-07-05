@@ -6,7 +6,18 @@
 
 ---
 
-## 2026-07-06 — Phase2 用户管理 + 工作区管理写操作全部真实 DB 写入
+## 2026-07-06 — Products audit: CI delete约束/decode_path版本/designItem字段/baseline创建/milestone计数/产品实例
+
+### 修复内容
+
+- fix(py): **delete_ci 约束检查** (`product_structure_service.py`) — 删除 CI 前检查 3 项依赖（productbaseline→Exception4 / productconfiguration→Exception23 / productinstancemaster→Exception13）
+- fix(py): **decode_path 版本号** (`product_structure_service.py`) — 从硬编码 `"A"` 改为查询 PartRevision 真实 version
+- fix(py): **designItemLatestVersion** (`products.py`) — 从 `""` 改为查询 PartRevision.creation_date DESC LIMIT 1
+- fix(py): **designItemName** (`products.py`) — 从 `""` 改为查询 PartMaster.name
+- fix(py): **create_baseline baselinedParts** (`product_structure_service.py` + `products.py`) — 接受 `baselinedParts: [{partNumber,version,iteration}]`，写入 partcollection + baselinedpart 表
+- fix(py): **milestone numberOfOrders/Requests** (`changes.py`) — 从 0 改为查询 changerequest/changeorder COUNT(*)
+- fix(py): **workspace 级 product-instances 列表** (`products.py`) — 从 `return []` 改为真实 DB 查询
+- feat(py): **GET /product-instances/{sn}** (`products.py`) — 新增按 serialNumber 获取产品实例端点
 
 全部 PUT/POST/DELETE handler 不再 stub，改为真实读写 PostgreSQL。新增 4 个端点。
 

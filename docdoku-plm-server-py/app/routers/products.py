@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.product import ProductConfiguration
+from app.models.product import ProductConfiguration, ConfigurationItem, ProductInstanceMaster, ProductBaseline  # noqa: F811
+from app.models.part import PartMaster, PartRevision
 from app.services.product_structure_service import ProductStructureService
 from app.services.acl_helper import apply_acl
 
@@ -30,6 +31,35 @@ def _fmt_date(d) -> str | None:
     if d is None:
         return None
     return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
+
+
+def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
+    name = ""
+    latest_version = ""
+    if ci.partmaster_partnumber:
+        master = db.query(PartMaster).filter(
+            PartMaster.workspace_id == ci.workspace_id,
+            PartMaster.number == ci.partmaster_partnumber,
+        ).first()
+        if master:
+            name = master.name or ""
+        rev = db.query(PartRevision).filter(
+            PartRevision.workspace_id == ci.workspace_id,
+            PartRevision.partmaster_partnumber == ci.partmaster_partnumber,
+        ).order_by(PartRevision.creation_date.desc()).first()
+        if rev:
+            latest_version = rev.version
+    return {
+        "id": ci.id, "workspaceId": ci.workspace_id,
+        "description": ci.description,
+        "designItemNumber": ci.partmaster_partnumber,
+        "designItemName": name,
+        "designItemLatestVersion": latest_version,
+        "author": _get_user_dto(db, ci.author_login, ci.workspace_id),
+        "creationDate": _fmt_date(ci.creation_date),
+        "hasModificationNotification": False,
+        "pathToPathLinks": [],
+    }
 
 
 def _config_to_dict(cfg, db) -> dict:
@@ -103,7 +133,7 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
         bl_type = 0 if bl_type.upper() == "LATEST" else 1
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
-                               current_user.login)
+                               current_user.login, body.get("baselinedParts"))
     return {"id": bl.id, "name": bl.name}
 
 
@@ -142,15 +172,7 @@ def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
 def list_cis(ws: str, current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     cis = svc.list_cis(db, ws)
-    return [{"id": c.id, "workspaceId": c.workspace_id,
-             "description": c.description,
-             "designItemNumber": c.partmaster_partnumber,
-             "designItemName": "",
-             "designItemLatestVersion": "",
-             "author": _get_user_dto(db, c.author_login, ws),
-             "creationDate": _fmt_date(c.creation_date),
-             "hasModificationNotification": False,
-             "pathToPathLinks": []} for c in cis]
+    return [_ci_to_dict(c, db) for c in cis]
 
 
 @router.get("/workspaces/{ws}/products/numbers")
@@ -171,15 +193,7 @@ def create_ci(ws: str, body: dict,
     desc = body.get("description", "")
     part = body.get("designItemNumber", body.get("partNumber", body.get("partMasterNumber", "")))
     ci = svc.create_ci(db, ws, ci_id, desc, part, current_user.login)
-    return {"id": ci.id, "workspaceId": ci.workspace_id,
-             "designItemNumber": ci.partmaster_partnumber,
-             "designItemName": "",
-             "designItemLatestVersion": "",
-             "description": ci.description,
-             "author": _get_user_dto(db, ci.author_login, ws),
-             "creationDate": _fmt_date(ci.creation_date),
-             "hasModificationNotification": False,
-             "pathToPathLinks": []}
+    return _ci_to_dict(ci, db)
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}")
@@ -188,15 +202,7 @@ def get_ci(ws: str, ci_id: str,
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
     ci = svc.get_ci(db, ws, ci_id)
-    return {"id": ci.id, "workspaceId": ci.workspace_id,
-             "description": ci.description,
-             "designItemNumber": ci.partmaster_partnumber,
-             "designItemName": "",
-             "designItemLatestVersion": "",
-             "author": _get_user_dto(db, ci.author_login, ws),
-             "creationDate": _fmt_date(ci.creation_date),
-             "hasModificationNotification": False,
-             "pathToPathLinks": []}
+    return _ci_to_dict(ci, db)
 
 
 @router.delete("/workspaces/{ws}/products/{ci_id}", status_code=204)
@@ -213,15 +219,7 @@ def update_ci(ws: str, ci_id: str, body: dict,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     ci = svc.update_ci(db, ws, ci_id, body)
-    return {"id": ci.id, "workspaceId": ci.workspace_id,
-             "designItemNumber": ci.partmaster_partnumber,
-             "designItemName": "",
-             "designItemLatestVersion": "",
-             "description": ci.description,
-             "author": _get_user_dto(db, ci.author_login, ws),
-             "creationDate": _fmt_date(ci.creation_date),
-             "hasModificationNotification": False,
-             "pathToPathLinks": []}
+    return _ci_to_dict(ci, db)
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/filter")
@@ -286,7 +284,7 @@ def create_baseline(ws: str, ci_id: str, body: dict,
         bl_type = 0 if bl_type.upper() == "LATEST" else 1
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
-                               current_user.login)
+                               current_user.login, body.get("baselinedParts"))
     return {"id": bl.id, "name": bl.name}
 
 
@@ -423,7 +421,28 @@ def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
 def list_product_instances(ws: str,
                             current_user: Account = Depends(get_current_user),
                             db: Session = Depends(get_db)):
-    return []
+    instances = svc.list_instances(db, ws)
+    return [{"serialNumber": i.serialnumber,
+             "workspaceId": i.workspace_id,
+             "configurationItemId": i.configurationitem_id}
+            for i in instances]
+
+
+@router.get("/workspaces/{ws}/product-instances/{sn}")
+@router.get("/workspaces/{ws}/product-instances/{sn}/", include_in_schema=False)
+def get_product_instance(ws: str, sn: str,
+                          current_user: Account = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    inst = db.query(ProductInstanceMaster).filter(
+        ProductInstanceMaster.workspace_id == ws,
+        ProductInstanceMaster.serialnumber == sn,
+    ).first()
+    if not inst:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Product instance not found")
+    return {"serialNumber": inst.serialnumber,
+            "workspaceId": inst.workspace_id,
+            "configurationItemId": inst.configurationitem_id}
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/releases/last")

@@ -5,6 +5,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
 from app.services.change_service import ChangeService
@@ -14,6 +15,15 @@ router = APIRouter()
 svc = ChangeService()
 
 _NAME_CACHE: dict = {}
+
+
+def _check_workspace_access(db: Session, ws: str, login: str):
+    """检查用户是否有工作区访问权限，无权限时抛出 AccessRightException(403)。"""
+    row = db.execute(sql_text(
+        "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
+    ), {"l": login, "w": ws}).first()
+    if not row:
+        raise AccessRightException("AccessRightException")
 
 def _get_user_name(db: Session, login: str) -> str:
     if not login:
@@ -65,10 +75,8 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
     )
 
     if is_request:
-        data["addressedChangeIssues"] = []
         data["milestoneId"] = getattr(item, "milestone_id", None) or -1
     elif is_order:
-        data["addressedChangeRequests"] = []
         data["milestoneId"] = getattr(item, "milestone_id", None) or -1
 
     # 从 DB 查询受影响的零件和文档
@@ -98,16 +106,50 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
                 {"documentKey": f"{r[0]}-{r[1]}", "documentMasterId": r[0], "version": r[1]}
                 for r in rows
             ]
+        # 关联的变更项
+        if is_request:
+            issue_ids = db.execute(sql_text(
+                "SELECT changeissue_id FROM changerequest_changeissue "
+                "WHERE changerequest_id=:iid"
+            ), {"iid": item.id}).fetchall()
+            if issue_ids:
+                issues = db.query(ChangeIssue).filter(
+                    ChangeIssue.id.in_([r[0] for r in issue_ids])
+                ).all()
+                data["addressedChangeIssues"] = [_item_to_dict(i, db) for i in issues]
+            else:
+                data["addressedChangeIssues"] = []
+        elif is_order:
+            req_ids = db.execute(sql_text(
+                "SELECT changerequest_id FROM changeorder_changerequest "
+                "WHERE changeorder_id=:iid"
+            ), {"iid": item.id}).fetchall()
+            if req_ids:
+                requests = db.query(ChangeRequest).filter(
+                    ChangeRequest.id.in_([r[0] for r in req_ids])
+                ).all()
+                data["addressedChangeRequests"] = [_item_to_dict(r, db) for r in requests]
+            else:
+                data["addressedChangeRequests"] = []
 
     return data
 
 
 def _milestone_to_dict(ms, db: Optional[Session] = None) -> dict:
+    num_requests = 0
+    num_orders = 0
+    if db:
+        num_requests = db.execute(sql_text(
+            "SELECT COUNT(*) FROM changerequest WHERE milestone_id=:id"
+        ), {"id": ms.id}).scalar() or 0
+        num_orders = db.execute(sql_text(
+            "SELECT COUNT(*) FROM changeorder WHERE milestone_id=:id"
+        ), {"id": ms.id}).scalar() or 0
     data = dict(
         description=getattr(ms, "description", "") or "",
         id=ms.id,
-        numberOfOrders=0,
-        numberOfRequests=0,
+        numberOfOrders=num_orders,
+        numberOfRequests=num_requests,
         title=getattr(ms, "title", "") or "",
         workspaceId=getattr(ms, "workspace_id", ""),
         writable=True,
@@ -158,6 +200,7 @@ def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
 @router.get("/workspaces/{ws}/changes/issues/", include_in_schema=False)
 def list_issues(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return [_item_to_dict(i, db) for i in svc.list_items(db, ws, "issues")]
 
 
@@ -166,6 +209,7 @@ def list_issues(ws: str, current_user: Account = Depends(get_current_user),
 def create_issue(ws: str, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     it = svc.create_item(db, ws, "issue", body, current_user.login)
     return _item_to_dict(it, db)
 
@@ -178,7 +222,7 @@ def search_issues(ws: str, q: str = "",
     items = db.query(ChangeIssue).filter(
         ChangeIssue.workspace_id == ws,
         ChangeIssue.name.ilike(f'%{q}%')
-    ).all()
+    ).limit(8).all()
     return [_item_to_dict(i, db) for i in items]
 
 
@@ -234,6 +278,8 @@ def remove_issue_tag(ws: str, item_id: int, tag_label: str,
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-documents")
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-documents/", include_in_schema=False)
 def set_issue_affected_documents(ws: str, item_id: int, body: dict,
+
+                                 current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeissue_affected_document", "changeissue_id")
@@ -243,6 +289,8 @@ def set_issue_affected_documents(ws: str, item_id: int, body: dict,
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts")
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts/", include_in_schema=False)
 def set_issue_affected_parts(ws: str, item_id: int, body: dict,
+
+                              current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeissue_affected_part", "changeissue_id")
@@ -289,7 +337,7 @@ def search_requests(ws: str, q: str = "",
     items = db.query(ChangeRequest).filter(
         ChangeRequest.workspace_id == ws,
         ChangeRequest.name.ilike(f'%{q}%')
-    ).all()
+    ).limit(8).all()
     return [_item_to_dict(r, db) for r in items]
 
 
@@ -342,6 +390,8 @@ def remove_request_tag(ws: str, item_id: int, tag_label: str,
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents")
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents/", include_in_schema=False)
 def set_request_affected_documents(ws: str, item_id: int, body: dict,
+
+                                   current_user: Account = Depends(get_current_user),
                                    db: Session = Depends(get_db)):
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changereq_affected_document", "changerequest_id")
@@ -351,6 +401,8 @@ def set_request_affected_documents(ws: str, item_id: int, body: dict,
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts")
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts/", include_in_schema=False)
 def set_request_affected_parts(ws: str, item_id: int, body: dict,
+
+                                current_user: Account = Depends(get_current_user),
                                 db: Session = Depends(get_db)):
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changereq_affected_part", "changerequest_id")
@@ -360,6 +412,8 @@ def set_request_affected_parts(ws: str, item_id: int, body: dict,
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues")
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues/", include_in_schema=False)
 def set_request_affected_issues(ws: str, item_id: int, body: dict,
+
+                                 current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     db.execute(sql_text(
         "DELETE FROM changerequest_changeissue WHERE changerequest_id=:iid"
@@ -416,7 +470,7 @@ def search_orders(ws: str, q: str = "",
     items = db.query(ChangeOrder).filter(
         ChangeOrder.workspace_id == ws,
         ChangeOrder.name.ilike(f'%{q}%')
-    ).all()
+    ).limit(8).all()
     return [_item_to_dict(o, db) for o in items]
 
 
@@ -469,6 +523,8 @@ def remove_order_tag(ws: str, item_id: int, tag_label: str,
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-documents")
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-documents/", include_in_schema=False)
 def set_order_affected_documents(ws: str, item_id: int, body: dict,
+
+                                 current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeorder_affected_document", "changeorder_id")
@@ -478,6 +534,8 @@ def set_order_affected_documents(ws: str, item_id: int, body: dict,
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts")
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts/", include_in_schema=False)
 def set_order_affected_parts(ws: str, item_id: int, body: dict,
+
+                              current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeorder_affected_part", "changeorder_id")
@@ -487,6 +545,8 @@ def set_order_affected_parts(ws: str, item_id: int, body: dict,
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests")
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests/", include_in_schema=False)
 def set_order_affected_requests(ws: str, item_id: int, body: dict,
+
+                                 current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     db.execute(sql_text(
         "DELETE FROM changeorder_changerequest WHERE changeorder_id=:iid"
