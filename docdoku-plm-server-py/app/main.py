@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from app.routers import auth, parts, part_files, document_files, folders, documents, document_templates, products, product_instances, product_files, changes, roles, users, accounts, admin, notifications, webhooks, workflows, workspaces, organizations, misc, shared
+from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, changes, roles, users, accounts, admin, notifications, webhooks, workflows, workspaces, organizations, misc, shared
 from app.core.exception_handlers import register_exception_handlers
 from app.core.security import verify_token
 from app.core.database import SessionLocal
@@ -55,8 +55,13 @@ app.add_middleware(UserLanguageMiddleware)
 
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(parts.router, prefix=API_PREFIX)
+app.include_router(part.router)
+app.include_router(part_templates.router)
+app.include_router(effectivity.router)
 app.include_router(part_files.router, prefix=API_PREFIX)
 app.include_router(documents.router, prefix=API_PREFIX)
+app.include_router(document.router)
+app.include_router(document_baselines.router)
 app.include_router(document_files.router, prefix=API_PREFIX)
 app.include_router(folders.router, prefix=API_PREFIX)
 app.include_router(document_templates.router, prefix=API_PREFIX)

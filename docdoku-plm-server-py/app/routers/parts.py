@@ -1,6 +1,5 @@
-"""零件集合路由（与 Payara 路径完全一致）。"""
-import re
-from datetime import datetime
+"""零件集合路由（PartsResource）。"""
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -8,27 +7,15 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.part import PartRevision, PartIteration, Conversion, part_revision_tags
+from app.models.part import PartRevision, PartIteration, part_revision_tags
 from app.schemas.part import (
-    PartRevisionDTO, PartCreationDTO, PartIterationUpdateDTO,
-    ConversionDTO, ConversionResultDTO, CountDTO, LightPartMasterDTO,
+    PartRevisionDTO, PartCreationDTO, CountDTO, LightPartMasterDTO,
 )
 from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision
-from app.services import converter
-from app.services.acl_helper import apply_acl
-from app.services.workflow_manager import workflow_service
 
 router = APIRouter()
 svc = ProductService()
-
-
-def _split_part_key(part_key: str) -> tuple[str, str]:
-    """从路径参数拆分零件号和版本（零件号可含 -，版本仅 [A-Z]+）。"""
-    m = re.match(r'^(.+)-([A-Z]+)$', part_key)
-    if not m:
-        raise HTTPException(400, f"Invalid part key format: {part_key}")
-    return m.group(1), m.group(2)
 
 
 @router.get("/workspaces/{workspace_id}/parts", response_model=list[PartRevisionDTO])
@@ -100,192 +87,6 @@ def search_parts(
     return [map_revision(pr, db) for pr in revisions]
 
 
-@router.get("/workspaces/{workspace_id}/part-templates")
-@router.get("/workspaces/{workspace_id}/part-templates/", include_in_schema=False)
-def list_part_templates(workspace_id: str,
-                        current_user: Account = Depends(get_current_user),
-                        db: Session = Depends(get_db)):
-    from app.models.part import PartMasterTemplate
-    templates = (
-        db.query(PartMasterTemplate)
-        .filter(PartMasterTemplate.workspace_id == workspace_id)
-        .all()
-    )
-    result = []
-    for t in templates:
-        result.append({
-            "id": t.id,
-            "workspaceId": t.workspace_id,
-            "mask": t.mask,
-            "idGenerated": t.id_generated,
-            "partType": t.part_type,
-            "attributesLocked": t.attributes_locked,
-            "authorLogin": t.author_login,
-            "authorWorkspaceId": t.author_workspace_id,
-            "creationDate": t.creation_date.isoformat() if t.creation_date else None,
-            "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-            "aclId": t.acl_id,
-            "workflowModelId": t.workflowmodel_id,
-        })
-    return result
-
-
-@router.get("/workspaces/{workspace_id}/part-templates/{template_id}")
-@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/", include_in_schema=False)
-def get_part_template(workspace_id: str, template_id: str,
-                      current_user: Account = Depends(get_current_user),
-                      db: Session = Depends(get_db)):
-    from app.models.part import PartMasterTemplate
-    t = (
-        db.query(PartMasterTemplate)
-        .filter(PartMasterTemplate.workspace_id == workspace_id,
-                PartMasterTemplate.id == template_id)
-        .first()
-    )
-    if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
-    return {
-        "id": t.id,
-        "workspaceId": t.workspace_id,
-        "mask": t.mask,
-        "idGenerated": t.id_generated,
-        "partType": t.part_type,
-        "attributesLocked": t.attributes_locked,
-        "authorLogin": t.author_login,
-        "authorWorkspaceId": t.author_workspace_id,
-        "creationDate": t.creation_date.isoformat() if t.creation_date else None,
-        "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "aclId": t.acl_id,
-        "workflowModelId": t.workflowmodel_id,
-    }
-
-
-@router.post("/workspaces/{workspace_id}/part-templates", status_code=201)
-@router.post("/workspaces/{workspace_id}/part-templates/", status_code=201, include_in_schema=False)
-def create_part_template(workspace_id: str,
-                         body: dict = Body(...),
-                         current_user: Account = Depends(get_current_user),
-                         db: Session = Depends(get_db)):
-    from app.models.part import PartMasterTemplate
-    t = PartMasterTemplate(
-        id=body.get("id", ""),
-        workspace_id=workspace_id,
-        mask=body.get("mask", ""),
-        id_generated=body.get("idGenerated", False),
-        part_type=body.get("partType", ""),
-        attributes_locked=body.get("attributesLocked", False),
-        author_login=current_user.login,
-        author_workspace_id=workspace_id,
-        creation_date=datetime.utcnow(),
-        modification_date=datetime.utcnow(),
-        acl_id=body.get("aclId"),
-        workflowmodel_id=body.get("workflowModelId"),
-    )
-    db.add(t)
-    db.commit()
-    return {
-        "id": t.id,
-        "workspaceId": t.workspace_id,
-        "mask": t.mask,
-        "idGenerated": t.id_generated,
-        "partType": t.part_type,
-        "attributesLocked": t.attributes_locked,
-        "authorLogin": t.author_login,
-        "authorWorkspaceId": t.author_workspace_id,
-        "creationDate": t.creation_date.isoformat() if t.creation_date else None,
-        "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "aclId": t.acl_id,
-        "workflowModelId": t.workflowmodel_id,
-    }
-
-
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}")
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/", include_in_schema=False)
-def update_part_template(workspace_id: str, template_id: str,
-                         body: dict = Body(...),
-                         current_user: Account = Depends(get_current_user),
-                         db: Session = Depends(get_db)):
-    from app.models.part import PartMasterTemplate
-    t = (
-        db.query(PartMasterTemplate)
-        .filter(PartMasterTemplate.workspace_id == workspace_id,
-                PartMasterTemplate.id == template_id)
-        .first()
-    )
-    if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
-    if "mask" in body:
-        t.mask = body["mask"]
-    if "idGenerated" in body:
-        t.id_generated = body["idGenerated"]
-    if "partType" in body:
-        t.part_type = body["partType"]
-    if "attributesLocked" in body:
-        t.attributes_locked = body["attributesLocked"]
-    if "workflowModelId" in body:
-        t.workflowmodel_id = body["workflowModelId"]
-    t.modification_date = datetime.utcnow()
-    db.commit()
-    return {
-        "id": t.id,
-        "workspaceId": t.workspace_id,
-        "mask": t.mask,
-        "idGenerated": t.id_generated,
-        "partType": t.part_type,
-        "attributesLocked": t.attributes_locked,
-        "authorLogin": t.author_login,
-        "authorWorkspaceId": t.author_workspace_id,
-        "creationDate": t.creation_date.isoformat() if t.creation_date else None,
-        "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "aclId": t.acl_id,
-        "workflowModelId": t.workflowmodel_id,
-    }
-
-
-@router.delete("/workspaces/{workspace_id}/part-templates/{template_id}", status_code=204)
-@router.delete("/workspaces/{workspace_id}/part-templates/{template_id}/", status_code=204, include_in_schema=False)
-def delete_part_template(workspace_id: str, template_id: str,
-                         current_user: Account = Depends(get_current_user),
-                         db: Session = Depends(get_db)):
-    from app.models.part import PartMasterTemplate
-    t = (
-        db.query(PartMasterTemplate)
-        .filter(PartMasterTemplate.workspace_id == workspace_id,
-                PartMasterTemplate.id == template_id)
-        .first()
-    )
-    if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
-    db.delete(t)
-    db.commit()
-    return Response(status_code=204)
-
-
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/acl")
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/acl/", include_in_schema=False)
-def update_part_template_acl(workspace_id: str, template_id: str,
-                             body: dict = Body(...),
-                             current_user: Account = Depends(get_current_user),
-                             db: Session = Depends(get_db)):
-    from app.models.part import PartMasterTemplate
-    from app.services.acl_helper import apply_acl
-    t = (
-        db.query(PartMasterTemplate)
-        .filter(PartMasterTemplate.workspace_id == workspace_id,
-                PartMasterTemplate.id == template_id)
-        .first()
-    )
-    if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
-    user_entries = body.get("userEntries", {})
-    group_entries = body.get("groupEntries", {})
-    new_acl_id = apply_acl(db, t.acl_id, user_entries, group_entries)
-    if t.acl_id != new_acl_id:
-        t.acl_id = new_acl_id
-        db.commit()
-    return {"aclId": new_acl_id}
-
-
 @router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}")
 @router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}/", include_in_schema=False)
 def get_parts_by_tag(workspace_id: str, tag_id: str,
@@ -302,14 +103,6 @@ def get_parts_by_tag(workspace_id: str, tag_id: str,
         .all()
     )
     return [map_revision(pr, db) for pr in revisions]
-
-
-@router.get("/workspaces/{workspace_id}/parts/queries")
-@router.get("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
-def get_queries(workspace_id: str,
-                current_user: Account = Depends(get_current_user),
-                db: Session = Depends(get_db)):
-    return []
 
 
 @router.get("/workspaces/{workspace_id}/parts/parts_last_iter")
@@ -356,32 +149,6 @@ def parts_last_iter(workspace_id: str, q: str = Query(""),
     return result
 
 
-@router.get("/workspaces/{workspace_id}/parts/imports/{filename}")
-@router.get("/workspaces/{workspace_id}/parts/imports/{filename}/", include_in_schema=False)
-def imports_get(workspace_id: str, filename: str,
-                current_user: Account = Depends(get_current_user)):
-    return {}
-
-
-@router.get("/workspaces/{workspace_id}/parts/import/{import_id}")
-@router.get("/workspaces/{workspace_id}/parts/import/{import_id}/", include_in_schema=False)
-def import_get(workspace_id: str, import_id: str,
-               current_user: Account = Depends(get_current_user)):
-    return {}
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_number}/latest-revision",
-             response_model=PartRevisionDTO)
-def get_latest_revision(
-    workspace_id: str,
-    part_number: str,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    pr = svc.get_latest_revision(db, workspace_id, part_number)
-    return map_revision(pr, db)
-
-
 @router.post("/workspaces/{workspace_id}/parts",
             response_model=PartRevisionDTO, status_code=201)
 @router.post("/workspaces/{workspace_id}/parts/",
@@ -396,341 +163,15 @@ def create_part(
     return map_revision(pr, db)
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component/", include_in_schema=False)
-def used_by_component(workspace_id: str, part_key: str,
-                      current_user: Account = Depends(get_current_user),
-                      db: Session = Depends(get_db)):
-    from sqlalchemy import text
-    number, version = _split_part_key(part_key)
-    rows = db.execute(text(
-        "SELECT DISTINCT pr.workspace_id, pr.partmaster_partnumber, pr.version "
-        "FROM partrevision pr "
-        "JOIN partiteration pi ON pi.workspace_id = pr.workspace_id "
-        "  AND pi.partmaster_partnumber = pr.partmaster_partnumber "
-        "  AND pi.partrevision_version = pr.version "
-        "JOIN partiteration_partusagelink piul "
-        "  ON piul.workspace_id = pi.workspace_id "
-        "  AND piul.partmaster_partnumber = pi.partmaster_partnumber "
-        "  AND piul.partrevision_version = pi.partrevision_version "
-        "  AND piul.iteration = pi.iteration "
-        "JOIN partusagelink pul ON pul.id = piul.component_id "
-        "WHERE pul.component_workspace_id = :ws AND pul.component_partnumber = :pn"
-    ), {"ws": workspace_id, "pn": number}).fetchall()
-    result = []
-    for row in rows:
-        pr = svc.get_revision(db, row.workspace_id, row.partmaster_partnumber,
-                              row.version)
-        result.append(map_revision(pr, db))
-    return result
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute/", include_in_schema=False)
-def used_by_substitute(workspace_id: str, part_key: str,
-                       current_user: Account = Depends(get_current_user),
-                       db: Session = Depends(get_db)):
-    from sqlalchemy import text
-    number, version = _split_part_key(part_key)
-    rows = db.execute(text(
-        "SELECT DISTINCT pr.workspace_id, pr.partmaster_partnumber, pr.version "
-        "FROM partrevision pr "
-        "JOIN partiteration pi ON pi.workspace_id = pr.workspace_id "
-        "  AND pi.partmaster_partnumber = pr.partmaster_partnumber "
-        "  AND pi.partrevision_version = pr.version "
-        "JOIN partiteration_partusagelink piul "
-        "  ON piul.workspace_id = pi.workspace_id "
-        "  AND piul.partmaster_partnumber = pi.partmaster_partnumber "
-        "  AND piul.partrevision_version = pi.partrevision_version "
-        "  AND piul.iteration = pi.iteration "
-        "JOIN pusagelink_psubstitutelink upl ON upl.partusagelink_id = piul.component_id "
-        "JOIN partsubstitutelink psl ON psl.id = upl.partsubstitute_id "
-        "WHERE psl.substitute_workspace_id = :ws AND psl.substitute_partnumber = :pn"
-    ), {"ws": workspace_id, "pn": number}).fetchall()
-    result = []
-    for row in rows:
-        pr = svc.get_revision(db, row.workspace_id, row.partmaster_partnumber,
-                              row.version)
-        result.append(map_revision(pr, db))
-    return result
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances/", include_in_schema=False)
-def get_instances(workspace_id: str, part_key: str,
-                  current_user: Account = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    return []
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines/", include_in_schema=False)
-def get_baselines(workspace_id: str, part_key: str,
-                  current_user: Account = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    return []
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows/", include_in_schema=False)
-def get_aborted_workflows(workspace_id: str, part_key: str,
-                          current_user: Account = Depends(get_current_user),
-                          db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    return workflow_service.get_aborted_workflows_for_part(
-        db, workspace_id, number, version)
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters/", include_in_schema=False)
-def used_by_product(workspace_id: str, part_key: str,
-                    current_user: Account = Depends(get_current_user),
-                    db: Session = Depends(get_db)):
-    return []
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}",
-            response_model=PartRevisionDTO)
-def get_part_revision(
-    workspace_id: str,
-    part_key: str,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    return map_revision(pr, db)
-
-
-@router.delete("/workspaces/{workspace_id}/parts/{part_key}",
-               status_code=204)
-def delete_part_revision(
-    workspace_id: str,
-    part_key: str,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    svc.delete_revision(db, workspace_id, number, version, current_user.login)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/checkout",
-            response_model=PartRevisionDTO)
-def checkout_part(
-    workspace_id: str,
-    part_key: str,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    pr = svc.checkout(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/checkin",
-            response_model=PartRevisionDTO)
-def checkin_part(
-    workspace_id: str,
-    part_key: str,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    pr = svc.checkin(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/undocheckout",
-            response_model=PartRevisionDTO)
-def undo_checkout_part(
-    workspace_id: str,
-    part_key: str,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    pr = svc.undo_checkout(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}",
-            response_model=PartRevisionDTO)
-def update_iteration(
-    workspace_id: str,
-    part_key: str,
-    iteration: int,
-    body: PartIterationUpdateDTO,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    pr = svc.update_iteration(db, workspace_id, number, version,
-                               iteration, current_user.login, body)
-    return map_revision(pr, db)
-
-
-@router.get(
-    "/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion",
-    response_model=ConversionDTO,
-)
-def get_conversion_status(
-    workspace_id: str,
-    part_key: str,
-    iteration: int,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    conv = svc.get_conversion(db, workspace_id, number, version, iteration)
-    if conv is None:
-        return Response(status_code=204)
-    return ConversionDTO(
-        pending=conv.pending or False,
-        succeed=conv.succeed or False,
-        startDate=conv.start_date,
-        endDate=conv.end_date,
-    )
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion")
-def conversion_callback(
-    workspace_id: str,
-    part_key: str,
-    body: ConversionResultDTO,
-    current_user: Account = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    number, version = _split_part_key(part_key)
-    converter.handle_callback(db, workspace_id, number, version, body)
-    db.commit()
-    return {"status": "ok"}
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/release",
-            response_model=PartRevisionDTO)
-def release_part(workspace_id: str, part_key: str,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.release(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/obsolete",
-            response_model=PartRevisionDTO)
-def obsolete_part(workspace_id: str, part_key: str,
-                  current_user: Account = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.mark_obsolete(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/newVersion",
-            response_model=PartRevisionDTO)
-def new_version_part(workspace_id: str, part_key: str,
-                     current_user: Account = Depends(get_current_user),
-                     db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.create_new_version(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/tags",
-            response_model=PartRevisionDTO)
-def set_tags(workspace_id: str, part_key: str,
-             body: dict = Body(...),
-             current_user: Account = Depends(get_current_user),
-             db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.set_tags(db, workspace_id, number, version, body.get("tags", []))
-    return map_revision(pr, db)
-
-
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/tags",
-             response_model=PartRevisionDTO)
-def add_tag(workspace_id: str, part_key: str,
-            body: dict = Body(...),
-            current_user: Account = Depends(get_current_user),
-            db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.add_tag(db, workspace_id, number, version, body.get("tag", ""))
-    return map_revision(pr, db)
-
-
-@router.delete("/workspaces/{workspace_id}/parts/{part_key}/tags/{tag_label}",
-               response_model=PartRevisionDTO)
-def remove_tag(workspace_id: str, part_key: str, tag_label: str,
-               current_user: Account = Depends(get_current_user),
-               db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.remove_tag(db, workspace_id, number, version, tag_label)
-    return map_revision(pr, db)
-
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags/", include_in_schema=False)
-def get_tags(workspace_id: str, part_key: str,
-             current_user: Account = Depends(get_current_user),
-             db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    return [t.label for t in (pr.tags or [])]
-
-
-# ── share / publish / unpublish ────────────────────────────────
-
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/share")
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/share/", include_in_schema=False)
-def share_part(workspace_id: str, part_key: str,
-               current_user: Account = Depends(get_current_user),
-               db: Session = Depends(get_db)):
-    import uuid
-    from app.models.part import SharedEntity
-    number, version = _split_part_key(part_key)
-    svc.get_revision(db, workspace_id, number, version)
-    shared_uuid = str(uuid.uuid4())
-    entity = SharedEntity(
-        uuid=shared_uuid,
-        dtype="SharedPart",
-        creation_date=datetime.utcnow(),
-        author_workspace_id=workspace_id,
-        author_login=current_user.login,
-        workspace_id=workspace_id,
-        entity_workspace_id=workspace_id,
-        partmaster_partnumber=number,
-        partrevision_version=version,
-    )
-    db.add(entity)
-    db.commit()
-    return {"uuid": shared_uuid, "workspaceId": workspace_id}
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/publish")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/publish/", include_in_schema=False)
-def publish_part(workspace_id: str, part_key: str,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    pr.public_shared = True
-    db.commit()
-    return map_revision(pr, db)
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish/", include_in_schema=False)
-def unpublish_part(workspace_id: str, part_key: str,
-                   current_user: Account = Depends(get_current_user),
-                   db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    pr.public_shared = False
-    db.commit()
-    return map_revision(pr, db)
-
-
 # ── queries stubs ──────────────────────────────────────────────
+
+@router.get("/workspaces/{workspace_id}/parts/queries")
+@router.get("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
+def get_queries(workspace_id: str,
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    return []
+
 
 @router.post("/workspaces/{workspace_id}/parts/queries")
 @router.post("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
@@ -762,11 +203,24 @@ def query_export(current_user: Account = Depends(get_current_user)):
 
 # ── imports ────────────────────────────────────────────────────
 
+@router.get("/workspaces/{workspace_id}/parts/imports/{filename}")
+@router.get("/workspaces/{workspace_id}/parts/imports/{filename}/", include_in_schema=False)
+def imports_get(workspace_id: str, filename: str,
+                current_user: Account = Depends(get_current_user)):
+    return {}
+
+
+@router.get("/workspaces/{workspace_id}/parts/import/{import_id}")
+@router.get("/workspaces/{workspace_id}/parts/import/{import_id}/", include_in_schema=False)
+def import_get(workspace_id: str, import_id: str,
+               current_user: Account = Depends(get_current_user)):
+    return {}
+
+
 @router.post("/parts/import", status_code=201)
 @router.post("/parts/import/", status_code=201, include_in_schema=False)
 def post_import(body: dict = Body(...),
                 current_user: Account = Depends(get_current_user)):
-    import uuid
     import_id = f"import-{uuid.uuid4().hex[:12]}"
     return {"id": import_id}
 
@@ -775,7 +229,6 @@ def post_import(body: dict = Body(...),
 @router.post("/parts/importPreview/", status_code=201, include_in_schema=False)
 def post_import_preview(body: dict = Body(...),
                         current_user: Account = Depends(get_current_user)):
-    import uuid
     import_id = f"import-{uuid.uuid4().hex[:12]}"
     return {"id": import_id}
 
@@ -785,77 +238,3 @@ def post_import_preview(body: dict = Body(...),
 def delete_import(import_id: str,
                   current_user: Account = Depends(get_current_user)):
     return Response(status_code=204)
-
-
-# ── filter by baseline ─────────────────────────────────────────
-
-@router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}")
-@router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}/", include_in_schema=False)
-def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
-                       current_user: Account = Depends(get_current_user),
-                       db: Session = Depends(get_db)):
-    return []
-
-
-# ── retry conversion ───────────────────────────────────────────
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion/", include_in_schema=False)
-def retry_conversion(workspace_id: str, part_key: str, iteration: int,
-                     current_user: Account = Depends(get_current_user),
-                     db: Session = Depends(get_db)):
-    number, version = _split_part_key(part_key)
-    conv = svc.get_conversion(db, workspace_id, number, version, iteration)
-    if conv is None:
-        conv = svc.create_conversion(db, workspace_id, number, version, iteration)
-    else:
-        conv.pending = True
-        conv.succeed = False
-        conv.start_date = None
-        conv.end_date = None
-    db.commit()
-    return {"status": "retry_queued"}
-
-
-# ── Effectivity stubs ──────────────────────────────────────────
-
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities/", include_in_schema=False)
-def get_effectivities(workspace_id: str, part_key: str,
-                       current_user: Account = Depends(get_current_user)):
-    return []
-
-
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/effectivities", status_code=201)
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/effectivities/", status_code=201, include_in_schema=False)
-def create_effectivity(workspace_id: str, part_key: str, body: dict = Body(...),
-                        current_user: Account = Depends(get_current_user)):
-    return Response(status_code=201)
-
-
-@router.delete("/workspaces/{workspace_id}/parts/{part_key}/effectivities/{effectivity_id}", status_code=204)
-@router.delete("/workspaces/{workspace_id}/parts/{part_key}/effectivities/{effectivity_id}/", status_code=204, include_in_schema=False)
-def delete_effectivity(workspace_id: str, part_key: str, effectivity_id: int,
-                        current_user: Account = Depends(get_current_user)):
-    return Response(status_code=204)
-
-
-# ── ACL ────────────────────────────────────────────────────────
-
-
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl/", include_in_schema=False)
-def update_part_acl(workspace_id: str, part_key: str, body: dict,
-                    db: Session = Depends(get_db),
-                    current_user: Account = Depends(get_current_user)):
-    number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    acl_id = getattr(pr, "acl_id", None)
-    user_entries = body.get("userEntries", {})
-    group_entries = body.get("groupEntries", {})
-    new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
-    if pr.acl_id != new_acl_id:
-        pr.acl_id = new_acl_id
-        db.commit()
-    return {"aclId": new_acl_id}
-
