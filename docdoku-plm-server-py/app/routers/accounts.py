@@ -40,3 +40,23 @@ def create_account(body: dict, db: Session = Depends(get_db)):
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     return user_mgmt_service.list_workspaces_for_user(db, current_user.login)
+
+
+@router.get("/admin/accounts-stats")
+def accounts_stats(db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    from sqlalchemy import text
+    total = db.execute(text("SELECT COUNT(*) FROM account")).scalar()
+    enabled = db.execute(text("SELECT COUNT(*) FROM account WHERE enabled = true")).scalar()
+    disabled = total - enabled if total else 0
+    return {"totalAccounts": total or 0, "enabledAccounts": enabled or 0,
+            "disabledAccounts": disabled}
+
+
+@router.get("/admin/workspace-stats")
+def workspace_stats(db: Session = Depends(get_db),
+                    current_user: Account = Depends(get_current_user)):
+    from sqlalchemy import text
+    total = db.execute(text("SELECT COUNT(*) FROM workspace")).scalar()
+    enabled = db.execute(text("SELECT COUNT(*) FROM workspace WHERE enabled = true")).scalar()
+    return {"totalWorkspaces": total or 0, "enabledWorkspaces": enabled or 0}
