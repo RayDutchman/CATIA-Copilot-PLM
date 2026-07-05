@@ -1,4 +1,5 @@
 """工作区 CRUD 端点。"""
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -69,11 +70,17 @@ def reachable_users(db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/stats-overview")
 def stats_overview(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    products = db.execute(text("SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     parts = db.execute(text("SELECT COUNT(*) FROM partmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     docs = db.execute(text("SELECT COUNT(*) FROM documentmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     users = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
-    return {"parts": parts, "documents": docs, "users": users, "products": products}
+    return {
+        "parts": parts,
+        "documents": docs,
+        "users": users,
+        "products": 0,
+        "checkedOutDocuments": 0,
+        "checkedOutParts": 0,
+    }
 
 
 @router.get("/workspaces/{ws}/disk-usage")
@@ -85,8 +92,21 @@ def disk_usage(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/disk-usage-stats")
 def disk_usage_stats(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    return {"total": 0, "documents": 0, "parts": 0,
-            "documentTemplates": 0, "partTemplates": 0}
+    vault = Path("/data/vault") / ws
+    total = 0
+    parts_size = 0
+    docs_size = 0
+    if vault.exists():
+        for p in vault.rglob("*"):
+            if p.is_file():
+                size = p.stat().st_size
+                total += size
+                if "/parts/" in str(p):
+                    parts_size += size
+                elif "/documents/" in str(p):
+                    docs_size += size
+    return {"total": total, "documents": docs_size, "parts": parts_size,
+            "partTemplates": 0, "documentTemplates": 0}
 
 
 @router.get("/workspaces/{ws}/checked-out-documents-stats")

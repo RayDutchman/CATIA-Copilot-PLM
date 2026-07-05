@@ -97,9 +97,14 @@ def create_model(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/workflow-models/{{model_id}}/", include_in_schema=False)
 def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
+    activity_models = body.get("activityModels")
     m = workflow_service.update_model(db, ws, model_id,
-                                       body.get("finalLifecycleState", ""))
-    return _model_to_dict(m, db)
+                                       body.get("finalLifecycleState", ""),
+                                       activity_models=activity_models)
+    result = _model_to_dict(m, db)
+    if activity_models:
+        result["activityModels"] = activity_models
+    return result
 
 
 @router.delete(f"{PREFIX}/workflow-models/{{model_id}}", status_code=204)

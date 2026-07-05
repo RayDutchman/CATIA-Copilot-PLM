@@ -37,9 +37,13 @@ class WorkflowService:
         return m
 
     def update_model(self, db: Session, ws: str, model_id: str,
-                     final_state: str) -> WorkflowModel:
+                     final_state: str,
+                     activity_models: list = None) -> WorkflowModel:
         m = self.get_model(db, ws, model_id)
         m.finalLifecycleState = final_state
+        # activityModels 关联的是 Workflow 实例（activity/task 表通过 workflow_id 关联），
+        # 模板编辑时还没有 Workflow 实例，MVP 策略：暂不持久化 activityModels，
+        # 由 router 层在响应中回显前端发来的 activities
         db.commit()
         db.refresh(m)
         return m
