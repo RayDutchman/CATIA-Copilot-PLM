@@ -1,5 +1,6 @@
 from datetime import datetime
 from fastapi import HTTPException
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.models.change import (
     ChangeIssue, ChangeRequest, ChangeOrder, Milestone,
@@ -81,6 +82,19 @@ class ChangeService:
 
     def delete_item(self, db: Session, cls, ws: str, item_id: int):
         item = self.get_by_id(db, cls, ws, item_id)
+        # 清理受影响关联（通过原始 SQL 写入的关联，ORM 不感知）
+        prefix_map = {
+            ChangeIssue: "changeissue",
+            ChangeOrder: "changeorder",
+            ChangeRequest: "changereq",
+        }
+        prefix = prefix_map.get(cls, "")
+        if prefix:
+            for suffix in ("_affected_part", "_affected_document"):
+                db.execute(sql_text(
+                    f"DELETE FROM {prefix}{suffix} "
+                    f"WHERE {prefix}_id=:iid"
+                ), {"iid": item_id})
         db.delete(item)
         db.commit()
 

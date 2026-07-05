@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-07-05 — Bug修复：文档搜索 + 变更项受影响关联
+
+- fix(py): documents搜索端点支持高级搜索全参数（id/title/version/author/tags/content/日期/attributes/分页），前端高级搜索弹窗可用
+- fix(py): changes路由 affected-parts/documents 6个stub handler实现真实DB写入（changeissue/changereq/changeorder 关联表），含清旧+写新+读取回显+删除级联清理
+- fix(py): change_service.delete_item 删除变更项时级联清理受影响的零件/文档关联记录
+
 ## 2026-07-05 — 系统化对拍 + 全量补齐 + 生产端收尾
 
 ### full_compare_v2 专项修复

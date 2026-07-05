@@ -1,6 +1,7 @@
 """变更管理端点路由（ChangeIssues/ChangeRequests/ChangeOrders/Milestones）。"""
 from typing import Optional
 from fastapi import APIRouter, Depends
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -70,6 +71,34 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
         data["addressedChangeRequests"] = []
         data["milestoneId"] = getattr(item, "milestone_id", None) or -1
 
+    # 从 DB 查询受影响的零件和文档
+    if db:
+        prefix_map = {
+            ChangeIssue: ("changeissue", "changeissue_id"),
+            ChangeOrder: ("changeorder", "changeorder_id"),
+            ChangeRequest: ("changereq", "changerequest_id"),
+        }
+        prefix, id_col = prefix_map.get(type(item), ("", ""))
+        if prefix:
+            # affected parts
+            rows = db.execute(sql_text(
+                f"SELECT partmaster_partnumber, partrevision_version "
+                f"FROM {prefix}_affected_part WHERE {id_col}=:iid"
+            ), {"iid": item.id}).fetchall()
+            data["affectedParts"] = [
+                {"partKey": f"{r[0]}-{r[1]}", "partNumber": r[0], "version": r[1]}
+                for r in rows
+            ]
+            # affected documents
+            rows = db.execute(sql_text(
+                f"SELECT documentmaster_id, documentrevision_version "
+                f"FROM {prefix}_affected_document WHERE {id_col}=:iid"
+            ), {"iid": item.id}).fetchall()
+            data["affectedDocuments"] = [
+                {"documentKey": f"{r[0]}-{r[1]}", "documentMasterId": r[0], "version": r[1]}
+                for r in rows
+            ]
+
     return data
 
 
@@ -87,6 +116,40 @@ def _milestone_to_dict(ms, db: Optional[Session] = None) -> dict:
     if dd:
         data["dueDate"] = dd.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dd.microsecond // 1000:03d}Z"
     return data
+
+
+def _set_affected_parts(db, ws, item_id, parts_data, table_name, id_column):
+    """写入变更项受影响的零件关联。"""
+    db.execute(sql_text(f"DELETE FROM {table_name} WHERE {id_column}=:iid"),
+               {"iid": item_id})
+    for part_data in parts_data:
+        part_key = part_data.get("partKey", "")
+        parts_split = part_key.rsplit("-", 1)
+        pn = parts_split[0] if len(parts_split) == 2 else part_key
+        ver = parts_split[1] if len(parts_split) == 2 else "A"
+        db.execute(sql_text(
+            f"INSERT INTO {table_name} ({id_column}, partmaster_workspace_id, "
+            f"partmaster_partnumber, partrevision_version, iteration) "
+            f"VALUES (:iid, :ws, :pn, :ver, 1)"
+        ), {"iid": item_id, "ws": ws, "pn": pn, "ver": ver})
+    db.commit()
+
+
+def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
+    """写入变更项受影响的文档关联。"""
+    db.execute(sql_text(f"DELETE FROM {table_name} WHERE {id_column}=:iid"),
+               {"iid": item_id})
+    for doc_data in docs_data:
+        doc_key = doc_data.get("documentKey", "")
+        parts_split = doc_key.rsplit("-", 1)
+        dm_id = parts_split[0] if len(parts_split) == 2 else doc_key
+        ver = parts_split[1] if len(parts_split) == 2 else "A"
+        db.execute(sql_text(
+            f"INSERT INTO {table_name} ({id_column}, documentmaster_workspace_id, "
+            f"documentmaster_id, documentrevision_version, iteration) "
+            f"VALUES (:iid, :ws, :did, :ver, 1)"
+        ), {"iid": item_id, "ws": ws, "did": dm_id, "ver": ver})
+    db.commit()
 
 
 # ── Issues ──
@@ -167,13 +230,19 @@ def remove_issue_tag(ws: str, item_id: int, tag_label: str,
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-documents")
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-documents/", include_in_schema=False)
-def set_issue_affected_documents(ws: str, item_id: int, body: dict):
+def set_issue_affected_documents(ws: str, item_id: int, body: dict,
+                                 db: Session = Depends(get_db)):
+    _set_affected_documents(db, ws, item_id, body.get("documents", []),
+                            "changeissue_affected_document", "changeissue_id")
     return {"status": "ok"}
 
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts")
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts/", include_in_schema=False)
-def set_issue_affected_parts(ws: str, item_id: int, body: dict):
+def set_issue_affected_parts(ws: str, item_id: int, body: dict,
+                              db: Session = Depends(get_db)):
+    _set_affected_parts(db, ws, item_id, body.get("parts", []),
+                        "changeissue_affected_part", "changeissue_id")
     return {"status": "ok"}
 
 
@@ -266,13 +335,19 @@ def remove_request_tag(ws: str, item_id: int, tag_label: str,
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents")
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents/", include_in_schema=False)
-def set_request_affected_documents(ws: str, item_id: int, body: dict):
+def set_request_affected_documents(ws: str, item_id: int, body: dict,
+                                   db: Session = Depends(get_db)):
+    _set_affected_documents(db, ws, item_id, body.get("documents", []),
+                            "changereq_affected_document", "changerequest_id")
     return {"status": "ok"}
 
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts")
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts/", include_in_schema=False)
-def set_request_affected_parts(ws: str, item_id: int, body: dict):
+def set_request_affected_parts(ws: str, item_id: int, body: dict,
+                                db: Session = Depends(get_db)):
+    _set_affected_parts(db, ws, item_id, body.get("parts", []),
+                        "changereq_affected_part", "changerequest_id")
     return {"status": "ok"}
 
 
@@ -371,13 +446,19 @@ def remove_order_tag(ws: str, item_id: int, tag_label: str,
 
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-documents")
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-documents/", include_in_schema=False)
-def set_order_affected_documents(ws: str, item_id: int, body: dict):
+def set_order_affected_documents(ws: str, item_id: int, body: dict,
+                                 db: Session = Depends(get_db)):
+    _set_affected_documents(db, ws, item_id, body.get("documents", []),
+                            "changeorder_affected_document", "changeorder_id")
     return {"status": "ok"}
 
 
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts")
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts/", include_in_schema=False)
-def set_order_affected_parts(ws: str, item_id: int, body: dict):
+def set_order_affected_parts(ws: str, item_id: int, body: dict,
+                              db: Session = Depends(get_db)):
+    _set_affected_parts(db, ws, item_id, body.get("parts", []),
+                        "changeorder_affected_part", "changeorder_id")
     return {"status": "ok"}
 
 

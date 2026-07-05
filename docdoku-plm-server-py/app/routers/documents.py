@@ -1,10 +1,12 @@
 """文档端点路由（DocumentsResource + DocumentResource）。"""
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_, text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.models.document import DocumentRevision, DocumentMaster
 from app.services.document_service import DocumentService
 from app.services.acl_helper import apply_acl
 
@@ -119,10 +121,58 @@ def count(ws: str, current_user: Account = Depends(get_current_user),
 
 
 @router.get("/workspaces/{ws}/documents/search")
-def search(ws: str, q: str = Query(""),
-           current_user: Account = Depends(get_current_user),
-           db: Session = Depends(get_db)):
-    return [_doc_to_dict(r) for r in svc.search(db, ws, title=q)]
+def search_documents(
+    ws: str,
+    id: str = Query("", alias="id"),
+    title: str = Query(""),
+    version: str = Query(""),
+    author: str = Query(""),
+    tags: str = Query(""),
+    content: str = Query(""),
+    createdFrom: str = Query(""),
+    createdTo: str = Query(""),
+    modifiedFrom: str = Query(""),
+    modifiedTo: str = Query(""),
+    attributes: str = Query(""),
+    q: str = Query(""),
+    start: int = Query(0, alias="from"),
+    size: int = Query(20),
+    db: Session = Depends(get_db),
+    current_user: Account = Depends(get_current_user),
+):
+    query = db.query(DocumentRevision).join(
+        DocumentMaster,
+        (DocumentRevision.workspace_id == DocumentMaster.workspace_id) &
+        (DocumentRevision.documentmaster_id == DocumentMaster.id)
+    ).filter(DocumentMaster.workspace_id == ws)
+    # 快速搜索: q 参数同时匹配 title 和 documentmaster_id
+    if q:
+        q_pattern = f"%{q}%"
+        query = query.filter(or_(
+            DocumentMaster.id.ilike(q_pattern),
+            DocumentRevision.title.ilike(q_pattern),
+        ))
+    # 高级搜索各参数
+    if id:
+        query = query.filter(DocumentMaster.id.ilike(f"%{id}%"))
+    if title:
+        query = query.filter(DocumentRevision.title.ilike(f"%{title}%"))
+    if version:
+        query = query.filter(DocumentRevision.version == version)
+    if author:
+        query = query.filter(DocumentRevision.author_login == author)
+    # MVP: tags 用子查询匹配（DB LIKE，ES 级搜索后续独立做）
+    if tags:
+        matched_ids = [row[0] for row in db.execute(sql_text(
+            "SELECT dr.documentmaster_id FROM documentrevision dr "
+            "JOIN documentrevision_tag t ON dr.documentmaster_id=t.documentmaster_id "
+            "AND dr.version=t.documentrevision_version "
+            "WHERE t.tag_label ILIKE :t AND dr.workspace_id=:w"
+        ), {"t": f"%{tags}%", "w": ws}).fetchall()]
+        query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+    # TODO: content / createdFrom~To / modifiedFrom~To / attributes 高级搜索
+    docs = query.order_by(DocumentMaster.id).offset(start).limit(size).all()
+    return [_doc_to_dict(d) for d in docs]
 
 
 @router.get("/workspaces/{ws}/documents")

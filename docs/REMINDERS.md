@@ -96,3 +96,5 @@
 - [x] **`ConverterBean` race condition**：查 pending conversion 记录（2026-06-18）
 - [x] **空几何体转换报失败**：`no geometry generated` → `succeed=true`（2026-06-22）
 - [x] **装配结构 amount=0**：`sync.py` 补充 `"amount"` 字段（2026-06-22）
+- [x] **文档搜索不可用（高级搜索多参数）**：documents.py search端点补全 id/title/version/author/tags/分页参数，前端高级搜索弹窗可用（2026-07-05）
+- [x] **变更项受影响的零件/文档无法添加**：changes.py 6个affected stub handler实现真实DB写入+读取回显+删除级联清理（2026-07-05）
