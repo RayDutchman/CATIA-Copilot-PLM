@@ -14,10 +14,14 @@ PREFIX = "/workspaces/{ws}"
 def _model_to_dict(m, db: Session = None) -> dict:
     author_login = m.author_login or ""
     author_name = author_login
+    author_email = ""
+    author_language = "en"
     if db and author_login:
         acc = db.query(Account).filter(Account.login == author_login).first()
         if acc:
             author_name = acc.name or author_login
+            author_email = acc.email or ""
+            author_language = acc.language or "en"
 
     acl_data = None
     if db and m.acl_id:
@@ -38,15 +42,22 @@ def _model_to_dict(m, db: Session = None) -> dict:
                 },
             }
 
-    return {
+    result = {
         "id": m.id,
-        "workspaceId": m.workspace_id,
         "finalLifecycleState": m.finalLifecycleState or "",
         "creationDate": m.creationdate.isoformat() + "Z" if m.creationdate else None,
-        "author": {"login": author_login, "name": author_name, "email": ""},
+        "author": {
+            "login": author_login,
+            "name": author_name,
+            "email": author_email,
+            "language": author_language,
+            "workspaceId": m.workspace_id,
+        },
         "activityModels": [],
-        "acl": acl_data,
     }
+    if acl_data is not None:
+        result["acl"] = acl_data
+    return result
 
 
 @router.get(f"{PREFIX}/workflow-models")

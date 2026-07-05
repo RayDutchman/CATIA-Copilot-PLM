@@ -20,6 +20,14 @@ def _group_to_dict(g):
     return {"id": g.id, "workspaceId": g.workspace_id}
 
 
+@router.get(f"{PREFIX}/users-stats")
+def users_stats(ws: str, db: Session = Depends(get_db),
+                current_user: Account = Depends(get_current_user)):
+    from sqlalchemy import text
+    total = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar()
+    return {"totalUsers": total or 0}
+
+
 @router.get(f"{PREFIX}/users")
 def list_users(ws: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
@@ -99,6 +107,19 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     user_mgmt_service.remove_user_from_workspace(db, ws, body.get("login", ""))
     return {"status": "ok"}
+
+
+@router.get(f"{PREFIX}/groups/{{group_id}}/users")
+def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
+                       current_user: Account = Depends(get_current_user)):
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT a.login, a.name, a.email, a.language "
+        "FROM account a "
+        "JOIN usergroupmapping m ON a.login = m.login "
+        "WHERE m.groupname = :gid"
+    ), {"gid": group_id}).fetchall()
+    return [{"login": r[0], "name": r[1], "email": r[2], "language": r[3]} for r in rows]
 
 
 @router.put(f"{PREFIX}/enable-user")
