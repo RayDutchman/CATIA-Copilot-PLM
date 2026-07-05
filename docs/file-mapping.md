@@ -56,6 +56,16 @@
 | 48 | `LOVManagerBean.java` | `LOVResource.java` | — | `workspaces.py` | 值列表 |
 | 49 | — | `TagResource.java` | — | `workspaces.py` | 标签管理 |
 | 50 | — | `AttributesResource.java` | — | `workspaces.py` | 属性管理 |
+| 51 | `EffectivityManagerBean.java` | `EffectivityResource.java` | — | — | 有效性管理（**缺 Python 实现**） |
+| 52 | — | `PartEffectivityResource.java` | — | — | 零件有效性（**缺 Python 实现**） |
+| 53 | — | `PartTemplateResource.java` | — | `parts.py`（部分） | 零件模板 CRUD |
+| 54 | — | `PartTemplateBinaryResource.java` | — | `parts.py`（部分） | 零件模板文件 |
+| 55 | — | `LayerResource.java` | — | — | 产品图层/Marker（**缺 Python 实现**） |
+| 56 | `ImporterBean.java` | — | — | `parts.py`（import 端点） | 属性/BOM 导入 |
+| 57 | `OrganizationManagerBean.java` | `OrganizationResource.java` | — | `organizations.py` | 组织管理 |
+| 58 | `PlatformOptionsManagerBean.java` | `PlatformResource.java` | — | `admin.py` | 平台选项 |
+| 59 | `PlatformHealthManagerBean.java` | — | — | `misc.py` | 平台健康检查 |
+| 60 | `PublicEntityManagerBean.java` | — | — | — | 公开实体管理（无直接 REST 端点） |
 
 ## 检查 Prompt 模板
 
