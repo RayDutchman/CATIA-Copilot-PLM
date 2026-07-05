@@ -49,6 +49,12 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
     return {"parts": parts, "documents": docs, "users": users}
 
 
+@router.get("/workspaces/{ws}/disk-usage")
+def disk_usage(ws: str, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    return {"total": 0}
+
+
 @router.get("/workspaces/{ws}")
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
