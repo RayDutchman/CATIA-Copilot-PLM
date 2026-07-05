@@ -8,6 +8,7 @@ from app.models.product import (
     ProductInstanceMaster, ProductInstanceIteration,
 )
 from app.models.part import PartMaster, PartRevision, PartIteration, PartUsageLink, CADInstance
+from app.models.auth import Account
 from app.core.exceptions import EntityAlreadyExistsException, EntityConstraintException
 
 
@@ -68,6 +69,31 @@ class ProductStructureService:
     def _build_component(self, db: Session, rev: PartRevision, usage_link, path: str,
                          depth=None):
         last_it = rev.last_iteration
+        # author: 对齐 Java ComponentDTO.setAuthor(pm.getAuthor().getName())
+        author_name = rev.part_master.author_login or ""
+        pm_author_acct = db.query(Account).filter(
+            Account.login == rev.part_master.author_login).first()
+        if pm_author_acct and pm_author_acct.name:
+            author_name = pm_author_acct.name
+        # checkOutUser: 对齐 Java UserDTO（含 login/name/email/workspaceId）
+        chk_user = None
+        if rev.checkout_user_login:
+            chk_user = {
+                "login": rev.checkout_user_login,
+                "workspaceId": rev.checkout_user_workspace_id,
+            }
+            chk_acct = db.query(Account).filter(
+                Account.login == rev.checkout_user_login).first()
+            if chk_acct:
+                chk_user["name"] = chk_acct.name
+                chk_user["email"] = chk_acct.email
+                chk_user["language"] = chk_acct.language
+        # virtual/substitute: 对齐 Java usageLink instanceof PartSubstituteLink
+        is_virtual = False
+        is_substitute = False
+        if usage_link:
+            is_virtual = getattr(usage_link, 'is_virtual', False)
+            is_substitute = getattr(usage_link, 'is_substitute', False)
         comp = {
             "number": rev.partmaster_partnumber,
             "name": rev.part_master.name or "",
@@ -83,13 +109,13 @@ class ProductStructureService:
             "assembly": bool(last_it and last_it.components),
             "released": rev.status == 1,
             "obsolete": rev.status == 2,
-            "author": rev.author_login or "",
-            "authorLogin": rev.author_login or "",
-            "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else None,
+            "author": author_name,
+            "authorLogin": rev.part_master.author_login or "",
+            "checkOutUser": chk_user,
             "checkOutDate": str(rev.check_out_date) if rev.check_out_date else None,
             "lastIterationNumber": rev.last_iteration_number,
-            "virtual": False,
-            "substitute": False,
+            "virtual": is_virtual,
+            "substitute": is_substitute,
             "partUsageLinkReferenceDescription": usage_link.reference_description if usage_link else None,
             "hasPathData": False,
             "accessDeny": False,

@@ -1,5 +1,6 @@
 """产品端点路由（ProductResource + Configurations + Baselines）。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -16,7 +17,12 @@ def list_cis(ws: str, current_user: Account = Depends(get_current_user),
     cis = svc.list_cis(db, ws)
     return [{"id": c.id, "workspaceId": c.workspace_id,
              "description": c.description,
-             "partNumber": c.partmaster_partnumber} for c in cis]
+             "designItemNumber": c.partmaster_partnumber,
+             "designItemName": "",
+             "designItemLatestVersion": "",
+             "author": {"login": c.author_login, "name": c.author_login},
+             "hasModificationNotification": False,
+             "pathToPathLinks": []} for c in cis]
 
 
 @router.get("/workspaces/{ws}/products/numbers")
@@ -37,7 +43,7 @@ def create_ci(ws: str, body: dict,
     part = body.get("designItemNumber", body.get("partNumber", body.get("partMasterNumber", "")))
     ci = svc.create_ci(db, ws, ci_id, desc, part, current_user.login)
     return {"id": ci.id, "workspaceId": ci.workspace_id,
-            "description": ci.description, "partNumber": ci.partmaster_partnumber}
+            "description": ci.description, "designItemNumber": ci.partmaster_partnumber}
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}")
@@ -46,15 +52,21 @@ def get_ci(ws: str, ci_id: str,
            db: Session = Depends(get_db)):
     ci = svc.get_ci(db, ws, ci_id)
     return {"id": ci.id, "workspaceId": ci.workspace_id,
-            "description": ci.description, "partNumber": ci.partmaster_partnumber}
+            "description": ci.description,
+            "designItemNumber": ci.partmaster_partnumber,
+            "designItemName": "",
+            "designItemLatestVersion": "",
+            "author": {"login": ci.author_login, "name": ci.author_login},
+            "hasModificationNotification": False,
+            "pathToPathLinks": []}
 
 
-@router.delete("/workspaces/{ws}/products/{ci_id}")
+@router.delete("/workspaces/{ws}/products/{ci_id}", status_code=204)
 def delete_ci(ws: str, ci_id: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     svc.delete_ci(db, ws, ci_id)
-    return {"status": "deleted"}
+    return Response(status_code=204)
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/filter")
