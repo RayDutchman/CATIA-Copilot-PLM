@@ -64,9 +64,10 @@ def _model_to_dict(m, db: Session = None) -> dict:
             "language": author_language,
             "workspaceId": m.workspace_id,
         },
-        "acl": acl_data,
         "activityModels": [],
     }
+    if acl_data is not None:
+        result["acl"] = acl_data
     return result
 
 
