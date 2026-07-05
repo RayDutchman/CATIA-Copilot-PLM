@@ -56,6 +56,42 @@ def disk_usage(ws: str, db: Session = Depends(get_db),
     return {"total": 0}
 
 
+@router.get("/workspaces/{ws}/disk-usage-stats")
+def disk_usage_stats(ws: str, db: Session = Depends(get_db),
+                     current_user: Account = Depends(get_current_user)):
+    return {"total": 0, "documents": 0, "parts": 0, "documentTemplates": 0}
+
+
+@router.get("/workspaces/{ws}/checked-out-documents-stats")
+def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
+                           current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/checked-out-parts-stats")
+def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
+                            current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/front-options")
+def front_options(ws: str, db: Session = Depends(get_db),
+                  current_user: Account = Depends(get_current_user)):
+    return {}
+
+
+@router.get("/workspaces/{ws}/back-options")
+def back_options(ws: str, db: Session = Depends(get_db),
+                  current_user: Account = Depends(get_current_user)):
+    return {}
+
+
+@router.get("/workspaces/{ws}/tags")
+def workspace_tags(ws: str, db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    return []
+
+
 @router.get("/workspaces/{ws}")
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
