@@ -246,13 +246,10 @@ def reindex_workspace(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/tags/", include_in_schema=False)
 def workspace_tags(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    try:
-        rows = db.execute(text(
-            "SELECT DISTINCT label FROM tag WHERE workspace_id = :ws ORDER BY label"
-        ), {"ws": ws}).fetchall()
-        return [{"id": r[0], "label": r[0], "workspaceId": ws} for r in rows]
-    except Exception:
-        return []
+    rows = db.execute(text(
+        "SELECT label, workspace_id FROM tag WHERE workspace_id = :ws ORDER BY label"
+    ), {"ws": ws}).fetchall()
+    return [{"id": r[0], "label": r[0], "workspaceId": r[1]} for r in rows]
 
 
 @router.get("/workspaces/{ws}/tags/{tag_id}/documents")
@@ -266,30 +263,43 @@ def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/lov/", include_in_schema=False)
 def list_of_values(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    try:
-        return []
-    except Exception:
-        return []
+    rows = db.execute(text(
+        "SELECT l.name, l.workspace_id FROM lov l WHERE l.workspace_id = :ws ORDER BY l.name"
+    ), {"ws": ws}).fetchall()
+    result = {}
+    for r in rows:
+        name = r[0]
+        nv_rows = db.execute(text(
+            "SELECT nv.name, nv.value FROM lov_namevalue nv "
+            "WHERE nv.lov_name = :name AND nv.lov_workspace_id = :ws "
+            "ORDER BY nv.namevalue_order"
+        ), {"name": name, "ws": ws}).fetchall()
+        result[name] = [{"name": n[0], "value": n[1]} for n in nv_rows]
+    return result
 
 
 @router.get("/workspaces/{ws}/attributes/part-iterations")
 @router.get("/workspaces/{ws}/attributes/part-iterations/", include_in_schema=False)
 def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
-    try:
-        return []
-    except Exception:
-        return []
+    rows = db.execute(text(
+        "SELECT DISTINCT ia.name FROM partiteration_attribute pia "
+        "JOIN instanceattribute ia ON ia.id = pia.instanceattribute_id "
+        "WHERE pia.workspace_id = :ws ORDER BY ia.name"
+    ), {"ws": ws}).fetchall()
+    return [r[0] for r in rows]
 
 
 @router.get("/workspaces/{ws}/attributes/path-data")
 @router.get("/workspaces/{ws}/attributes/path-data/", include_in_schema=False)
 def attributes_path_data(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    try:
-        return []
-    except Exception:
-        return []
+    rows = db.execute(text(
+        "SELECT DISTINCT iat.name FROM partiteration_pathdata_attr ppa "
+        "JOIN instanceattributetemplate iat ON iat.id = ppa.instanceattribute_template_id "
+        "WHERE ppa.workspace_id = :ws ORDER BY iat.name"
+    ), {"ws": ws}).fetchall()
+    return [r[0] for r in rows]
 
 
 @router.get("/workspaces/{ws}")
