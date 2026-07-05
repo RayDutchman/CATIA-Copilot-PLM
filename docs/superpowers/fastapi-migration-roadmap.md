@@ -138,6 +138,8 @@
 
 ### 防御性检查清单（每阶段实现端点后逐项检查）
 
+**0. （新增）读前端 Model——提取响应必需字段。** 每个 POST 返回的 JSON 必须包含前端 Backbone model `parse()`/`initialize()` 中访问的所有字段。curl 对拍只比 HTTP 层，覆盖不了 `model.author.name` 这类 JS 层字段缺失导致的静默崩溃。**在写代码之前就搞清楚前端需要什么字段。**
+
 1. **尾斜杠（Trailing Slash）**：前端 Backbone.js 的 `collection.create()` 会在 URL 后加 `/`。FastAPI 默认把 `/parts/` redirect 307 到 `/parts`，AJAX POST 不跟随 307 → **创建永远失败**。**每个 POST/PUT 端点必须同时注册带 `/` 和不带 `/` 的双路由。**
 
 2. **前端发送 camelCase**：前端发 `standardPart`、`workspaceId`、`reference`（非 `standard_part`、`workspace_id`、`number`）。Pydantic v2 默认 case-insensitive 匹配可以应对简单字段，但 `populate_by_name=True` 仅在定义了 `alias` 时才生效。**DTO 字段要么用前端相同的 camelCase 命名，要么显式加 `alias`。**
