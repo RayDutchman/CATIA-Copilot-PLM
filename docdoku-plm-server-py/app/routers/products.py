@@ -16,15 +16,15 @@ _NAME_CACHE: dict = {}
 
 def _get_user_dto(db: Session, login: str, ws: str) -> dict:
     if not login:
-        return {"login": "", "name": "", "email": None, "workspaceId": ws}
+        return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws}
     if login in _NAME_CACHE:
         cached = _NAME_CACHE[login]
-        return {"login": login, "name": cached, "email": None, "workspaceId": ws}
+        return {"login": login, "name": cached, "email": None, "language": None, "workspaceId": ws}
     from app.models.auth import Account
     acc = db.query(Account).filter(Account.login == login).first()
     name = acc.name if (acc and acc.name) else login
     _NAME_CACHE[login] = name
-    return {"login": login, "name": name, "email": None, "workspaceId": ws}
+    return {"login": login, "name": name, "email": None, "language": None, "workspaceId": ws}
 
 def _fmt_date(d) -> str | None:
     if d is None:

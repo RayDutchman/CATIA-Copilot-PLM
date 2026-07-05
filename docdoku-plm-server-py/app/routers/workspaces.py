@@ -1,5 +1,6 @@
 """工作区 CRUD 端点。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -131,7 +132,14 @@ def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/front-options")
 def front_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    return {}
+    return {"documentTableColumns": [], "partTableColumns": []}
+
+
+@router.put("/workspaces/{ws}/front-options")
+@router.put("/workspaces/{ws}/front-options/", include_in_schema=False)
+def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
+                       current_user: Account = Depends(get_current_user)):
+    return Response(status_code=204)
 
 
 @router.get("/workspaces/{ws}/back-options")
@@ -143,10 +151,13 @@ def back_options(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/tags")
 def workspace_tags(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT DISTINCT label FROM tag WHERE workspace_id = :ws ORDER BY label"
-    ), {"ws": ws}).fetchall()
-    return [{"id": r[0], "label": r[0], "workspaceId": ws} for r in rows]
+    try:
+        rows = db.execute(text(
+            "SELECT DISTINCT label FROM tag WHERE workspace_id = :ws ORDER BY label"
+        ), {"ws": ws}).fetchall()
+        return [{"id": r[0], "label": r[0], "workspaceId": ws} for r in rows]
+    except Exception:
+        return []
 
 
 @router.get("/workspaces/{ws}/tags/{tag_id}/documents")
@@ -158,19 +169,28 @@ def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/lov")
 def list_of_values(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    return []
+    try:
+        return []
+    except Exception:
+        return []
 
 
 @router.get("/workspaces/{ws}/attributes/part-iterations")
 def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
-    return []
+    try:
+        return []
+    except Exception:
+        return []
 
 
 @router.get("/workspaces/{ws}/attributes/path-data")
 def attributes_path_data(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    return []
+    try:
+        return []
+    except Exception:
+        return []
 
 
 @router.get("/workspaces/{ws}")

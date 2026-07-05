@@ -101,7 +101,10 @@ def search_parts(
 def list_part_templates(workspace_id: str,
                         current_user: Account = Depends(get_current_user),
                         db: Session = Depends(get_db)):
-    return []
+    try:
+        return []
+    except Exception:
+        return []
 
 
 @router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}")

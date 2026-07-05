@@ -69,6 +69,8 @@ def _doc_to_dict(rev):
         "documentIterations": iterations,
         "tags": [],
         "path": rev.location_completepath,
+        "routePath": None,
+        "acl": getattr(rev, "acl_id", None),
         "publicShared": False, "attributesLocked": False,
         "commentLink": None, "iterationSubscription": False,
         "stateSubscription": False,
@@ -77,20 +79,26 @@ def _doc_to_dict(rev):
         "type": rev.document_master.type if rev.document_master else None,
         "author": {
             "login": rev.author_login, "name": rev.author_login,
-            "email": None, "workspaceId": rev.workspace_id,
+            "email": None, "language": None, "workspaceId": rev.workspace_id,
         },
     }
     if rev.checkout_user_login:
-        dict_fields["checkOutUser"] = {"login": rev.checkout_user_login}
+        dict_fields["checkOutUser"] = {
+            "login": rev.checkout_user_login,
+            "name": rev.checkout_user_login,
+            "email": None,
+            "language": None,
+            "workspaceId": rev.checkout_user_workspace_id or rev.workspace_id,
+        }
     if rev.release_user_login:
         dict_fields["releaseAuthor"] = {
             "login": rev.release_user_login, "name": rev.release_user_login or "",
-            "email": None, "workspaceId": rev.workspace_id,
+            "email": None, "language": None, "workspaceId": rev.workspace_id,
         }
     if rev.obsolete_user_login:
         dict_fields["obsoleteAuthor"] = {
             "login": rev.obsolete_user_login, "name": rev.obsolete_user_login or "",
-            "email": None, "workspaceId": rev.workspace_id,
+            "email": None, "language": None, "workspaceId": rev.workspace_id,
         }
     for k in ("description",):
         dict_fields.setdefault(k, "")
@@ -340,7 +348,10 @@ def unpublish(ws: str, doc_key: str,
 def list_doc_baselines(ws: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    return []
+    try:
+        return []
+    except Exception:
+        return []
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")

@@ -16,4 +16,4 @@ def list_timezones():
 
 @router.get("/platform/health")
 def platform_health():
-    return {"executionTime": 0}
+    return {"executionTime": 0, "status": "UP"}
