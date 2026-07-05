@@ -75,19 +75,11 @@ def reachable_users(db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/stats-overview/", include_in_schema=False)
 def stats_overview(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    # Payara 对齐: 统计有至少一个迭代的零件/文档（不限签入状态）
+    # 对齐 Payara: 直接 COUNT PartRevision/DocumentRevision 行数
     parts = db.execute(text(
-        "SELECT COUNT(DISTINCT pm.partnumber) FROM partmaster pm "
-        "JOIN partrevision pr ON pm.workspace_id=pr.workspace_id AND pm.partnumber=pr.partmaster_partnumber "
-        "JOIN partiteration pi ON pr.workspace_id=pi.workspace_id AND pr.partmaster_partnumber=pi.partmaster_partnumber AND pr.version=pi.partrevision_version "
-        "WHERE pm.workspace_id=:w"
-    ), {"w": ws}).scalar() or 0
+        "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     docs = db.execute(text(
-        "SELECT COUNT(DISTINCT dm.id) FROM documentmaster dm "
-        "JOIN documentrevision dr ON dm.workspace_id=dr.workspace_id AND dm.id=dr.documentmaster_id "
-        "JOIN documentiteration di ON dr.workspace_id=di.workspace_id AND dr.documentmaster_id=di.documentmaster_id AND dr.version=di.documentrevision_version "
-        "WHERE dm.workspace_id=:w"
-    ), {"w": ws}).scalar() or 0
+        "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     users = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     products = db.execute(text("SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     checked_out_docs = db.execute(text(

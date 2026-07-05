@@ -286,6 +286,16 @@ class ProductService:
                 it.attached_files[:] = []
             if it.geometries:
                 it.geometries[:] = []
+            # 清理 vault 物理文件（对齐 Payara removeCADFile/removeAttachedFiles）
+            try:
+                import shutil
+                from pathlib import Path
+                from app.core.config import settings
+                vault_dir = Path(settings.VAULT_PATH) / workspace_id / "parts" / number / version / str(it.iteration)
+                if vault_dir.exists():
+                    shutil.rmtree(vault_dir)
+            except Exception:
+                pass
         db.delete(pr)
         db.commit()
 
