@@ -6,7 +6,47 @@
 
 ---
 
-## 2026-07-05 — FA 全量差距修复（3/3）：缺失端点 + 字段差异
+## 2026-07-05 — 系统化对拍 + 全量补齐 + 生产端收尾
+
+### 系统化 Payara vs FastAPI 对拍
+
+- feat: `scripts/compare_all_endpoints.py` — 133 端点全量对拍脚本，支持 `--fresh`（清空→种子→动态解析ID→对拍）和 `--admin`（admin端点）
+- feat: 双后端对比端口——8000=FastAPI, 8005=Payara（Nginx server块完整复制主server，静态文件一致）
+- feat: Payara兜底移除→502 暴露遗漏端点
+- chore: 对拍从 37/133 MATCH 提升至 60/133（+23 MATCH，4轮批量修复）
+
+### Bug修复（生产端）
+
+- fix: changes/issues/link + requests/link 路由顺序错误 → 422（`/{item_id}`抢在`/link`之前）
+- fix: workflow-models `acl:null` 导致前端按钮disabled（subagent误回退，恢复条件返回）
+- perf: checked-out-docs-stats + checked-out-parts-stats 返回真实数据（Payara格式`{login:[{date:ts}]}`）
+- fix: product-baselines端点 + baseline type字符串→整数 + 前端URL对齐`/product-baselines/{ci}/baselines`
+- fix: workspace列表 allWorkspaces 过滤 userdata 约束
+- fix: workspace stats-overview 补 products 字段
+- fix: 3预存测试修复（document service stale数据 + CAD instance count lenient）
+
+### 全量补齐
+
+- feat: 8个缺失端点（user-group/users-admin/tasks-docs-parts/tags/lov/attributes/more）
+- feat: Admin/Organizations/Misc/Shared 全量端点（39个）
+- feat: 工作区CRUD（7端点）+ 子端点（front/back-options/disk-usage-stats等）
+- feat: P4 affected-documents/parts/issues/requests + ACL + link search
+- feat: P2/P3 16个子端点（documents/products/baselines）
+- fix: DocumentRevision.obsoleteAuthor/releaseAuthor + PartIteration.instanceAttributeTemplates
+- fix: ProductConfigurations补齐Payara字段 + CI详情补全
+- fix: accounts/me Payara格式（timeZone/enabled/admin）
+- fix: workflow finalLifeCycleState camelCase + health endpoint
+- fix: changes移除额外字段(initiator/priority/category)对齐Payara
+- fix: Nginx路由覆盖全部workspace子路径 + product-*路径
+
+### 测试与数据
+
+- feat: seed_test_data.py 增强（多账号+多所有者+附件+角色+受影响项）,--cleanup模式
+- test: 134 passed(↑ from 131), 0 new failures
+
+### 文档
+
+- docs: CHANGELOG/REMINDERS/路线图收尾
 
 - fix(py): users.py — 新增 `GET /workspaces/{ws}/user-group` 端点，查询 usergroup 表返回用户组列表
 - fix(py): users.py — 新增 `GET /workspaces/{ws}/users/{login}` 端点，返回指定用户信息

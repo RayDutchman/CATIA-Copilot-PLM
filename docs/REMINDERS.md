@@ -19,6 +19,9 @@
 
 ### 中优先级
 
+- [ ] **对拍脚本持续维护**：`scripts/compare_all_endpoints.py --fresh` 每次运行前清数据+种子→133端点对拍。新增端点/改字段后必跑。
+- [ ] **2 个文档测试偶尔失败**：`test_create_and_delete`/`test_duplicate_raises`——DocumentMaster 残留需手动清理。`docker exec ... psql -c "DELETE FROM documentmaster WHERE id IN ('P2SVC-1','P2SVC-DUP')"` 修复。
+
 - [ ] **装配同步仍走 Payara**：P1b 仅做零件单体 CRUD，装配 BOM 同步（update_iteration 含 _sync_components）仍在 Payara 处理。迁移到 FastAPI 待 P5+。
 
 - [ ] **搜索为 DB LIKE MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。功能正常但随数据量增长性能下降。后续 P5+ 独立子项目。

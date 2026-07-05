@@ -1,7 +1,7 @@
 # Payara → FastAPI 完整迁移路线图
 
 > **权威文档**：本文件是迁移路线图的唯一事实来源。取代散落在各 plan 文档和对话中的描述。每次规划新阶段前先读本文件。
-> **最后更新**：2026-07-05（P5 Payara 对拍 + 前端实测完成）
+> **最后更新**：2026-07-05（系统化对拍完成，133端点60 MATCH，双后端对比端口就绪）
 
 ---
 
@@ -135,6 +135,16 @@
 ---
 
 ## 已知风险（跨阶段）
+
+- **REST API BasicAuth 401 未解决**：`admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）。影响依赖 REST API 认证的工具集成（如 CATIA Copilot sync）。根因未查清，当前绕过方案是直接 DB 操作。
+- **WSL mirrored 网络重启后端口失效**：`wsl --shutdown` 重启可恢复，详见 REMINDERS。
+
+## 持续合规工具
+
+- **对拍脚本**：`scripts/compare_all_endpoints.py` —— 133端点逐双后端curl对比。用法：`python scripts/compare_all_endpoints.py --fresh`（清空→种子→对拍）。输出 MATCH/PARTIAL/MISMATCH 汇总。
+- **双后端对比端口**：8000=FastAPI（前端+back-py），8005=Payara（前端+back:8080）。两个tab并排对比前端行为。
+- **种子数据**：`scripts/seed_test_data.py` —— `--cleanup` 清空旧数据，无参创建20条跨5模块测试数据。
+- **全量测试**：`pytest tests/ -q` —— 134 passed
 
 - **REST API BasicAuth 401 未解决**：`admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）。影响依赖 REST API 认证的工具集成（如 CATIA Copilot sync）。根因未查清，当前绕过方案是直接 DB 操作。规划涉及 REST API 认证的阶段前需先排查。
 - **WSL mirrored 网络重启后端口失效**：`wsl --shutdown` 重启可恢复，详见 REMINDERS。
