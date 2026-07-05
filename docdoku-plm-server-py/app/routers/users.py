@@ -92,9 +92,14 @@ def my_memberships(ws: str, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/memberships/usergroups")
 def list_group_memberships(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
-    from app.models.user_mgmt import UserGroup
-    groups = db.query(UserGroup).filter(UserGroup.workspace_id == ws).all()
-    return [{"workspaceId": ws, "memberId": g.id, "readOnly": False, "member": {"id": g.id}} for g in groups]
+    """Payara 对齐：仅返回有工作区级别组成员关系的组（无显式关系时返回 []）"""
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT DISTINCT g.id, g.workspace_id FROM usergroup g "
+        "JOIN usergroupmapping m ON g.id = m.groupname "
+        "WHERE g.workspace_id = :ws"
+    ), {"ws": ws}).fetchall()
+    return [{"workspaceId": r[1], "memberId": r[0], "readOnly": False, "member": {"id": r[0]}} for r in rows]
 
 
 @router.get(f"{PREFIX}/memberships/usergroups/me")
