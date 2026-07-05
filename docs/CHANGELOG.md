@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-07-05 — FA 全量差距修复（3/3）：缺失端点 + 字段差异
+
+- fix(py): users.py — 新增 `GET /workspaces/{ws}/user-group` 端点，查询 usergroup 表返回用户组列表
+- fix(py): users.py — 新增 `GET /workspaces/{ws}/users/{login}` 端点，返回指定用户信息
+- fix(py): workflows.py — 新增 `GET /workspaces/{ws}/tasks/{login}/documents` 和 `tasks/{login}/parts` 端点
+- fix(py): workspaces.py — 新增 `GET /workspaces/{ws}/tags/{id}/documents`、`/lov`、`/attributes/part-iterations`、`/attributes/path-data` 端点
+- fix(py): workspaces.py — `GET /workspaces/{ws}/tags` 改为查询 DB tag 表返回 `{id, label, workspaceId}` 结构
+- fix(py): workspaces.py — 新增 `GET /workspaces/more` 端点
+- fix(py): workspaces.py — `disk-usage-stats` 新增 `partTemplates: 0` 字段
+- fix(py): workspaces.py — `back-options` 新增 `sendEmails: false, workspaceId: ws` 字段
+- fix(py): users.py — `users-stats` 重写为 Payara 格式（`users/activeusers/inactiveusers/groups/activegroups/inactivegroups`）
+- fix(py): accounts.py — 新增 `GET /accounts/me` 端点（此前仅有 PUT）
+- fix(py): organizations.py — `GET /organizations` 改为返回 204 空响应（匹配 Payara）
+- fix(py): schemas/part.py — `PartRevisionDTO`/`PartIterationDTO` 添加 `model_config = ConfigDict(exclude_none=True)`，使 null 字段不序列化，匹配 Payara Jackson 行为
+- fix(py): documents.py — `_doc_to_dict` 移除 Payara 不返回的字段（`acl`/`workflow`/`lifeCycleState`/`routePath`）
+- fix(py): changes.py — `issues/link`、`requests/link` 的 `q` 参数默认值已为 `""`（无需修改）
+
 ## 2026-07-05 — Workflow/Users/Admin/Misc FA 差距修复
 
 - fix(py): workflows.py — `_model_to_dict` 始终包含 `acl` 字段（无 ACL 时为 `null`），匹配 Payara 响应格式

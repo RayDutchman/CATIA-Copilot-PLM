@@ -68,11 +68,10 @@ def _doc_to_dict(rev):
         "lastIteration": rev.last_iteration_number,
         "documentIterations": iterations,
         "tags": [],
-        "acl": None, "workflow": None, "lifeCycleState": "WIP",
         "path": rev.location_completepath,
         "publicShared": False, "attributesLocked": False,
         "commentLink": None, "iterationSubscription": False,
-        "stateSubscription": False, "routePath": None,
+        "stateSubscription": False,
         "releaseAuthor": None,
         "obsoleteAuthor": None,
         "type": rev.document_master.type if rev.document_master else None,
@@ -93,9 +92,8 @@ def _doc_to_dict(rev):
             "login": rev.obsolete_user_login, "name": rev.obsolete_user_login or "",
             "email": None, "workspaceId": rev.workspace_id,
         }
-    for k in ("description", "lastIteration", "workflow", "lifeCycleState",
-              "obsoleteDate", "routePath", "tags"):
-        dict_fields.setdefault(k, None if k == "description" else "" if k == "tags" else [])
+    for k in ("description",):
+        dict_fields.setdefault(k, "")
     return dict_fields
 
 

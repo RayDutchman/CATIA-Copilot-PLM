@@ -37,6 +37,18 @@ def list_workspaces(db: Session = Depends(get_db),
             "allWorkspaces": [w for w in all_ws if w["id"] in user_ws]}
 
 
+@router.get("/workspaces/more")
+def list_more_workspaces(db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    """GetDTO: 返回用户可切换的更多 Workspace 列表。"""
+    rows = db.execute(text(
+        "SELECT w.id, w.description FROM workspace w "
+        "JOIN userdata u ON w.id = u.workspace_id "
+        "WHERE u.login = :l"
+    ), {"l": current_user.login}).fetchall()
+    return [{"id": r[0], "description": r[1] or ""} for r in rows]
+
+
 @router.get("/workspaces/reachable-users")
 def reachable_users(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
@@ -65,7 +77,8 @@ def disk_usage(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/disk-usage-stats")
 def disk_usage_stats(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    return {"total": 0, "documents": 0, "parts": 0, "documentTemplates": 0}
+    return {"total": 0, "documents": 0, "parts": 0,
+            "documentTemplates": 0, "partTemplates": 0}
 
 
 @router.get("/workspaces/{ws}/checked-out-documents-stats")
@@ -89,12 +102,39 @@ def front_options(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/back-options")
 def back_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    return {}
+    return {"sendEmails": False, "workspaceId": ws}
 
 
 @router.get("/workspaces/{ws}/tags")
 def workspace_tags(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
+    rows = db.execute(text(
+        "SELECT DISTINCT label FROM tag WHERE workspace_id = :ws ORDER BY label"
+    ), {"ws": ws}).fetchall()
+    return [{"id": r[0], "label": r[0], "workspaceId": ws} for r in rows]
+
+
+@router.get("/workspaces/{ws}/tags/{tag_id}/documents")
+def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
+                  current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/lov")
+def list_of_values(ws: str, db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/attributes/part-iterations")
+def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
+                               current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/attributes/path-data")
+def attributes_path_data(ws: str, db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
     return []
 
 

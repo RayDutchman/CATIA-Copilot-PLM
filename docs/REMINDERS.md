@@ -70,6 +70,8 @@
 
 ## 已解决（近期）
 
+- [x] **FA 全量差距修复（3/3）**：补齐 19 个缺失端点（user-group/users/{login}/tasks-docs/tasks-parts/tags-docs/lov/attributes/workspaces-more 等）+ Parts 响应 exclude_none + Documents 移除多余字段 + users-stats 格式对齐 + back-options 补字段 + organizations 204 + accounts/me GET（2026-07-05）
+
 - [x] **Workflow/Users/Admin/Misc FA 差距修复**：workflow-models acl 字段补齐/workflow-instances 403 权限校验/accounts/me 新增 enabled+admin+timeZone/accounts workspaces 新增 description+folderLocked/platform/health 改为 executionTime/accounts create 响应 admin 字段实时查询（2026-07-05）
 
 - [x] **P5 前端 Model 对齐审计修复**：6 问题全部修复——task status 字符串映射/author.name 查 Account/activities 非空/acl 非 null/aborted-workflows 端点/workspace-workflows 端点（2026-07-05）

@@ -2,8 +2,7 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class UserDTO(BaseModel):
@@ -89,6 +88,8 @@ ComponentDTO.model_rebuild()
 
 
 class PartIterationDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, exclude_none=True)
+
     workspaceId: str
     number: str
     version: str
@@ -107,11 +108,10 @@ class PartIterationDTO(BaseModel):
     attachedFiles: List[BinaryResourceDTO] = []
     linkedDocuments: List[dict] = []
 
-    class Config:
-        from_attributes = True
-
 
 class PartRevisionDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, exclude_none=True)
+
     workspaceId: str
     number: str
     version: str
@@ -146,9 +146,6 @@ class PartRevisionDTO(BaseModel):
         if not self.partKey:
             self.partKey = f"{self.number}-{self.version}"
         return self
-
-    class Config:
-        from_attributes = True
 
 
 class PartCreationDTO(BaseModel):

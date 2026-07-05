@@ -1,5 +1,5 @@
 """组织管理端点（stub 实现）。"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 def list_organizations(
     current_user: Account = Depends(get_current_user),
 ):
-    return []
+    return Response(status_code=204)
 
 
 @router.post("/organizations")

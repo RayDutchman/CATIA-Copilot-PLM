@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -23,8 +23,25 @@ def _group_to_dict(g):
 def users_stats(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     from sqlalchemy import text
-    total = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar()
-    return {"totalUsers": total or 0}
+    users = db.execute(text(
+        "SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"
+    ), {"w": ws}).scalar() or 0
+    active_users = db.execute(text(
+        "SELECT COUNT(*) FROM userdata u JOIN account a ON u.login = a.login "
+        "WHERE u.workspace_id = :w AND a.enabled = true"
+    ), {"w": ws}).scalar() or 0
+    groups = db.execute(text(
+        "SELECT COUNT(*) FROM usergroup WHERE workspace_id=:w"
+    ), {"w": ws}).scalar() or 0
+    active_groups = groups
+    return {
+        "users": users,
+        "activeusers": active_users,
+        "inactiveusers": users - active_users,
+        "groups": groups,
+        "activegroups": active_groups,
+        "inactivegroups": 0,
+    }
 
 
 @router.get(f"{PREFIX}/users")
@@ -202,6 +219,31 @@ def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     user_mgmt_service.disable_user(db, ws, body.get("login", ""))
     return {"status": "ok"}
+
+
+@router.get(f"{PREFIX}/user-group")
+def workspace_user_group(ws: str, db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT g.id, g.workspace_id FROM usergroup g WHERE g.workspace_id = :ws"
+    ), {"ws": ws}).fetchall()
+    return [{"id": r[0], "workspaceId": r[1]} for r in rows]
+
+
+@router.get(f"{PREFIX}/users/{{login}}")
+def get_user(ws: str, login: str, db: Session = Depends(get_db),
+             current_user: Account = Depends(get_current_user)):
+    acc = db.query(Account).filter(Account.login == login).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return {
+        "login": acc.login,
+        "name": acc.name or "",
+        "email": acc.email or "",
+        "language": acc.language or "en",
+        "workspaceId": ws,
+    }
 
 
 @router.get(f"{PREFIX}/workspace-workflows/{{workflowId}}/aborted")

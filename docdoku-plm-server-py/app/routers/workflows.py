@@ -171,3 +171,15 @@ def process_task(ws: str, task_id: int, body: dict, db: Session = Depends(get_db
                                   body.get("signature", ""),
                                   current_user.login)
     return {"status": "ok"}
+
+
+@router.get(f"{PREFIX}/tasks/{{login}}/documents")
+def task_documents(ws: str, login: str, db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get(f"{PREFIX}/tasks/{{login}}/parts")
+def task_parts(ws: str, login: str, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    return []
