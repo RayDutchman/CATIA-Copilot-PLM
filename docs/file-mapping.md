@@ -1,114 +1,130 @@
-# 建议的新文件映射 — 待确认（已按 Java 源码修正）
+# Java → Python 文件映射表
 
-> Router 22→32（对齐 Java Resource），Service 重命名（对齐 Java Bean 名称）  
-> 修正：Effectivity 合并1文件 / Workflow 合并1文件 / Shared→share.py
+> 用于 AI 逐文件对比检查：方法覆盖 / SQL 查询逻辑 / 异常对齐 / 响应字段 / Stub 检测。  
+> 首次审计 60 对 → 35 问题 → 2 轮修复 → 最后审计：2026-07-05。
 
-| # | Java Bean | Java REST Resource | Python Service | Python Router | 功能域 |
-|---|-----------|-------------------|----------------|---------------|--------|
-| 1 | `ProductManagerBean.java` | — | `product_manager.py` | — | 零件 CRUD + 签出签入 |
-| 2 | — | — | `part_mapper.py` | — | DTO 映射 |
-| 3 | — | `PartsResource.java` | — | `parts.py` | 零件列表/搜索/统计/模板/导入 |
-| 4 | — | `PartResource.java` | — | `part.py` | 单个零件 CRUD |
-| 5 | — | `PartTemplateResource.java` | — | `part_templates.py` | 零件模板 |
-| 6 | — | `PartBinaryResource.java` | — | `part_files.py` | 文件上传下载 |
-| 7 | — | `EffectivityResource.java`, `PartEffectivityResource.java` | — | `effectivity.py` | 有效性（合1文件） |
-| 8 | `ConverterBean.java` | — | `converter.py` | — | CAD 转换 |
-| 9 | `DocumentManagerBean.java` | — | `document_manager.py` | — | 文档 CRUD |
-| 10 | — | `DocumentsResource.java` | — | `documents.py` | 文档列表/搜索 |
-| 11 | — | `DocumentResource.java` | — | `document.py` | 单个文档 CRUD |
-| 12 | — | `DocumentBaselinesResource.java` | — | `document_baselines.py` | 文档基线 |
-| 13 | — | `FolderResource.java` | — | `folders.py` | 文件夹 CRUD |
-| 14 | — | `DocumentTemplateResource.java` | — | `document_templates.py` | 文档模板 |
-| 15 | — | `DocumentBinaryResource.java` | — | `document_files.py` | 文件上传下载 |
-| 16 | `ProductManagerBean.java` (CI) | — | `product_structure.py` | — | 产品结构树 |
-| 17 | — | `ProductResource.java` | — | `products.py` | 产品/CI REST |
-| 18 | — | `ProductBaselinesResource.java` | — | `product_baselines.py` | 产品基线 |
-| 19 | — | `ProductConfigurationsResource.java` | — | `product_configurations.py` | 产品配置 |
-| 20 | — | `ProductInstancesResource.java`, `ProductInstanceBinaryResource.java` | — | `product_instances.py`, `product_files.py` | 产品实例 + 文件 |
-| 21 | — | `LayerResource.java` | — | `layers.py` | 图层/Marker |
-| 22 | `ChangeManagerBean.java` | — | `change_manager.py` | — | 变更 CRUD |
-| 23 | — | `ChangeIssuesResource.java` | — | `change_issues.py` | Issue 端点 |
-| 24 | — | `ChangeRequestsResource.java` | — | `change_requests.py` | Request 端点 |
-| 25 | — | `ChangeOrdersResource.java` | — | `change_orders.py` | Order 端点 |
-| 26 | — | `MilestonesResource.java` | — | `milestones.py` | 里程碑端点 |
-| 27 | `WorkflowManagerBean.java`, `TaskManagerBean.java` | — | `workflow_manager.py` | — | 工作流业务 |
-| 28 | — | `WorkflowModelResource.java` | — | `workflow_models.py` | 工作流模板 REST |
-| 29 | — | `WorkflowResource.java`, `WorkspaceWorkflowResource.java` | — | `workflow.py` | 工作流实例 + 模板（合1文件） |
-| 30 | — | `TaskResource.java` | — | `tasks.py` | 任务 REST |
-| 31 | `UserManagerBean.java`, `AccountManagerBean.java` | — | `user_manager.py` | — | 用户/账号管理 |
-| 32 | — | `UserResource.java` | — | `users.py` | 用户 REST |
-| 33 | — | `UserGroupResource.java` | — | `user_groups.py` | 用户组 REST |
-| 34 | — | `WorkspaceMembershipResource.java` | — | `workspace_memberships.py` | 成员资格 REST |
-| 35 | — | `AccountResource.java`, `AuthResource.java` | — | `accounts.py`, `auth.py` | 账号 + 认证 |
-| 36 | — | `RoleResource.java` | — | `roles.py` | 角色 REST |
-| 37 | `NotificationManagerBean.java` | — | `notification_manager.py` | — | 通知业务 |
-| 38 | — | `ModificationNotificationResource.java` | — | `notifications.py` | 通知 REST |
-| 39 | `WebhookManagerBean.java` | — | — | — | Webhook 业务 |
-| 40 | — | `WebhookResource.java` | — | `webhooks.py` | Webhook REST |
-| 41 | `WorkspaceManagerBean.java` | — | — | — | 工作区管理 |
-| 42 | — | `WorkspaceResource.java` | — | `workspaces.py` | 工作区 REST + stats |
-| 43 | — | `TagResource.java`, `LOVResource.java`, `AttributesResource.java` | — | `workspaces.py` | 标签/LOV/属性 |
-| 44 | `BinaryStorageManagerBean.java` | — | `binary_storage.py`, `vault.py` | — | 文件存储 |
-| 45 | `ShareManagerBean.java` | — | — | `share.py` | 共享 |
-| 46 | — | `SharedResource.java` | — | `share.py` | 共享端点 |
-| 47 | — | `AdminResource.java` | — | `admin.py` | 管理员面板 |
-| 48 | — | `OrganizationResource.java` | — | `organizations.py` | 组织管理 |
-| 49 | — | `PlatformResource.java` | — | `platform.py` | 平台/health |
-| 50 | — | `LanguagesResource.java` | — | `languages.py` | 语言列表 |
-| 51 | — | `TimeZoneResource.java` | — | `timezones.py` | 时区列表 |
-| 52 | `ImporterBean.java` | — | — | `parts.py` | 属性/BOM 导入 |
+## 一、业务映射（Router + Service ↔ Java Resource + Bean）
 
-## 变更清单
+| # | Java Bean | Java REST Resource | Python Service | Python Router | 功能域 | 状态 |
+|---|-----------|-------------------|----------------|---------------|--------|------|
+| 1 | `ProductManagerBean.java` | — | `product_manager.py` | — | 零件 CRUD + 签出签入 | ✅ |
+| 2 | — | — | `part_mapper.py` | — | DTO 映射 | ✅ |
+| 3 | — | `PartsResource.java` | — | `parts.py` | 零件列表/搜索/统计/导入 | ✅ |
+| 4 | — | `PartResource.java` | — | `part.py` | 单个零件 CRUD | ✅ |
+| 5 | — | `PartTemplateResource.java` | — | `part_templates.py` | 零件模板 | ✅ |
+| 6 | — | `PartBinaryResource.java` | — | `part_files.py` | 文件上传下载 | ✅ |
+| 7 | — | `EffectivityResource.java`, `PartEffectivityResource.java` | — | `effectivity.py` | 有效性 | ⚠️ stub |
+| 8 | `ConverterBean.java` | — | `converter.py` | — | CAD 转换 | ✅ |
+| 9 | `DocumentManagerBean.java` | — | `document_manager.py` | — | 文档 CRUD | ✅ |
+| 10 | — | `DocumentsResource.java` | — | `documents.py` | 文档列表/搜索 | ✅ |
+| 11 | — | `DocumentResource.java` | — | `document.py` | 单个文档 CRUD | ✅ |
+| 12 | — | `DocumentBaselinesResource.java` | — | `document_baselines.py` | 文档基线 | ✅ |
+| 13 | — | `FolderResource.java` | — | `folders.py` | 文件夹 CRUD | ✅ |
+| 14 | — | `DocumentTemplateResource.java` | — | `document_templates.py` | 文档模板 | ✅ |
+| 15 | — | `DocumentBinaryResource.java` | — | `document_files.py` | 文件上传下载 | ✅ |
+| 16 | `ProductManagerBean.java` (CI) | — | `product_structure.py` | — | 产品结构树 | ✅ |
+| 17 | — | `ProductResource.java` | — | `products.py` | 产品/CI REST | ✅ |
+| 18 | — | `ProductBaselinesResource.java` | — | `product_baselines.py` | 产品基线 | ✅ |
+| 19 | — | `ProductConfigurationsResource.java` | — | `product_configurations.py` | 产品配置 | ✅ |
+| 20 | — | `ProductInstancesResource.java`, `ProductInstanceBinaryResource.java` | — | `product_instances.py`, `product_files.py` | 产品实例 + 文件 | ✅ |
+| 21 | — | `LayerResource.java` | — | `layers.py` | 图层/Marker | ✅ |
+| 22 | `ChangeManagerBean.java` | — | `change_manager.py` | — | 变更 CRUD | ✅ |
+| 23 | — | `ChangeIssuesResource.java` | — | `change_issues.py` | Issue 端点 | ✅ |
+| 24 | — | `ChangeRequestsResource.java` | — | `change_requests.py` | Request 端点 | ✅ |
+| 25 | — | `ChangeOrdersResource.java` | — | `change_orders.py` | Order 端点 | ✅ |
+| 26 | — | `MilestonesResource.java` | — | `milestones.py` | 里程碑端点 | ✅ |
+| 27 | `WorkflowManagerBean.java`, `TaskManagerBean.java` | — | `workflow_manager.py` | — | 工作流业务 | ✅ |
+| 28 | — | `WorkflowModelResource.java` | — | `workflow_models.py` | 工作流模板 REST | ✅ |
+| 29 | — | `WorkflowResource.java`, `WorkspaceWorkflowResource.java` | — | `workflow.py` | 工作流实例 + 模板 | ✅ |
+| 30 | — | `TaskResource.java` | — | `tasks.py` | 任务 REST | ✅ |
+| 31 | `UserManagerBean.java`, `AccountManagerBean.java` | — | `user_manager.py` | — | 用户/账号管理 | ✅ |
+| 32 | — | `UserResource.java` | — | `users.py` | 用户 REST | ✅ |
+| 33 | — | `UserGroupResource.java` | — | `user_groups.py` | 用户组 REST | ✅ |
+| 34 | — | `WorkspaceMembershipResource.java` | — | `workspace_memberships.py` | 成员资格 REST | ✅ |
+| 35 | — | `AccountResource.java`, `AuthResource.java` | — | `accounts.py`, `auth.py` | 账号 + 认证 | ✅ |
+| 36 | — | `RoleResource.java` | — | `roles.py` | 角色 REST | ✅ |
+| 37 | `NotificationManagerBean.java` | — | `notification_manager.py` | — | 通知业务 | ✅ |
+| 38 | — | `ModificationNotificationResource.java` | — | `notifications.py` | 通知 REST | ✅ |
+| 39 | `WebhookManagerBean.java` | — | — | — | Webhook 业务 | ✅ |
+| 40 | — | `WebhookResource.java` | — | `webhooks.py` | Webhook REST | ✅ |
+| 41 | `WorkspaceManagerBean.java` | — | — | — | 工作区管理 | ✅ |
+| 42 | — | `WorkspaceResource.java` | — | `workspaces.py` | 工作区 REST + stats | ✅ |
+| 43 | — | `TagResource.java`, `LOVResource.java`, `AttributesResource.java` | — | `workspaces.py` | 标签/LOV/属性 | ✅ |
+| 44 | `BinaryStorageManagerBean.java` | — | `binary_storage.py`, `vault.py` | — | 文件存储 | ✅ |
+| 45 | `ShareManagerBean.java` | — | — | `share.py` | 共享 | ✅ |
+| 46 | — | `SharedResource.java` | — | `share.py` | 共享端点 | ✅ |
+| 47 | — | `AdminResource.java` | — | `admin.py` | 管理员面板 | ✅ |
+| 48 | — | `OrganizationResource.java` | — | `organizations.py` | 组织管理 | ✅ |
+| 49 | — | `PlatformResource.java` | — | `platform.py` | 平台/health | ✅ |
+| 50 | — | `LanguagesResource.java` | — | `languages.py` | 语言列表 | ✅ |
+| 51 | — | `TimeZoneResource.java` | — | `timezones.py` | 时区列表 | ✅ |
+| 52 | `ImporterBean.java` | — | — | `parts.py` | 属性/BOM 导入 | ⚠️ |
 
-**Router 拆分** (22→32，+10 文件)：
+> ✅ = 已对齐 | ⚠️ = stub/低频功能
 
-| 原文件 | 拆出 |
-|--------|------|
-| `parts.py` | `part.py` + `part_templates.py` + `effectivity.py` |
-| `documents.py` | `document.py` + `document_baselines.py` |
-| `changes.py` | `change_issues.py` + `change_requests.py` + `change_orders.py` + `milestones.py` |
-| `products.py` | `product_baselines.py` + `product_configurations.py` + `layers.py` |
-| `users.py` | `user_groups.py` + `workspace_memberships.py` |
-| `workflows.py` | `workflow_models.py` + `tasks.py` + `workflow.py` |
-| `misc.py` | `languages.py` + `timezones.py` + `platform.py` |
-| `shared.py` | → `share.py`（改名） |
+## 二、基础设施映射（无直接 Java 对应文件，但有关联 Java 组件）
 
-**Service 改名** (10 个)：
+| # | Python 文件 | 相关联的 Java 组件 |
+|---|-----------|-------------------|
+| C1 | `app/core/config.py` | `ConversionServiceConfig.java`，`Back.env` 环境变量 |
+| C2 | `app/core/database.py` | `EntityManagerProducer.java` (JPA) |
+| C3 | `app/core/deps.py` | `RequestFilter.java` + `JWTokenManager.java` |
+| C4 | `app/core/exceptions.py` | `com/docdoku/plm/server/core/exceptions/*.java` (86 文件) |
+| C5 | `app/core/exception_handlers.py` | `AccessRightsExceptionMapper.java` 等 |
+| C6 | `app/core/i18n.py` | `PropertiesLoader.java` |
+| C7 | `app/core/security.py` | `JWTokenManager.java`，`Credential.java` (MD5) |
+| C8 | `app/main.py` | `RestApplication.java` (JAX-RS Application) |
+| C9 | `app/models/auth.py` | `Account.java`, `Credential.java`, `UserGroupMapping.java` |
+| C10 | `app/models/part.py` | `PartMaster.java`, `PartRevision.java`, `PartIteration.java` 等 |
+| C11 | `app/models/document.py` | `DocumentMaster.java`, `DocumentRevision.java` 等 |
+| C12 | `app/models/product.py` | `ConfigurationItem.java`, `ProductBaseline.java` 等 |
+| C13 | `app/models/change.py` | `ChangeIssue.java`, `ChangeRequest.java` 等 |
+| C14 | `app/models/workflow.py` | `WorkflowModel.java`, `Workflow.java`, `Activity.java` 等 |
+| C15 | `app/models/security.py` | `ACL.java`, `AclUserEntry.java`, `Role.java` |
+| C16 | `app/models/user_mgmt.py` | `UserGroup.java`, `Workspace.java` (部分字段) |
+| C17 | `app/models/notification.py` | `ModificationNotification.java` |
+| C18 | `app/schemas/auth.py` | `AccountDTO.java` |
+| C19 | `app/schemas/part.py` | `PartRevisionDTO.java`, `PartIterationDTO.java` 等 (~20 DTO) |
+| C20 | `app/services/acl_helper.py` | `ACLFactory.java` (抽象) |
+| C21 | `app/services/security_service.py` | `RoleManagerBean.java` (间接) |
+| C22 | `app/services/kafka_producer.py` | `ConverterBean.java` (Kafka 部分) |
 
-| 原文件名 | 新文件名 |
-|----------|----------|
-| `product_service.py` | `product_manager.py` |
-| `document_service.py` | `document_manager.py` |
-| `change_service.py` | `change_manager.py` |
-| `workflow_service.py` | `workflow_manager.py` |
-| `user_mgmt_service.py` | `user_manager.py` |
-| `conversion_service.py` | `converter.py` |
-| `notification_service.py` | `notification_manager.py` |
-| `product_structure_service.py` | `product_structure.py` |
-| `file_service.py` | `binary_storage.py` |
-| — | `security_service.py` / `acl_helper.py` / `kafka_producer.py` / `part_mapper.py` / `vault.py` 不变 |
+## 三、文件夹结构
 
-## 实施计划
+```
+app/
+├── core/           # 基础设施（config/DB/auth/i18n/异常）— 对应 Java core + i18n 包
+├── models/         # ORM 模型 — 对应 Java JPA Entity 类
+├── schemas/        # Pydantic 模型 — 对应 Java DTO 类
+├── services/       # 业务逻辑 — 对应 Java EJB
+└── routers/        # REST 端点 — 对应 Java Resource
+```
 
-按依赖顺序分 3 步：
+结构合理：`core(models)→models→services→routers`，依赖方向清晰（router→service→model→core）。无循环依赖，无跨层引用。
 
-### Step 1: Service 改名（低风险——只改文件名 + import）
-- `git mv` 10 个 service 文件
-- 更新 `main.py` 中的 import
-- 更新所有 router 文件中的 import
-- 更新所有 test 文件中的 import
-- 更新其他 service 文件之间的相互 import
-- 跑测试确认
+## 四、检查 Prompt 模板
 
-### Step 2: Router 拆分（中风险——内容移动 + 新文件）
-- 从 7 个大文件拆出 17 个新文件（合并原 +10）
-- 每个新文件：移动对应端点代码 + 独立 `router = APIRouter(prefix=...)`
-- 更新 `main.py` 注册所有新 router
-- 保留原文件中的剩余端点（缩小后的文件）
-- 跑测试确认
+```markdown
+You are auditing a Java→Python migration file pair.
 
-### Step 3: 文档更新
-- `file-mapping.md` 替换为最终映射
-- `file-mapping-proposed.md` 删除
+Java file: {JAVA_FILE_PATH}
+Python file: {PYTHON_FILE_PATH}
 
-确认后按 1→2→3 执行？
+Check these 5 dimensions:
+
+1. **方法覆盖率** — List all public methods in Java. Which ones have a Python equivalent? Mark ❌ for missing.
+2. **SQL查询逻辑** — Same tables/JOINs/WHERE? 🚨 Java = ground truth
+3. **异常对齐** — Java throw → Python raise with same i18n key?
+4. **响应字段** — Java DTO fields → Python dict keys?
+5. **Stub检测** — Hardcoded `[]`/`{}`/`{"status":"ok"}` without `db.commit()`?
+
+Output: METHOD | VERDICT (✅/❌/⚠) | DETAIL
+```
+
+## 五、审计历史
+
+| 日期 | 发现 | 修复 | 剩余 |
+|------|------|------|------|
+| 2026-07-05 | 35（15 Critical + 20 Partial） | 全修（10 批并行 agent） | 11 |
+| 2026-07-05 | 11 Partial | 全修（7 批并行 agent） | 0 |
+| 2026-07-05 | 文件重组：Router 22→32，Service 10 个改名 | — | — |
