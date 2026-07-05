@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
@@ -8,15 +9,18 @@ from app.services.user_mgmt_service import user_mgmt_service
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-def _account_to_dict(acc, db=None):
+def _account_to_dict(acc, db):
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login = :l AND groupname = 'admin'"
+    ), {"l": acc.login}).first() is not None
     result = {
         "login": acc.login,
         "email": acc.email or "",
         "name": acc.name or "",
         "language": acc.language or "en",
-        "enabled": True,
-        "admin": False,
-        "timeZone": acc.timezone,
+        "enabled": bool(acc.enabled) if acc.enabled is not None else True,
+        "admin": is_admin,
+        "timeZone": acc.timezone or "",
     }
     return result
 
@@ -26,7 +30,7 @@ def _account_to_dict(acc, db=None):
 def update_account(body: dict, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     acc = user_mgmt_service.update_account(db, current_user.login, body)
-    return _account_to_dict(acc)
+    return _account_to_dict(acc, db)
 
 
 @router.post("/accounts/create", status_code=201)
@@ -35,7 +39,7 @@ def create_account(body: dict, db: Session = Depends(get_db)):
     acc = user_mgmt_service.create_account(
         db, body.get("login", ""), body.get("password", ""),
         body.get("email", ""), body.get("name", ""), body.get("language", "en"))
-    return _account_to_dict(acc)
+    return _account_to_dict(acc, db)
 
 
 @router.get("/accounts/workspaces")

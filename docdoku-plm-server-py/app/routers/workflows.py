@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.models.workflow import Activity
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
@@ -9,6 +11,15 @@ from app.services.workflow_service import workflow_service, STATUS_MAP
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
+
+
+def _check_workspace_access(db: Session, ws: str, login: str):
+    """检查用户是否有工作区访问权限，无权限时抛出 AccessRightException(403)。"""
+    row = db.execute(text(
+        "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
+    ), {"l": login, "w": ws}).first()
+    if not row:
+        raise AccessRightException("AccessRightException")
 
 
 def _model_to_dict(m, db: Session = None) -> dict:
@@ -53,10 +64,9 @@ def _model_to_dict(m, db: Session = None) -> dict:
             "language": author_language,
             "workspaceId": m.workspace_id,
         },
+        "acl": acl_data,
         "activityModels": [],
     }
-    if acl_data is not None:
-        result["acl"] = acl_data
     return result
 
 
@@ -101,6 +111,7 @@ def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}")
 def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
+    _check_workspace_access(db, ws, current_user.login)
     w = workflow_service.get_instance(db, ws, workflow_id)
     activities = db.query(Activity).filter(
         Activity.workflow_id == workflow_id).all()
@@ -122,6 +133,7 @@ def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}/aborted")
 def get_aborted(ws: str, workflow_id: int, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
+    _check_workspace_access(db, ws, current_user.login)
     return workflow_service.get_aborted_workflow_instance(db, ws, workflow_id)
 
 

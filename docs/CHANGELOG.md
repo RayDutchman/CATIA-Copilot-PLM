@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-05 — Workflow/Users/Admin/Misc FA 差距修复
+
+- fix(py): workflows.py — `_model_to_dict` 始终包含 `acl` 字段（无 ACL 时为 `null`），匹配 Payara 响应格式
+- fix(py): workflows.py — workflow-instances 路由新增工作区成员校验，非成员返回 403（`AccessRightException`），匹配 Payara 行为
+- fix(py): auth.py — `GET /accounts/me` 和 `POST /auth/login` 响应新增 `enabled`、`admin`、`timeZone` 字段；`admin` 从 `usergroupmapping` 表实时查询
+- fix(py): accounts.py — `_account_to_dict` 接收 `db` 参数，`admin` 从 `usergroupmapping` 实时查询（原为硬编码 `False`）
+- fix(py): user_mgmt_service.py — `list_workspaces_for_user` 新增 `description`、`folderLocked` 字段
+- fix(py): misc.py — `/platform/health` 响应改为 `{"executionTime": 0}`（匹配 Payara）
+- fix(py): schemas/auth.py — `AccountDTO` 用 `timeZone` 替换 `timezone`，新增 `enabled`/`admin` 字段
+
 ## 2026-07-05 — Parts/Documents FA 差距修复
 
 - fix(py): parts.py — 移除 4 处 `response_model_exclude_none=True`，使 Payara 存在的字段（releaseAuthor/obsoleteAuthor/workflow/acl 等）即使为 None 也返回

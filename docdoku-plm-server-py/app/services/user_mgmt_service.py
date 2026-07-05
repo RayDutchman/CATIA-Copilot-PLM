@@ -148,11 +148,13 @@ class UserMgmtService:
 
     def list_workspaces_for_user(self, db: Session, login: str) -> list:
         rows = db.execute(text(
-            "SELECT w.id, w.enabled FROM workspace w "
+            "SELECT w.id, w.enabled, w.description, w.folderlocked FROM workspace w "
             "JOIN userdata u ON w.id = u.workspace_id "
             "WHERE u.login = :l"
         ), {"l": login}).fetchall()
-        return [{"id": r[0], "enabled": r[1]} for r in rows]
+        return [{"id": r[0], "enabled": r[1],
+                 "description": r[2] or "", "folderLocked": bool(r[3]) if r[3] is not None else False}
+                for r in rows]
 
 
 user_mgmt_service = UserMgmtService()

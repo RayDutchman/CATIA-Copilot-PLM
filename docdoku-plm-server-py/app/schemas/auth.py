@@ -11,7 +11,9 @@ class AccountDTO(BaseModel):
     email: str
     name: Optional[str] = None
     language: Optional[str] = None
-    timezone: Optional[str] = None
+    timeZone: Optional[str] = None
+    enabled: Optional[bool] = None
+    admin: Optional[bool] = None
 
     class Config:
         from_attributes = True

@@ -35,10 +35,22 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
     mapping = db.query(UserGroupMapping).filter(UserGroupMapping.login == account.login).first()
     group_name = mapping.groupname if mapping else "REGULAR_USER_ROLE_ID"
     token = create_token(account.login, group_name)
+    is_admin = db.query(UserGroupMapping).filter(
+        UserGroupMapping.login == account.login,
+        UserGroupMapping.groupname == "admin"
+    ).first() is not None
 
     # JWT 通过响应头返回，与 Payara AuthResource 行为一致
     response.headers["jwt"] = token
-    return account
+    return {
+        "login": account.login,
+        "email": account.email or "",
+        "name": account.name or "",
+        "language": account.language or "en",
+        "timeZone": account.timezone or "",
+        "enabled": bool(account.enabled) if account.enabled is not None else True,
+        "admin": is_admin,
+    }
 
 
 @router.get("/auth/logout", status_code=204)
@@ -53,10 +65,23 @@ def list_providers():
     return []
 
 
-@router.get("/accounts/me", response_model=AccountDTO)
-def get_me(current_user: Account = Depends(get_current_user)):
+@router.get("/accounts/me")
+def get_me(current_user: Account = Depends(get_current_user),
+           db: Session = Depends(get_db)):
     """返回当前登录用户的账号信息。"""
-    return current_user
+    is_admin = db.query(UserGroupMapping).filter(
+        UserGroupMapping.login == current_user.login,
+        UserGroupMapping.groupname == "admin"
+    ).first() is not None
+    return {
+        "login": current_user.login,
+        "email": current_user.email or "",
+        "name": current_user.name or "",
+        "language": current_user.language or "en",
+        "timeZone": current_user.timezone or "",
+        "enabled": bool(current_user.enabled) if current_user.enabled is not None else True,
+        "admin": is_admin,
+    }
 
 
 @router.get("/auth/providers/{provider_id}")
