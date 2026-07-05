@@ -11,6 +11,53 @@ from app.core.database import Base
 
 # ── 关联表（多对多）──────────────────────────────────────────
 
+# partiteration → 关联文档（M:N）
+part_iteration_documentlink = Table(
+    "partiteration_documentlink", Base.metadata,
+    Column("workspace_id", String, primary_key=True),
+    Column("partmaster_partnumber", String, primary_key=True),
+    Column("partrevision_version", String, primary_key=True),
+    Column("iteration", Integer, primary_key=True),
+    Column("documentlink_id", Integer, primary_key=True),
+    ForeignKeyConstraint(
+        ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
+)
+
+# partiteration → 实例属性（M:N）
+part_iteration_attribute = Table(
+    "partiteration_attribute", Base.metadata,
+    Column("workspace_id", String, primary_key=True),
+    Column("partmaster_partnumber", String, primary_key=True),
+    Column("partrevision_version", String, primary_key=True),
+    Column("iteration", Integer, primary_key=True),
+    Column("instanceattribute_id", Integer, primary_key=True),
+    Column("attribute_order", Integer),
+    ForeignKeyConstraint(
+        ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
+)
+
+# partiteration → 实例属性模板（M:N）
+part_iteration_pathdata_attr = Table(
+    "partiteration_pathdata_attr", Base.metadata,
+    Column("workspace_id", String, primary_key=True),
+    Column("partmaster_partnumber", String, primary_key=True),
+    Column("partrevision_version", String, primary_key=True),
+    Column("iteration", Integer, primary_key=True),
+    Column("instanceattribute_template_id", Integer, primary_key=True),
+    Column("attribute_order", Integer),
+    ForeignKeyConstraint(
+        ["workspace_id", "partmaster_partnumber", "partrevision_version", "iteration"],
+        ["partiteration.workspace_id", "partiteration.partmaster_partnumber",
+         "partiteration.partrevision_version", "partiteration.iteration"],
+    ),
+)
+
 # partiteration → 附件（M:N）
 part_iteration_binres = Table(
     "partiteration_binres", Base.metadata,
@@ -391,3 +438,40 @@ class Conversion(Base):
              "partiteration.partrevision_version", "partiteration.iteration"],
         ),
     )
+
+
+class SharedEntity(Base):
+    """对应 sharedentity 表（单表继承，dtype 区分 SharedPart/SharedDocument）。"""
+    __tablename__ = "sharedentity"
+
+    uuid = Column(String, primary_key=True)
+    dtype = Column(String)
+    creation_date = Column("creationdate", DateTime)
+    expire_date = Column("expiredate", DateTime, nullable=True)
+    password = Column(String, nullable=True)
+    author_workspace_id = Column(String)
+    author_login = Column(String)
+    workspace_id = Column(String)
+    entity_workspace_id = Column(String)
+    partmaster_partnumber = Column(String, nullable=True)
+    partrevision_version = Column(String, nullable=True)
+    documentrevision_version = Column(String, nullable=True)
+    documentmaster_id = Column(String, nullable=True)
+
+
+class PartMasterTemplate(Base):
+    """对应 partmastertemplate 表，零件模板。"""
+    __tablename__ = "partmastertemplate"
+
+    id = Column(String, primary_key=True)
+    workspace_id = Column(String, primary_key=True)
+    mask = Column(String)
+    id_generated = Column("idgenerated", Boolean, default=False)
+    part_type = Column("parttype", String)
+    attributes_locked = Column("attributeslocked", Boolean, default=False)
+    author_login = Column(String)
+    author_workspace_id = Column(String)
+    creation_date = Column("creationdate", DateTime)
+    modification_date = Column("modificationdate", DateTime)
+    acl_id = Column(Integer, nullable=True)
+    workflowmodel_id = Column(String, nullable=True)

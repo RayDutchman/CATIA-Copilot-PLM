@@ -714,10 +714,11 @@ class ProductService:
 
     def _copy_iteration_files(self, db: Session, ws: str, pn: str, ver: str,
                                from_iter: int, to_iter: int) -> None:
-        """将旧迭代的附件/几何体/子件链接复制到新迭代。"""
+        """将旧迭代的全部分类数据复制到新迭代（7/7）。"""
         from app.models.part import (
             part_iteration_binres, part_iteration_geometry,
-            part_iteration_usagelink,
+            part_iteration_usagelink, part_iteration_documentlink,
+            part_iteration_attribute, part_iteration_pathdata_attr,
         )
         # 复制附件关联
         for row in db.execute(
@@ -762,3 +763,71 @@ class ProductService:
                 component_id=row.component_id,
                 component_order=row.component_order,
             ))
+        # 复制关联文档
+        for row in db.execute(
+            part_iteration_documentlink.select().where(
+                part_iteration_documentlink.c.workspace_id == ws,
+                part_iteration_documentlink.c.partmaster_partnumber == pn,
+                part_iteration_documentlink.c.partrevision_version == ver,
+                part_iteration_documentlink.c.iteration == from_iter,
+            )
+        ).fetchall():
+            db.execute(part_iteration_documentlink.insert().values(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=to_iter,
+                documentlink_id=row.documentlink_id,
+            ))
+        # 复制实例属性
+        for row in db.execute(
+            part_iteration_attribute.select().where(
+                part_iteration_attribute.c.workspace_id == ws,
+                part_iteration_attribute.c.partmaster_partnumber == pn,
+                part_iteration_attribute.c.partrevision_version == ver,
+                part_iteration_attribute.c.iteration == from_iter,
+            )
+        ).fetchall():
+            db.execute(part_iteration_attribute.insert().values(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=to_iter,
+                instanceattribute_id=row.instanceattribute_id,
+                attribute_order=row.attribute_order,
+            ))
+        # 复制实例属性模板
+        for row in db.execute(
+            part_iteration_pathdata_attr.select().where(
+                part_iteration_pathdata_attr.c.workspace_id == ws,
+                part_iteration_pathdata_attr.c.partmaster_partnumber == pn,
+                part_iteration_pathdata_attr.c.partrevision_version == ver,
+                part_iteration_pathdata_attr.c.iteration == from_iter,
+            )
+        ).fetchall():
+            db.execute(part_iteration_pathdata_attr.insert().values(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=to_iter,
+                instanceattribute_template_id=row.instanceattribute_template_id,
+                attribute_order=row.attribute_order,
+            ))
+        # 复制 nativeCADFile 引用
+        old_iter = (
+            db.query(PartIteration)
+            .filter(
+                PartIteration.workspace_id == ws,
+                PartIteration.partmaster_partnumber == pn,
+                PartIteration.partrevision_version == ver,
+                PartIteration.iteration == from_iter,
+            )
+            .first()
+        )
+        if old_iter and old_iter.native_cad_file_fullname:
+            new_iter = (
+                db.query(PartIteration)
+                .filter(
+                    PartIteration.workspace_id == ws,
+                    PartIteration.partmaster_partnumber == pn,
+                    PartIteration.partrevision_version == ver,
+                    PartIteration.iteration == to_iter,
+                )
+                .first()
+            )
+            if new_iter:
+                new_iter.native_cad_file_fullname = old_iter.native_cad_file_fullname
