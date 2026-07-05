@@ -1,13 +1,15 @@
 from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text as sql_text
 from app.models.document import (
     DocumentMaster, DocumentRevision, DocumentIteration,
     DocumentMasterTemplate, Folder, document_iteration_binres,
     document_revision_tags,
 )
 from app.core.exceptions import (
-    EntityAlreadyExistsException, NotAllowedException,
+    EntityAlreadyExistsException, EntityConstraintException,
+    NotAllowedException, EntityNotFoundException,
 )
 
 
@@ -24,9 +26,8 @@ class DocumentService:
         return pr
 
     def count_documents(self, db, ws):
-        return db.query(DocumentMaster).filter(
-            DocumentMaster.workspace_id == ws,
-            DocumentMaster.revisions.any(),
+        return db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
         ).count()
 
     def list_revisions(self, db, ws, start=0, length=50):
@@ -69,9 +70,95 @@ class DocumentService:
 
     def delete_revision(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
-        if pr.checkout_user_login and pr.checkout_user_login != user_login:
+
+        # 非管理员不能删除其他用户 home 文件夹里的文档
+        if self._is_in_another_user_home(user_login, ws, pr.location_completepath):
             raise NotAllowedException("NotAllowedException22")
+
         from sqlalchemy import text
+
+        # 1. baseline 约束检查
+        in_baseline = db.execute(text(
+            "SELECT COUNT(*) FROM baselineddocument "
+            "WHERE target_workspace_id=:ws "
+            "AND target_documentmaster_id=:did "
+            "AND target_docrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver},
+        ).scalar()
+        if in_baseline:
+            raise EntityConstraintException("EntityConstraintException6")
+
+        # 循环检查所有 revision 上的逆链接（对齐 Java 外层 for）
+        master = pr.document_master
+        for rev in master.revisions:
+            # 2. inverse document links: 其他文档迭代引用此 revision
+            inv_doc = db.execute(text(
+                "SELECT COUNT(*) FROM documentlink "
+                "WHERE target_workspace_id=:ws "
+                "AND target_documentmaster_id=:did "
+                "AND target_docrevision_version=:ver"),
+                {"ws": ws, "did": rev.documentmaster_id, "ver": rev.version},
+            ).scalar()
+            if inv_doc:
+                raise EntityConstraintException("EntityConstraintException17")
+
+            # 3. inverse part links
+            inv_part = db.execute(text(
+                "SELECT COUNT(*) FROM partiteration_documentlink pidl "
+                "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
+                "WHERE dl.target_workspace_id=:ws "
+                "AND dl.target_documentmaster_id=:did "
+                "AND dl.target_docrevision_version=:ver"),
+                {"ws": ws, "did": rev.documentmaster_id, "ver": rev.version},
+            ).scalar()
+            if inv_part:
+                raise EntityConstraintException("EntityConstraintException18")
+
+            # 4. inverse product instance links
+            inv_pinst = db.execute(text(
+                "SELECT COUNT(*) FROM prdinstiteration_documentlink pidl "
+                "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
+                "WHERE dl.target_workspace_id=:ws "
+                "AND dl.target_documentmaster_id=:did "
+                "AND dl.target_docrevision_version=:ver"),
+                {"ws": ws, "did": rev.documentmaster_id, "ver": rev.version},
+            ).scalar()
+            if inv_pinst:
+                raise EntityConstraintException("EntityConstraintException19")
+
+            # 5. inverse path data links
+            inv_path = db.execute(text(
+                "SELECT COUNT(*) FROM pathdataiteration_documentlink pdl "
+                "JOIN documentlink dl ON pdl.documentlink_id = dl.id "
+                "WHERE dl.target_workspace_id=:ws "
+                "AND dl.target_documentmaster_id=:did "
+                "AND dl.target_docrevision_version=:ver"),
+                {"ws": ws, "did": rev.documentmaster_id, "ver": rev.version},
+            ).scalar()
+            if inv_path:
+                raise EntityConstraintException("EntityConstraintException20")
+
+        # 6. change items（仅检查被删除的 revision，对齐 Java pDocRPK）
+        has_change = db.execute(text(
+            "SELECT 1 FROM changeissue_affected_document "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver "
+            "UNION ALL SELECT 1 FROM changeorder_affected_document "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver "
+            "UNION ALL SELECT 1 FROM changereq_affected_document "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver "
+            "LIMIT 1"),
+            {"ws": ws, "did": doc_id, "ver": ver},
+        ).scalar()
+        if has_change is not None:
+            raise EntityConstraintException("EntityConstraintException7")
+
+        # 清理关联表
         for tbl in ("documentrevision_tag",):
             db.execute(text(f"DELETE FROM {tbl} WHERE documentmaster_workspace_id=:ws "
                 "AND documentmaster_id=:did AND documentrevision_version=:ver"),
@@ -82,8 +169,26 @@ class DocumentService:
                 "AND documentmaster_id=:did AND documentrevision_version=:ver "
                 "AND iteration=:i"),
                 {"ws": ws, "did": doc_id, "ver": ver, "i": it.iteration})
-        db.delete(pr)
+        db.flush()
+
+        is_last_revision = len(master.revisions) == 1
+        if is_last_revision:
+            db.delete(master)
+        else:
+            db.delete(pr)
         db.commit()
+
+    def _is_in_another_user_home(self, user_login, ws, location_path):
+        """判断文档是否在其他用户的 home 文件夹中。"""
+        if not location_path:
+            return False
+        user_prefix = f"{ws}/users/"
+        if not location_path.startswith(user_prefix):
+            return False
+        # 提取 home 文件夹的 owner 用户名
+        rest = location_path[len(user_prefix):]
+        owner = rest.split("/")[0] if "/" in rest else rest
+        return owner != user_login
 
     def checkout(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
@@ -92,17 +197,39 @@ class DocumentService:
         if pr.status != 0:
             raise NotAllowedException("NotAllowedException47")
         now = datetime.utcnow()
-        pr.checkout_user_login = user_login
-        pr.checkout_user_workspace_id = ws
-        pr.check_out_date = now
+        previous_iteration = pr.last_iteration
         last = pr.last_iteration_number + 1
-        db.add(DocumentIteration(
+        new_it = DocumentIteration(
             workspace_id=ws, documentmaster_id=doc_id,
             documentrevision_version=ver, iteration=last,
             creation_date=now, author_workspace_id=ws,
-            author_login=user_login))
+            author_login=user_login)
+        db.add(new_it)
+        pr.checkout_user_login = user_login
+        pr.checkout_user_workspace_id = ws
+        pr.check_out_date = now
+        # 复制上一迭代的 attached_files 到新迭代
+        if previous_iteration:
+            self._copy_attached_files(db, ws, doc_id, ver,
+                                      previous_iteration.iteration,
+                                      new_it.iteration)
         db.commit(); db.refresh(pr)
         return pr
+
+    def _copy_attached_files(self, db, ws, doc_id, ver, src_iter, dst_iter):
+        """将 src_iter 的 attached_files 复制到 dst_iter。"""
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT attachedfile_fullname FROM documentiteration_binres "
+            "WHERE workspace_id=:ws AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver AND iteration=:iter"),
+            {"ws": ws, "did": doc_id, "ver": ver, "iter": src_iter},
+        ).fetchall()
+        for row in rows:
+            db.execute(document_iteration_binres.insert().values(
+                workspace_id=ws, documentmaster_id=doc_id,
+                documentrevision_version=ver, iteration=dst_iter,
+                attachedfile_fullname=row[0]))
 
     def checkin(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
@@ -149,7 +276,7 @@ class DocumentService:
         return pr
 
     def update_iteration(self, db, ws, doc_id, ver, iteration, data):
-        """更新文档迭代的 revisionNote 等字段。"""
+        """更新文档迭代的 revisionNote、linkedDocuments 等字段。"""
         di = db.query(DocumentIteration).filter(
             DocumentIteration.workspace_id == ws,
             DocumentIteration.documentmaster_id == doc_id,
@@ -161,8 +288,47 @@ class DocumentService:
                                           doc_id, ver, str(iteration))
         if data.get("revisionNote"):
             di.revisionnote = data["revisionNote"]
+        linked_docs = data.get("linkedDocuments")
+        if linked_docs is not None:
+            di_modification_date = datetime.utcnow()
+            # 清除现有链接文档
+            db.execute(sql_text(
+                "DELETE FROM documentiteration_documentlink "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:iter"
+            ), {"ws": ws, "did": doc_id, "ver": ver, "iter": iteration})
+            # 插入新链接文档
+            for ld in linked_docs:
+                result = db.execute(sql_text(
+                    "INSERT INTO documentlink (commentdata, target_documentmaster_id, "
+                    "target_docrevision_version, target_workspace_id) "
+                    "VALUES (:comment, :dm, :drv, :tws) RETURNING id"
+                ), {
+                    "comment": ld.get("commentLink", ""),
+                    "dm": ld.get("documentMasterId", ""),
+                    "drv": ld.get("version", "A"),
+                    "tws": ws,
+                })
+                link_id = result.fetchone()[0]
+                db.execute(sql_text(
+                    "INSERT INTO documentiteration_documentlink "
+                    "(workspace_id, documentmaster_id, documentrevision_version, "
+                    "iteration, documentlink_id) "
+                    "VALUES (:ws, :did, :ver, :iter, :lid)"
+                ), {"ws": ws, "did": doc_id, "ver": ver, "iter": iteration, "lid": link_id})
+            di.modification_date = di_modification_date
         db.commit()
         return di.revision
+
+    def _ensure_last_revision(self, db, ws, doc_id, ver):
+        """检查是否为文档的最新版本，否则抛出 NotAllowedException(72)。"""
+        # 同名文档下版本号最大的即为最新版本
+        last = db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.documentmaster_id == doc_id,
+        ).order_by(DocumentRevision.version.desc()).first()
+        if last is None or last.version != ver:
+            raise NotAllowedException("NotAllowedException72")
 
     def mark_obsolete(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
@@ -336,16 +502,22 @@ class DocumentService:
         db.commit()
         return folder
 
-    def delete_folder(self, db, completepath):
+    def delete_folder(self, db, completepath, current_user_login=None):
         folder = db.query(Folder).filter(
             Folder.completepath == completepath).first()
         if folder is None:
             raise HTTPException(404, "Folder not found")
-        children = db.query(Folder).filter(
-            Folder.parentfolder_completepath == completepath).count()
-        if children > 0:
-            raise HTTPException(403, "Folder not empty")
-        db.delete(folder); db.commit()
+        # 级联删除文件夹内所有文档
+        docs = db.query(DocumentRevision).filter(
+            DocumentRevision.location_completepath.like(f"{completepath}%")
+        ).all()
+        for doc in docs:
+            self.delete_revision(db, doc.workspace_id, doc.documentmaster_id,
+                                 doc.version, current_user_login or "")
+        # 删除子文件夹及自身
+        db.execute(sql_text("DELETE FROM folder WHERE completepath LIKE :path"),
+                   {"path": f"{completepath}%"})
+        db.commit()
 
     def list_templates(self, db, ws):
         return db.query(DocumentMasterTemplate).filter(

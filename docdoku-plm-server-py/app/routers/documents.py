@@ -1,5 +1,6 @@
 """文档端点路由（DocumentsResource + DocumentResource）。"""
 import re
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, text as sql_text
 from sqlalchemy.orm import Session
@@ -323,10 +324,12 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkout")
+@router.put("/workspaces/{ws}/documents/{doc_key}/checkout/", include_in_schema=False)
 def checkout(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
+    svc._ensure_last_revision(db, ws, doc_id, ver)
     return _doc_to_dict(svc.checkout(db, ws, doc_id, ver, current_user.login))
 
 
@@ -487,6 +490,77 @@ def list_doc_baselines(ws: str,
             ],
         })
     return result
+
+
+@router.post("/workspaces/{ws}/document-baselines", status_code=201)
+@router.post("/workspaces/{ws}/document-baselines/", status_code=201, include_in_schema=False)
+def create_doc_baseline(ws: str, body: dict,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    baselined_docs = body.get("baselinedDocuments", [])
+    if not baselined_docs:
+        raise HTTPException(400, "No baselinedDocuments provided")
+    result = db.execute(sql_text(
+        "INSERT INTO documentcollection (creationdate, author_workspace_id, author_login) "
+        "VALUES (:now, :ws, :login) RETURNING id"
+    ), {"now": now, "ws": ws, "login": current_user.login})
+    collection_id = result.fetchone()[0]
+    result = db.execute(sql_text(
+        "INSERT INTO documentbaseline (creationdate, description, name, type, "
+        "author_workspace_id, author_login, documentcollection_id) "
+        "VALUES (:now, :desc, :name, :type, :ws, :login, :col_id) RETURNING id"
+    ), {
+        "now": now, "desc": body.get("description", ""),
+        "name": body.get("name", ""), "type": body.get("type", 0),
+        "ws": ws, "login": current_user.login, "col_id": collection_id
+    })
+    baseline_id = result.fetchone()[0]
+    for doc in baselined_docs:
+        db.execute(sql_text(
+            "INSERT INTO baselineddocument (target_iteration, documentcollection_id, "
+            "target_documentmaster_id, target_docrevision_version, target_workspace_id) "
+            "VALUES (:iter, :col_id, :dm_id, :ver, :ws)"
+        ), {
+            "iter": doc.get("iteration", 1),
+            "col_id": collection_id,
+            "dm_id": doc["documentMasterId"],
+            "ver": doc.get("version", "A"),
+            "ws": ws
+        })
+    db.commit()
+    docs = db.execute(sql_text(
+        "SELECT bd.target_documentmaster_id, bd.target_docrevision_version, bd.target_iteration "
+        "FROM baselineddocument bd WHERE bd.documentcollection_id = :cid "
+        "ORDER BY bd.target_documentmaster_id"
+    ), {"cid": collection_id}).fetchall()
+    return {
+        "id": baseline_id, "name": body.get("name", ""),
+        "description": body.get("description", ""), "type": body.get("type", 0),
+        "creationDate": now.isoformat() + "Z",
+        "author": {"login": current_user.login, "name": current_user.login, "workspaceId": ws},
+        "baselinedDocuments": [
+            {"documentMasterId": d[0], "version": d[1], "iteration": d[2]}
+            for d in docs
+        ],
+    }
+
+
+@router.delete("/workspaces/{ws}/document-baselines/{baseline_id}", status_code=204)
+@router.delete("/workspaces/{ws}/document-baselines/{baseline_id}/", status_code=204, include_in_schema=False)
+def delete_doc_baseline(ws: str, baseline_id: int,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    baseline = db.execute(sql_text(
+        "SELECT documentcollection_id FROM documentbaseline WHERE id = :bid"
+    ), {"bid": baseline_id}).fetchone()
+    if not baseline:
+        raise HTTPException(404, "Baseline not found")
+    collection_id = baseline[0]
+    db.execute(sql_text("DELETE FROM baselineddocument WHERE documentcollection_id = :cid"), {"cid": collection_id})
+    db.execute(sql_text("DELETE FROM documentbaseline WHERE id = :bid"), {"bid": baseline_id})
+    db.execute(sql_text("DELETE FROM documentcollection WHERE id = :cid"), {"cid": collection_id})
+    db.commit()
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")

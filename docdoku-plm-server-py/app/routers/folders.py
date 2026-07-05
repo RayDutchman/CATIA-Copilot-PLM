@@ -1,13 +1,24 @@
 """文件夹端点路由（FolderResource）。"""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.services.document_service import DocumentService
 
 router = APIRouter()
 svc = DocumentService()
+
+
+def _check_workspace_write_access(db: Session, ws: str, login: str):
+    """检查用户是否有工作区写权限。"""
+    row = db.execute(sql_text(
+        "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
+    ), {"l": login, "w": ws}).first()
+    if not row:
+        raise AccessRightException("AccessRightException")
 
 
 @router.get("/workspaces/{ws}/folders")
@@ -37,6 +48,7 @@ def list_sub(ws: str, folder_path: str,
 def create_root(ws: str, body: dict,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
+    _check_workspace_write_access(db, ws, current_user.login)
     name = body.get("name", "")
     f = svc.create_folder(db, ws, name)
     return {"path": f.completepath, "name": name}
@@ -46,6 +58,7 @@ def create_root(ws: str, body: dict,
 def create_sub(ws: str, parent_path: str, body: dict,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
+    _check_workspace_write_access(db, ws, current_user.login)
     name = body.get("name", "")
     f = svc.create_folder(db, parent_path, name)
     return {"path": f.completepath, "name": name}
@@ -64,7 +77,8 @@ def rename_put(ws: str, folder_path: str, body: dict,
 def delete(ws: str, folder_path: str,
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
-    svc.delete_folder(db, folder_path)
+    _check_workspace_write_access(db, ws, current_user.login)
+    svc.delete_folder(db, folder_path, current_user.login)
     return {"status": "deleted"}
 
 

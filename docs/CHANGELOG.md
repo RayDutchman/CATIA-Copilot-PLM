@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-07-06 — Documents/Folders audit: baselines CRUD/folder cascade/checkout auth/iteration update
+
+### 修复内容
+
+- fix(py): **document baselines create/delete** (`routers/documents.py`) — 新增 `POST /workspaces/{ws}/document-baselines` 和 `DELETE /workspaces/{ws}/document-baselines/{baseline_id}` 端点，含 trailing-slash 双路由
+- fix(py): **deleteFolder 级联删除** (`services/document_service.py`) — delete_folder 先按 `location_completepath LIKE path%` 查找并删除所有文档，再删除子文件夹和自身
+- fix(py): **folder create/delete 写权限检查** (`routers/folders.py`) — create_root/create_sub/delete 端点新增 `_check_workspace_write_access` 检查
+- fix(py): **checkout NotAllowedException72** (`routers/documents.py` + `services/document_service.py`) — checkout 前调用 `_ensure_last_revision()` 检查是否为最新版本
+- fix(py): **iteration update 支持 linkedDocuments** (`services/document_service.py`) — update_iteration 支持 body 中 `linkedDocuments` 字段，写入 `documentlink` + `documentiteration_documentlink` 表
+
+### 影响
+- 3 个文件，210 行新增，35 行删除
+- Pytest: 122 passed，13 个 pre-existing failures（delete_revision SA PK-FK + 残留数据 + conversion_service）
+- Docker: 无需重建
+
+---
+
+## 2026-07-06 — Workflow audit: activityModels持久化/acl端点/processTask holderType路由/task响应字段
+
+### 修复内容
+
+- fix(py): **create_model activityModels 持久化** (`workflow_service.py` + `models/workflow.py`) — create_model 接收 `activityModels` 参数，写入 `activitymodel` 表；每个 activity 的 tasks 写入 `taskmodel` 表（新增 `TaskModel` ORM 模型）
+- fix(py): **PUT /workflow-models/{id}/acl** (`workflows.py`) — 新增工作流模型 ACL 端点，使用 `apply_acl` 辅助函数
+- fix(py): **process_task holderType 路由** (`workflow_service.py`) — 根据 task 的 workflow_id 查找关联实体（documentrevision/partrevision/workspace_workflow），审批通过→RELEASED，拒绝→WIP，响应含 holder 信息
+- fix(py): **GET /tasks 响应字段** (`workflow_service.py`) — `get_assigned_tasks` 返回 `holderType`/`holderReference`/`holderVersion`/`workspaceId`
+- fix(py): **task_documents/task_parts filter 参数** (`workflows.py`) — 支持 `?filter=in_progress` 过滤仅进行中的任务
+
+### 影响
+- 3 个文件，175 行新增，22 行删除
+- Pytest: 125 passed, 9 pre-existing failures（documentlink schema 不匹配 + vault 清理 FileNotFound）
+- Docker: back-py 容器已重建并运行
+
+(以上内容已提交至 git)
+
+---
+
 ## 2026-07-06 — Products audit: CI delete约束/decode_path版本/designItem字段/baseline创建/milestone计数/产品实例
 
 ### 修复内容
