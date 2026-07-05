@@ -102,17 +102,19 @@ P4 范围内**无 `.author.name` 嵌套崩溃风险**。`author`/`assignee` 在 
 
 ## 测试策略
 
-1. **单元/集成测试**（真实 DB, TestClient）：每个类型的 CRUD + 错误路径
-2. **Payara 对拍**：创建/列表/详情/删除 对比端口 8001 vs 8000
-3. **前端实测清单**：建 Issue→创建→编辑→删除→Milestone 全流程
+1. **前端 Model 审计**（P3 防御清单 #0，每阶段启动前必做）：读 `change_item.js`/`change_issue.js`/`change_request.js`/`change_order.js`/`milestone.js` 的 `parse()`/`initialize()`/`this.get()`，确认响应必需字段无缺失。P4 范围内 `author`/`assignee` 已平铺为 `authorName`/`assigneeName`，无 `.author.name` 嵌套风险。
+2. **单元/集成测试**（真实 DB, TestClient）：每个类型的 CRUD + 错误路径
+3. **Payara 对拍**：创建/列表/详情/删除 对比端口 8001 vs 8000
+4. **前端实测清单**：建 Issue→创建→编辑→删除→Milestone 全流程
 
 ## 执行顺序（遵循标准每阶段工作流）
 
-1. ORM 建模（`app/models/change.py`）
-2. ChangeService CRUD
-3. changes 路由
-4. **对齐审计**（逐方法对照 Java + 补齐 i18n）
-5. **Payara 对拍**（无 diff）
-6. **前端实测清单**交用户验收
-7. **通过后**切 Nginx 变更路由
-8. 更新文档
+1. 前端 Model 审计（确认响应必需字段）
+2. ORM 建模（`app/models/change.py`）
+3. ChangeService CRUD
+4. changes 路由
+5. **对齐审计**（逐方法对照 Java + 补齐 i18n）
+6. **Payara 对拍**（无 diff）
+7. **前端实测清单**交用户验收
+8. **通过后**切 Nginx 变更路由
+9. 更新文档
