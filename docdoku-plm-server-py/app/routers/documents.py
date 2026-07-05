@@ -82,14 +82,17 @@ def _doc_to_dict(rev):
         dict_fields["checkOutUser"] = {"login": rev.checkout_user_login}
     if rev.release_user_login:
         dict_fields["releaseAuthor"] = {
-            "login": rev.release_user_login, "name": rev.release_user_login,
+            "login": rev.release_user_login, "name": rev.release_user_login or "",
             "email": None, "workspaceId": rev.workspace_id,
         }
     if rev.obsolete_user_login:
         dict_fields["obsoleteAuthor"] = {
-            "login": rev.obsolete_user_login, "name": rev.obsolete_user_login,
+            "login": rev.obsolete_user_login, "name": rev.obsolete_user_login or "",
             "email": None, "workspaceId": rev.workspace_id,
         }
+    for k in ("description", "lastIteration", "workflow", "lifeCycleState",
+              "obsoleteDate", "routePath", "tags"):
+        dict_fields.setdefault(k, None if k == "description" else "" if k == "tags" else [])
     return dict_fields
 
 

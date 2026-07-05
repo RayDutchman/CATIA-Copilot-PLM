@@ -246,7 +246,11 @@ def list_all_baselines(ws: str,
 @router.get("/workspaces/{ws}/product-configurations")
 def list_configs(ws: str, current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    return [{"id": c.id, "name": c.name} for c in svc.list_configs(db, ws)]
+    configs = svc.list_configs(db, ws)
+    return [{"id": c.id, "name": c.name,
+             "configurationItemId": c.configurationitem_id,
+             "description": c.description or ""}
+            for c in configs]
 
 
 @router.post("/workspaces/{ws}/products/{ci_id}/configurations", status_code=201)

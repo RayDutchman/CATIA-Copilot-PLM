@@ -8,15 +8,17 @@ from app.services.user_mgmt_service import user_mgmt_service
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-def _account_to_dict(acc):
-    return {
+def _account_to_dict(acc, db=None):
+    result = {
         "login": acc.login,
-        "email": acc.email,
-        "name": acc.name,
-        "language": acc.language,
-        "timezone": acc.timezone,
+        "email": acc.email or "",
+        "name": acc.name or "",
+        "language": acc.language or "en",
+        "enabled": True,
         "admin": False,
+        "timeZone": acc.timezone,
     }
+    return result
 
 
 @router.put("/accounts/me")

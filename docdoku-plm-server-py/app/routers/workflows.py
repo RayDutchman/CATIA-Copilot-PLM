@@ -44,7 +44,7 @@ def _model_to_dict(m, db: Session = None) -> dict:
 
     result = {
         "id": m.id,
-        "finalLifecycleState": m.finalLifecycleState or "",
+        "finalLifeCycleState": m.finalLifecycleState or "",
         "creationDate": m.creationdate.isoformat() + "Z" if m.creationdate else None,
         "author": {
             "login": author_login,
