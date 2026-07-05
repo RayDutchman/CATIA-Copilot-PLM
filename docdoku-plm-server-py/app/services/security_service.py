@@ -52,11 +52,11 @@ class SecurityService:
         role = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if not role:
             raise EntityNotFoundException("RoleNotFoundException", name)
-        in_use = db.execute(text(
+        rows = db.execute(text(
             "SELECT COUNT(*) FROM role_user WHERE role_name=:n AND role_workspace_id=:w "
             "UNION ALL SELECT COUNT(*) FROM role_usergroup WHERE role_name=:n AND role_workspace_id=:w"
-        ), {"n": name, "w": ws}).scalar()
-        if in_use:
+        ), {"n": name, "w": ws}).fetchall()
+        if any(r[0] > 0 for r in rows):
             raise EntityConstraintException("EntityConstraintException25")
         db.delete(role)
         db.commit()
