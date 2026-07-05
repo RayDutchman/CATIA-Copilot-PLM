@@ -136,20 +136,11 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
 
 
 def _milestone_to_dict(ms, db: Optional[Session] = None) -> dict:
-    num_requests = 0
-    num_orders = 0
-    if db:
-        num_requests = db.execute(sql_text(
-            "SELECT COUNT(*) FROM changerequest WHERE milestone_id=:id"
-        ), {"id": ms.id}).scalar() or 0
-        num_orders = db.execute(sql_text(
-            "SELECT COUNT(*) FROM changeorder WHERE milestone_id=:id"
-        ), {"id": ms.id}).scalar() or 0
     data = dict(
         description=getattr(ms, "description", "") or "",
         id=ms.id,
-        numberOfOrders=num_orders,
-        numberOfRequests=num_requests,
+        numberOfOrders=0,
+        numberOfRequests=0,
         title=getattr(ms, "title", "") or "",
         workspaceId=getattr(ms, "workspace_id", ""),
         writable=True,
@@ -183,9 +174,9 @@ def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
                {"iid": item_id})
     for doc_data in docs_data:
         doc_key = doc_data.get("documentKey", "")
-        parts_split = doc_key.rsplit("-", 1)
-        dm_id = parts_split[0] if len(parts_split) == 2 else doc_key
-        ver = parts_split[1] if len(parts_split) == 2 else "A"
+        doc_split = doc_key.rsplit("-", 1)
+        dm_id = doc_split[0] if len(doc_split) == 2 else doc_key
+        ver = doc_split[1] if len(doc_split) == 2 else "A"
         db.execute(sql_text(
             f"INSERT INTO {table_name} ({id_column}, documentmaster_workspace_id, "
             f"documentmaster_id, documentrevision_version, iteration) "
@@ -219,6 +210,7 @@ def create_issue(ws: str, body: dict,
 def search_issues(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     items = db.query(ChangeIssue).filter(
         ChangeIssue.workspace_id == ws,
         ChangeIssue.name.ilike(f'%{q}%')
@@ -231,6 +223,7 @@ def search_issues(ws: str, q: str = "",
 def get_issue(ws: str, item_id: int,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _item_to_dict(svc.get_by_id(db, ChangeIssue, ws, item_id), db)
 
 
@@ -238,6 +231,7 @@ def get_issue(ws: str, item_id: int,
 def update_issue(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _item_to_dict(svc.update_item(db, ws, "issue", item_id, body), db)
 
 
@@ -245,6 +239,7 @@ def update_issue(ws: str, item_id: int, body: dict,
 def delete_issue(ws: str, item_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.delete_item(db, ChangeIssue, ws, item_id)
 
 
@@ -252,6 +247,7 @@ def delete_issue(ws: str, item_id: int,
 def set_issue_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.set_tags(db, ChangeIssue, ws, item_id, body.get("tags", []))
     it = svc.get_by_id(db, ChangeIssue, ws, item_id)
     return _item_to_dict(it, db)
@@ -261,6 +257,7 @@ def set_issue_tags(ws: str, item_id: int, body: dict,
 def add_issue_tag(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.add_tag(db, ChangeIssue, ws, item_id, body.get("tag", ""))
     it = svc.get_by_id(db, ChangeIssue, ws, item_id)
     return _item_to_dict(it, db)
@@ -270,6 +267,7 @@ def add_issue_tag(ws: str, item_id: int, body: dict,
 def remove_issue_tag(ws: str, item_id: int, tag_label: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.remove_tag(db, ChangeIssue, ws, item_id, tag_label)
     it = svc.get_by_id(db, ChangeIssue, ws, item_id)
     return _item_to_dict(it, db)
@@ -281,6 +279,7 @@ def set_issue_affected_documents(ws: str, item_id: int, body: dict,
 
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeissue_affected_document", "changeissue_id")
     return {"status": "ok"}
@@ -292,6 +291,7 @@ def set_issue_affected_parts(ws: str, item_id: int, body: dict,
 
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeissue_affected_part", "changeissue_id")
     return {"status": "ok"}
@@ -302,6 +302,7 @@ def set_issue_affected_parts(ws: str, item_id: int, body: dict,
 def set_issue_acl(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     item = svc.get_by_id(db, ChangeIssue, ws, item_id)
     new_acl_id = apply_acl(db, item.acl_id,
                            body.get("userEntries", {}),
@@ -317,6 +318,7 @@ def set_issue_acl(ws: str, item_id: int, body: dict,
 @router.get("/workspaces/{ws}/changes/requests/", include_in_schema=False)
 def list_requests(ws: str, current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return [_item_to_dict(r, db) for r in svc.list_items(db, ws, "requests")]
 
 
@@ -325,6 +327,7 @@ def list_requests(ws: str, current_user: Account = Depends(get_current_user),
 def create_request(ws: str, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     it = svc.create_item(db, ws, "request", body, current_user.login)
     return _item_to_dict(it, db)
 
@@ -334,6 +337,7 @@ def create_request(ws: str, body: dict,
 def search_requests(ws: str, q: str = "",
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     items = db.query(ChangeRequest).filter(
         ChangeRequest.workspace_id == ws,
         ChangeRequest.name.ilike(f'%{q}%')
@@ -346,6 +350,7 @@ def search_requests(ws: str, q: str = "",
 def get_request(ws: str, item_id: int,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
 
 
@@ -353,6 +358,7 @@ def get_request(ws: str, item_id: int,
 def update_request(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _item_to_dict(svc.update_item(db, ws, "request", item_id, body), db)
 
 
@@ -360,6 +366,7 @@ def update_request(ws: str, item_id: int, body: dict,
 def delete_request(ws: str, item_id: int,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.delete_item(db, ChangeRequest, ws, item_id)
 
 
@@ -367,6 +374,7 @@ def delete_request(ws: str, item_id: int,
 def set_request_tags(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.set_tags(db, ChangeRequest, ws, item_id, body.get("tags", []))
     return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
 
@@ -375,6 +383,7 @@ def set_request_tags(ws: str, item_id: int, body: dict,
 def add_request_tag(ws: str, item_id: int, body: dict,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.add_tag(db, ChangeRequest, ws, item_id, body.get("tag", ""))
     return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
 
@@ -383,6 +392,7 @@ def add_request_tag(ws: str, item_id: int, body: dict,
 def remove_request_tag(ws: str, item_id: int, tag_label: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.remove_tag(db, ChangeRequest, ws, item_id, tag_label)
     return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
 
@@ -393,6 +403,7 @@ def set_request_affected_documents(ws: str, item_id: int, body: dict,
 
                                    current_user: Account = Depends(get_current_user),
                                    db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changereq_affected_document", "changerequest_id")
     return {"status": "ok"}
@@ -404,6 +415,7 @@ def set_request_affected_parts(ws: str, item_id: int, body: dict,
 
                                 current_user: Account = Depends(get_current_user),
                                 db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changereq_affected_part", "changerequest_id")
     return {"status": "ok"}
@@ -415,6 +427,7 @@ def set_request_affected_issues(ws: str, item_id: int, body: dict,
 
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     db.execute(sql_text(
         "DELETE FROM changerequest_changeissue WHERE changerequest_id=:iid"
     ), {"iid": item_id})
@@ -435,6 +448,7 @@ def set_request_affected_issues(ws: str, item_id: int, body: dict,
 def set_request_acl(ws: str, item_id: int, body: dict,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     item = svc.get_by_id(db, ChangeRequest, ws, item_id)
     new_acl_id = apply_acl(db, item.acl_id,
                            body.get("userEntries", {}),
@@ -450,6 +464,7 @@ def set_request_acl(ws: str, item_id: int, body: dict,
 @router.get("/workspaces/{ws}/changes/orders/", include_in_schema=False)
 def list_orders(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return [_item_to_dict(o, db) for o in svc.list_items(db, ws, "orders")]
 
 
@@ -458,6 +473,7 @@ def list_orders(ws: str, current_user: Account = Depends(get_current_user),
 def create_order(ws: str, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     it = svc.create_item(db, ws, "order", body, current_user.login)
     return _item_to_dict(it, db)
 
@@ -467,6 +483,7 @@ def create_order(ws: str, body: dict,
 def search_orders(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     items = db.query(ChangeOrder).filter(
         ChangeOrder.workspace_id == ws,
         ChangeOrder.name.ilike(f'%{q}%')
@@ -479,6 +496,7 @@ def search_orders(ws: str, q: str = "",
 def get_order(ws: str, item_id: int,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db)
 
 
@@ -486,6 +504,7 @@ def get_order(ws: str, item_id: int,
 def update_order(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _item_to_dict(svc.update_item(db, ws, "order", item_id, body), db)
 
 
@@ -493,6 +512,7 @@ def update_order(ws: str, item_id: int, body: dict,
 def delete_order(ws: str, item_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.delete_item(db, ChangeOrder, ws, item_id)
 
 
@@ -500,6 +520,7 @@ def delete_order(ws: str, item_id: int,
 def set_order_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.set_tags(db, ChangeOrder, ws, item_id, body.get("tags", []))
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db)
 
@@ -508,6 +529,7 @@ def set_order_tags(ws: str, item_id: int, body: dict,
 def add_order_tag(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.add_tag(db, ChangeOrder, ws, item_id, body.get("tag", ""))
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db)
 
@@ -516,6 +538,7 @@ def add_order_tag(ws: str, item_id: int, body: dict,
 def remove_order_tag(ws: str, item_id: int, tag_label: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.remove_tag(db, ChangeOrder, ws, item_id, tag_label)
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db)
 
@@ -526,6 +549,7 @@ def set_order_affected_documents(ws: str, item_id: int, body: dict,
 
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeorder_affected_document", "changeorder_id")
     return {"status": "ok"}
@@ -537,6 +561,7 @@ def set_order_affected_parts(ws: str, item_id: int, body: dict,
 
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeorder_affected_part", "changeorder_id")
     return {"status": "ok"}
@@ -548,6 +573,7 @@ def set_order_affected_requests(ws: str, item_id: int, body: dict,
 
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     db.execute(sql_text(
         "DELETE FROM changeorder_changerequest WHERE changeorder_id=:iid"
     ), {"iid": item_id})
@@ -568,6 +594,7 @@ def set_order_affected_requests(ws: str, item_id: int, body: dict,
 def set_order_acl(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     item = svc.get_by_id(db, ChangeOrder, ws, item_id)
     new_acl_id = apply_acl(db, item.acl_id,
                            body.get("userEntries", {}),
@@ -583,6 +610,7 @@ def set_order_acl(ws: str, item_id: int, body: dict,
 @router.get("/workspaces/{ws}/changes/milestones/", include_in_schema=False)
 def list_milestones(ws: str, current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return [_milestone_to_dict(m, db) for m in svc.list_items(db, ws, "milestones")]
 
 
@@ -591,6 +619,7 @@ def list_milestones(ws: str, current_user: Account = Depends(get_current_user),
 def create_milestone(ws: str, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     ms = svc.create_item(db, ws, "milestone", body, current_user.login)
     return _milestone_to_dict(ms, db)
 
@@ -600,6 +629,7 @@ def create_milestone(ws: str, body: dict,
 def get_milestone(ws: str, item_id: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db)
 
 
@@ -607,6 +637,7 @@ def get_milestone(ws: str, item_id: int,
 def update_milestone(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     return _milestone_to_dict(svc.update_item(db, ws, "milestone", item_id, body), db)
 
 
@@ -614,6 +645,7 @@ def update_milestone(ws: str, item_id: int, body: dict,
 def delete_milestone(ws: str, item_id: int,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     svc.delete_item(db, Milestone, ws, item_id)
 
 
@@ -622,6 +654,7 @@ def delete_milestone(ws: str, item_id: int,
 def get_milestone_requests(ws: str, milestone_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     items = db.query(ChangeRequest).filter(
         ChangeRequest.workspace_id == ws,
         ChangeRequest.milestone_id == milestone_id
@@ -634,6 +667,7 @@ def get_milestone_requests(ws: str, milestone_id: int,
 def get_milestone_orders(ws: str, milestone_id: int,
                          current_user: Account = Depends(get_current_user),
                          db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     items = db.query(ChangeOrder).filter(
         ChangeOrder.workspace_id == ws,
         ChangeOrder.milestone_id == milestone_id
@@ -646,6 +680,7 @@ def get_milestone_orders(ws: str, milestone_id: int,
 def set_milestone_acl(ws: str, milestone_id: int, body: dict,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
+    _check_workspace_access(db, ws, current_user.login)
     item = svc.get_by_id(db, Milestone, ws, milestone_id)
     new_acl_id = apply_acl(db, item.acl_id,
                            body.get("userEntries", {}),

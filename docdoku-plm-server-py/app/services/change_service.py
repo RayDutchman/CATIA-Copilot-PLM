@@ -2,6 +2,8 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
+from app.core.exceptions import AccessRightException, EntityConstraintException
+from app.models.auth import Account
 from app.models.change import (
     ChangeIssue, ChangeRequest, ChangeOrder, Milestone,
     change_issue_tags, change_request_tags, change_order_tags,
@@ -40,6 +42,14 @@ class ChangeService:
             raise HTTPException(404, f"{cls.__name__} not found")
         return item
 
+    def _check_assignee(self, db: Session, assignee_login: str):
+        if assignee_login:
+            acc = db.query(Account).filter(Account.login == assignee_login).first()
+            if not acc:
+                raise AccessRightException("NotAllowedException")
+            if not acc.enabled:
+                raise AccessRightException("NotAllowedException")
+
     def create_item(self, db: Session, ws: str, type_name: str,
                     body: dict, user_login: str):
         cls = self._cls(type_name)
@@ -56,7 +66,9 @@ class ChangeService:
             if field in body:
                 kwargs[field] = body[field]
         if "assignee" in body and isinstance(body["assignee"], dict):
-            kwargs["assignee_login"] = body["assignee"].get("login")
+            assignee_login = body["assignee"].get("login")
+            self._check_assignee(db, assignee_login)
+            kwargs["assignee_login"] = assignee_login
         if "dueDate" in body:
             kwargs["due_date"] = body["dueDate"]
         item = cls(**kwargs)
@@ -71,7 +83,9 @@ class ChangeService:
         item = self.get_by_id(db, cls, ws, item_id)
         for key, val in body.items():
             if key == "assignee" and isinstance(val, dict):
-                item.assignee_login = val.get("login")
+                assignee_login = val.get("login")
+                self._check_assignee(db, assignee_login)
+                item.assignee_login = assignee_login
             elif key == "dueDate":
                 item.due_date = val
             elif hasattr(item, key):
@@ -82,6 +96,20 @@ class ChangeService:
 
     def delete_item(self, db: Session, cls, ws: str, item_id: int):
         item = self.get_by_id(db, cls, ws, item_id)
+        # 里程碑删除前检查约束
+        if cls is Milestone:
+            orders = db.query(ChangeOrder).filter(
+                ChangeOrder.milestone_id == item_id,
+                ChangeOrder.workspace_id == ws,
+            ).count()
+            requests = db.query(ChangeRequest).filter(
+                ChangeRequest.milestone_id == item_id,
+                ChangeRequest.workspace_id == ws,
+            ).count()
+            if orders > 0:
+                raise EntityConstraintException("EntityConstraintException8")
+            if requests > 0:
+                raise EntityConstraintException("EntityConstraintException9")
         # 清理受影响关联（通过原始 SQL 写入的关联，ORM 不感知）
         prefix_map = {
             ChangeIssue: "changeissue",
