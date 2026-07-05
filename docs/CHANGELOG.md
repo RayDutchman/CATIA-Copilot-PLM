@@ -8,6 +8,17 @@
 
 ## 2026-07-05 — 系统化对拍 + 全量补齐 + 生产端收尾
 
+### full_compare_v2 专项修复
+
+- fix: 6 端点 try/except 防 502（workspace tags/lov/attributes/part-templates/document-baselines）
+- fix: PUT /workspaces/{ws}/front-options 返回 204 No Content
+- fix: GET front-options 补齐 `documentTableColumns`/`partTableColumns` 字段
+- fix: document _doc_to_dict 补齐 `acl`/`routePath`/checkOutUser 子字段(`email`/`language`/`name`/`workspaceId`)
+- fix: document author/releaseAuthor/obsoleteAuthor 补齐 `language` 字段
+- fix: _get_user_dto (products.py) 补齐 `language` 字段
+- fix: /platform/health 补齐 `status` 字段
+- chore: 对拍 MATCH 56→57, PARTIAL 1→0 (full_compare_v2)
+
 ### 系统化 Payara vs FastAPI 对拍
 
 - feat: `scripts/compare_all_endpoints.py` — 133 端点全量对拍脚本，支持 `--fresh`（清空→种子→动态解析ID→对拍）和 `--admin`（admin端点）
