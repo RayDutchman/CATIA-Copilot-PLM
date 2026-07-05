@@ -112,9 +112,12 @@ def list_baselines(ws: str, ci_id: str,
 def create_baseline(ws: str, ci_id: str, body: dict,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
+    bl_type = body.get("type", 0)
+    if isinstance(bl_type, str):
+        bl_type = 0 if bl_type.upper() == "LATEST" else 1
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
-                              body.get("description", ""), body.get("type", 0),
-                              current_user.login)
+                               body.get("description", ""), bl_type,
+                               current_user.login)
     return {"id": bl.id, "name": bl.name}
 
 
@@ -124,6 +127,19 @@ def delete_baseline(ws: str, ci_id: str, bl_id: int,
                     db: Session = Depends(get_db)):
     svc.delete_baseline(db, ws, bl_id)
     return {"status": "deleted"}
+
+
+@router.get("/workspaces/{ws}/product-baselines")
+def list_all_baselines(ws: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    from app.models.product import ProductBaseline
+    all_bl = db.query(ProductBaseline).filter(
+        ProductBaseline.configurationitem_workspace_id == ws
+    ).all()
+    return [{"id": b.id, "name": b.name, "type": b.type,
+             "configurationItemId": b.configurationitem_id}
+            for b in all_bl]
 
 
 @router.get("/workspaces/{ws}/product-configurations")
