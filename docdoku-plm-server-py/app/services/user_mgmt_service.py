@@ -99,19 +99,32 @@ class UserMgmtService:
         db.commit()
 
     def list_memberships(self, db: Session, ws: str) -> list:
+        """Payara: 非管理员默认 readOnly=True。管理员始终 FULL_ACCESS。"""
+        from sqlalchemy import text
+        # 查 workspace admin
+        admin_row = db.execute(text(
+            "SELECT admin_login FROM workspace WHERE id = :w"
+        ), {"w": ws}).fetchone()
+        admin_login = admin_row[0] if admin_row else ""
+        # 查所有 workspace 成员
         rows = db.execute(text(
-            "SELECT u.login, u.workspace_id, a.name, a.email, a.language, a.enabled "
+            "SELECT u.login, a.name, a.email, a.language "
             "FROM userdata u JOIN account a ON u.login = a.login "
-            "WHERE u.workspace_id = :ws AND a.enabled = true "
-            "AND u.login NOT IN (SELECT login FROM usergroupmapping WHERE groupname = 'admin')"
+            "WHERE u.workspace_id = :ws"
         ), {"ws": ws}).fetchall()
-        return [{"workspaceId": ws,
-                 "member": {
-                     "login": r[0], "name": r[2] or "",
-                     "email": r[3] or "", "language": r[4] or "",
-                     "workspaceId": ws,
-                 },
-                 "readOnly": not r[5]} for r in rows]
+        result = []
+        for r in rows:
+            login = r[0]
+            result.append({
+                "workspaceId": ws,
+                "member": {
+                    "login": login, "name": r[1] or "",
+                    "email": r[2] or "", "language": r[3] or "",
+                    "workspaceId": ws,
+                },
+                "readOnly": login != admin_login,  # 管理员 = False, 非管理员 = True
+            })
+        return result
 
     def create_account(self, db: Session, login: str, password: str,
                        email: str, name: str, lang: str) -> Account:
