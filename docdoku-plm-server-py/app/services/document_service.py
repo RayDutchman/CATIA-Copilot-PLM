@@ -71,8 +71,12 @@ class DocumentService:
     def delete_revision(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
 
-        # 非管理员不能删除其他用户 home 文件夹里的文档
-        if self._is_in_another_user_home(user_login, ws, pr.location_completepath):
+        # 管理员跳过 home 文件夹检查
+        from sqlalchemy import text as _text
+        is_admin = db.scalar(_text(
+            "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": user_login}) or 0
+        if not is_admin and self._is_in_another_user_home(user_login, ws, pr.location_completepath):
             raise NotAllowedException("NotAllowedException22")
 
         from sqlalchemy import text

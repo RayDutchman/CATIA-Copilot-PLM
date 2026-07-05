@@ -1,5 +1,6 @@
 """零件集合路由（与 Payara 路径完全一致）。"""
 import re
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -509,9 +510,25 @@ def get_tags(workspace_id: str, part_key: str,
 def share_part(workspace_id: str, part_key: str,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
+    import uuid
+    from app.models.part import SharedEntity
     number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    return map_revision(pr, db)
+    svc.get_revision(db, workspace_id, number, version)
+    shared_uuid = str(uuid.uuid4())
+    entity = SharedEntity(
+        uuid=shared_uuid,
+        dtype="SharedPart",
+        creation_date=datetime.utcnow(),
+        author_workspace_id=workspace_id,
+        author_login=current_user.login,
+        workspace_id=workspace_id,
+        entity_workspace_id=workspace_id,
+        partmaster_partnumber=number,
+        partrevision_version=version,
+    )
+    db.add(entity)
+    db.commit()
+    return {"uuid": shared_uuid, "workspaceId": workspace_id}
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/publish")
@@ -612,6 +629,29 @@ def retry_conversion(workspace_id: str, part_key: str, iteration: int,
         conv.end_date = None
     db.commit()
     return {"status": "retry_queued"}
+
+
+# ── Effectivity stubs ──────────────────────────────────────────
+
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities/", include_in_schema=False)
+def get_effectivities(workspace_id: str, part_key: str,
+                       current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.post("/workspaces/{workspace_id}/parts/{part_key}/effectivities", status_code=201)
+@router.post("/workspaces/{workspace_id}/parts/{part_key}/effectivities/", status_code=201, include_in_schema=False)
+def create_effectivity(workspace_id: str, part_key: str, body: dict = Body(...),
+                        current_user: Account = Depends(get_current_user)):
+    return Response(status_code=201)
+
+
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/effectivities/{effectivity_id}", status_code=204)
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/effectivities/{effectivity_id}/", status_code=204, include_in_schema=False)
+def delete_effectivity(workspace_id: str, part_key: str, effectivity_id: int,
+                        current_user: Account = Depends(get_current_user)):
+    return Response(status_code=204)
 
 
 # ── ACL ────────────────────────────────────────────────────────

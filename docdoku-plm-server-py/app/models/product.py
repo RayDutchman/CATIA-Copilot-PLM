@@ -80,3 +80,22 @@ class ProductInstanceIteration(Base):
     author_login = Column(String)
     documentcollection_id = Column(Integer)
     partcollection_id = Column(Integer)
+
+
+class Layer(Base):
+    __tablename__ = "layer"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    workspace_id = Column(String, nullable=False)
+    configurationitem_id = Column(String, nullable=False)
+
+
+class Marker(Base):
+    __tablename__ = "marker"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    z = Column(Float, nullable=False)
+    title = Column(String)
+    description = Column(Text)
+    layer_id = Column(Integer, ForeignKey("layer.id"), nullable=False)
