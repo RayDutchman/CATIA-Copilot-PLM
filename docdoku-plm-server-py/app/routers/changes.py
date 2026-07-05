@@ -7,6 +7,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
 from app.services.change_service import ChangeService
+from app.services.acl_helper import apply_acl
 
 router = APIRouter()
 svc = ChangeService()
@@ -156,6 +157,43 @@ def remove_issue_tag(ws: str, item_id: int, tag_label: str,
     return _item_to_dict(it, db)
 
 
+@router.get("/workspaces/{ws}/changes/issues/link")
+def search_issues(ws: str, q: str = "",
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    items = db.query(ChangeIssue).filter(
+        ChangeIssue.workspace_id == ws,
+        ChangeIssue.name.ilike(f'%{q}%')
+    ).all()
+    return [_item_to_dict(i, db) for i in items]
+
+
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-documents")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-documents/", include_in_schema=False)
+def set_issue_affected_documents(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts/", include_in_schema=False)
+def set_issue_affected_parts(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/acl")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/acl/", include_in_schema=False)
+def set_issue_acl(ws: str, item_id: int, body: dict,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    item = svc.get_by_id(db, ChangeIssue, ws, item_id)
+    new_acl_id = apply_acl(db, item.acl_id,
+                           body.get("userEntries", {}),
+                           body.get("groupEntries", {}))
+    item.acl_id = new_acl_id
+    db.commit()
+    return {"aclId": new_acl_id}
+
+
 # ── Requests ──
 
 @router.get("/workspaces/{ws}/changes/requests")
@@ -216,6 +254,49 @@ def remove_request_tag(ws: str, item_id: int, tag_label: str,
                        db: Session = Depends(get_db)):
     svc.remove_tag(db, ChangeRequest, ws, item_id, tag_label)
     return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
+
+
+@router.get("/workspaces/{ws}/changes/requests/link")
+def search_requests(ws: str, q: str = "",
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    items = db.query(ChangeRequest).filter(
+        ChangeRequest.workspace_id == ws,
+        ChangeRequest.name.ilike(f'%{q}%')
+    ).all()
+    return [_item_to_dict(r, db) for r in items]
+
+
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents")
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents/", include_in_schema=False)
+def set_request_affected_documents(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts")
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts/", include_in_schema=False)
+def set_request_affected_parts(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues")
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues/", include_in_schema=False)
+def set_request_affected_issues(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/acl")
+@router.put("/workspaces/{ws}/changes/requests/{item_id}/acl/", include_in_schema=False)
+def set_request_acl(ws: str, item_id: int, body: dict,
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    item = svc.get_by_id(db, ChangeRequest, ws, item_id)
+    new_acl_id = apply_acl(db, item.acl_id,
+                           body.get("userEntries", {}),
+                           body.get("groupEntries", {}))
+    item.acl_id = new_acl_id
+    db.commit()
+    return {"aclId": new_acl_id}
 
 
 # ── Orders ──
@@ -280,6 +361,49 @@ def remove_order_tag(ws: str, item_id: int, tag_label: str,
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db)
 
 
+@router.get("/workspaces/{ws}/changes/orders/link")
+def search_orders(ws: str, q: str = "",
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    items = db.query(ChangeOrder).filter(
+        ChangeOrder.workspace_id == ws,
+        ChangeOrder.name.ilike(f'%{q}%')
+    ).all()
+    return [_item_to_dict(o, db) for o in items]
+
+
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-documents")
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-documents/", include_in_schema=False)
+def set_order_affected_documents(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts")
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts/", include_in_schema=False)
+def set_order_affected_parts(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests")
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests/", include_in_schema=False)
+def set_order_affected_requests(ws: str, item_id: int, body: dict):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/acl")
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/acl/", include_in_schema=False)
+def set_order_acl(ws: str, item_id: int, body: dict,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    item = svc.get_by_id(db, ChangeOrder, ws, item_id)
+    new_acl_id = apply_acl(db, item.acl_id,
+                           body.get("userEntries", {}),
+                           body.get("groupEntries", {}))
+    item.acl_id = new_acl_id
+    db.commit()
+    return {"aclId": new_acl_id}
+
+
 # ── Milestones ──
 
 @router.get("/workspaces/{ws}/changes/milestones")
@@ -316,3 +440,39 @@ def delete_milestone(ws: str, item_id: int,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     svc.delete_item(db, Milestone, ws, item_id)
+
+
+@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/requests")
+def get_milestone_requests(ws: str, milestone_id: int,
+                           current_user: Account = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    items = db.query(ChangeRequest).filter(
+        ChangeRequest.workspace_id == ws,
+        ChangeRequest.milestone_id == milestone_id
+    ).all()
+    return [_item_to_dict(r, db) for r in items]
+
+
+@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders")
+def get_milestone_orders(ws: str, milestone_id: int,
+                         current_user: Account = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    items = db.query(ChangeOrder).filter(
+        ChangeOrder.workspace_id == ws,
+        ChangeOrder.milestone_id == milestone_id
+    ).all()
+    return [_item_to_dict(o, db) for o in items]
+
+
+@router.put("/workspaces/{ws}/changes/milestones/{milestone_id}/acl")
+@router.put("/workspaces/{ws}/changes/milestones/{milestone_id}/acl/", include_in_schema=False)
+def set_milestone_acl(ws: str, milestone_id: int, body: dict,
+                      current_user: Account = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    item = svc.get_by_id(db, Milestone, ws, milestone_id)
+    new_acl_id = apply_acl(db, item.acl_id,
+                           body.get("userEntries", {}),
+                           body.get("groupEntries", {}))
+    item.acl_id = new_acl_id
+    db.commit()
+    return {"aclId": new_acl_id}
