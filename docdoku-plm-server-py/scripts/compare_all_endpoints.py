@@ -3,6 +3,7 @@
 
 从 Java Resource 文件提取全部端点，逐端点 curl 双后端对比。
 用法: cd docdoku-plm-server-py && source venv/bin/activate && python scripts/compare_all_endpoints.py
+      python scripts/compare_all_endpoints.py --admin
 """
 
 import re, json, subprocess, sys
@@ -23,6 +24,8 @@ LOGIN = "test1"
 
 token_fa = None
 token_py = None
+token_fa_admin = None
+token_py_admin = None
 
 def login(host):
     url = f"{host}{API}/auth/login"
@@ -31,13 +34,24 @@ def login(host):
     resp = urlopen(req, timeout=10)
     return dict(resp.headers).get("jwt", "")
 
-def curl(method, host, path):
+def login_admin(host):
+    url = f"{host}{API}/auth/login"
+    data = json.dumps({"login": "admin", "password": "password"}).encode()
+    req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    resp = urlopen(req, timeout=10)
+    return dict(resp.headers).get("jwt", "")
+
+def curl(method, host, path, body_dict=None, admin=False):
     url = f"{host}{API}{path}"
-    tok = token_fa if host == FA else token_py
+    if admin:
+        tok = token_fa_admin if host == FA else token_py_admin
+    else:
+        tok = token_fa if host == FA else token_py
     headers = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
     body = None
     if method in ("POST", "PUT"):
-        body = json.dumps({}).encode()
+        data = body_dict if body_dict is not None else {}
+        body = json.dumps(data).encode()
     req = Request(url, data=body, headers=headers, method=method)
     try:
         resp = urlopen(req, timeout=15)
@@ -54,9 +68,9 @@ def curl(method, host, path):
             data = None
     return code, data
 
-def compare(name, method, path, fa_expected=200, py_expected=200):
-    fa_code, fa_data = curl(method, FA, path)
-    py_code, py_data = curl(method, PY, path)
+def compare(name, method, path, body=None, admin=False, fa_expected=200, py_expected=200):
+    fa_code, fa_data = curl(method, FA, path, body_dict=body, admin=admin)
+    py_code, py_data = curl(method, PY, path, body_dict=body, admin=admin)
 
     # 提取 keys 作对比（兼容 dict / list / 标量）
     def get_keys(data):
@@ -87,7 +101,7 @@ def compare(name, method, path, fa_expected=200, py_expected=200):
         return f"  \u2717 MISMATCH FA:{fa_code} PY:{py_code}"
 
 # ============================================================
-# 端点清单：method, path, name
+# 端点清单：method, path, name [, body_dict]
 # 从 Java Resource 文件提取，覆盖全部 GET 端点 + 部分 POST/PUT/DELETE
 # ============================================================
 endpoints = [
@@ -97,9 +111,8 @@ endpoints = [
     ("GET",  "/auth/logout", "logout"),
     ("POST", "/auth/login", "login"),  # broken, Payara 500
 
-    # ---- Admin (仅 accounts 和 platform-options，跳过 index/统计数据) ----
+    # ---- Admin (仅 accounts，用 test1 权限测试) ----
     ("GET",  "/admin/accounts", "admin accounts"),
-    ("GET",  "/admin/platform-options", "platform options"),
 
     # ---- Platform ----
     ("GET",  "/platform/health", "health"),
@@ -289,8 +302,74 @@ endpoints = [
     ("GET",  f"/shared/{WS}/parts/SEED-ASSEM-A", "shared part detail"),
 ]
 
+# Admin endpoints (use admin token via --admin flag)
+# 格式: ("METHOD", "path", "name", {body_dict} or None)
+admin_endpoints = [
+    ("GET",  "/admin/platform-options", "admin/options"),
+    ("PUT",  "/admin/platform-options", "admin/options-update", {}),
+    ("GET",  "/admin/index", "admin/index"),
+    ("POST", "/admin/index", "admin/index-post", {}),
+    ("GET",  "/admin/providers", "admin/providers"),
+    ("POST", "/admin/providers", "admin/providers-create", {}),
+    ("GET",  "/admin/providers/42", "admin/providers-detail"),
+    ("PUT",  "/admin/providers/42", "admin/providers-update", {}),
+    ("DELETE", "/admin/providers/42", "admin/providers-delete"),
+    ("PUT",  "/admin/accounts/admin/enable", "admin/enable-account", {}),
+    ("PUT",  "/admin/accounts/admin/disable", "admin/disable-account", {}),
+    # 用 admin 权限测试 accounts 列表
+    ("GET",  "/admin/accounts", "admin accounts (admin)", None),
+]
+
+def run_admin():
+    global token_fa_admin, token_py_admin
+    print("Logging in as admin...")
+    try:
+        token_fa_admin = login_admin(FA)
+    except Exception as e:
+        print(f"FA admin login failed: {e}")
+        token_fa_admin = ""
+    try:
+        token_py_admin = login_admin(PY)
+    except Exception as e:
+        print(f"PY admin login failed: {e}")
+        token_py_admin = ""
+    print(f"FA admin: {token_fa_admin[:30] if token_fa_admin else 'N/A'}...")
+    print(f"PY admin: {token_py_admin[:30] if token_py_admin else 'N/A'}...")
+
+    matched = partial = mismatch = error = 0
+    print(f"\n═══ Admin 端点对拍 {len(admin_endpoints)} 端点 ═══\n")
+
+    for entry in admin_endpoints:
+        if len(entry) == 4:
+            method, path, name, body = entry
+        elif len(entry) == 3:
+            method, path, name = entry
+            body = None
+        else:
+            continue
+
+        try:
+            result = compare(name, method, path, body=body, admin=True)
+            print(f"{result}  {method} {path}")
+            if result.startswith("  \u2713"): matched += 1
+            elif result.startswith("  \u26a0"): partial += 1
+            else: mismatch += 1
+        except Exception as e:
+            error += 1
+            print(f"  \u2717 ERROR {method} {path}: {e}")
+
+    total = matched + partial + mismatch + error
+    print(f"\n═══ Admin 汇总 ═══")
+    print(f"\u2713 MATCH: {matched}  \u26a0 PARTIAL: {partial}  \u2717 MISMATCH: {mismatch}  \u2717 ERROR: {error}")
+    print(f"Total: {total}")
+
 def main():
-    global token_fa, token_py
+    global token_fa, token_py, token_fa_admin, token_py_admin
+
+    if "--admin" in sys.argv:
+        run_admin()
+        return
+
     print("Logging in...")
     token_fa = login(FA)
     token_py = login(PY)
@@ -299,9 +378,17 @@ def main():
     matched = partial = mismatch = error = 0
     print(f"\n═══ 对拍 {len(endpoints)} 端点 ═══\n")
 
-    for method, path, name in endpoints:
+    for entry in endpoints:
+        if len(entry) == 4:
+            method, path, name, body = entry
+        elif len(entry) == 3:
+            method, path, name = entry
+            body = None
+        else:
+            continue
+
         try:
-            result = compare(name, method, path)
+            result = compare(name, method, path, body=body)
             print(f"{result}  {method} {path}")
             if result.startswith("  \u2713"): matched += 1
             elif result.startswith("  \u26a0"): partial += 1
