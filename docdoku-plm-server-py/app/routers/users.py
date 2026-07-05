@@ -65,6 +65,26 @@ def my_memberships(ws: str, db: Session = Depends(get_db),
     return [m for m in all_m if m["member"]["login"] == current_user.login]
 
 
+@router.get(f"{PREFIX}/memberships/usergroups")
+def list_group_memberships(ws: str, db: Session = Depends(get_db),
+                           current_user: Account = Depends(get_current_user)):
+    from app.models.user_mgmt import UserGroup
+    groups = db.query(UserGroup).filter(UserGroup.workspace_id == ws).all()
+    return [{"workspaceId": ws, "memberId": g.id, "readOnly": False, "member": {"id": g.id}} for g in groups]
+
+
+@router.get(f"{PREFIX}/memberships/usergroups/me")
+def my_group_memberships(ws: str, db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT g.id, g.workspace_id FROM usergroup g "
+        "JOIN usergroupmapping m ON g.id = m.groupname "
+        "WHERE g.workspace_id = :ws AND m.login = :l"
+    ), {"ws": ws, "l": current_user.login}).fetchall()
+    return [{"workspaceId": r[1], "memberId": r[0]} for r in rows]
+
+
 @router.put(f"{PREFIX}/add-user")
 @router.put(f"{PREFIX}/add-user/", include_in_schema=False)
 def add_user(ws: str, body: dict, db: Session = Depends(get_db),
