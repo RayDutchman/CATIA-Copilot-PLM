@@ -99,12 +99,44 @@ def map_usage_link(link: PartUsageLink) -> PartUsageLinkDTO:
 
 
 def map_iteration(it: PartIteration, db: Session | None = None) -> PartIterationDTO:
-    # geometryFileURI：从 geometries 关系取首个 GLB 文件的 fullName
-    # Payara 格式：/api/files/{binaryresource.fullname}
-    geometry_uri = None
+    # geometryFileURI：逗号分隔所有 GLB 几何体的 URI
     geometries = it.geometries or []
-    if geometries:
-        geometry_uri = f"/api/files/{geometries[0].full_name}"
+    geometry_uri = ",".join(
+        [f"/api/files/{g.full_name}" for g in geometries]
+    ) if geometries else None
+
+    # instanceAttributes：从 partiteration_attribute + instanceattribute 查询
+    instance_attributes = []
+    if db is not None:
+        from sqlalchemy import text
+        attr_rows = db.execute(text(
+            "SELECT ia.name, ia.mandatory, ia.locked, "
+            "ia.booleanvalue, ia.datevalue, ia.indexvalue, "
+            "ia.numbervalue, ia.textvalue, ia.longtextvalue, ia.urlvalue "
+            "FROM partiteration_attribute pia "
+            "JOIN instanceattribute ia ON ia.id = pia.instanceattribute_id "
+            "WHERE pia.workspace_id=:ws AND pia.partmaster_partnumber=:pn "
+            "AND pia.partrevision_version=:ver AND pia.iteration=:it "
+            "ORDER BY pia.attribute_order"
+        ), {"ws": it.workspace_id, "pn": it.partmaster_partnumber,
+            "ver": it.partrevision_version, "it": it.iteration}).fetchall()
+        instance_attributes = [dict(row._mapping) for row in attr_rows]
+
+    # linkedDocuments：从 partiteration_documentlink + documentlink 查询
+    linked_documents = []
+    if db is not None:
+        from sqlalchemy import text
+        doc_rows = db.execute(text(
+            "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
+            "dl.target_docrevision_version, dl.commentdata "
+            "FROM partiteration_documentlink pidl "
+            "JOIN documentlink dl ON dl.id = pidl.documentlink_id "
+            "WHERE pidl.workspace_id=:ws AND pidl.partmaster_partnumber=:pn "
+            "AND pidl.partrevision_version=:ver AND pidl.iteration=:it"
+        ), {"ws": it.workspace_id, "pn": it.partmaster_partnumber,
+            "ver": it.partrevision_version, "it": it.iteration}).fetchall()
+        linked_documents = [dict(row._mapping) for row in doc_rows]
+
     return PartIterationDTO(
         workspaceId=it.workspace_id,
         number=it.partmaster_partnumber,
@@ -117,9 +149,9 @@ def map_iteration(it: PartIteration, db: Session | None = None) -> PartIteration
         checkInDate=_to_utc(it.check_in_date),
         nativeCADFile=_binary_dto(it.native_cad_file),
         geometryFileURI=geometry_uri,
-        instanceAttributes=[],
+        instanceAttributes=instance_attributes,
         instanceAttributeTemplates=[],
-        linkedDocuments=[],
+        linkedDocuments=linked_documents,
         attachedFiles=[_binary_dto(f) for f in (it.attached_files or []) if f],
         components=[map_usage_link(l) for l in (it.components or [])],
     )

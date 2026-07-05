@@ -243,6 +243,13 @@ class PartRevision(Base):
     def status_label(self) -> str:
         return {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(self.status, "WIP")
 
+    @property
+    def is_last_revision(self) -> bool:
+        master = self.part_master
+        if master is None:
+            return False
+        return master.last_revision is self
+
 
 class PartIteration(Base):
     """对应 partiteration 表，零件版本的一次迭代（签出→修改→签入循环）。"""

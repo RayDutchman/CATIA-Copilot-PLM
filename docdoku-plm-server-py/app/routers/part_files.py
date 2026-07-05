@@ -11,6 +11,7 @@ from app.services import file_service
 from app.services.product_service import ProductService
 from app.services.kafka_producer import send_conversion_order
 from app.services.conversion_service import find_pending_conversion
+from app.models.part import PartIteration
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter()

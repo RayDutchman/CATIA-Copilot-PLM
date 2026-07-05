@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.part import (
     PartMaster, PartRevision, PartIteration,
     PartUsageLink, CADInstance, Conversion,
+    BinaryResource,
     part_iteration_usagelink, usage_link_cadinstances,
 )
 from app.schemas.part import PartCreationDTO, PartIterationUpdateDTO
@@ -26,11 +27,8 @@ class ProductService:
 
     def count_parts(self, db: Session, workspace_id: str) -> int:
         return (
-            db.query(PartMaster)
-            .filter(
-                PartMaster.workspace_id == workspace_id,
-                PartMaster.revisions.any(),
-            )
+            db.query(PartRevision)
+            .filter(PartRevision.workspace_id == workspace_id)
             .count()
         )
 
@@ -303,6 +301,8 @@ class ProductService:
                  number: str, version: str, user_login: str) -> PartRevision:
         from app.core.exceptions import NotAllowedException
         pr = self.get_revision(db, workspace_id, number, version)
+        if not pr.is_last_revision:
+            raise NotAllowedException("NotAllowedException72")
         if pr.checkout_user_login:
             raise NotAllowedException("NotAllowedException37")
         if pr.status != 0:
@@ -323,6 +323,10 @@ class ProductService:
             author_login=user_login,
         )
         db.add(new_iter)
+        db.flush()
+        # 复制附件、几何体、子件链接到新迭代
+        self._copy_iteration_files(db, workspace_id, number, version,
+                                   last_iter, last_iter + 1)
         db.commit()
         db.refresh(pr)
         return pr
@@ -357,7 +361,19 @@ class ProductService:
         # 删除未签入的最新迭代
         last = pr.last_iteration
         if last and last.check_in_date is None:
+            last_iter_num = last.iteration
             db.delete(last)
+            db.flush()
+            # 清理 vault 物理文件
+            try:
+                import shutil
+                from pathlib import Path
+                from app.core.config import settings
+                vault_dir = Path(settings.VAULT_PATH) / workspace_id / "parts" / number / version / str(last_iter_num)
+                if vault_dir.exists():
+                    shutil.rmtree(vault_dir)
+            except Exception:
+                pass
         pr.checkout_user_login = None
         pr.checkout_user_workspace_id = None
         pr.check_out_date = None
@@ -590,6 +606,98 @@ class ProductService:
         db.refresh(pr)
         return pr
 
+    def find_part_master_by_cad_filename(self, db: Session, workspace_id: str,
+                                         cad_filename: str) -> Optional[PartMaster]:
+        """通过 CAD 文件名查找 PartMaster。
+        对齐 Java findPartMasterByCADFileName：
+        1. 在 workspace 内查找 nativecad 文件名匹配的 BinaryResource
+        2. 解析 full_name 提取零件号
+        3. 加载对应的 PartMaster
+        """
+        from sqlalchemy import func as sa_func
+        br = (
+            db.query(BinaryResource)
+            .filter(
+                BinaryResource.full_name.like(f"{workspace_id}/parts/%/nativecad/{cad_filename}"),
+            )
+            .first()
+        )
+        if br is None:
+            return None
+        # full_name 格式: {ws}/parts/{pn}/{ver}/{iter}/nativecad/{filename}
+        parts = br.full_name.split("/")
+        if len(parts) < 3:
+            return None
+        part_number = parts[2]  # parts[1] = "parts", parts[2] = part number
+        return (
+            db.query(PartMaster)
+            .filter(
+                PartMaster.workspace_id == workspace_id,
+                PartMaster.number == part_number,
+            )
+            .first()
+        )
+
+    def update_usage_links_in_converted_iteration(
+        self, db: Session, workspace_id: str, part_number: str,
+        version: str, iteration_num: int,
+        usage_links: list[PartUsageLink],
+    ) -> None:
+        """在 CAD 转换回调中更新零件迭代的组件列表。
+        对齐 Java updateUsageLinksInConvertedIteration：
+        不检查签出状态，因为转换是异步的。
+        """
+        iteration = (
+            db.query(PartIteration)
+            .filter(
+                PartIteration.workspace_id == workspace_id,
+                PartIteration.partmaster_partnumber == part_number,
+                PartIteration.partrevision_version == version,
+                PartIteration.iteration == iteration_num,
+            )
+            .first()
+        )
+        if iteration is None:
+            return
+        # 收集旧 link id，清理关联后删除孤儿 PartUsageLink
+        old_link_ids = [
+            row[0] for row in db.execute(
+                part_iteration_usagelink.select().with_only_columns(
+                    part_iteration_usagelink.c.component_id
+                ).where(
+                    part_iteration_usagelink.c.workspace_id == workspace_id,
+                    part_iteration_usagelink.c.partmaster_partnumber == part_number,
+                    part_iteration_usagelink.c.partrevision_version == version,
+                    part_iteration_usagelink.c.iteration == iteration_num,
+                )
+            )
+        ]
+        db.execute(
+            part_iteration_usagelink.delete().where(
+                part_iteration_usagelink.c.workspace_id == workspace_id,
+                part_iteration_usagelink.c.partmaster_partnumber == part_number,
+                part_iteration_usagelink.c.partrevision_version == version,
+                part_iteration_usagelink.c.iteration == iteration_num,
+            )
+        )
+        if old_link_ids:
+            db.query(PartUsageLink).filter(
+                PartUsageLink.id.in_(old_link_ids)
+            ).delete(synchronize_session=False)
+        for order, link in enumerate(usage_links):
+            db.add(link)
+            db.flush()
+            db.execute(
+                part_iteration_usagelink.insert().values(
+                    workspace_id=workspace_id,
+                    partmaster_partnumber=part_number,
+                    partrevision_version=version,
+                    iteration=iteration_num,
+                    component_id=link.id,
+                    component_order=order,
+                )
+            )
+
     def search_parts(self, db: Session, ws: str, name=None,
                      number=None, type_=None) -> list:
         q = db.query(PartMaster).filter(PartMaster.workspace_id == ws)
@@ -604,3 +712,54 @@ class ProductService:
         for m in masters:
             result.extend(m.revisions)
         return result
+
+    def _copy_iteration_files(self, db: Session, ws: str, pn: str, ver: str,
+                               from_iter: int, to_iter: int) -> None:
+        """将旧迭代的附件/几何体/子件链接复制到新迭代。"""
+        from app.models.part import (
+            part_iteration_binres, part_iteration_geometry,
+            part_iteration_usagelink,
+        )
+        # 复制附件关联
+        for row in db.execute(
+            part_iteration_binres.select().where(
+                part_iteration_binres.c.workspace_id == ws,
+                part_iteration_binres.c.partmaster_partnumber == pn,
+                part_iteration_binres.c.partrevision_version == ver,
+                part_iteration_binres.c.iteration == from_iter,
+            )
+        ).fetchall():
+            db.execute(part_iteration_binres.insert().values(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=to_iter,
+                attachedfile_fullname=row.attachedfile_fullname,
+            ))
+        # 复制几何体关联
+        for row in db.execute(
+            part_iteration_geometry.select().where(
+                part_iteration_geometry.c.workspace_id == ws,
+                part_iteration_geometry.c.partmaster_partnumber == pn,
+                part_iteration_geometry.c.partrevision_version == ver,
+                part_iteration_geometry.c.iteration == from_iter,
+            )
+        ).fetchall():
+            db.execute(part_iteration_geometry.insert().values(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=to_iter,
+                geometry_fullname=row.geometry_fullname,
+            ))
+        # 复制子件链接关联
+        for row in db.execute(
+            part_iteration_usagelink.select().where(
+                part_iteration_usagelink.c.workspace_id == ws,
+                part_iteration_usagelink.c.partmaster_partnumber == pn,
+                part_iteration_usagelink.c.partrevision_version == ver,
+                part_iteration_usagelink.c.iteration == from_iter,
+            )
+        ).fetchall():
+            db.execute(part_iteration_usagelink.insert().values(
+                workspace_id=ws, partmaster_partnumber=pn,
+                partrevision_version=ver, iteration=to_iter,
+                component_id=row.component_id,
+                component_order=row.component_order,
+            ))
