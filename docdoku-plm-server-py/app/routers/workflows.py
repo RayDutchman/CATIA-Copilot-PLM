@@ -8,6 +8,7 @@ from app.models.auth import Account
 from app.models.workflow import Activity
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.services.workflow_service import workflow_service, STATUS_MAP
+from app.services.acl_helper import apply_acl
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -105,7 +106,8 @@ def create_model(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     m = workflow_service.create_model(db, ws, body.get("id", ""),
                                        body.get("finalLifecycleState", ""),
-                                       current_user.login)
+                                       current_user.login,
+                                       activity_models=body.get("activityModels"))
     return _model_to_dict(m, db)
 
 
@@ -128,6 +130,19 @@ def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_d
 def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     workflow_service.delete_model(db, ws, model_id)
+
+
+@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl")
+@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl/", include_in_schema=False)
+def update_model_acl(ws: str, model_id: str, body: dict, db: Session = Depends(get_db),
+                      current_user: Account = Depends(get_current_user)):
+    m = workflow_service.get_model(db, ws, model_id)
+    new_acl_id = apply_acl(db, m.acl_id,
+                           body.get("userEntries", {}),
+                           body.get("groupEntries", {}))
+    m.acl_id = new_acl_id
+    db.commit()
+    return _model_to_dict(m, db)
 
 
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}")
@@ -174,9 +189,7 @@ def list_wwf(ws: str, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/tasks/{{login}}/assigned/", include_in_schema=False)
 def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    tasks = workflow_service.get_assigned_tasks(db, ws, login)
-    return [{"num": t[0], "title": t[4],
-             "status": STATUS_MAP.get(t[7], "NOT_STARTED")} for t in tasks]
+    return workflow_service.get_assigned_tasks(db, ws, login)
 
 
 @router.get(f"{PREFIX}/tasks/{{task_id}}")
@@ -192,23 +205,27 @@ def get_task(ws: str, task_id: int, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/tasks/{{task_id}}/process/", include_in_schema=False)
 def process_task(ws: str, task_id: int, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
-    workflow_service.process_task(db, ws, task_id,
-                                  body.get("action", ""),
-                                  body.get("comment", ""),
-                                  body.get("signature", ""),
-                                  current_user.login)
-    return {"status": "ok"}
+    holder = workflow_service.process_task(db, ws, task_id,
+                                           body.get("action", ""),
+                                           body.get("comment", ""),
+                                           body.get("signature", ""),
+                                           current_user.login)
+    return holder
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/documents")
 @router.get(f"{PREFIX}/tasks/{{login}}/documents/", include_in_schema=False)
-def task_documents(ws: str, login: str, db: Session = Depends(get_db),
+def task_documents(ws: str, login: str,
+                   filter: str = None,
+                   db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     from app.models.document import DocumentRevision
+    status_cond = "AND t.status < 2"
+    if filter == "in_progress":
+        status_cond = "AND t.status = 1"
     wf_rows = db.execute(text(
-        "SELECT DISTINCT t.workflow_id FROM task t "
-        "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
-        "AND t.status < 2"
+        f"SELECT DISTINCT t.workflow_id FROM task t "
+        f"WHERE t.worker_login = :l AND t.worker_workspace_id = :w {status_cond}"
     ), {"l": login, "w": ws}).fetchall()
     wf_ids = [r[0] for r in wf_rows]
     if not wf_ids:
@@ -222,13 +239,17 @@ def task_documents(ws: str, login: str, db: Session = Depends(get_db),
 
 @router.get(f"{PREFIX}/tasks/{{login}}/parts")
 @router.get(f"{PREFIX}/tasks/{{login}}/parts/", include_in_schema=False)
-def task_parts(ws: str, login: str, db: Session = Depends(get_db),
+def task_parts(ws: str, login: str,
+               filter: str = None,
+               db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     from app.models.part import PartRevision
+    status_cond = "AND t.status < 2"
+    if filter == "in_progress":
+        status_cond = "AND t.status = 1"
     wf_rows = db.execute(text(
-        "SELECT DISTINCT t.workflow_id FROM task t "
-        "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
-        "AND t.status < 2"
+        f"SELECT DISTINCT t.workflow_id FROM task t "
+        f"WHERE t.worker_login = :l AND t.worker_workspace_id = :w {status_cond}"
     ), {"l": login, "w": ws}).fetchall()
     wf_ids = [r[0] for r in wf_rows]
     if not wf_ids:
@@ -237,7 +258,6 @@ def task_parts(ws: str, login: str, db: Session = Depends(get_db),
         PartRevision.workspace_id == ws,
         PartRevision.workflow_id.in_(wf_ids)
     ).all()
-    # 使用简化的 part 字典格式
     return [{
         "partKey": f"{p.partmaster_partnumber}-{p.version}",
         "partNumber": p.partmaster_partnumber,

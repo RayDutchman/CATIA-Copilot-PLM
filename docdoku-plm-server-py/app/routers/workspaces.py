@@ -228,6 +228,20 @@ def back_options(ws: str, db: Session = Depends(get_db),
     return {"sendEmails": False, "workspaceId": ws}
 
 
+@router.put("/workspaces/{ws}/back-options")
+@router.put("/workspaces/{ws}/back-options/", include_in_schema=False)
+def save_back_options(ws: str, body: dict, db: Session = Depends(get_db),
+                      current_user: Account = Depends(get_current_user)):
+    return Response(status_code=204)
+
+
+@router.put("/workspaces/{ws}/index", status_code=202)
+@router.put("/workspaces/{ws}/index/", status_code=202, include_in_schema=False)
+def reindex_workspace(ws: str, db: Session = Depends(get_db),
+                      current_user: Account = Depends(get_current_user)):
+    return {"status": "accepted"}
+
+
 @router.get("/workspaces/{ws}/tags")
 @router.get("/workspaces/{ws}/tags/", include_in_schema=False)
 def workspace_tags(ws: str, db: Session = Depends(get_db),
@@ -364,6 +378,62 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
     ), {"id": ws}).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="工作区不存在")
+
+    # 级联删除：按依赖顺序从子到父
+    # 1. 零件相关 join 表
+    db.execute(text("DELETE FROM partiteration_binres WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM partiteration_geometry WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM partiteration_partusagelink WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM partrevision_tag WHERE partmaster_workspace_id=:ws"), {"ws": ws})
+
+    # 2. 文档相关 join 表
+    db.execute(text("DELETE FROM documentiteration_binres WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM documentrevision_tag WHERE documentmaster_workspace_id=:ws"), {"ws": ws})
+
+    # 3. 转换任务
+    db.execute(text("DELETE FROM conversion WHERE workspace_id=:ws"), {"ws": ws})
+
+    # 4. 零件迭代 → 版本 → 主数据
+    db.execute(text("DELETE FROM partiteration WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM partrevision WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM partmaster WHERE workspace_id=:ws"), {"ws": ws})
+
+    # 5. 文档迭代 → 版本 → 主数据
+    db.execute(text("DELETE FROM documentiteration WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM documentrevision WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM documentmaster WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM documentmastertemplate WHERE workspace_id=:ws"), {"ws": ws})
+
+    # 6. 产品配置项
+    db.execute(text("DELETE FROM productinstanceiteration WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM productinstancemaster WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM productbaseline WHERE configurationitem_workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM productconfiguration WHERE configurationitem_workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM configurationitem WHERE workspace_id=:ws"), {"ws": ws})
+
+    # 7. 角色与 ACL
+    db.execute(text("DELETE FROM role_user WHERE role_workspace_id=:ws OR user_workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM role_usergroup WHERE role_workspace_id=:ws OR usergroup_workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM role WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM acluserentry WHERE principal_workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM aclusergroupentry WHERE principal_workspace_id=:ws"), {"ws": ws})
+
+    # 8. 用户/组关系
+    db.execute(text("DELETE FROM workspaceusermembership WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM workspaceusergroupmembership WHERE workspace_id=:ws"), {"ws": ws})
+    db.execute(text("DELETE FROM usergroup WHERE workspace_id=:ws"), {"ws": ws})
+
+    # 9. 用户数据与全局组映射（仅当用户不在其他工作区时清理 usergroupmapping）
+    users = db.execute(text("SELECT login FROM userdata WHERE workspace_id=:ws"), {"ws": ws}).fetchall()
+    db.execute(text("DELETE FROM userdata WHERE workspace_id=:ws"), {"ws": ws})
+    for (login,) in users:
+        remaining = db.execute(text(
+            "SELECT COUNT(*) FROM userdata WHERE login=:l"
+        ), {"l": login}).scalar()
+        if remaining == 0:
+            db.execute(text("DELETE FROM usergroupmapping WHERE login=:l"), {"l": login})
+
+    # 10. 工作区自身
     db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
     db.commit()
 

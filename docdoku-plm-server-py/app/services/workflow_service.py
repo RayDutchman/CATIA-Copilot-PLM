@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
-from app.models.workflow import WorkflowModel, Activity, Task, Workflow, ActivityModel
+from app.models.workflow import WorkflowModel, Activity, Task, Workflow, ActivityModel, TaskModel
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityNotFoundException,
     EntityConstraintException,
@@ -22,7 +22,8 @@ class WorkflowService:
         return m
 
     def create_model(self, db: Session, ws: str, model_id: str,
-                     final_state: str, user_login: str) -> WorkflowModel:
+                     final_state: str, user_login: str,
+                     activity_models: list = None) -> WorkflowModel:
         existing = db.query(WorkflowModel).filter(
             WorkflowModel.id == model_id, WorkflowModel.workspace_id == ws).first()
         if existing:
@@ -32,6 +33,28 @@ class WorkflowService:
                           creationdate=datetime.utcnow(),
                           author_login=user_login, author_workspace_id=ws)
         db.add(m)
+        if activity_models:
+            for am in activity_models:
+                am_obj = ActivityModel(
+                    step=am.get("step", 0),
+                    dtype=am.get("type", ""),
+                    lifecyclestate=am.get("lifeCycleState", ""),
+                    workflowmodel_id=model_id,
+                    workspace_id=ws,
+                    taskstocomplete=am.get("tasksToComplete", 0),
+                )
+                db.add(am_obj)
+                db.flush()
+                for task in am.get("tasks", []):
+                    db.add(TaskModel(
+                        num=task.get("num", 0),
+                        activitymodel_id=am_obj.id,
+                        title=task.get("title", ""),
+                        instructions=task.get("instructions", ""),
+                        duration=task.get("duration"),
+                        role_workspace_id=task.get("role", {}).get("workspaceId") if task.get("role") else None,
+                        role_name=task.get("role", {}).get("name") if task.get("role") else None,
+                    ))
         db.commit()
         db.refresh(m)
         return m
@@ -145,7 +168,50 @@ class WorkflowService:
             "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
             "AND t.status < 2"
         ), {"l": login, "w": ws}).fetchall()
-        return rows
+        result = []
+        for t in rows:
+            wf_id = t[2]  # workflow_id
+            holder_type = None
+            holder_reference = None
+            holder_version = None
+            # 检查文档
+            doc = db.execute(text(
+                "SELECT documentmaster_id, version FROM documentrevision "
+                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+            ), {"wf_id": wf_id, "ws": ws}).first()
+            if doc:
+                holder_type = "document"
+                holder_reference = doc[0]
+                holder_version = doc[1]
+            else:
+                # 检查零件
+                part = db.execute(text(
+                    "SELECT partmaster_partnumber, version FROM partrevision "
+                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+                ), {"wf_id": wf_id, "ws": ws}).first()
+                if part:
+                    holder_type = "part"
+                    holder_reference = part[0]
+                    holder_version = part[1]
+                else:
+                    # 检查工作区工作流
+                    ww = db.execute(text(
+                        "SELECT id FROM workspace_workflow "
+                        "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+                    ), {"wf_id": wf_id, "ws": ws}).first()
+                    if ww:
+                        holder_type = "workspace-workflow"
+                        holder_reference = ww[0]
+            result.append({
+                "num": t[0],
+                "title": t[4] if len(t) > 4 else None,
+                "status": STATUS_MAP.get(t[7], "NOT_STARTED"),
+                "holderType": holder_type,
+                "holderReference": holder_reference,
+                "holderVersion": holder_version,
+                "workspaceId": ws,
+            })
+        return result
 
     def process_task(self, db: Session, ws: str, task_id: int,
                      action: str, comment: str, signature: str,
@@ -157,7 +223,63 @@ class WorkflowService:
             "signature = :sig, closuredate = NOW() "
             "WHERE num = :id"
         ), {"s": status, "c": comment, "sig": signature, "id": task_id})
+
+        # 获取 task 的关联信息，判断 holderType
+        t_row = db.execute(text(
+            "SELECT workflow_id FROM task WHERE num = :id LIMIT 1"
+        ), {"id": task_id}).first()
+        holder_type = None
+        holder_reference = None
+        holder_version = None
+        if t_row:
+            wf_id = t_row[0]
+            # 检查是否挂载到文档
+            doc = db.execute(text(
+                "SELECT documentmaster_id, version FROM documentrevision "
+                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+            ), {"wf_id": wf_id, "ws": ws}).first()
+            if doc:
+                holder_type = "document"
+                holder_reference = doc[0]
+                holder_version = doc[1]
+                # 更新文档状态（审批通过→RELEASED，拒绝→WIP）
+                new_status = 1 if status == 2 else 0
+                db.execute(text(
+                    "UPDATE documentrevision SET status = :st "
+                    "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
+                ), {"st": new_status, "ws": ws, "dm": doc[0], "v": doc[1]})
+            else:
+                # 检查是否挂载到零件
+                part = db.execute(text(
+                    "SELECT partmaster_partnumber, version FROM partrevision "
+                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+                ), {"wf_id": wf_id, "ws": ws}).first()
+                if part:
+                    holder_type = "part"
+                    holder_reference = part[0]
+                    holder_version = part[1]
+                    # 更新零件状态
+                    new_status = 1 if status == 2 else 0
+                    db.execute(text(
+                        "UPDATE partrevision SET status = :st "
+                        "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :v"
+                    ), {"st": new_status, "ws": ws, "pn": part[0], "v": part[1]})
+                else:
+                    # 检查是否挂载到工作区工作流
+                    ww = db.execute(text(
+                        "SELECT id FROM workspace_workflow "
+                        "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+                    ), {"wf_id": wf_id, "ws": ws}).first()
+                    if ww:
+                        holder_type = "workspace-workflow"
+                        holder_reference = ww[0]
         db.commit()
+        return {
+            "holderType": holder_type,
+            "holderReference": holder_reference,
+            "holderVersion": holder_version,
+            "workspaceId": ws,
+        }
 
 
 workflow_service = WorkflowService()

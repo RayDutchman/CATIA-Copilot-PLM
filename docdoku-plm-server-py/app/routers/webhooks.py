@@ -79,3 +79,20 @@ def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
                 db.delete(app)
         db.commit()
 
+
+@router.put(f"{PREFIX}/webhooks/{{webhook_id}}")
+@router.put(f"{PREFIX}/webhooks/{{webhook_id}}/", include_in_schema=False)
+def update_webhook(ws: str, webhook_id: int, body: dict, db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    w = db.query(Webhook).filter(Webhook.id == webhook_id,
+                                  Webhook.workspace_id == ws).first()
+    if not w:
+        raise EntityNotFoundException("WebhookNotFoundException", str(webhook_id))
+    if "name" in body:
+        w.name = body["name"]
+    if "active" in body:
+        w.active = body["active"]
+    db.commit()
+    db.refresh(w)
+    return _webhook_to_dict(w)
+

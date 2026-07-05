@@ -59,6 +59,17 @@ class Task(Base):
     targetiteration = Column(Integer)
 
 
+class TaskModel(Base):
+    __tablename__ = "taskmodel"
+    num = Column(Integer, primary_key=True)
+    activitymodel_id = Column(Integer, primary_key=True)
+    title = Column(String)
+    instructions = Column(Text)
+    duration = Column(Integer)
+    role_workspace_id = Column(String)
+    role_name = Column(String)
+
+
 class WebhookApp(Base):
     __tablename__ = "webhookapp"
     id = Column(Integer, primary_key=True, autoincrement=True)

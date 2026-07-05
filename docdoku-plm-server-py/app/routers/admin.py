@@ -1,5 +1,6 @@
 """管理员端点。"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -192,30 +193,30 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
     db.commit()
 
 
-# ============ Platform Options (stubs) ============
+# ============ Platform Options ============
 
 @router.get("/admin/platform-options")
 @router.get("/admin/platform-options/", include_in_schema=False)
 def get_platform_options():
-    return {}
+    return {"workspaceCreationStrategy": "NONE", "registrationStrategy": "NONE"}
 
 
 @router.put("/admin/platform-options")
 @router.put("/admin/platform-options/", include_in_schema=False)
 def put_platform_options():
-    return {"status": "ok"}
+    return Response(status_code=204)
 
 
-# ============ Index (stubs) ============
+# ============ Index ============
 
 @router.get("/admin/index")
 @router.get("/admin/index/", include_in_schema=False)
 def get_index():
-    return {"status": "ok"}
+    return {"inProgress": False}
 
 
-@router.post("/admin/index")
-@router.post("/admin/index/", include_in_schema=False)
+@router.post("/admin/index", status_code=202)
+@router.post("/admin/index/", status_code=202, include_in_schema=False)
 def post_index():
-    return {"status": "ok"}
+    return {"status": "accepted"}
 
