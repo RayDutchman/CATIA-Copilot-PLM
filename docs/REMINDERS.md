@@ -19,7 +19,7 @@
 
 ### 中优先级
 
-- [ ] **P5 工作流与权限**：下一阶段——Workflow/WorkflowModel/Tasks/ACL/角色/用户组/Webhook/通知。落地后补齐 PartRevisionDTO.notifications 字段。
+- [ ] **P5 工作流与权限**：Task 1-6 已完成（ORM 4 模型 + ACL/Security/Role/UserMgmt/Account/Notification 路由），待 Task 7+（Workflow 路由 + Webhook 路由 + 测试）。
 
 - [ ] **装配同步仍走 Payara**：P1b 仅做零件单体 CRUD，装配 BOM 同步（update_iteration 含 _sync_components）仍在 Payara 处理。迁移到 FastAPI 待 P5+。
 

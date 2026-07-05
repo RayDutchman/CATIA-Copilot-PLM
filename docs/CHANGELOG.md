@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-05 — P5 工作流与权限（Task 6）
+
+- feat: 通知确认端点 PUT /workspaces/{ws}/notifications/{id} + NotificationService + test_notifications_api.py 1 测试通过
+- fix: 移除 part.py 中冗余的 modification_notification Table，解决与 notification.py 的 ModificationNotification ORM 表名冲突
+
+## 2026-07-05 — P5 工作流与权限（Task 2）
+
+- feat: ACL helper（apply_acl/check_write_access）+ SecurityService（Role CRUD）+ Role REST 路由（GET/POST/PUT/DELETE）
+- fix: security.py permission 列类型 String→Integer，匹配 DB 实际 integer 类型（Java enum ordinals）
+- test: test_security_service.py 3 测试通过（角色空列表/创建删除/ACL 创建与检查），累计 10/10
+
+## 2026-07-05 — P5 工作流与权限（Task 1）
+
+- feat: P5 ORM 模型——user_mgmt（UserGroup/Credential）+ security（ACL/AclUserEntry/AclUserGroupEntry/Role + 2 关联表）+ workflow（WorkflowModel/Workflow/Activity/Task/WebhookApp/Webhook）+ notification（ModificationNotification + 2 关联表）
+- test: test_p5_models.py 7 测试通过，所有表存在性验证 + modificationnotification 数据量确认
+
 ## 2026-07-05 — P3 产品结构 + P4 变更管理 + 阶段收尾
 
 ### P3 产品结构（ConfigurationItem/Baseline/Configuration/Instance）
