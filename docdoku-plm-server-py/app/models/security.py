@@ -37,7 +37,7 @@ class AclUserEntry(Base):
     acl_id = Column(Integer, ForeignKey("acl.id"), primary_key=True)
     principal_login = Column(String, primary_key=True)
     principal_workspace_id = Column(String, primary_key=True)
-    permission = Column(String)  # FORBIDDEN / READ_ONLY / FULL_ACCESS
+    permission = Column(Integer)  # 0=FORBIDDEN, 1=READ_ONLY, 2=FULL_ACCESS
 
 
 class AclUserGroupEntry(Base):
@@ -45,7 +45,7 @@ class AclUserGroupEntry(Base):
     acl_id = Column(Integer, ForeignKey("acl.id"), primary_key=True)
     principal_id = Column(String, primary_key=True)
     principal_workspace_id = Column(String, primary_key=True)
-    permission = Column(String)
+    permission = Column(Integer)
 
 
 class Role(Base):
