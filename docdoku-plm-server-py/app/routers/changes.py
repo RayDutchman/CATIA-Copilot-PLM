@@ -28,6 +28,7 @@ def _get_user_name(db: Session, login: str) -> str:
 def _item_to_dict(item, db: Optional[Session] = None) -> dict:
     is_request = isinstance(item, ChangeRequest)
     is_order = isinstance(item, ChangeOrder)
+    is_issue = isinstance(item, ChangeIssue)
 
     author_login = getattr(item, "author_login", "")
     assignee_login = getattr(item, "assignee_login", "")
@@ -50,14 +51,19 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
         assigneeName=assignee_name or None,
         author=author_login,
         authorName=author_name or author_login,
+        category=getattr(item, "category", None),
         creationDate=creation_date,
         description=getattr(item, "description", "") or "",
         id=item.id,
         name=name,
+        priority=getattr(item, "priority", None),
         tags=[t.label for t in (getattr(item, "tags", None) or [])],
         workspaceId=getattr(item, "workspace_id", ""),
         writable=True,
     )
+
+    if is_issue:
+        data["initiator"] = getattr(item, "initiator", "") or ""
 
     if is_request:
         data["addressedChangeIssues"] = []

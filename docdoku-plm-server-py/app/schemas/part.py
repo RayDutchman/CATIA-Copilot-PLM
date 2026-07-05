@@ -100,6 +100,7 @@ class PartIterationDTO(BaseModel):
     modificationDate: Optional[datetime] = None
     checkInDate: Optional[datetime] = None
     instanceAttributes: List[dict] = []
+    instanceAttributeTemplates: List[dict] = []
     nativeCADFile: Optional[BinaryResourceDTO] = None
     geometryFileURI: Optional[str] = None
     components: List[PartUsageLinkDTO] = []

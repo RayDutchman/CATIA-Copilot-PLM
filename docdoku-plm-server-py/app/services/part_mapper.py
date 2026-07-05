@@ -100,6 +100,9 @@ def map_iteration(it: PartIteration, db: Session | None = None) -> PartIteration
         checkInDate=_to_utc(it.check_in_date),
         nativeCADFile=_binary_dto(it.native_cad_file),
         geometryFileURI=geometry_uri,
+        instanceAttributes=[],
+        instanceAttributeTemplates=[],
+        linkedDocuments=[],
         attachedFiles=[_binary_dto(f) for f in (it.attached_files or []) if f],
         components=[map_usage_link(l) for l in (it.components or [])],
     )

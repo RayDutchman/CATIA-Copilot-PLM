@@ -85,6 +85,11 @@ def _doc_to_dict(rev):
             "login": rev.release_user_login, "name": rev.release_user_login,
             "email": None, "workspaceId": rev.workspace_id,
         }
+    if rev.obsolete_user_login:
+        dict_fields["obsoleteAuthor"] = {
+            "login": rev.obsolete_user_login, "name": rev.obsolete_user_login,
+            "email": None, "workspaceId": rev.workspace_id,
+        }
     return dict_fields
 
 

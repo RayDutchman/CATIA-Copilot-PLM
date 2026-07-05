@@ -130,6 +130,29 @@ def enable_user(ws: str, body: dict, db: Session = Depends(get_db),
     return {"status": "ok"}
 
 
+@router.put(f"{PREFIX}/user-access")
+@router.put(f"{PREFIX}/user-access/", include_in_schema=False)
+def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
+                    current_user: Account = Depends(get_current_user)):
+    """设置用户访问权限：'只读'(readOnly=true→disable) 或 '完全访问'(false→enable)"""
+    login = body.get("member", {}).get("login", "")
+    read_only = body.get("readOnly", False)
+    from sqlalchemy import text
+    # Payara: readOnly=true → account.enabled=false
+    db.execute(text("UPDATE account SET enabled = :en WHERE login = :l"),
+               {"en": not read_only, "l": login})
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.put(f"{PREFIX}/group-access")
+@router.put(f"{PREFIX}/group-access/", include_in_schema=False)
+def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
+                     current_user: Account = Depends(get_current_user)):
+    """设置用户组访问权限（暂不实现完整组权限）"""
+    return {"status": "ok"}
+
+
 @router.put(f"{PREFIX}/disable-user")
 @router.put(f"{PREFIX}/disable-user/", include_in_schema=False)
 def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
