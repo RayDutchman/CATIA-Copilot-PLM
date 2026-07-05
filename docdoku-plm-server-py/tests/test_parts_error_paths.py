@@ -19,7 +19,7 @@ def test_delete_part_used_as_component_returns_403_zh():
         "DELETE",
         f"{PREFIX}/workspaces/{WS}/parts/Differential Axle 2010-A",
         headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 400
+    assert resp.status_code == 403
     assert resp.text == "您无法删除在装配体中用作组件的零件"
 
 

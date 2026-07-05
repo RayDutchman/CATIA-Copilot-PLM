@@ -56,7 +56,7 @@ def search_numbers(
     db: Session = Depends(get_db),
 ):
     masters = svc.search_numbers(db, workspace_id, q)
-    return [LightPartMasterDTO(number=m.number, name=m.name or "") for m in masters]
+    return [LightPartMasterDTO(partNumber=m.number, partName=m.name or "") for m in masters]
 
 
 @router.get("/workspaces/{workspace_id}/parts/checkedout",

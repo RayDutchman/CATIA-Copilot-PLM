@@ -223,15 +223,63 @@ class ProductService:
         )
         if used_as_component > 0:
             raise EntityConstraintException("EntityConstraintException2")
-        # TODO(对齐审计): 补齐以下约束（需对应表建模后实现）
-        #   EntityConstraintException1  配置项根零件
-        #   EntityConstraintException22 被用作替代品（PartSubstituteLink 表）
-        #   EntityConstraintException5  已在基线中（ProductBaseline 表）
-        #   EntityConstraintException21 已分配到变更项（ChangeItem 表）
+
+        from sqlalchemy import text
+
+        # EntityConstraintException1: 配置项根零件（P3 已落地）
+        is_root = db.execute(
+            text("SELECT COUNT(*) FROM configurationitem "
+                 "WHERE partmaster_workspace_id=:ws AND partmaster_partnumber=:pn"),
+            {"ws": workspace_id, "pn": number},
+        ).scalar()
+        if is_root:
+            raise EntityConstraintException("EntityConstraintException1")
+
+        # EntityConstraintException22: 被用作替代品（P3 已落地）
+        is_substitute = db.execute(
+            text("SELECT COUNT(*) FROM partsubstitutelink "
+                 "WHERE substitute_workspace_id=:ws AND substitute_partnumber=:pn"),
+            {"ws": workspace_id, "pn": number},
+        ).scalar()
+        if is_substitute:
+            raise EntityConstraintException("EntityConstraintException22")
+
+        # EntityConstraintException5: 已在基线中（P3 已落地）
+        is_baselined = db.execute(
+            text("SELECT COUNT(*) FROM baselinedpart "
+                 "WHERE target_workspace_id=:ws AND target_partmaster_partnumber=:pn "
+                 "AND target_partrevision_version=:ver"),
+            {"ws": workspace_id, "pn": number, "ver": version},
+        ).scalar()
+        if is_baselined:
+            raise EntityConstraintException("EntityConstraintException5")
+
+        # EntityConstraintException21: 已分配到变更项（P4 已落地）
+        has_change_item = db.execute(
+            text("SELECT 1 FROM changeissue_affected_part "
+                 "WHERE partmaster_workspace_id=:ws AND partmaster_partnumber=:pn "
+                 "UNION ALL SELECT 1 FROM changeorder_affected_part "
+                 "WHERE partmaster_workspace_id=:ws AND partmaster_partnumber=:pn "
+                 "UNION ALL SELECT 1 FROM changereq_affected_part "
+                 "WHERE partmaster_workspace_id=:ws AND partmaster_partnumber=:pn "
+                 "LIMIT 1"),
+            {"ws": workspace_id, "pn": number},
+        ).scalar()
+        if has_change_item is not None:
+            raise EntityConstraintException("EntityConstraintException21")
 
         if pr.tags:
             pr.tags[:] = []
         for it in pr.iterations:
+            # 清理 modificationnotification 引用（FK 到 partiteration）
+            db.execute(
+                text("DELETE FROM modificationnotification "
+                     "WHERE impacted_workspace_id=:ws "
+                     "AND impacted_partmaster_partnumber=:pn "
+                     "AND impacted_partrevision_version=:ver "
+                     "AND impacted_iteration=:it"),
+                {"ws": workspace_id, "pn": number, "ver": version, "it": it.iteration},
+            )
             if it.conversions:
                 it.conversions[:] = []
             if it.attached_files:

@@ -9,7 +9,7 @@ from app.core.exceptions import (
 
 def _status_for(exc: ApplicationException) -> int:
     if isinstance(exc, EntityConstraintException):
-        return 400
+        return 403
     if isinstance(exc, (AccessRightException, NotAllowedException)):
         return 403
     if isinstance(exc, EntityNotFoundException):

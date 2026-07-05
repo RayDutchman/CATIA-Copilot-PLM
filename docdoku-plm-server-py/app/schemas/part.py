@@ -190,8 +190,8 @@ class CountDTO(BaseModel):
 
 
 class LightPartMasterDTO(BaseModel):
-    number: str
-    name: str = ""
+    partNumber: str
+    partName: str = ""
 
     class Config:
         from_attributes = True
