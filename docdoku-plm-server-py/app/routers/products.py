@@ -63,7 +63,11 @@ def filter_structure(ws: str, ci_id: str,
                      depth: int = Query(None),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    return svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth)
+    """返回递归 ComponentDTO 对象（非数组），对接 Payara filterProductStructure 响应。"""
+    result = svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth)
+    if not result:
+        return {}
+    return result[0]
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/decode-path/{p:path}")

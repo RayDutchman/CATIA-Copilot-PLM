@@ -18,8 +18,8 @@ def test_create_and_filter():
     resp2 = client.get(f"{PREFIX}/workspaces/{WS}/products/P3API-1/filter?depth=2", headers=h)
     assert resp2.status_code == 200
     tree = resp2.json()
-    assert len(tree) >= 1
-    assert tree[0]["number"] == "Assem1"
+    assert isinstance(tree, dict)
+    assert tree["number"] == "Assem1"
     # cleanup
     client.request("DELETE", f"{PREFIX}/workspaces/{WS}/products/P3API-1", headers=h)
 

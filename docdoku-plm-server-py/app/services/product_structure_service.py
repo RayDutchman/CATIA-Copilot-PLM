@@ -63,9 +63,10 @@ class ProductStructureService:
         if master is None or not master.revisions:
             return []
         root_rev = master.last_revision
-        return [self._build_component(db, root_rev, None, ci_id)]
+        return [self._build_component(db, root_rev, None, ci_id, depth=depth)]
 
-    def _build_component(self, db: Session, rev: PartRevision, usage_link, path: str):
+    def _build_component(self, db: Session, rev: PartRevision, usage_link, path: str,
+                         depth=None):
         last_it = rev.last_iteration
         comp = {
             "number": rev.partmaster_partnumber,
@@ -97,7 +98,8 @@ class ProductStructureService:
             "substituteIds": [],
             "notifications": [],
         }
-        if last_it:
+        if last_it and (depth is None or depth > 0):
+            child_depth = depth - 1 if depth is not None else None
             for order_link in (last_it.components or []):
                 child_part = db.query(PartRevision).filter(
                     PartRevision.workspace_id == order_link.component_workspace_id,
@@ -106,7 +108,8 @@ class ProductStructureService:
                 if child_part is None:
                     continue
                 child_path = f"{path}-u{order_link.id}"
-                child_comp = self._build_component(db, child_part, order_link, child_path)
+                child_comp = self._build_component(db, child_part, order_link,
+                                                    child_path, depth=child_depth)
                 comp["components"].append(child_comp)
         return comp
 
