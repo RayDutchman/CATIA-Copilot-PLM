@@ -148,6 +148,22 @@ class DocumentService:
         db.commit(); db.refresh(pr)
         return pr
 
+    def update_iteration(self, db, ws, doc_id, ver, iteration, data):
+        """更新文档迭代的 revisionNote 等字段。"""
+        di = db.query(DocumentIteration).filter(
+            DocumentIteration.workspace_id == ws,
+            DocumentIteration.documentmaster_id == doc_id,
+            DocumentIteration.documentrevision_version == ver,
+            DocumentIteration.iteration == iteration,
+        ).first()
+        if not di:
+            raise EntityNotFoundException("DocumentIterationNotFoundException",
+                                          doc_id, ver, str(iteration))
+        if data.get("revisionNote"):
+            di.revisionnote = data["revisionNote"]
+        db.commit()
+        return di.revision
+
     def mark_obsolete(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
         if pr.status != 1:

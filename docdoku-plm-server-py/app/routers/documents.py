@@ -196,6 +196,15 @@ def inverse_path_link(ws: str, doc_key: str, iteration: int,
     return []
 
 
+@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}")
+@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/", include_in_schema=False)
+def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    return _doc_to_dict(svc.update_iteration(db, ws, doc_id, ver, doc_iter, body))
+
+
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkout")
 def checkout(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
