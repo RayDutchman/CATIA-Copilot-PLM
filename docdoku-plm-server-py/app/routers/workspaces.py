@@ -186,11 +186,7 @@ def front_options(ws: str, db: Session = Depends(get_db),
     }
 
 
-# 有效列名白名单（对齐前端 part-table-columns.js cellsFactory）
-_VALID_PART_COLUMNS = {
-    "pr.number", "pr.version", "pr.iteration", "pr.type", "pr.name",
-    "pr.author", "pr.modificationDate", "pr.lifecycleSate", "pr.checkoutUser", "pr.acl",
-}
+# 默认列（对齐前端 part-table-columns.js defaultColumns）
 _DEFAULT_PART_COLUMNS = ["pr.number", "pr.version", "pr.iteration", "pr.type", "pr.name", "pr.author"]
 
 
@@ -214,8 +210,6 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
     ), {"ws": ws})
 
     for i, col in enumerate(body.get("partTableColumns", [])):
-        if col not in _VALID_PART_COLUMNS:
-            raise HTTPException(400, f"Invalid column: {col}")
         db.execute(text(
             "INSERT INTO workspace_parttablecolumn (workspace_id, tablecolumn, partcolumn_order) "
             "VALUES (:ws, :col, :ord)"
