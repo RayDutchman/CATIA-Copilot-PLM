@@ -43,7 +43,14 @@ def create_ci(ws: str, body: dict,
     part = body.get("designItemNumber", body.get("partNumber", body.get("partMasterNumber", "")))
     ci = svc.create_ci(db, ws, ci_id, desc, part, current_user.login)
     return {"id": ci.id, "workspaceId": ci.workspace_id,
-            "description": ci.description, "designItemNumber": ci.partmaster_partnumber}
+            "designItemNumber": ci.partmaster_partnumber,
+            "designItemName": "",
+            "designItemLatestVersion": "",
+            "description": ci.description,
+            "author": {"login": ci.author_login, "name": ci.author_login,
+                       "email": None, "workspaceId": ws},
+            "hasModificationNotification": False,
+            "pathToPathLinks": []}
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}")
