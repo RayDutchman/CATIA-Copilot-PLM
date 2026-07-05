@@ -1,31 +1,77 @@
 #!/usr/bin/env python3
 """系统化 Payara vs FastAPI 对拍脚本。
 
-从 Java Resource 文件提取全部端点，逐端点 curl 双后端对比。
-用法: cd docdoku-plm-server-py && source venv/bin/activate && python scripts/compare_all_endpoints.py
-      python scripts/compare_all_endpoints.py --admin
+用法:
+    python scripts/compare_all_endpoints.py              # 标准对拍
+    python scripts/compare_all_endpoints.py --admin      # Admin 端点（admin/password）
+    python scripts/compare_all_endpoints.py --fresh      # 清空数据→重新种子→对拍
 """
 
-import re, json, subprocess, sys
+import re, json, subprocess, sys, os
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-JAVA_DIR = "../docdoku-plm-server/docdoku-plm-server-rest/src/main/java/com/docdoku/plm/server/rest/"
 FA = "http://localhost:8009"
 PY = "http://localhost:8005"
 API = "/docdoku-plm-server-rest/api"
 WS = "Workspace_2"
-CI = "ACLCI-B98DED"
-DOC_KEY = "SEED-20260705-184807-d-0-A"
-PART_KEY = "SEED-20260705-184807-p00-A"
-BASELINE_ID = "3"
-ISSUE_ID = "41"
+CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID = "ACLCI-B98DED", "", "", "3", "41"
 LOGIN = "test1"
 
 token_fa = None
 token_py = None
 token_fa_admin = None
 token_py_admin = None
+
+def resolve_ids():
+    """从 API 动态获取当前数据库中存在的测试数据 ID。"""
+    global CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID
+    tok = token_fa or token_py
+    if not tok:
+        return
+    h = {"Authorization": f"Bearer {tok}"}
+
+    # 第一个零件
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/parts?start=0&length=1", headers=h))
+        data = json.loads(resp.read().decode())
+        if data:
+            PART_KEY = data[0].get("partKey", PART_KEY)
+    except: pass
+
+    # 第一个文档
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/documents?start=0&length=1", headers=h))
+        data = json.loads(resp.read().decode())
+        if data:
+            DOC_KEY = data[0].get("id", DOC_KEY)
+    except: pass
+
+    # 第一个 CI
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/products", headers=h))
+        data = json.loads(resp.read().decode())
+        if data:
+            CI = data[0].get("id", CI)
+    except: pass
+
+    # 第一个 baseline
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/product-baselines", headers=h))
+        data = json.loads(resp.read().decode())
+        if data:
+            BASELINE_ID = str(data[0].get("id", BASELINE_ID))
+    except: pass
+
+    # 第一个 issue
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/changes/issues", headers=h))
+        data = json.loads(resp.read().decode())
+        if data:
+            ISSUE_ID = str(data[0].get("id", ISSUE_ID))
+    except: pass
+
+    print(f"Resolved: CI={CI} PART_KEY={PART_KEY} DOC_KEY={DOC_KEY} BL={BASELINE_ID} ISS={ISSUE_ID}")
 
 def login(host):
     url = f"{host}{API}/auth/login"
@@ -363,6 +409,21 @@ def run_admin():
     print(f"\u2713 MATCH: {matched}  \u26a0 PARTIAL: {partial}  \u2717 MISMATCH: {mismatch}  \u2717 ERROR: {error}")
     print(f"Total: {total}")
 
+def _run_seed():
+    """清空旧数据 + 重新生成种子数据。"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(script_dir)
+    seed = os.path.join(project_dir, "scripts", "seed_test_data.py")
+    print("Cleaning up...")
+    r = os.system(f"cd {project_dir} && python {seed} --cleanup")
+    if r != 0:
+        print("⚠ cleanup failed")
+    print("Seeding data...")
+    r = os.system(f"cd {project_dir} && python {seed}")
+    if r != 0:
+        print("⚠ seeding failed")
+    print("Seed complete.")
+
 def main():
     global token_fa, token_py, token_fa_admin, token_py_admin
 
@@ -370,10 +431,16 @@ def main():
         run_admin()
         return
 
+    if "--fresh" in sys.argv:
+        _run_seed()
+
     print("Logging in...")
     token_fa = login(FA)
     token_py = login(PY)
     print(f"FA: {token_fa[:30]}...  PY: {token_py[:30]}...")
+
+    if "--fresh" in sys.argv:
+        resolve_ids()
 
     matched = partial = mismatch = error = 0
     print(f"\n═══ 对拍 {len(endpoints)} 端点 ═══\n")
