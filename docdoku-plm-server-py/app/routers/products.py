@@ -1,20 +1,19 @@
-"""产品端点路由（ProductResource + Configurations + Baselines）。"""
+"""产品端点路由（ConfigurationItem CRUD + 产品实例）。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.product import ProductConfiguration, ConfigurationItem, ProductInstanceMaster, ProductBaseline, Layer, Marker  # noqa: F811
+from app.models.product import ConfigurationItem, ProductInstanceMaster
 from app.models.part import PartMaster, PartRevision
 from app.services.product_structure import ProductStructureService
-from app.services.acl_helper import apply_acl
 
-router = APIRouter()
+router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
 
 _NAME_CACHE: dict = {}
+
 
 def _get_user_dto(db: Session, login: str, ws: str) -> dict:
     if not login:
@@ -27,6 +26,7 @@ def _get_user_dto(db: Session, login: str, ws: str) -> dict:
     name = acc.name if (acc and acc.name) else login
     _NAME_CACHE[login] = name
     return {"login": login, "name": name, "email": None, "language": None, "workspaceId": ws}
+
 
 def _fmt_date(d) -> str | None:
     if d is None:
@@ -63,110 +63,7 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
     }
 
 
-def _config_to_dict(cfg, db) -> dict:
-    """将 ProductConfiguration 转为前端需要的 JSON 结构。"""
-    ws = cfg.configurationitem_workspace_id
-    acl_data = None
-    if cfg.acl_id and db:
-        from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
-        acl = db.query(ACL).filter(ACL.id == cfg.acl_id).first()
-        if acl:
-            user_entries = db.query(AclUserEntry).filter(
-                AclUserEntry.acl_id == cfg.acl_id).all()
-            group_entries = db.query(AclUserGroupEntry).filter(
-                AclUserGroupEntry.acl_id == cfg.acl_id).all()
-            acl_data = {
-                "userEntries": {
-                    f"{e.principal_login}:{e.principal_workspace_id}": e.permission
-                    for e in user_entries
-                },
-                "groupEntries": {
-                    f"{e.principal_id}:{e.principal_workspace_id}": e.permission
-                    for e in group_entries
-                },
-            }
-    return {
-        "id": cfg.id,
-        "name": cfg.name,
-        "configurationItemId": cfg.configurationitem_id,
-        "description": cfg.description or "",
-        "author": _get_user_dto(db, cfg.author_login, ws),
-        "acl": acl_data,
-        "creationDate": _fmt_date(cfg.creation_date),
-        "substituteLinks": [],
-        "optionalUsageLinks": [],
-    }
-
-
-# ── ProductBaselines（前端实际使用的路径：/product-baselines/{ci_id}/baselines）──
-
-@router.get("/workspaces/{ws}/product-baselines")
-@router.get("/workspaces/{ws}/product-baselines/", include_in_schema=False)
-def ci_scoped_baselines_root(ws: str,
-                             current_user: Account = Depends(get_current_user),
-                             db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
-    all_bl = db.query(ProductBaseline).filter(
-        ProductBaseline.configurationitem_workspace_id == ws
-    ).all()
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in all_bl]
-
-
-@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines")
-@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/", include_in_schema=False)
-def list_ci_baselines(ws: str, ci_id: str,
-                      current_user: Account = Depends(get_current_user),
-                      db: Session = Depends(get_db)):
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in svc.list_baselines(db, ws, ci_id)]
-
-
-@router.post("/workspaces/{ws}/product-baselines/{ci_id}/baselines", status_code=201)
-@router.post("/workspaces/{ws}/product-baselines/{ci_id}/baselines/", status_code=201, include_in_schema=False)
-def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
-                              current_user: Account = Depends(get_current_user),
-                              db: Session = Depends(get_db)):
-    bl_type = body.get("type", 0)
-    if isinstance(bl_type, str):
-        bl_type = 0 if bl_type.upper() == "LATEST" else 1
-    bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
-                               body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"))
-    return {"id": bl.id, "name": bl.name}
-
-
-@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}")
-@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
-def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
-                           current_user: Account = Depends(get_current_user),
-                           db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
-    if not bl:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {"id": bl.id, "name": bl.name, "type": bl.type,
-            "configurationItemId": bl.configurationitem_id,
-            "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
-            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-            "description": bl.description or "",
-            "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
-            "baselinedParts": [], "substituteLinks": [], "optionalUsageLinks": [],
-            "pathToPathLinks": []}
-
-
-@router.delete("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}", status_code=204)
-def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
-                       current_user: Account = Depends(get_current_user),
-                       db: Session = Depends(get_db)):
-    svc.delete_baseline(db, ws, bl_id)
-    return {"status": "deleted"}
-
-
-# ── Products（CI CRUD，保持向后兼容）──
+# ── Products（CI CRUD）──
 
 @router.get("/workspaces/{ws}/products")
 @router.get("/workspaces/{ws}/products/", include_in_schema=False)
@@ -230,7 +127,6 @@ def filter_structure(ws: str, ci_id: str,
                      depth: int = Query(None),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    """返回递归 ComponentDTO 对象（非数组），对接 Payara filterProductStructure 响应。"""
     result = svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth)
     if not result:
         return {}
@@ -245,177 +141,7 @@ def decode_path(ws: str, ci_id: str, p: str,
     return svc.decode_path(db, ws, ci_id, p)
 
 
-@router.get("/workspaces/{ws}/products/{ci_id}/baselines")
-@router.get("/workspaces/{ws}/products/{ci_id}/baselines/", include_in_schema=False)
-def list_baselines(ws: str, ci_id: str,
-                   current_user: Account = Depends(get_current_user),
-                   db: Session = Depends(get_db)):
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in svc.list_baselines(db, ws, ci_id)]
-
-
-@router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
-@router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
-def get_baseline(ws: str, ci_id: str, bl_id: int,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
-    if not bl:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {"id": bl.id, "name": bl.name, "type": bl.type,
-            "configurationItemId": bl.configurationitem_id,
-            "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
-            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-            "description": bl.description or "",
-            "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
-            "baselinedParts": [], "substituteLinks": [], "optionalUsageLinks": [],
-            "pathToPathLinks": []}
-
-
-@router.post("/workspaces/{ws}/products/{ci_id}/baselines", status_code=201)
-@router.post("/workspaces/{ws}/products/{ci_id}/baselines/", status_code=201, include_in_schema=False)
-def create_baseline(ws: str, ci_id: str, body: dict,
-                    current_user: Account = Depends(get_current_user),
-                    db: Session = Depends(get_db)):
-    bl_type = body.get("type", 0)
-    if isinstance(bl_type, str):
-        bl_type = 0 if bl_type.upper() == "LATEST" else 1
-    bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
-                               body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"))
-    return {"id": bl.id, "name": bl.name}
-
-
-@router.delete("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
-def delete_baseline(ws: str, ci_id: str, bl_id: int,
-                    current_user: Account = Depends(get_current_user),
-                    db: Session = Depends(get_db)):
-    svc.delete_baseline(db, ws, bl_id)
-    return {"status": "deleted"}
-
-
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}")
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
-def get_workspace_baseline(ws: str, bl_id: int,
-                           current_user: Account = Depends(get_current_user),
-                           db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
-    if not bl:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {"id": bl.id, "name": bl.name, "type": bl.type,
-            "configurationItemId": bl.configurationitem_id,
-            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-            "description": bl.description or ""}
-
-
-@router.get("/workspaces/{ws}/product-baselines")
-@router.get("/workspaces/{ws}/product-baselines/", include_in_schema=False)
-def list_all_baselines(ws: str,
-                       current_user: Account = Depends(get_current_user),
-                       db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
-    all_bl = db.query(ProductBaseline).filter(
-        ProductBaseline.configurationitem_workspace_id == ws
-    ).all()
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in all_bl]
-
-
-@router.get("/workspaces/{ws}/product-configurations")
-@router.get("/workspaces/{ws}/product-configurations/", include_in_schema=False)
-def list_configs(ws: str, current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    configs = svc.list_configs(db, ws)
-    return [{"id": c.id, "name": c.name,
-             "configurationItemId": c.configurationitem_id,
-             "description": c.description or "",
-             "author": _get_user_dto(db, c.author_login, ws),
-             "acl": c.acl_id,
-             "creationDate": _fmt_date(c.creation_date),
-             "substituteLinks": [],
-             "optionalUsageLinks": []}
-            for c in configs]
-
-
-@router.post("/workspaces/{ws}/products/{ci_id}/configurations", status_code=201)
-@router.post("/workspaces/{ws}/products/{ci_id}/configurations/", status_code=201, include_in_schema=False)
-def create_config(ws: str, ci_id: str, body: dict,
-                  current_user: Account = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    cfg = svc.create_config(db, ws, ci_id, body.get("name", ""),
-                             body.get("description", ""), current_user.login)
-    return {"id": cfg.id, "name": cfg.name}
-
-
-@router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}")
-def delete_config(ws: str, ci_id: str, cfg_id: int,
-                  current_user: Account = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    svc.delete_config(db, ws, cfg_id)
-    return {"status": "deleted"}
-
-
-
-# 前端使用的路径: /product-configurations/{ciId}/configurations/{id}
-@router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}")
-@router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}/", include_in_schema=False)
-def get_config_by_ci(ws: str, ciId: str, cfg_id: int,
-                     db: Session = Depends(get_db),
-                     current_user: Account = Depends(get_current_user)):
-    cfg = db.query(ProductConfiguration).filter(
-        ProductConfiguration.id == cfg_id,
-        ProductConfiguration.configurationitem_id == ciId,
-        ProductConfiguration.configurationitem_workspace_id == ws,
-    ).first()
-    if not cfg:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
-    return _config_to_dict(cfg, db)
-
-
-@router.delete("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}", status_code=204)
-@router.delete("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}/", status_code=204, include_in_schema=False)
-def delete_config_by_ci(ws: str, ciId: str, cfg_id: int,
-                        db: Session = Depends(get_db),
-                        current_user: Account = Depends(get_current_user)):
-    cfg = db.query(ProductConfiguration).filter(
-        ProductConfiguration.id == cfg_id,
-        ProductConfiguration.configurationitem_id == ciId,
-        ProductConfiguration.configurationitem_workspace_id == ws,
-    ).first()
-    if not cfg:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
-    svc.delete_config(db, ws, cfg_id)
-    return Response(status_code=204)
-
-
-@router.put("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/acl")
-@router.put("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/acl/", include_in_schema=False)
-def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
-                      db: Session = Depends(get_db),
-                      current_user: Account = Depends(get_current_user)):
-    config = db.query(ProductConfiguration).filter(
-        ProductConfiguration.configurationitem_workspace_id == ws,
-        ProductConfiguration.configurationitem_id == ci_id,
-        ProductConfiguration.id == cfg_id,
-    ).first()
-    if not config:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
-    acl_id = getattr(config, "acl_id", None)
-    new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
-    if config.acl_id != new_acl_id:
-        config.acl_id = new_acl_id
-        db.commit()
-    return {"aclId": new_acl_id}
-
+# ── Product Instances ──
 
 @router.get("/workspaces/{ws}/product-instances")
 @router.get("/workspaces/{ws}/product-instances/", include_in_schema=False)
@@ -439,12 +165,25 @@ def get_product_instance(ws: str, sn: str,
         ProductInstanceMaster.serialnumber == sn,
     ).first()
     if not inst:
-        from fastapi import HTTPException
         raise HTTPException(404, "Product instance not found")
     return {"serialNumber": inst.serialnumber,
             "workspaceId": inst.workspace_id,
             "configurationItemId": inst.configurationitem_id}
 
+
+@router.get("/workspaces/{ws}/product-instances/{pid}/instances")
+@router.get("/workspaces/{ws}/product-instances/{pid}/instances/", include_in_schema=False)
+def list_ci_instances(ws: str, pid: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    instances = svc.list_instances(db, ws, pid)
+    return [{"serialNumber": i.serialnumber,
+             "workspaceId": i.workspace_id,
+             "configurationItemId": i.configurationitem_id}
+            for i in instances]
+
+
+# ── Stubs ──
 
 @router.get("/workspaces/{ws}/products/{ci_id}/releases/last")
 @router.get("/workspaces/{ws}/products/{ci_id}/releases/last/", include_in_schema=False)
@@ -489,143 +228,7 @@ def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
     return {}
 
 
-@router.get("/workspaces/{ws}/products/{pid}/layers")
-@router.get("/workspaces/{ws}/products/{pid}/layers/", include_in_schema=False)
-def list_layers(ws: str, pid: str,
-               current_user: Account = Depends(get_current_user),
-               db: Session = Depends(get_db)):
-    layers = db.query(Layer).filter(
-        Layer.workspace_id == ws,
-        Layer.configurationitem_id == pid,
-    ).all()
-    return [{"id": l.id, "name": l.name, "workspaceId": l.workspace_id,
-             "configurationItemId": l.configurationitem_id} for l in layers]
-
-
-@router.post("/workspaces/{ws}/products/{pid}/layers", status_code=201)
-@router.post("/workspaces/{ws}/products/{pid}/layers/", status_code=201, include_in_schema=False)
-def create_layer(ws: str, pid: str, body: dict,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    layer = Layer(workspace_id=ws, configurationitem_id=pid,
-                  name=body.get("name", ""))
-    db.add(layer); db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name, "workspaceId": layer.workspace_id,
-            "configurationItemId": layer.configurationitem_id}
-
-
-@router.put("/workspaces/{ws}/products/{pid}/layers/{layer_id}")
-@router.put("/workspaces/{ws}/products/{pid}/layers/{layer_id}/", include_in_schema=False)
-def update_layer(ws: str, pid: str, layer_id: int, body: dict,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    layer = db.query(Layer).filter(
-        Layer.id == layer_id, Layer.workspace_id == ws,
-        Layer.configurationitem_id == pid,
-    ).first()
-    if not layer:
-        raise HTTPException(404, "Layer not found")
-    if "name" in body:
-        layer.name = body["name"]
-    db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name, "workspaceId": layer.workspace_id,
-            "configurationItemId": layer.configurationitem_id}
-
-
-@router.delete("/workspaces/{ws}/products/{pid}/layers/{layer_id}", status_code=204)
-@router.delete("/workspaces/{ws}/products/{pid}/layers/{layer_id}/", status_code=204, include_in_schema=False)
-def delete_layer(ws: str, pid: str, layer_id: int,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    layer = db.query(Layer).filter(
-        Layer.id == layer_id, Layer.workspace_id == ws,
-        Layer.configurationitem_id == pid,
-    ).first()
-    if not layer:
-        return Response(status_code=204)
-    # 级联删除 markers
-    db.execute(sql_text("DELETE FROM marker WHERE layer_id=:lid"), {"lid": layer_id})
-    db.delete(layer)
-    db.commit()
-    return Response(status_code=204)
-
-
-@router.get("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers")
-@router.get("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers/", include_in_schema=False)
-def list_markers(ws: str, pid: str, layer_id: int,
-                 current_user: Account = Depends(get_current_user),
-                 db: Session = Depends(get_db)):
-    markers = db.query(Marker).filter(Marker.layer_id == layer_id).all()
-    return [{"id": m.id, "x": m.x, "y": m.y, "z": m.z,
-             "title": m.title or "", "description": m.description or "",
-             "layerId": m.layer_id} for m in markers]
-
-
-@router.post("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers", status_code=201)
-@router.post("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers/", status_code=201, include_in_schema=False)
-def create_marker(ws: str, pid: str, layer_id: int, body: dict,
-                  current_user: Account = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    layer = db.query(Layer).filter(
-        Layer.id == layer_id, Layer.workspace_id == ws,
-        Layer.configurationitem_id == pid,
-    ).first()
-    if not layer:
-        raise HTTPException(404, "Layer not found")
-    marker = Marker(
-        x=body.get("x", 0), y=body.get("y", 0), z=body.get("z", 0),
-        title=body.get("title", ""), description=body.get("description", ""),
-        layer_id=layer_id,
-    )
-    db.add(marker); db.commit(); db.refresh(marker)
-    return {"id": marker.id, "x": marker.x, "y": marker.y, "z": marker.z,
-            "title": marker.title or "", "description": marker.description or "",
-            "layerId": marker.layer_id}
-
-
-@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types")
-@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types/", include_in_schema=False)
-def baseline_path_to_path_links_types(ws: str, pid: str, bid: int,
-                                       current_user: Account = Depends(get_current_user)):
-    return []
-
-
-@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}")
-@router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}/", include_in_schema=False)
-def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
-                                        source: str, target: str,
-                                        current_user: Account = Depends(get_current_user)):
-    return {}
-
-
-@router.get("/workspaces/{ws}/product-configurations/{pid}/configurations")
-@router.get("/workspaces/{ws}/product-configurations/{pid}/configurations/", include_in_schema=False)
-def list_ci_configs(ws: str, pid: str,
-                    current_user: Account = Depends(get_current_user),
-                    db: Session = Depends(get_db)):
-    configs = svc.list_configs(db, ws, pid)
-    return [{"id": c.id, "name": c.name,
-             "configurationItemId": c.configurationitem_id,
-             "description": c.description or "",
-             "author": _get_user_dto(db, c.author_login, ws),
-             "acl": c.acl_id,
-             "creationDate": _fmt_date(c.creation_date),
-             "substituteLinks": [],
-             "optionalUsageLinks": []}
-            for c in configs]
-
-
-@router.get("/workspaces/{ws}/product-instances/{pid}/instances")
-@router.get("/workspaces/{ws}/product-instances/{pid}/instances/", include_in_schema=False)
-def list_ci_instances(ws: str, pid: str,
-                       current_user: Account = Depends(get_current_user),
-                       db: Session = Depends(get_db)):
-    instances = svc.list_instances(db, ws, pid)
-    return [{"serialNumber": i.serialnumber,
-             "workspaceId": i.workspace_id,
-             "configurationItemId": i.configurationitem_id}
-            for i in instances]
-
+# ── Cascade ──
 
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout/", include_in_schema=False)
@@ -646,4 +249,3 @@ def cascade_checkin(ws: str, ci_id: str,
 def cascade_undocheckout(ws: str, ci_id: str,
                           current_user: Account = Depends(get_current_user)):
     return {"status": "ok"}
-

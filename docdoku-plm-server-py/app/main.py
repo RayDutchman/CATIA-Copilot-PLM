@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, changes, roles, users, accounts, admin, notifications, webhooks, workflows, workspaces, organizations, misc, shared
+from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share
 from app.core.exception_handlers import register_exception_handlers
 from app.core.security import verify_token
 from app.core.database import SessionLocal
@@ -65,21 +65,33 @@ app.include_router(document_baselines.router)
 app.include_router(document_files.router, prefix=API_PREFIX)
 app.include_router(folders.router, prefix=API_PREFIX)
 app.include_router(document_templates.router, prefix=API_PREFIX)
-app.include_router(products.router, prefix=API_PREFIX)
+app.include_router(products.router)
+app.include_router(product_baselines.router)
+app.include_router(product_configurations.router)
+app.include_router(layers.router)
 app.include_router(product_instances.router, prefix=API_PREFIX)
 app.include_router(product_files.router, prefix=API_PREFIX)
-app.include_router(changes.router, prefix=API_PREFIX)
+app.include_router(change_issues.router)
+app.include_router(change_requests.router)
+app.include_router(change_orders.router)
+app.include_router(milestones.router)
 app.include_router(roles.router)
 app.include_router(users.router)
+app.include_router(user_groups.router)
+app.include_router(workspace_memberships.router)
 app.include_router(accounts.router)
 app.include_router(admin.router)
 app.include_router(notifications.router)
 app.include_router(webhooks.router)
-app.include_router(workflows.router)
+app.include_router(workflow_models.router)
+app.include_router(workflow.router)
+app.include_router(tasks.router)
 app.include_router(workspaces.router)
 app.include_router(organizations.router)
-app.include_router(misc.router)
-app.include_router(shared.router)
+app.include_router(languages.router)
+app.include_router(timezones.router)
+app.include_router(platform.router)
+app.include_router(share.router)
 
 
 @app.get(f"{API_PREFIX}/health")

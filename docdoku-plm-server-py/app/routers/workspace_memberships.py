@@ -1,0 +1,196 @@
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.core.database import get_db
+from app.core.deps import get_current_user
+from app.models.auth import Account
+from app.services.user_manager import user_mgmt_service
+
+router = APIRouter(prefix="/docdoku-plm-server-rest/api")
+PREFIX = "/workspaces/{ws}"
+
+
+def _group_to_dict(g):
+    return {"id": g.id, "workspaceId": g.workspace_id}
+
+
+def _workspace_to_dict(r) -> dict:
+    return {
+        "id": r[0],
+        "description": r[1] or "",
+        "enabled": bool(r[2]) if r[2] is not None else True,
+        "folderLocked": bool(r[3]) if r[3] is not None else False,
+        "admin": r[4] or "",
+        "creationDate": None,
+    }
+
+
+# ============ 成员关系 ============
+
+@router.get(f"{PREFIX}/memberships/users")
+@router.get(f"{PREFIX}/memberships/users/", include_in_schema=False)
+def list_user_memberships(ws: str, db: Session = Depends(get_db),
+                          current_user: Account = Depends(get_current_user)):
+    return user_mgmt_service.list_memberships(db, ws)
+
+
+@router.get(f"{PREFIX}/memberships/users/me")
+@router.get(f"{PREFIX}/memberships/users/me/", include_in_schema=False)
+def my_memberships(ws: str, db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    all_m = user_mgmt_service.list_memberships(db, ws)
+    return [m for m in all_m if m["member"]["login"] == current_user.login]
+
+
+@router.get(f"{PREFIX}/memberships/usergroups")
+@router.get(f"{PREFIX}/memberships/usergroups/", include_in_schema=False)
+def list_group_memberships(ws: str, db: Session = Depends(get_db),
+                           current_user: Account = Depends(get_current_user)):
+    rows = db.execute(text(
+        "SELECT wgm.workspace_id, wgm.member_id, wgm.readonly "
+        "FROM workspaceusergroupmembership wgm "
+        "WHERE wgm.workspace_id = :ws"
+    ), {"ws": ws}).fetchall()
+    if not rows:
+        return []
+    return [{"workspaceId": r[0], "memberId": r[1],
+             "readOnly": bool(r[2]) if r[2] is not None else False,
+             "member": {"id": r[1]}} for r in rows]
+
+
+@router.get(f"{PREFIX}/memberships/usergroups/me")
+@router.get(f"{PREFIX}/memberships/usergroups/me/", include_in_schema=False)
+def my_group_memberships(ws: str, db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    rows = db.execute(text(
+        "SELECT g.id, g.workspace_id FROM usergroup g "
+        "JOIN usergroupmapping m ON g.id = m.groupname "
+        "WHERE g.workspace_id = :ws AND m.login = :l"
+    ), {"ws": ws, "l": current_user.login}).fetchall()
+    return [{"workspaceId": r[1], "memberId": r[0]} for r in rows]
+
+
+# ============ 用户管理操作 ============
+
+@router.put(f"{PREFIX}/add-user")
+@router.put(f"{PREFIX}/add-user/", include_in_schema=False)
+def add_user(ws: str, body: dict, db: Session = Depends(get_db),
+             current_user: Account = Depends(get_current_user)):
+    login = body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    acc = db.query(Account).filter(Account.login == login).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    user_mgmt_service.add_user(db, ws, login, body.get("group"))
+    return Response(status_code=204)
+
+
+@router.put(f"{PREFIX}/remove-from-workspace")
+@router.put(f"{PREFIX}/remove-from-workspace/", include_in_schema=False)
+def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
+                current_user: Account = Depends(get_current_user)):
+    login = body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    user_mgmt_service.remove_user_from_workspace(db, ws, login)
+    r = db.execute(text(
+        "SELECT id, description, enabled, folderlocked, admin_login "
+        "FROM workspace WHERE id = :id"
+    ), {"id": ws}).fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    return _workspace_to_dict(r)
+
+
+@router.put(f"{PREFIX}/remove-from-group/{{gid}}")
+@router.put(f"{PREFIX}/remove-from-group/{{gid}}/", include_in_schema=False)
+def remove_from_group(ws: str, gid: str, body: dict,
+                       db: Session = Depends(get_db),
+                       current_user: Account = Depends(get_current_user)):
+    """从工作组移除用户"""
+    login = body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    group = db.execute(text(
+        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
+    ), {"gid": gid, "ws": ws}).fetchone()
+    if not group:
+        raise HTTPException(status_code=404, detail="工作组不存在")
+    db.execute(text(
+        "DELETE FROM usergroupmapping WHERE login = :l AND groupname = :g"
+    ), {"l": login, "g": gid})
+    db.commit()
+    return _group_to_dict(user_mgmt_service.list_groups(db, ws)[0])
+
+
+@router.put(f"{PREFIX}/admin")
+@router.put(f"{PREFIX}/admin/", include_in_schema=False)
+def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
+              current_user: Account = Depends(get_current_user)):
+    """设置工作区管理员"""
+    login = body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    acc = db.query(Account).filter(Account.login == login).first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    ws_row = db.execute(text(
+        "SELECT id FROM workspace WHERE id = :id"
+    ), {"id": ws}).fetchone()
+    if not ws_row:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    db.execute(text(
+        "UPDATE workspace SET admin_login = :login WHERE id = :id"
+    ), {"login": login, "id": ws})
+    db.commit()
+    r = db.execute(text(
+        "SELECT id, description, enabled, folderlocked, admin_login "
+        "FROM workspace WHERE id = :id"
+    ), {"id": ws}).fetchone()
+    return _workspace_to_dict(r)
+
+
+@router.put(f"{PREFIX}/enable-user")
+@router.put(f"{PREFIX}/enable-user/", include_in_schema=False)
+def enable_user(ws: str, body: dict, db: Session = Depends(get_db),
+                current_user: Account = Depends(get_current_user)):
+    login = body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    user_mgmt_service.enable_user(db, ws, login)
+    return Response(status_code=204)
+
+
+@router.put(f"{PREFIX}/disable-user")
+@router.put(f"{PREFIX}/disable-user/", include_in_schema=False)
+def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
+                 current_user: Account = Depends(get_current_user)):
+    login = body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    user_mgmt_service.disable_user(db, ws, login)
+    return Response(status_code=204)
+
+
+@router.put(f"{PREFIX}/user-access")
+@router.put(f"{PREFIX}/user-access/", include_in_schema=False)
+def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
+                    current_user: Account = Depends(get_current_user)):
+    """设置用户访问权限"""
+    login = body.get("member", {}).get("login", "") or body.get("login", "")
+    if not login:
+        raise HTTPException(status_code=400, detail="login 不能为空")
+    read_only = body.get("readOnly", False)
+    db.execute(text("UPDATE account SET enabled = :en WHERE login = :l"),
+               {"en": not read_only, "l": login})
+    db.execute(text(
+        "INSERT INTO workspaceusermembership "
+        "(workspace_id, member_login, member_workspace_id, readonly) "
+        "VALUES (:ws, :l, :ws, :ro) "
+        "ON CONFLICT (workspace_id, member_login, member_workspace_id) "
+        "DO UPDATE SET readonly = :ro2"
+    ), {"ws": ws, "l": login, "ro": read_only, "ro2": read_only})
+    db.commit()
+    return {"status": "ok"}
