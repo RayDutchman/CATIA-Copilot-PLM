@@ -14,14 +14,6 @@ class Account(Base):
     enabled = Column(Boolean, default=True)
 
 
-class Credential(Base):
-    """对应 credential 表。密码为 MD5 哈希。"""
-    __tablename__ = "credential"
-
-    login = Column(String, primary_key=True)
-    password = Column(String)
-
-
 class UserGroupMapping(Base):
     """对应 usergroupmapping 表，login → groupname 映射。"""
     __tablename__ = "usergroupmapping"
