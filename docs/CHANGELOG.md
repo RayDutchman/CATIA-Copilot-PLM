@@ -6,6 +6,67 @@
 
 ---
 
+## 2026-07-06 — Phase2 用户管理 + 工作区管理写操作全部真实 DB 写入
+
+全部 PUT/POST/DELETE handler 不再 stub，改为真实读写 PostgreSQL。新增 4 个端点。
+
+### 修复内容
+
+- fix(py): **group-access** (`users.py`) — 从 stub `return {"status":"ok"}` 改为写入 `workspaceusergroupmembership` 表（INSERT ON CONFLICT UPDATE readonly）
+- fix(py): **users/{login}/tag-subscriptions** PUT/DELETE (`users.py`) — 写入/删除 `tagusersubscription` 表，PUT 自动创建 tag（INSERT INTO tag ON CONFLICT DO NOTHING）
+- fix(py): **groups/{gid}/tag-subscriptions** PUT/DELETE (`users.py`) — 写入/删除 `tagusergroupsubscription` 表，PUT 自动创建 tag
+- fix(py): **user tag GET** (`users.py`) — 从 `return []` 改为查询 `tagusersubscription` 表返回真实订阅
+- fix(py): **group tag GET** (`users.py`) — 从 `return []` 改为查询 `tagusergroupsubscription` 表返回真实订阅
+- fix(py): **user-access** (`users.py`) — 增写 `workspaceusermembership` 表（ON CONFLICT UPDATE），双写 account.enabled + workspaceusermembership
+- fix(py): **add-user** (`users.py`) — 返回 204 而非 `{"status":"ok"}`（对齐 Payara），添加 404 校验
+- fix(py): **remove-from-workspace** (`users.py`) — 返回更新后的 WorkspaceDTO（对齐 Payara），添加 400 校验
+- fix(py): **enable-user / disable-user** (`users.py`) — 返回 204 而非 `{"status":"ok"}`，添加 400 校验
+- fix(py): **users-stats** (`users.py`) — `activegroups` 从硬编码同一值改为查询 `workspaceusergroupmembership` 表
+- fix(py): **list_group_memberships** (`users.py`) — 从 `usergroupmapping` 改为查询 `workspaceusergroupmembership`（对齐 Payara 语义）
+- fix(py): **路由顺序修复** (`users.py`) — `/users/admin` 移至 `/users/{login}` 之前，防止 FastAPI 参数化路由误匹配
+- feat(py): **PUT /admin** (`users.py`) — 新增设置工作区管理员的端点，UPDATE `workspace.admin_login`
+- feat(py): **GET /users/admin** (`users.py`) — 新增获取工作区管理员端点，JOIN `workspace.admin_login` → `account`
+- feat(py): **PUT /enable-group** (`users.py`) — 新增启用组端点，写入 `workspaceusergroupmembership` （ON CONFLICT DO NOTHING）
+- feat(py): **PUT /disable-group** (`users.py`) — 新增禁用组端点，删除 `workspaceusergroupmembership` 记录
+- feat(py): **PUT /remove-from-group/{gid}** (`users.py`) — 新增从组移除用户端点，DELETE `usergroupmapping`
+
+### 通用规则贯彻
+- 每个写 handler 调用 `db.commit()`
+- 先检查 user/group/workspace 存在性，不存在返回 404
+- 用 `text()` 原生 SQL 执行
+- 所有 GET 端点返回 DB 真实数据（不再硬编码 []）
+
+### 影响
+- 1 个文件，~230 行新增/~60 行删除
+- Pytest: 132 passed, 2 pre-existing failures
+- Docker: back-py 容器已重建并运行
+- 所有新增端点 curl 实测通过（set_admin, get_admin, group-access, tag CRUD, enable/disable-group, remove-from-group）
+
+---
+
+## 2026-07-06 — FastAPI Stub Handler 真实 DB 写入修复
+
+修复大面积 PUT/POST/DELETE handler 的 stub 问题（返回 200/204 但不写数据库），共 9 个 Bug。
+
+### 修复内容
+
+- fix(py): **front-options GET/PUT** (`workspaces.py`) — GET 从 `workspace_parttablecolumn`/`workspace_documenttablecolumn` 表读取列配置，PUT 写入 3 张表（清旧+写新），实现真实持久化
+- fix(py): **stats-overview** (`workspaces.py`) — `products` 从0改为查询 `configurationitem` 表；`checkedOutDocuments`/`checkedOutParts` 从0改为查询 `documentrevision`/`partrevision` 表 checkout 状态
+- fix(py): **disk-usage-stats** (`workspaces.py`) — vault 路径从硬编码 `/data/vault` 改为 `settings.VAULT_PATH` 环境变量
+- fix(py): **文档高级搜索** (`documents.py`) — 实现 `content`（搜索 `documentiteration.revisionnote`）、`createdFrom`/`createdTo`（`creation_date` 范围）、`modifiedFrom`/`modifiedTo`（`modificationdate` 范围）参数，原 TODO 注释参数现已参与查询
+- fix(py): **/document-baselines** (`documents.py`) — 从 `return []` 改为查询 `documentbaseline` + `baselineddocument` 两张表，返回完整基线列表含 `baselinedDocuments` 子数组
+- fix(py): **/tasks/{login}/documents + parts** (`workflows.py`) — 从 `return []` 改为通过 `task`→`documentrevision.workflow_id`/`partrevision.workflow_id` 查询，并添加尾斜杠双路由防止 307 跳转
+- fix(py): **workflow-models activityModels** (`workflows.py` + `workflow_service.py` + `models/workflow.py`) — 新增 `ActivityModel` ORM 模型映射 `activitymodel` 表；`_model_to_dict` 从 `[]` 改为查询 `activitymodel` 表；`update_model` 从仅回显改为清旧+写新持久化
+- fix(py): **product-configurations 端点** (`products.py`) — GET 添加尾斜杠双路由防止前端跳转；DELETE 清理重复路由；ACL 从 `cfg.acl_id` 整数改为查询 `acl`/`acluserentry`/`aclusergroupentry` 表返回完整 ACL 对象（`{userEntries, groupEntries}`），修复前端绿色钥匙不显示问题
+- chore(py): Bug7 affected-parts `rsplit("-", 1)` 确认逻辑正确（版本号始终为单字母 A-Z），无需修改
+
+### 影响
+
+- 6 个文件，240 行新增，39 行删除
+- Pytest: 132 passed（2 failed 为数据库残留数据，与本次无关）
+- Docker: back-py 容器已重建并运行
+- Playwright: API 全端点 200 响应实测通过
+
 ## 2026-07-05 — Bug修复：文档搜索 + 变更项受影响关联
 
 - fix(py): documents搜索端点支持高级搜索全参数（id/title/version/author/tags/content/日期/attributes/分页），前端高级搜索弹窗可用
