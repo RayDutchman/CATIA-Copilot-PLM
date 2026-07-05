@@ -35,13 +35,32 @@ def _fmt_date(d) -> str | None:
 def _config_to_dict(cfg, db) -> dict:
     """将 ProductConfiguration 转为前端需要的 JSON 结构。"""
     ws = cfg.configurationitem_workspace_id
+    acl_data = None
+    if cfg.acl_id and db:
+        from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+        acl = db.query(ACL).filter(ACL.id == cfg.acl_id).first()
+        if acl:
+            user_entries = db.query(AclUserEntry).filter(
+                AclUserEntry.acl_id == cfg.acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(
+                AclUserGroupEntry.acl_id == cfg.acl_id).all()
+            acl_data = {
+                "userEntries": {
+                    f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+                    for e in user_entries
+                },
+                "groupEntries": {
+                    f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+                    for e in group_entries
+                },
+            }
     return {
         "id": cfg.id,
         "name": cfg.name,
         "configurationItemId": cfg.configurationitem_id,
         "description": cfg.description or "",
         "author": _get_user_dto(db, cfg.author_login, ws),
-        "acl": cfg.acl_id,
+        "acl": acl_data,
         "creationDate": _fmt_date(cfg.creation_date),
         "substituteLinks": [],
         "optionalUsageLinks": [],
@@ -313,16 +332,10 @@ def delete_config(ws: str, ci_id: str, cfg_id: int,
     return {"status": "deleted"}
 
 
-@router.delete("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}")
-def delete_config_production(ws: str, ciId: str, cfg_id: int,
-                             current_user: Account = Depends(get_current_user),
-                             db: Session = Depends(get_db)):
-    svc.delete_config(db, ws, cfg_id)
-    return {"status": "deleted"}
-
 
 # 前端使用的路径: /product-configurations/{ciId}/configurations/{id}
 @router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}")
+@router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}/", include_in_schema=False)
 def get_config_by_ci(ws: str, ciId: str, cfg_id: int,
                      db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
@@ -452,21 +465,6 @@ def list_ci_configs(ws: str, pid: str,
              "substituteLinks": [],
              "optionalUsageLinks": []}
             for c in configs]
-
-
-@router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}")
-def get_configuration(ws: str, ciId: str, cfg_id: int,
-                      db: Session = Depends(get_db),
-                      current_user: Account = Depends(get_current_user)):
-    cfg = db.query(ProductConfiguration).filter(
-        ProductConfiguration.id == cfg_id,
-        ProductConfiguration.configurationitem_id == ciId,
-        ProductConfiguration.configurationitem_workspace_id == ws,
-    ).first()
-    if not cfg:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
-    return _config_to_dict(cfg, db)
 
 
 @router.get("/workspaces/{ws}/product-instances/{pid}/instances")

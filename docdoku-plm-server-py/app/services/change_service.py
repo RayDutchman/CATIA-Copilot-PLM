@@ -95,6 +95,23 @@ class ChangeService:
                     f"DELETE FROM {prefix}{suffix} "
                     f"WHERE {prefix}_id=:iid"
                 ), {"iid": item_id})
+        # 清理 tags 关联（FK 约束需要先清关联再删记录）
+        tag_tbl = TAG_TABLES.get(cls)
+        if tag_tbl is not None:
+            pk_col = list(tag_tbl.primary_key.columns)[0]
+            db.execute(tag_tbl.delete().where(pk_col == item_id))
+        # 清理跨类型关联
+        if cls is ChangeRequest:
+            db.execute(sql_text(
+                "DELETE FROM changerequest_changeissue WHERE changerequest_id=:iid"
+            ), {"iid": item_id})
+            db.execute(sql_text(
+                "DELETE FROM changeorder_changerequest WHERE changerequest_id=:iid"
+            ), {"iid": item_id})
+        elif cls is ChangeOrder:
+            db.execute(sql_text(
+                "DELETE FROM changeorder_changerequest WHERE changeorder_id=:iid"
+            ), {"iid": item_id})
         db.delete(item)
         db.commit()
 

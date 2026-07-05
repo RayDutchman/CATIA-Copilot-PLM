@@ -171,6 +171,44 @@ def search_documents(
         ), {"t": f"%{tags}%", "w": ws}).fetchall()]
         query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
     # TODO: content / createdFrom~To / modifiedFrom~To / attributes 高级搜索
+    # content: 搜索 DocumentIteration.revision_note 中的关键字
+    if content:
+        content_pattern = f"%{content}%"
+        from app.models.document import DocumentIteration
+        matched_ids = [row[0] for row in db.execute(sql_text(
+            "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
+            "WHERE di.workspace_id = :w AND di.revisionnote ILIKE :c"
+        ), {"w": ws, "c": f"%{content}%"}).fetchall()]
+        if matched_ids:
+            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+        else:
+            query = query.filter(DocumentRevision.documentmaster_id == None)
+    # 日期范围过滤
+    if createdFrom:
+        query = query.filter(DocumentRevision.creation_date >= createdFrom)
+    if createdTo:
+        query = query.filter(DocumentRevision.creation_date <= createdTo)
+    if modifiedFrom:
+        from app.models.document import DocumentIteration as DI
+        matched_ids = [row[0] for row in db.execute(sql_text(
+            "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
+            "WHERE di.workspace_id = :w AND di.modificationdate >= :d"
+        ), {"w": ws, "d": modifiedFrom}).fetchall()]
+        if matched_ids:
+            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+        else:
+            query = query.filter(DocumentRevision.documentmaster_id == None)
+    if modifiedTo:
+        from app.models.document import DocumentIteration as DI
+        matched_ids = [row[0] for row in db.execute(sql_text(
+            "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
+            "WHERE di.workspace_id = :w AND di.modificationdate <= :d"
+        ), {"w": ws, "d": modifiedTo}).fetchall()]
+        if matched_ids:
+            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+        else:
+            query = query.filter(DocumentRevision.documentmaster_id == None)
+    # attributes: 搜索 instanceAttributes（保留为爱可，前端可能不传）
     docs = query.order_by(DocumentMaster.id).offset(start).limit(size).all()
     return [_doc_to_dict(d) for d in docs]
 
@@ -395,13 +433,47 @@ def unpublish(ws: str, doc_key: str,
 
 
 @router.get("/workspaces/{ws}/document-baselines")
+@router.get("/workspaces/{ws}/document-baselines/", include_in_schema=False)
 def list_doc_baselines(ws: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    try:
-        return []
-    except Exception:
-        return []
+    rows = db.execute(sql_text(
+        "SELECT DISTINCT db.id, db.name, db.description, db.type, "
+        "db.creationdate, db.author_login, db.author_workspace_id "
+        "FROM documentbaseline db "
+        "JOIN baselineddocument bd ON db.documentcollection_id = bd.documentcollection_id "
+        "WHERE bd.target_workspace_id = :ws "
+        "ORDER BY db.id"
+    ), {"ws": ws}).fetchall()
+    result = []
+    for r in rows:
+        baseline_id = r[0]
+        docs = db.execute(sql_text(
+            "SELECT bd.target_documentmaster_id, bd.target_docrevision_version, bd.target_iteration "
+            "FROM baselineddocument bd WHERE bd.documentcollection_id = "
+            "(SELECT documentcollection_id FROM documentbaseline WHERE id = :bid) "
+            "ORDER BY bd.target_documentmaster_id"
+        ), {"bid": baseline_id}).fetchall()
+        result.append({
+            "id": baseline_id,
+            "name": r[1] or "",
+            "description": r[2] or "",
+            "type": r[3],
+            "creationDate": r[4].isoformat() + "Z" if r[4] else None,
+            "author": {
+                "login": r[5] or "",
+                "name": r[5] or "",
+                "workspaceId": r[6] or ws,
+            },
+            "baselinedDocuments": [
+                {
+                    "documentMasterId": d[0],
+                    "version": d[1],
+                    "iteration": d[2],
+                } for d in docs
+            ],
+        })
+    return result
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")

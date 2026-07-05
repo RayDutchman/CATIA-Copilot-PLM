@@ -68,5 +68,11 @@ def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if w:
+        app_id = w.webhookapp_id
         db.delete(w)
+        db.flush()
+        if app_id:
+            app = db.query(WebhookApp).filter(WebhookApp.id == app_id).first()
+            if app:
+                db.delete(app)
         db.commit()

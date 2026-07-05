@@ -53,6 +53,20 @@ def _model_to_dict(m, db: Session = None) -> dict:
                 },
             }
 
+    activity_models = []
+    if db:
+        from app.models.workflow import ActivityModel
+        ams = db.query(ActivityModel).filter(
+            ActivityModel.workflowmodel_id == m.id,
+            ActivityModel.workspace_id == m.workspace_id,
+        ).order_by(ActivityModel.step).all()
+        activity_models = [{
+            "step": a.step,
+            "type": a.dtype,
+            "lifeCycleState": a.lifecyclestate,
+            "tasksToComplete": a.taskstocomplete,
+        } for a in ams]
+
     result = {
         "id": m.id,
         "finalLifeCycleState": m.finalLifecycleState or "",
@@ -64,7 +78,7 @@ def _model_to_dict(m, db: Session = None) -> dict:
             "language": author_language,
             "workspaceId": m.workspace_id,
         },
-        "activityModels": [],
+        "activityModels": activity_models,
     }
     if acl_data is not None:
         result["acl"] = acl_data
@@ -180,12 +194,60 @@ def process_task(ws: str, task_id: int, body: dict, db: Session = Depends(get_db
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/documents")
+@router.get(f"{PREFIX}/tasks/{{login}}/documents/", include_in_schema=False)
 def task_documents(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    return []
+    from app.models.document import DocumentRevision
+    wf_rows = db.execute(text(
+        "SELECT DISTINCT t.workflow_id FROM task t "
+        "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
+        "AND t.status < 2"
+    ), {"l": login, "w": ws}).fetchall()
+    wf_ids = [r[0] for r in wf_rows]
+    if not wf_ids:
+        return []
+    docs = db.query(DocumentRevision).filter(
+        DocumentRevision.workspace_id == ws,
+        DocumentRevision.workflow_id.in_(wf_ids)
+    ).all()
+    return [_doc_to_dict_short(d) for d in docs]
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/parts")
+@router.get(f"{PREFIX}/tasks/{{login}}/parts/", include_in_schema=False)
 def task_parts(ws: str, login: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
-    return []
+    from app.models.part import PartRevision
+    wf_rows = db.execute(text(
+        "SELECT DISTINCT t.workflow_id FROM task t "
+        "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
+        "AND t.status < 2"
+    ), {"l": login, "w": ws}).fetchall()
+    wf_ids = [r[0] for r in wf_rows]
+    if not wf_ids:
+        return []
+    parts = db.query(PartRevision).filter(
+        PartRevision.workspace_id == ws,
+        PartRevision.workflow_id.in_(wf_ids)
+    ).all()
+    # 使用简化的 part 字典格式
+    return [{
+        "partKey": f"{p.partmaster_partnumber}-{p.version}",
+        "partNumber": p.partmaster_partnumber,
+        "version": p.version,
+        "name": p.name or p.partmaster_partnumber,
+        "workspaceId": p.workspace_id,
+    } for p in parts]
+
+
+def _doc_to_dict_short(rev):
+    return {
+        "id": f"{rev.documentmaster_id}-{rev.version}",
+        "version": rev.version,
+        "workspaceId": rev.workspace_id,
+        "documentMasterId": rev.documentmaster_id,
+        "title": rev.title or rev.documentmaster_id,
+        "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
+        "checkOutUser": None,
+        "checkOutDate": None,
+    }

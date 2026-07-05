@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
@@ -73,13 +74,20 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
     parts = db.execute(text("SELECT COUNT(*) FROM partmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     docs = db.execute(text("SELECT COUNT(*) FROM documentmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     users = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+    products = db.execute(text("SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+    checked_out_docs = db.execute(text(
+        "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:w AND checkoutuser_login IS NOT NULL"
+    ), {"w": ws}).scalar() or 0
+    checked_out_parts = db.execute(text(
+        "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:w AND checkoutuser_login IS NOT NULL"
+    ), {"w": ws}).scalar() or 0
     return {
         "parts": parts,
         "documents": docs,
         "users": users,
-        "products": 0,
-        "checkedOutDocuments": 0,
-        "checkedOutParts": 0,
+        "products": products,
+        "checkedOutDocuments": checked_out_docs,
+        "checkedOutParts": checked_out_parts,
     }
 
 
@@ -92,7 +100,7 @@ def disk_usage(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/disk-usage-stats")
 def disk_usage_stats(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    vault = Path("/data/vault") / ws
+    vault = Path(settings.VAULT_PATH) / ws
     total = 0
     parts_size = 0
     docs_size = 0
@@ -152,13 +160,52 @@ def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/front-options")
 def front_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    return {"documentTableColumns": [], "partTableColumns": []}
+    part_cols = db.execute(text(
+        "SELECT tablecolumn FROM workspace_parttablecolumn "
+        "WHERE workspace_id = :ws ORDER BY partcolumn_order"
+    ), {"ws": ws}).fetchall()
+    doc_cols = db.execute(text(
+        "SELECT tablecolumn FROM workspace_documenttablecolumn "
+        "WHERE workspace_id = :ws ORDER BY documentcolumn_order"
+    ), {"ws": ws}).fetchall()
+    return {
+        "documentTableColumns": [r[0] for r in doc_cols],
+        "partTableColumns": [r[0] for r in part_cols],
+    }
 
 
 @router.put("/workspaces/{ws}/front-options")
 @router.put("/workspaces/{ws}/front-options/", include_in_schema=False)
 def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
+    existing = db.execute(text(
+        "SELECT workspace_id FROM workspacefrontoptions WHERE workspace_id = :ws"
+    ), {"ws": ws}).fetchone()
+    if not existing:
+        db.execute(text(
+            "INSERT INTO workspacefrontoptions (workspace_id) VALUES (:ws)"
+        ), {"ws": ws})
+
+    db.execute(text(
+        "DELETE FROM workspace_parttablecolumn WHERE workspace_id = :ws"
+    ), {"ws": ws})
+    db.execute(text(
+        "DELETE FROM workspace_documenttablecolumn WHERE workspace_id = :ws"
+    ), {"ws": ws})
+
+    for i, col in enumerate(body.get("partTableColumns", [])):
+        db.execute(text(
+            "INSERT INTO workspace_parttablecolumn (workspace_id, tablecolumn, partcolumn_order) "
+            "VALUES (:ws, :col, :ord)"
+        ), {"ws": ws, "col": col, "ord": i})
+
+    for i, col in enumerate(body.get("documentTableColumns", [])):
+        db.execute(text(
+            "INSERT INTO workspace_documenttablecolumn (workspace_id, tablecolumn, documentcolumn_order) "
+            "VALUES (:ws, :col, :ord)"
+        ), {"ws": ws, "col": col, "ord": i})
+
+    db.commit()
     return Response(status_code=204)
 
 

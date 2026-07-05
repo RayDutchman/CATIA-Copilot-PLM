@@ -30,6 +30,17 @@ class Activity(Base):
     taskstocomplete = Column(Integer)
 
 
+class ActivityModel(Base):
+    __tablename__ = "activitymodel"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    step = Column(Integer)
+    dtype = Column(String)
+    lifecyclestate = Column(String)
+    workflowmodel_id = Column(String, ForeignKey("workflowmodel.id"))
+    workspace_id = Column(String)
+    taskstocomplete = Column(Integer)
+
+
 class Task(Base):
     __tablename__ = "task"
     num = Column(Integer, primary_key=True)

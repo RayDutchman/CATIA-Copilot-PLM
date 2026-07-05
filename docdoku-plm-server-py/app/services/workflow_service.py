@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
-from app.models.workflow import WorkflowModel, Activity, Task, Workflow
+from app.models.workflow import WorkflowModel, Activity, Task, Workflow, ActivityModel
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityNotFoundException,
     EntityConstraintException,
@@ -41,9 +41,20 @@ class WorkflowService:
                      activity_models: list = None) -> WorkflowModel:
         m = self.get_model(db, ws, model_id)
         m.finalLifecycleState = final_state
-        # activityModels 关联的是 Workflow 实例（activity/task 表通过 workflow_id 关联），
-        # 模板编辑时还没有 Workflow 实例，MVP 策略：暂不持久化 activityModels，
-        # 由 router 层在响应中回显前端发来的 activities
+        if activity_models is not None:
+            db.query(ActivityModel).filter(
+                ActivityModel.workflowmodel_id == model_id,
+                ActivityModel.workspace_id == ws,
+            ).delete()
+            for am in activity_models:
+                db.add(ActivityModel(
+                    step=am.get("step", 0),
+                    dtype=am.get("type", ""),
+                    lifecyclestate=am.get("lifeCycleState", ""),
+                    workflowmodel_id=model_id,
+                    workspace_id=ws,
+                    taskstocomplete=am.get("tasksToComplete", 0),
+                ))
         db.commit()
         db.refresh(m)
         return m
