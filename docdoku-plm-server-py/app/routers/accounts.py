@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -77,4 +78,18 @@ def workspace_stats(db: Session = Depends(get_db),
     total = db.execute(text("SELECT COUNT(*) FROM workspace")).scalar()
     enabled = db.execute(text("SELECT COUNT(*) FROM workspace WHERE enabled = true")).scalar()
     return {"totalWorkspaces": total or 0, "enabledWorkspaces": enabled or 0}
+
+
+@router.put("/accounts/gcm", status_code=204)
+@router.put("/accounts/gcm/", status_code=204, include_in_schema=False)
+def put_gcm(body: dict, db: Session = Depends(get_db),
+            current_user: Account = Depends(get_current_user)):
+    return Response(status_code=204)
+
+
+@router.delete("/accounts/gcm", status_code=204)
+@router.delete("/accounts/gcm/", status_code=204, include_in_schema=False)
+def delete_gcm(db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    return Response(status_code=204)
 

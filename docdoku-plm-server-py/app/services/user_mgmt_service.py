@@ -40,6 +40,12 @@ class UserMgmtService:
             raise EntityAlreadyExistsException("UserGroupAlreadyExistsException", group_id)
         g = UserGroup(id=group_id, workspace_id=ws)
         db.add(g)
+        db.execute(text(
+            "INSERT INTO workspaceusergroupmembership "
+            "(workspace_id, member_id, member_workspace_id, readonly) "
+            "VALUES (:ws, :gid, :ws, false) "
+            "ON CONFLICT (workspace_id, member_id, member_workspace_id) DO NOTHING"
+        ), {"ws": ws, "gid": group_id})
         db.commit()
         db.refresh(g)
         return g
@@ -88,14 +94,18 @@ class UserMgmtService:
 
     def enable_user(self, db: Session, ws: str, login: str):
         db.execute(text(
-            "UPDATE account SET enabled = true WHERE login = :l"
-        ), {"l": login})
+            "INSERT INTO workspaceusermembership "
+            "(workspace_id, member_login, member_workspace_id) "
+            "VALUES (:ws, :login, :ws) "
+            "ON CONFLICT (workspace_id, member_login, member_workspace_id) DO NOTHING"
+        ), {"ws": ws, "login": login})
         db.commit()
 
     def disable_user(self, db: Session, ws: str, login: str):
         db.execute(text(
-            "UPDATE account SET enabled = false WHERE login = :l"
-        ), {"l": login})
+            "DELETE FROM workspaceusermembership "
+            "WHERE workspace_id = :ws AND member_login = :login"
+        ), {"ws": ws, "login": login})
         db.commit()
 
     def list_memberships(self, db: Session, ws: str) -> list:

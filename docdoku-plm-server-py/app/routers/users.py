@@ -57,8 +57,8 @@ def users_stats(ws: str, db: Session = Depends(get_db),
         "SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"
     ), {"w": ws}).scalar() or 0
     active_users = db.execute(text(
-        "SELECT COUNT(*) FROM userdata u JOIN account a ON u.login = a.login "
-        "WHERE u.workspace_id = :w AND a.enabled = true"
+        "SELECT COUNT(*) FROM workspaceusermembership "
+        "WHERE workspace_id = :w"
     ), {"w": ws}).scalar() or 0
     groups = db.execute(text(
         "SELECT COUNT(*) FROM usergroup WHERE workspace_id=:w"
