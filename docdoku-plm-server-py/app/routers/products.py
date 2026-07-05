@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.models.product import ProductConfiguration
 from app.services.product_structure_service import ProductStructureService
+from app.services.acl_helper import apply_acl
 
 router = APIRouter()
 svc = ProductStructureService()
@@ -146,3 +148,24 @@ def delete_config(ws: str, ci_id: str, cfg_id: int,
                   db: Session = Depends(get_db)):
     svc.delete_config(db, ws, cfg_id)
     return {"status": "deleted"}
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/acl")
+@router.put("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/acl/", include_in_schema=False)
+def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
+                      db: Session = Depends(get_db),
+                      current_user: Account = Depends(get_current_user)):
+    config = db.query(ProductConfiguration).filter(
+        ProductConfiguration.configurationitem_workspace_id == ws,
+        ProductConfiguration.configurationitem_id == ci_id,
+        ProductConfiguration.id == cfg_id,
+    ).first()
+    if not config:
+        from app.core.exceptions import EntityNotFoundException
+        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
+    acl_id = getattr(config, "acl_id", None)
+    new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
+    if config.acl_id != new_acl_id:
+        config.acl_id = new_acl_id
+        db.commit()
+    return {"aclId": new_acl_id}

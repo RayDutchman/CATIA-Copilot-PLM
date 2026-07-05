@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.models.document import DocumentMasterTemplate
 from app.services.document_service import DocumentService
+from app.services.acl_helper import apply_acl
 
 router = APIRouter()
 svc = DocumentService()
@@ -66,3 +68,23 @@ def delete(ws: str, template_id: str,
            db: Session = Depends(get_db)):
     svc.delete_template(db, ws, template_id)
     return {"status": "deleted"}
+
+
+@router.put("/workspaces/{ws}/document-templates/{template_id}/acl")
+@router.put("/workspaces/{ws}/document-templates/{template_id}/acl/", include_in_schema=False)
+def update_template_acl(ws: str, template_id: str, body: dict,
+                        db: Session = Depends(get_db),
+                        current_user: Account = Depends(get_current_user)):
+    tpl = db.query(DocumentMasterTemplate).filter(
+        DocumentMasterTemplate.workspace_id == ws,
+        DocumentMasterTemplate.id == template_id,
+    ).first()
+    if not tpl:
+        from app.core.exceptions import EntityNotFoundException
+        raise EntityNotFoundException("DocumentMasterTemplateNotFoundException", template_id)
+    acl_id = getattr(tpl, "acl_id", None)
+    new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
+    if tpl.acl_id != new_acl_id:
+        tpl.acl_id = new_acl_id
+        db.commit()
+    return {"aclId": new_acl_id}

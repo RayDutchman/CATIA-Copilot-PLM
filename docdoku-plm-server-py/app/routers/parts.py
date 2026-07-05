@@ -13,6 +13,7 @@ from app.schemas.part import (
 from app.services.product_service import ProductService
 from app.services.part_mapper import map_revision
 from app.services import conversion_service
+from app.services.acl_helper import apply_acl
 
 router = APIRouter()
 svc = ProductService()
@@ -382,3 +383,20 @@ def get_tags(workspace_id: str, part_key: str,
     number, version = _split_part_key(part_key)
     pr = svc.get_revision(db, workspace_id, number, version)
     return [t.label for t in (pr.tags or [])]
+
+
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl")
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl/", include_in_schema=False)
+def update_part_acl(workspace_id: str, part_key: str, body: dict,
+                    db: Session = Depends(get_db),
+                    current_user: Account = Depends(get_current_user)):
+    number, version = _split_part_key(part_key)
+    pr = svc.get_revision(db, workspace_id, number, version)
+    acl_id = getattr(pr, "acl_id", None)
+    user_entries = body.get("userEntries", {})
+    group_entries = body.get("groupEntries", {})
+    new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+    if pr.acl_id != new_acl_id:
+        pr.acl_id = new_acl_id
+        db.commit()
+    return {"aclId": new_acl_id}

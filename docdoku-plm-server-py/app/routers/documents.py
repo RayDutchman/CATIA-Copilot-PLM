@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.document_service import DocumentService
+from app.services.acl_helper import apply_acl
 
 router = APIRouter()
 svc = DocumentService()
@@ -261,7 +262,22 @@ def add_tag(ws: str, doc_key: str, body: dict,
 
 @router.delete("/workspaces/{ws}/documents/{doc_key}/tags/{tag_label}")
 def remove_tag(ws: str, doc_key: str, tag_label: str,
-               current_user: Account = Depends(get_current_user),
-               db: Session = Depends(get_db)):
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     return svc.remove_tag(db, ws, doc_id, ver, tag_label)
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/acl")
+@router.put("/workspaces/{ws}/documents/{doc_key}/acl/", include_in_schema=False)
+def update_doc_acl(ws: str, doc_key: str, body: dict,
+                   db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    doc_id, version = _split_doc_key(doc_key)
+    dr = svc.get_revision(db, ws, doc_id, version)
+    acl_id = getattr(dr, "acl_id", None)
+    new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
+    if dr.acl_id != new_acl_id:
+        dr.acl_id = new_acl_id
+        db.commit()
+    return {"aclId": new_acl_id}
