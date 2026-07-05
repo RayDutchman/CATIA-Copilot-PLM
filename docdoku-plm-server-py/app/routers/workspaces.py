@@ -43,10 +43,11 @@ def reachable_users(db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/stats-overview")
 def stats_overview(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
+    products = db.execute(text("SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     parts = db.execute(text("SELECT COUNT(*) FROM partmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     docs = db.execute(text("SELECT COUNT(*) FROM documentmaster WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
     users = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
-    return {"parts": parts, "documents": docs, "users": users}
+    return {"parts": parts, "documents": docs, "users": users, "products": products}
 
 
 @router.get("/workspaces/{ws}/disk-usage")
