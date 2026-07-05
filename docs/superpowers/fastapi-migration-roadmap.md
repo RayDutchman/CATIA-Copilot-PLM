@@ -1,7 +1,7 @@
 # Payara → FastAPI 完整迁移路线图
 
 > **权威文档**：本文件是迁移路线图的唯一事实来源。取代散落在各 plan 文档和对话中的描述。每次规划新阶段前先读本文件。
-> **最后更新**：2026-07-05（系统化对拍完成，133端点60 MATCH，双后端对比端口就绪）
+> **最后更新**：2026-07-06（3轮全量审计清零 / 文件映射方法论 / Router 22→32 / Service 改名 / 142 passed）
 
 ---
 
@@ -141,10 +141,13 @@
 
 ## 持续合规工具
 
-- **对拍脚本**：`scripts/compare_all_endpoints.py` —— 133端点逐双后端curl对比。用法：`python scripts/compare_all_endpoints.py --fresh`（清空→种子→对拍）。输出 MATCH/PARTIAL/MISMATCH 汇总。
-- **双后端对比端口**：8000=FastAPI（前端+back-py），8005=Payara（前端+back:8080）。两个tab并排对比前端行为。
-- **种子数据**：`scripts/seed_test_data.py` —— `--cleanup` 清空旧数据，无参创建20条跨5模块测试数据。
-- **全量测试**：`pytest tests/ -q` —— 134 passed
+- **文件映射+代码级对比**（最可靠）: `docs/file-mapping.md` — 52 业务对 + 22 基础设施对，5 维度检查 (方法/SQL/异常/字段/Stub)。3 轮全量审计：60 对→35→11→14→0 问题。
+- **全端点对拍 v2**: `scripts/full_compare_v2.py` — 96 端点 POST/PUT/DELETE/GET 全覆盖 + 种子数据 + 字段级 diff。用法: `python3 scripts/full_compare_v2.py`
+- **对拍脚本 v1**: `scripts/compare_all_endpoints.py` — 133 GET 端点逐双后端 curl 对比。`--fresh` 模式清空→种子→对拍。
+- **Stub 审计**: `scripts/audit_write_stubs.py` — 读-写-读一致性测试。
+- **GET 尾斜杠**: `scripts/add_get_trailing_slash.py` — 自动补 GET 尾斜杠双路由。
+- **双后端对比端口**: 8000=FastAPI，8005=Payara。
+- **全量测试**: `pytest tests/ -q` — 142 passed
 
 - **REST API BasicAuth 401 未解决**：`admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）。影响依赖 REST API 认证的工具集成（如 CATIA Copilot sync）。根因未查清，当前绕过方案是直接 DB 操作。规划涉及 REST API 认证的阶段前需先排查。
 - **WSL mirrored 网络重启后端口失效**：`wsl --shutdown` 重启可恢复，详见 REMINDERS。

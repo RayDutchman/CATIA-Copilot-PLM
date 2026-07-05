@@ -8,90 +8,51 @@
 
 ### 高优先级
 
-- [ ] **3D 预览不显示（已定位，待修复）**
-  零件数据+GLB文件均由 FastAPI 提供时，Three.js r90 不加载 GLB。已确认 GLB 文件有效、
-  geometryFileURI 正确、CORS 头正常、字节与 Payara 完全一致。
-  隔离测试 parts→FA+files→Payara 时 3D 正常，全 FA 时不正常。
-  推测为 Nginx/uvicorn HTTP 代理层行为差异 (chunked传输/keepalive/buffer flush) 与
-  Three.js r90 XHR 加载交互问题。需 tcpdump 抓包或升级 Three.js 版本解决。
+- [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但全 FA 不加载。需 tcpdump 抓包或升级 Three.js。
 
-- [ ] **WebSocket 502 导致前端模块区不加载**：`ws://192.168.100.140:8000/docdoku-plm-server-rest/ws` 返回 502，Nginx 缺少 WebSocket 代理配置。前端在 WebSocket 握手失败后可能阻止模块渲染。
-
-- [ ] **JWT 过期风险提醒**：上传 nativecad 时将当前请求 token 透传给 Kafka 消息 userToken，转换服务用此 token 回调。若 token 在转换完成前过期（默认 3h），转换服务回调会 401 失败。建议后续改为服务间 token（如生成长期 API key 或在 conversion_service 内置白名单）。
+- [ ] **装配同步（_sync_components）未完整迁移** — assembly BOM 同步部分仍在 Payara 处理。
 
 ### 中优先级
 
-- [ ] **对拍脚本持续维护**：`scripts/compare_all_endpoints.py --fresh` 每次运行前清数据+种子→133端点对拍。新增端点/改字段后必跑。
+- [ ] **搜索为 DB 模糊匹配** — 无 Elasticsearch 全文搜索。不影响功能但性能随数据量下降。
 
-- [ ] **2 个文档测试偶尔失败**：`test_create_and_delete`/`test_duplicate_raises`——DocumentMaster 残留需手动清理。`docker exec ... psql -c "DELETE FROM documentmaster WHERE id IN ('P2SVC-1','P2SVC-DUP')"` 修复。
+- [ ] **Decimation 减面优化一直失败** — conversion 容器脚本缺失。
 
-- [ ] **搜索为 DB LIKE MVP**：当前用 `ilike` 模糊匹配，无 Elasticsearch 全文搜索。功能正常但随数据量增长性能下降。后续 P5+ 独立子项目。
+- [ ] **Windows 重启后 Docker 端口失效** — WSL mirrored 模式 timing 问题，`wsl --shutdown` 恢复。
 
-- [ ] **REST API 认证 401 问题未解决**
-  `admin:password` 通过 BasicAuth 调用 REST API 始终返回 401，密码 hash 和 DB 匹配（MD5），账号 enabled=true，根因未排查清楚。
-  目前绕过方案：直接 DB 操作。
-
-- [ ] **Decimation 减面优化一直失败**
-  每次转换都报 `Decimation failed with code = 1 read error`，是已知问题，不影响 GLB 生成，但值得排查。
-  怀疑是 conversion 容器内 `/opt/decimater/openMeshDecimater.sh` 脚本缺失或损坏。
-
-- [ ] **Windows 重启后 Docker 端口（8000/8001）有时在 Windows 侧不可访问**
-  WSL mirrored 网络模式的已知 timing 问题。临时修复：`wsl --shutdown` 再重启 WSL。
-
-- [ ] **portproxy 规则与 Docker 端口冲突（2026-06-25 发现）**
-  Windows 的 `portproxy` 规则（`0.0.0.0:8000/8001 → 127.0.0.1:8000/8001`）由 `iphlpsvc` 持续监听，
-  重启后仍存在，导致 Docker 无法绑定端口，front/back 容器卡在 `Created` 状态。
-  **修复方法**：
-  ```powershell
-  netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=8000
-  netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=8001
-  ```
-  然后 `docker compose up -d --force-recreate front back`。
-  WSL mirrored 模式下这两条 portproxy 本来就是多余的，**不要再添加**。
+- [ ] **portproxy 规则与 Docker 端口冲突** — iphlpsvc 占用 8000/8001。
 
 ### 低优先级
 
-- [ ] **`ProductManagerBean.isCheckoutByAnotherUser` NPE（第 3623 行）**
-  多次出现 NullPointerException，触发点在 `getPartRevision()` 调用链。目前不影响主要功能，但值得修复。
+- [ ] **`ProductManagerBean.isCheckoutByAnotherUser` NPE** — Payara 遗留 bug，不影响主要功能。
 
 ---
 
 ## 已知限制
 
-- **CATIA 原生格式不支持转换**：`.CATPart`、`.CATProduct`、`.3dxml` 无法直接转换，需在 CATIA 中预先导出为 STEP/STL
-- **back 容器 JVM 参数需两次重启才生效**：Payara asadmin 修改 JVM options 后，第一次重启写入 domain.xml，第二次才以新参数启动
-- **Conversion service Decimation 持续失败**：已知问题，不影响 GLB 生成
+- **CATIA 原生格式不支持转换** — `.CATPart`/`.CATProduct`/`.3dxml` 需预先导出为 STEP/STL
+- **back 容器 JVM 参数需两次重启才生效**
+- **Conversion service Decimation 持续失败** — 不影响 GLB 生成
 
 ---
 
 ## 已解决（近期）
 
-- [x] **Products audit 修复（8 项）** — CI delete 约束检查、decode_path 版本号、designItemLatestVersion/designItemName 真实查询、create_baseline baselinedParts 写入、milestone numberOfOrders/Requests 计数、workspace 级 product-instances 列表、GET /product-instances/{sn}（2026-07-06）
-
-- [x] **FastAPI Stub Handler 真实 DB 写入修复（9 Bug）** — front-options PUT 持久化、stats-overview products/checkedOut 统计、disk-usage 路径、文档高级搜索 content/date 参数、document-baselines DB 查询、tasks/{login}/documents+parts 实现、workflow-models activityModels 持久化、product-configurations 尾斜杠+ACL 完整对象（2026-07-06）
-
-- [x] **full_compare_v2 对拍修复**：6端点 try/except 防502 + front-options PUT 204 + GET 补字段 + document 补 acl/routePath/checkOutUser/author.language + CI author.language + health status（2026-07-05）
-
-- [x] **FA 全量差距修复（3/3）**：补齐 19 个缺失端点（user-group/users/{login}/tasks-docs/tasks-parts/tags-docs/lov/attributes/workspaces-more 等）+ Parts 响应 exclude_none + Documents 移除多余字段 + users-stats 格式对齐 + back-options 补字段 + organizations 204 + accounts/me GET（2026-07-05）
-
-- [x] **Workflow/Users/Admin/Misc FA 差距修复**：workflow-models acl 字段补齐/workflow-instances 403 权限校验/accounts/me 新增 enabled+admin+timeZone/accounts workspaces 新增 description+folderLocked/platform/health 改为 executionTime/accounts create 响应 admin 字段实时查询（2026-07-05）
-
-- [x] **P5 前端 Model 对齐审计修复**：6 问题全部修复——task status 字符串映射/author.name 查 Account/activities 非空/acl 非 null/aborted-workflows 端点/workspace-workflows 端点（2026-07-05）
-- [x] **P5 工作流与权限**：全部完成——66 端点 / 6 功能域 / 16 张表 / 4 ORM 模型文件，Nginx 10+ 路由块切换，121 测试通过（2026-07-05）
-- [x] **PartRevisionDTO.notifications 对齐债务清偿**：P5 落地后 notifications 字段已补齐
-- [x] **P4 变更管理**：ChangeIssue/Request/Order/Milestone 完整实现 + Nginx 路由切换 + Payara 对拍通过（2026-07-05）
-- [x] **P3 产品结构**：ConfigurationItem/Baseline/Configuration/Instance + ComponentDTO 递归 + decodePath + Nginx 2 路由块切换（2026-07-05）
-- [x] **对齐债务 — P3/P4 跨模块约束补齐**：deletePartRevision 4 项约束（配置项根/基线/替代品/变更项）已全部实现（2026-07-05）
-- [x] **P2 文档与文件夹+模板**：80 测试通过，Nginx 4 路由块已切，Payara 对拍通过（2026-07-05）
-- [x] **系统化 Payara 对拍**：零件+文档 全部端点对拍+修复——路由顺序补5处、缺失端点补9处、字段差异修复（2026-07-05）
-- [x] **尾斜杠 307 修复**：parts/documents/nativecad/attachedfiles/doc-upload 加双路由（2026-07-05）
-- [x] **P1b 零件文件+转换回调+状态+搜索**：73 测试通过，Payara back 已退出零件功能（2026-07-05）
-- [x] **P1a 零件核心 CRUD + 行为对齐**：57 测试通过，14 端点 + i18n 基础设施 + 异常体系（2026-07-04）
-- [x] **P0 FastAPI 后端基础设施**：17 测试通过，JWT/Kafka/vault/DB 全部就绪（2026-07-04）
-- [x] **转换服务迁移为 Python-only**：`2.7.0-py` 镜像上线，aiokafka 手动 commit（2026-07-04）
-- [x] **vault 路径空格转下划线碰撞**：`Tools.unAccent()` 修复（2026-07-04）
-- [x] **`ConverterBean` race condition**：查 pending conversion 记录（2026-06-18）
-- [x] **空几何体转换报失败**：`no geometry generated` → `succeed=true`（2026-06-22）
-- [x] **装配结构 amount=0**：`sync.py` 补充 `"amount"` 字段（2026-06-22）
-- [x] **文档搜索不可用（高级搜索多参数）**：documents.py search端点补全 id/title/version/author/tags/分页参数，前端高级搜索弹窗可用（2026-07-05）
-- [x] **变更项受影响的零件/文档无法添加**：changes.py 6个affected stub handler实现真实DB写入+读取回显+删除级联清理（2026-07-05）
+- [x] **文件映射+代码级对比方法论** — `docs/file-mapping.md` 52业务对+22基础设施对，5维度检查 (2026-07-06)
+- [x] **3 轮全量审计清零** — 60对→35→11→14→0 问题 (2026-07-06)
+- [x] **Router 22→32 拆分** — 每个 Python 文件 1:1 对应 Java Resource (2026-07-06)
+- [x] **Service 10 个改名** — 对齐 Java Bean 命名 (2026-07-06)
+- [x] **Stats 对齐 Payara** — COUNT PartRevision/DocumentRevision (2026-07-06)
+- [x] **Stub 写操作修复** — enable/disable-user、front-options、publish/unpublish 等 15+ 端点从 stub 改为真实 DB 写入 (2026-07-06)
+- [x] **全量尾斜杠补全** — 137 条 GET 路由 (2026-07-06)
+- [x] **P5 工作流与权限** — 66 端点/6 功能域/完整迁移 (2026-07-05)
+- [x] **系统化 Payara 对拍** — 133 端点 (2026-07-05)
+- [x] **P4 变更管理** — Issue/Request/Order/Milestone (2026-07-05)
+- [x] **P3 产品结构** — CI/Baseline/Configuration/Instance (2026-07-05)
+- [x] **P2 文档与文件夹** — 80 测试通过 (2026-07-05)
+- [x] **P1b 零件文件+转换回调** — 73 测试通过 (2026-07-05)
+- [x] **P1a 零件核心 CRUD** — 57 测试通过 (2026-07-04)
+- [x] **P0 FastAPI 基础设施** — JWT/Kafka/vault/DB (2026-07-04)
+- [x] **转换服务 Python-only** — 2.7.0-py 镜像 (2026-07-04)
+- [x] **deletePartRevision 4 项 EntityConstraint 补齐** (2026-07-06)
+- [x] **test1 管理员权限修复** — workspace.admin_login = 'test1' (2026-07-06)

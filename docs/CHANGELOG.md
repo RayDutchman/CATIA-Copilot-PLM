@@ -6,6 +6,49 @@
 
 ---
 
+## 2026-07-06 — 收尾：方法沉淀 + 文件重组 + 3轮审计清零
+
+### 方法论沉淀
+
+- docs: **后端迁移方法论存档** (`docs/migration-methodology.md`) — 6 章：方法评估矩阵、唯一可靠方法（文件映射+代码级对比）、反模式、工具链、标准工作流、前端迁移适配
+- docs: **长期记忆** — 4 个 Memory entity（迁移方法论/文件映射审计/前端准备/通用反模式），前端迁移时可 `memory_search_nodes("迁移")` 召回
+
+### 前端实测回扣
+
+- fix: 用户报告 10 个 Bug → 全量排查 → 60 对审计 → 3 轮修复 → 0 残留
+- fix: test1 管理员权限修复 + stats 统计对齐 Payara（COUNT PartRevision/DocumentRevision 非 PartMaster）
+- fix: disk-usage "undefined" 标签修复（移除 Payara 没有的 `total` 字段）
+
+### 文件重组
+
+- refactor: **Service 10 个改名** — product_service→product_manager, document_service→document_manager 等（对齐 Java Bean 命名）
+- refactor: **Router 22→32 拆分** — parts/documents/changes/products/users/workflows/misc 各拆 2-4 个，每个 Python 文件 1:1 对应 Java Resource
+- refactor: shared→share、changes.py 残留删除、main.py 注册 32 个 router
+
+### 审计工具
+
+- feat: `scripts/full_compare_v2.py` — 96 端点 POST/PUT/DELETE/GET 全覆盖 + 种子数据 + 字段级 diff
+- docs: `docs/file-mapping.md` — 52 业务对 + 22 基础设施对，5 维度检查 (方法/SQL/异常/字段/Stub)
+- 3 轮全量审计：60 对 → 35 问题 → 11 → 14 → **0**
+
+### Payara 源码验证
+
+- fix: stats 计数逻辑——读 ProductManagerBean.java / DocumentManagerBean.java 确认 Java 用 `COUNT(*) FROM PARTREVISION/DOCUMENTREVISION`（非 JOIN 或 checkInDate 过滤）
+- fix: stats 完全对齐 Payara（删除 PartMaster JOIN，直接 COUNT Revision 表）
+
+### 其他修复
+
+- feat: PartTemplate generate_id mask 递增实现
+- fix: share 端点 404→真实 sharedentity 查询 (UUID/密码/过期)
+- fix: document publish/unpublish 写 DB
+- fix: baselinedParts 真实查询 + product_instances 补 3 端点
+- fix: workflow 实例端点补全 + Task ID 对齐 Java (wfId-step-idx)
+- fix: timezones 4→486 (zoneinfo), languages 从 i18n 加载
+- fix: Tags/LOV/Attributes 4 个 `[]`→真实 DB 查询
+- test: 142 passed (从 137 增至 142, +5 part_templates 测试)
+
+---
+
 ## 2026-07-06 — Documents audit: stats SQL/delete constraints/DocumentMaster cleanup/auth condition/checkout file copy
 
 ### 修复内容
