@@ -20,6 +20,7 @@ services:
       - network
     ports:
       - 8000:80
+      - 8005:85
     volumes:
       - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
       # Custom nginx config that adds charset=utf-8 so Chinese NLS files are
