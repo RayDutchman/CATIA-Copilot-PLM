@@ -181,9 +181,17 @@ def front_options(ws: str, db: Session = Depends(get_db),
         "WHERE workspace_id = :ws ORDER BY documentcolumn_order"
     ), {"ws": ws}).fetchall()
     return {
-        "documentTableColumns": [r[0] for r in doc_cols],
-        "partTableColumns": [r[0] for r in part_cols],
+        "documentTableColumns": [r[0] for r in doc_cols] or [],
+        "partTableColumns": [r[0] for r in part_cols] or _DEFAULT_PART_COLUMNS,
     }
+
+
+# 有效列名白名单（对齐前端 part-table-columns.js cellsFactory）
+_VALID_PART_COLUMNS = {
+    "pr.number", "pr.version", "pr.iteration", "pr.type", "pr.name",
+    "pr.author", "pr.modificationDate", "pr.lifecycleSate", "pr.checkoutUser", "pr.acl",
+}
+_DEFAULT_PART_COLUMNS = ["pr.number", "pr.version", "pr.iteration", "pr.type", "pr.name", "pr.author"]
 
 
 @router.put("/workspaces/{ws}/front-options")
@@ -206,6 +214,8 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
     ), {"ws": ws})
 
     for i, col in enumerate(body.get("partTableColumns", [])):
+        if col not in _VALID_PART_COLUMNS:
+            raise HTTPException(400, f"Invalid column: {col}")
         db.execute(text(
             "INSERT INTO workspace_parttablecolumn (workspace_id, tablecolumn, partcolumn_order) "
             "VALUES (:ws, :col, :ord)"
