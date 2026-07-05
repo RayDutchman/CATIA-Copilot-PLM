@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-05 — P2/P3 缺失子端点补全
+
+- feat(py): documents.py 新增 8 个子端点——move/share/publish/unpublish + 4 个 notification 订阅
+- feat(py): document_service.py 新增 move_document 方法（更新 location_completepath）
+- feat(py): document_templates.py 新增 generate_id 端点
+- feat(py): products.py 新增 7 个子端点——product-instances/releases-last/path-choices/versions-choices/cascade-* stubs
+- test(py): 3 个测试文件新增 16 个测试用例覆盖所有新端点
+
+## 2026-07-05 — 工作区 CRUD 端点
+
+- feat(py): workspaces 路由——GET/POST/PUT/DELETE /workspaces 完整 CRUD（7 路由），查询 workspace 表，响应含 id/admin/enabled/description/creationDate
+
 ## 2026-07-05 — P5 前端 Model 对齐审计修复
 
 - fix(py): task status 整数→字符串映射（0=NOT_STARTED/1=IN_PROGRESS/2=APPROVED/3=REJECTED），防止前端 `status.toLowerCase()` 对整数调用抛出 TypeError

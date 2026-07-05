@@ -277,6 +277,14 @@ class DocumentService:
             DocumentRevision.checkout_user_login.isnot(None),
         ).count()
 
+    def move_document(self, db, ws, doc_id, ver, folder_path):
+        """移动文档到指定文件夹（更新 location_completepath）。"""
+        pr = self.get_revision(db, ws, doc_id, ver)
+        pr.location_completepath = folder_path
+        db.commit()
+        db.refresh(pr)
+        return pr
+
     def list_documents_in_folder(self, db, ws, folder_path):
         return db.query(DocumentRevision).filter(
             DocumentRevision.workspace_id == ws,

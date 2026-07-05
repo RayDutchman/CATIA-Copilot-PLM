@@ -169,3 +169,50 @@ def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
         config.acl_id = new_acl_id
         db.commit()
     return {"aclId": new_acl_id}
+
+
+@router.get("/workspaces/{ws}/product-instances")
+def list_product_instances(ws: str,
+                            current_user: Account = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/releases/last")
+def last_release(ws: str, ci_id: str,
+                  current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/path-choices")
+def path_choices(ws: str, ci_id: str,
+                 type: str = Query(""),
+                 current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/versions-choices")
+def versions_choices(ws: str, ci_id: str,
+                      current_user: Account = Depends(get_current_user)):
+    return []
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout")
+@router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout/", include_in_schema=False)
+def cascade_checkout(ws: str, ci_id: str,
+                      current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkin")
+@router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkin/", include_in_schema=False)
+def cascade_checkin(ws: str, ci_id: str,
+                     current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/cascade-undocheckout")
+@router.put("/workspaces/{ws}/products/{ci_id}/cascade-undocheckout/", include_in_schema=False)
+def cascade_undocheckout(ws: str, ci_id: str,
+                          current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}

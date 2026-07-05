@@ -295,3 +295,66 @@ def update_doc_acl(ws: str, doc_key: str, body: dict,
         dr.acl_id = new_acl_id
         db.commit()
     return {"aclId": new_acl_id}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/move")
+@router.put("/workspaces/{ws}/documents/{doc_key}/move/", include_in_schema=False)
+def move_document(ws: str, doc_key: str, body: dict,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    folder_path = body.get("parentFolder", "")
+    return _doc_to_dict(svc.move_document(db, ws, doc_id, ver, folder_path))
+
+
+@router.get("/workspaces/{ws}/documents/{doc_key}/share")
+def get_share(ws: str, doc_key: str,
+              current_user: Account = Depends(get_current_user),
+              db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    rev = svc.get_revision(db, ws, doc_id, ver)
+    return {"publicShared": getattr(rev, "public_shared", False)}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/publish")
+@router.put("/workspaces/{ws}/documents/{doc_key}/publish/", include_in_schema=False)
+def publish(ws: str, doc_key: str,
+            current_user: Account = Depends(get_current_user),
+            db: Session = Depends(get_db)):
+    return {"publicShared": True}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/unpublish")
+@router.put("/workspaces/{ws}/documents/{doc_key}/unpublish/", include_in_schema=False)
+def unpublish(ws: str, doc_key: str,
+              current_user: Account = Depends(get_current_user),
+              db: Session = Depends(get_db)):
+    return {"publicShared": False}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe/", include_in_schema=False)
+def subscribe_iteration_change(ws: str, doc_key: str,
+                                current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe")
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe/", include_in_schema=False)
+def unsubscribe_iteration_change(ws: str, doc_key: str,
+                                  current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe")
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe/", include_in_schema=False)
+def subscribe_state_change(ws: str, doc_key: str,
+                            current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe")
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe/", include_in_schema=False)
+def unsubscribe_state_change(ws: str, doc_key: str,
+                              current_user: Account = Depends(get_current_user)):
+    return {"status": "ok"}

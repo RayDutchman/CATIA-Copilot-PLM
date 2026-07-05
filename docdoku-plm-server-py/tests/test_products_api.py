@@ -52,3 +52,44 @@ def test_ci_not_found_returns_404():
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     resp = client.get(f"{PREFIX}/workspaces/{WS}/products/P3-NOEXIST", headers=h)
     assert resp.status_code == 404
+
+
+def test_product_instances():
+    """GET .../product-instances 返回空列表。"""
+    token = _token(); h = {"Authorization": f"Bearer {token}"}
+    resp = client.get(f"{PREFIX}/workspaces/{WS}/product-instances", headers=h)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_releases_last():
+    """GET .../products/{id}/releases/last stub。"""
+    token = _token(); h = {"Authorization": f"Bearer {token}"}
+    resp = client.get(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/releases/last", headers=h)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_path_choices():
+    """GET .../products/{id}/path-choices stub。"""
+    token = _token(); h = {"Authorization": f"Bearer {token}"}
+    resp = client.get(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/path-choices?type=PATHDATA", headers=h)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_versions_choices():
+    """GET .../products/{id}/versions-choices stub。"""
+    token = _token(); h = {"Authorization": f"Bearer {token}"}
+    resp = client.get(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/versions-choices", headers=h)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_cascade_operations():
+    """PUT cascade-checkout/checkin/undocheckout stubs。"""
+    token = _token(); h = {"Authorization": f"Bearer {token}"}
+    for op in ["cascade-checkout", "cascade-checkin", "cascade-undocheckout"]:
+        resp = client.put(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/{op}", headers=h)
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}

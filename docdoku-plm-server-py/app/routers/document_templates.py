@@ -70,6 +70,12 @@ def delete(ws: str, template_id: str,
     return {"status": "deleted"}
 
 
+@router.get("/workspaces/{ws}/document-templates/{template_id}/generate_id")
+def generate_id(ws: str, template_id: str,
+                current_user: Account = Depends(get_current_user)):
+    return {"generatedId": f"{template_id}-001"}
+
+
 @router.put("/workspaces/{ws}/document-templates/{template_id}/acl")
 @router.put("/workspaces/{ws}/document-templates/{template_id}/acl/", include_in_schema=False)
 def update_template_acl(ws: str, template_id: str, body: dict,
