@@ -12,12 +12,12 @@ import hashlib
 class UserMgmtService:
     def list_users(self, db: Session, ws: str) -> list:
         rows = db.execute(text(
-            "SELECT u.login, u.workspace_id, a.name, a.email, a.enabled, a.language "
+            "SELECT u.login, u.workspace_id, a.name, a.email, a.language "
             "FROM userdata u JOIN account a ON u.login = a.login "
             "WHERE u.workspace_id = :ws"
         ), {"ws": ws}).fetchall()
         return [{"login": r[0], "workspaceId": r[1], "name": r[2],
-                 "email": r[3], "enabled": r[4], "language": r[5] or ""}
+                 "email": r[3], "language": r[4] or ""}
                 for r in rows]
 
     def who_am_i(self, db: Session, ws: str, login: str) -> dict:
@@ -26,7 +26,7 @@ class UserMgmtService:
             raise EntityNotFoundException("UserNotFoundException", login)
         return {
             "login": acc.login, "name": acc.name, "email": acc.email,
-            "language": acc.language, "timezone": acc.timezone,
+            "language": acc.language,
             "workspaceId": ws,
         }
 

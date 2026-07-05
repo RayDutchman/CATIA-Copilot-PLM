@@ -28,7 +28,7 @@ def _split_part_key(part_key: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
-@router.get("/workspaces/{workspace_id}/parts", response_model=list[PartRevisionDTO])
+@router.get("/workspaces/{workspace_id}/parts", response_model=list[PartRevisionDTO], response_model_exclude_none=True)
 def list_parts(
     workspace_id: str,
     start: int = Query(0, ge=0),
@@ -62,7 +62,7 @@ def search_numbers(
 
 
 @router.get("/workspaces/{workspace_id}/parts/checkedout",
-             response_model=list[PartRevisionDTO])
+             response_model=list[PartRevisionDTO], response_model_exclude_none=True)
 def list_checked_out(
     workspace_id: str,
     current_user: Account = Depends(get_current_user),
@@ -83,7 +83,7 @@ def count_checked_out(
 
 
 @router.get("/workspaces/{workspace_id}/parts/search",
-            response_model=list[PartRevisionDTO])
+            response_model=list[PartRevisionDTO], response_model_exclude_none=True)
 def search_parts(
     workspace_id: str,
     name: str = Query(None),
@@ -131,7 +131,7 @@ def import_get(workspace_id: str, import_id: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_number}/latest-revision",
-             response_model=PartRevisionDTO)
+             response_model=PartRevisionDTO, response_model_exclude_none=True)
 def get_latest_revision(
     workspace_id: str,
     part_number: str,

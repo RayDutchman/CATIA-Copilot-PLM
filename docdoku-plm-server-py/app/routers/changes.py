@@ -52,19 +52,14 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
         assigneeName=assignee_name or None,
         author=author_login,
         authorName=author_name or author_login,
-        category=getattr(item, "category", None),
         creationDate=creation_date,
         description=getattr(item, "description", "") or "",
         id=item.id,
         name=name,
-        priority=getattr(item, "priority", None),
         tags=[t.label for t in (getattr(item, "tags", None) or [])],
         workspaceId=getattr(item, "workspace_id", ""),
         writable=True,
     )
-
-    if is_issue:
-        data["initiator"] = getattr(item, "initiator", "") or ""
 
     if is_request:
         data["addressedChangeIssues"] = []

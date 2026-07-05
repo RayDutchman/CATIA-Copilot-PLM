@@ -12,7 +12,6 @@ PREFIX = "/workspaces/{ws}"
 def _user_to_dict(u):
     return {"login": u["login"], "workspaceId": u["workspaceId"],
             "name": u.get("name", ""), "email": u.get("email", ""),
-            "enabled": u.get("enabled", True),
             "language": u.get("language", "")}
 
 
