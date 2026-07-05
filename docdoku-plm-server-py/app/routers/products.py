@@ -34,7 +34,7 @@ def create_ci(ws: str, body: dict,
               db: Session = Depends(get_db)):
     ci_id = body.get("id", body.get("reference", ""))
     desc = body.get("description", "")
-    part = body.get("partNumber", body.get("partMasterNumber", ""))
+    part = body.get("designItemNumber", body.get("partNumber", body.get("partMasterNumber", "")))
     ci = svc.create_ci(db, ws, ci_id, desc, part, current_user.login)
     return {"id": ci.id, "workspaceId": ci.workspace_id,
             "description": ci.description, "partNumber": ci.partmaster_partnumber}

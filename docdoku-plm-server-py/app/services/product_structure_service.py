@@ -22,6 +22,13 @@ class ProductStructureService:
         if existing:
             raise EntityAlreadyExistsException(
                 "ConfigurationItemAlreadyExistsException", ci_id)
+        # 验证根零件存在（对齐 Java partMasterDAO.loadPartM）
+        master = db.query(PartMaster).filter(
+            PartMaster.workspace_id == ws,
+            PartMaster.number == part_number,
+        ).first()
+        if master is None:
+            raise HTTPException(404, f"未找到零件\"{part_number}\"")
         ci = ConfigurationItem(
             workspace_id=ws, id=ci_id, description=description,
             partmaster_workspace_id=ws, partmaster_partnumber=part_number,
