@@ -176,11 +176,19 @@ class ConversionDTO(BaseModel):
     endDate: Optional[datetime] = None
 
 
+class PositionDTO(BaseModel):
+    """CAD 装配体组件位置信息（3x3 旋转矩阵 + 平移向量）。"""
+    translation: Optional[list[float]] = None          # [x, y, z]
+    rotationmatrix: Optional[list[list[float]]] = None  # 3x3 matrix
+
+
 class ConversionResultDTO(BaseModel):
     tempDir: Optional[str] = None
     convertedFileLODs: Optional[dict] = None
     box: Optional[list[float]] = None
     errorOutput: Optional[str] = None
+    componentPositionMap: Optional[dict[str, list[PositionDTO]]] = None
+    materials: Optional[list[str]] = None
 
 
 class CountDTO(BaseModel):

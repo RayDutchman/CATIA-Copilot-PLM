@@ -614,7 +614,6 @@ class ProductService:
         2. 解析 full_name 提取零件号
         3. 加载对应的 PartMaster
         """
-        from sqlalchemy import func as sa_func
         br = (
             db.query(BinaryResource)
             .filter(
