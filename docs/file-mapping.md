@@ -1,97 +1,114 @@
-# Java → Python 文件映射表
+# 建议的新文件映射 — 待确认（已按 Java 源码修正）
 
-> 用于 AI 逐文件对比检查：方法覆盖 / SQL 查询逻辑 / 异常对齐 / 响应字段 / Stub 检测。  
-> 首次审计 60 对 → 35 问题 → 2 轮修复 → 最后审计：2026-07-05。
+> Router 22→32（对齐 Java Resource），Service 重命名（对齐 Java Bean 名称）  
+> 修正：Effectivity 合并1文件 / Workflow 合并1文件 / Shared→share.py
 
-## 映射对
+| # | Java Bean | Java REST Resource | Python Service | Python Router | 功能域 |
+|---|-----------|-------------------|----------------|---------------|--------|
+| 1 | `ProductManagerBean.java` | — | `product_manager.py` | — | 零件 CRUD + 签出签入 |
+| 2 | — | — | `part_mapper.py` | — | DTO 映射 |
+| 3 | — | `PartsResource.java` | — | `parts.py` | 零件列表/搜索/统计/模板/导入 |
+| 4 | — | `PartResource.java` | — | `part.py` | 单个零件 CRUD |
+| 5 | — | `PartTemplateResource.java` | — | `part_templates.py` | 零件模板 |
+| 6 | — | `PartBinaryResource.java` | — | `part_files.py` | 文件上传下载 |
+| 7 | — | `EffectivityResource.java`, `PartEffectivityResource.java` | — | `effectivity.py` | 有效性（合1文件） |
+| 8 | `ConverterBean.java` | — | `converter.py` | — | CAD 转换 |
+| 9 | `DocumentManagerBean.java` | — | `document_manager.py` | — | 文档 CRUD |
+| 10 | — | `DocumentsResource.java` | — | `documents.py` | 文档列表/搜索 |
+| 11 | — | `DocumentResource.java` | — | `document.py` | 单个文档 CRUD |
+| 12 | — | `DocumentBaselinesResource.java` | — | `document_baselines.py` | 文档基线 |
+| 13 | — | `FolderResource.java` | — | `folders.py` | 文件夹 CRUD |
+| 14 | — | `DocumentTemplateResource.java` | — | `document_templates.py` | 文档模板 |
+| 15 | — | `DocumentBinaryResource.java` | — | `document_files.py` | 文件上传下载 |
+| 16 | `ProductManagerBean.java` (CI) | — | `product_structure.py` | — | 产品结构树 |
+| 17 | — | `ProductResource.java` | — | `products.py` | 产品/CI REST |
+| 18 | — | `ProductBaselinesResource.java` | — | `product_baselines.py` | 产品基线 |
+| 19 | — | `ProductConfigurationsResource.java` | — | `product_configurations.py` | 产品配置 |
+| 20 | — | `ProductInstancesResource.java`, `ProductInstanceBinaryResource.java` | — | `product_instances.py`, `product_files.py` | 产品实例 + 文件 |
+| 21 | — | `LayerResource.java` | — | `layers.py` | 图层/Marker |
+| 22 | `ChangeManagerBean.java` | — | `change_manager.py` | — | 变更 CRUD |
+| 23 | — | `ChangeIssuesResource.java` | — | `change_issues.py` | Issue 端点 |
+| 24 | — | `ChangeRequestsResource.java` | — | `change_requests.py` | Request 端点 |
+| 25 | — | `ChangeOrdersResource.java` | — | `change_orders.py` | Order 端点 |
+| 26 | — | `MilestonesResource.java` | — | `milestones.py` | 里程碑端点 |
+| 27 | `WorkflowManagerBean.java`, `TaskManagerBean.java` | — | `workflow_manager.py` | — | 工作流业务 |
+| 28 | — | `WorkflowModelResource.java` | — | `workflow_models.py` | 工作流模板 REST |
+| 29 | — | `WorkflowResource.java`, `WorkspaceWorkflowResource.java` | — | `workflow.py` | 工作流实例 + 模板（合1文件） |
+| 30 | — | `TaskResource.java` | — | `tasks.py` | 任务 REST |
+| 31 | `UserManagerBean.java`, `AccountManagerBean.java` | — | `user_manager.py` | — | 用户/账号管理 |
+| 32 | — | `UserResource.java` | — | `users.py` | 用户 REST |
+| 33 | — | `UserGroupResource.java` | — | `user_groups.py` | 用户组 REST |
+| 34 | — | `WorkspaceMembershipResource.java` | — | `workspace_memberships.py` | 成员资格 REST |
+| 35 | — | `AccountResource.java`, `AuthResource.java` | — | `accounts.py`, `auth.py` | 账号 + 认证 |
+| 36 | — | `RoleResource.java` | — | `roles.py` | 角色 REST |
+| 37 | `NotificationManagerBean.java` | — | `notification_manager.py` | — | 通知业务 |
+| 38 | — | `ModificationNotificationResource.java` | — | `notifications.py` | 通知 REST |
+| 39 | `WebhookManagerBean.java` | — | — | — | Webhook 业务 |
+| 40 | — | `WebhookResource.java` | — | `webhooks.py` | Webhook REST |
+| 41 | `WorkspaceManagerBean.java` | — | — | — | 工作区管理 |
+| 42 | — | `WorkspaceResource.java` | — | `workspaces.py` | 工作区 REST + stats |
+| 43 | — | `TagResource.java`, `LOVResource.java`, `AttributesResource.java` | — | `workspaces.py` | 标签/LOV/属性 |
+| 44 | `BinaryStorageManagerBean.java` | — | `binary_storage.py`, `vault.py` | — | 文件存储 |
+| 45 | `ShareManagerBean.java` | — | — | `share.py` | 共享 |
+| 46 | — | `SharedResource.java` | — | `share.py` | 共享端点 |
+| 47 | — | `AdminResource.java` | — | `admin.py` | 管理员面板 |
+| 48 | — | `OrganizationResource.java` | — | `organizations.py` | 组织管理 |
+| 49 | — | `PlatformResource.java` | — | `platform.py` | 平台/health |
+| 50 | — | `LanguagesResource.java` | — | `languages.py` | 语言列表 |
+| 51 | — | `TimeZoneResource.java` | — | `timezones.py` | 时区列表 |
+| 52 | `ImporterBean.java` | — | — | `parts.py` | 属性/BOM 导入 |
 
-| # | Java Bean | Java REST Resource | Python Service | Python Router | 功能域 | 状态 |
-|---|-----------|-------------------|----------------|---------------|--------|------|
-| 1 | `ProductManagerBean.java` | — | `product_service.py` | — | 零件 CRUD + 签出签入 + BOM | ✅ |
-| 2 | `ProductManagerBean.java` | — | `part_mapper.py` | — | 零件 DTO 映射 | ✅ |
-| 3 | — | `PartsResource.java` | — | `parts.py` | 零件列表/搜索/统计 | ✅ |
-| 4 | — | `PartResource.java` | — | `parts.py` | 单个零件 CRUD/tags | ✅ |
-| 5 | — | `PartBinaryResource.java` | — | `part_files.py` | 零件文件上传下载 | ✅ |
-| 6 | `ConverterBean.java` | — | `conversion_service.py` | — | CAD 转换回调（含 syncAssembly） | ✅ |
-| 7 | `DocumentManagerBean.java` | — | `document_service.py` | — | 文档 CRUD + 签出签入 | ✅ |
-| 8 | — | `DocumentsResource.java` | — | `documents.py` | 文档列表/搜索/统计 | ✅ |
-| 9 | — | `DocumentResource.java` | — | `documents.py` | 单个文档 CRUD/tags | ✅ |
-| 10 | — | `FolderResource.java` | — | `folders.py` | 文件夹 CRUD | ✅ |
-| 11 | — | `DocumentTemplateResource.java` | — | `document_templates.py` | 文档模板 | ✅ |
-| 12 | — | `DocumentBinaryResource.java` | — | `document_files.py` | 文档文件上传下载 | ✅ |
-| 13 | — | `DocumentBaselinesResource.java` | — | `documents.py` | 文档基线 | ✅ |
-| 14 | `ProductManagerBean.java` (CI) | — | `product_structure_service.py` | — | 产品 CI + 结构树 + 基线 | ✅ |
-| 15 | — | `ProductResource.java` | — | `products.py` | 产品/CI REST | ✅ |
-| 16 | — | `ProductBaselinesResource.java` | — | `products.py` | 产品基线 | ✅ |
-| 17 | — | `ProductConfigurationsResource.java` | — | `products.py` | 产品配置 | ✅ |
-| 18 | — | `ProductInstancesResource.java` | — | `product_instances.py` | 产品实例 | ✅ |
-| 19 | — | `ProductInstanceBinaryResource.java` | — | `product_files.py` | 产品实例文件 | ✅ |
-| 20 | `ChangeManagerBean.java` | — | `change_service.py` | — | 变更 CRUD | ✅ |
-| 21 | — | `ChangeIssuesResource.java` | — | `changes.py` | Issue 端点 | ✅ |
-| 22 | — | `ChangeRequestsResource.java` | — | `changes.py` | Request 端点 | ✅ |
-| 23 | — | `ChangeOrdersResource.java` | — | `changes.py` | Order 端点 | ✅ |
-| 24 | — | `MilestonesResource.java` | — | `changes.py` | 里程碑端点 | ✅ |
-| 25 | `WorkflowManagerBean.java` | — | `workflow_service.py` | — | 工作流业务 | ✅ |
-| 26 | `TaskManagerBean.java` | — | `workflow_service.py` | — | 任务审批业务 | ✅ |
-| 27 | — | `WorkflowModelResource.java` | — | `workflows.py` | 工作流模板 REST | ✅ |
-| 28 | — | `TaskResource.java` | — | `workflows.py` | 任务 REST | ✅ |
-| 29 | `UserManagerBean.java` | — | `user_mgmt_service.py` | — | 用户/组管理业务 | ✅ |
-| 30 | `AccountManagerBean.java` | — | `user_mgmt_service.py` | — | 账号管理业务 | ✅ |
-| 31 | — | `UserResource.java` | — | `users.py` | 用户 REST | ✅ |
-| 32 | — | `UserGroupResource.java` | — | `users.py` | 用户组 REST | ✅ |
-| 33 | — | `WorkspaceMembershipResource.java` | — | `users.py` | 成员资格 REST | ✅ |
-| 34 | — | `AccountResource.java` | — | `accounts.py` | 账号 REST | ✅ |
-| 35 | — | `AuthResource.java` | — | `auth.py` | 认证端点 | ✅ |
-| 36 | — | `RoleResource.java` | — | `roles.py` | 角色 REST | ✅ |
-| 37 | `NotificationManagerBean.java` | — | `notification_service.py` | — | 通知业务 | ✅ |
-| 38 | — | `ModificationNotificationResource.java` | — | `notifications.py` | 通知 REST | ✅ |
-| 39 | `WebhookManagerBean.java` | — | — | — | Webhook 业务 | ✅ |
-| 40 | — | `WebhookResource.java` | — | `webhooks.py` | Webhook REST | ✅ |
-| 41 | `WorkspaceManagerBean.java` | — | — | `workspaces.py` | 工作区管理业务 | ✅ |
-| 42 | — | `WorkspaceResource.java` | — | `workspaces.py` | 工作区 REST | ✅ |
-| 43 | `BinaryStorageManagerBean.java` | — | `file_service.py` + `vault.py` | — | 文件存储 | ✅ |
-| 44 | `ShareManagerBean.java` | — | — | `shared.py` | 共享 | ✅ |
-| 45 | — | `AdminResource.java` | — | `admin.py` | 管理员面板 | ✅ |
-| 46 | — | `OrganizationResource.java` | — | `organizations.py` | 组织管理 | ✅ |
-| 47 | — | `PlatformResource.java` | — | `misc.py` | 平台/语言/时区 | ✅ |
-| 48 | `LOVManagerBean.java` | `LOVResource.java` | — | `workspaces.py` | 值列表 | ✅ |
-| 49 | — | `TagResource.java` | — | `workspaces.py` | 标签管理 | ✅ |
-| 50 | — | `AttributesResource.java` | — | `workspaces.py` | 属性管理 | ✅ |
-| 51 | `EffectivityManagerBean.java` | `EffectivityResource.java` | — | `parts.py` | 有效性管理（stub） | ⚠️ |
-| 52 | — | `PartEffectivityResource.java` | — | `parts.py` | 零件有效性（stub） | ⚠️ |
-| 53 | — | `PartTemplateResource.java` | — | `parts.py` | 零件模板 CRUD | ✅ |
-| 54 | — | `PartTemplateBinaryResource.java` | — | `parts.py` | 零件模板文件 | ✅ |
-| 55 | — | `LayerResource.java` | — | `products.py` | 产品图层/Marker | ✅ |
-| 56 | `ImporterBean.java` | — | — | `parts.py` | 属性/BOM 导入 | ⚠️ |
-| 57 | `OrganizationManagerBean.java` | `OrganizationResource.java` | — | `organizations.py` | 组织管理 | ✅ |
-| 58 | `PlatformOptionsManagerBean.java` | `PlatformResource.java` | — | `admin.py` | 平台选项 | ✅ |
-| 59 | `PlatformHealthManagerBean.java` | — | — | `misc.py` | 平台健康检查 | ✅ |
-| 60 | `PublicEntityManagerBean.java` | — | — | — | 公开实体管理（无 REST 端点） | — |
+## 变更清单
 
-> ✅ = 已对齐 | ⚠️ = stub/低频功能 | — = 无需迁移
+**Router 拆分** (22→32，+10 文件)：
 
-## 检查 Prompt 模板
+| 原文件 | 拆出 |
+|--------|------|
+| `parts.py` | `part.py` + `part_templates.py` + `effectivity.py` |
+| `documents.py` | `document.py` + `document_baselines.py` |
+| `changes.py` | `change_issues.py` + `change_requests.py` + `change_orders.py` + `milestones.py` |
+| `products.py` | `product_baselines.py` + `product_configurations.py` + `layers.py` |
+| `users.py` | `user_groups.py` + `workspace_memberships.py` |
+| `workflows.py` | `workflow_models.py` + `tasks.py` + `workflow.py` |
+| `misc.py` | `languages.py` + `timezones.py` + `platform.py` |
+| `shared.py` | → `share.py`（改名） |
 
-```markdown
-You are auditing a Java→Python migration file pair.
+**Service 改名** (10 个)：
 
-Java file: {JAVA_FILE_PATH}
-Python file: {PYTHON_FILE_PATH}
+| 原文件名 | 新文件名 |
+|----------|----------|
+| `product_service.py` | `product_manager.py` |
+| `document_service.py` | `document_manager.py` |
+| `change_service.py` | `change_manager.py` |
+| `workflow_service.py` | `workflow_manager.py` |
+| `user_mgmt_service.py` | `user_manager.py` |
+| `conversion_service.py` | `converter.py` |
+| `notification_service.py` | `notification_manager.py` |
+| `product_structure_service.py` | `product_structure.py` |
+| `file_service.py` | `binary_storage.py` |
+| — | `security_service.py` / `acl_helper.py` / `kafka_producer.py` / `part_mapper.py` / `vault.py` 不变 |
 
-Check these 5 dimensions:
+## 实施计划
 
-1. **方法覆盖率** — List all public methods in Java. Which ones have a Python equivalent? Mark ❌ for missing.
-2. **SQL查询逻辑** — For each method that queries DB: does Python use the same tables, same JOINs, same WHERE conditions? If not, spell out the diff.
-3. **异常对齐** — For each Java throw: does Python raise the corresponding ApplicationException with the matching i18n key?
-4. **响应字段** — For each Java endpoint returning DTO: does Python return the same field names and nested structure?
-5. **Stub检测** — For each Python method returning hardcoded `[]`, `{}`, `{"status":"ok"}`, or `return 204` without `db.commit()`: mark ❌ STUB.
+按依赖顺序分 3 步：
 
-Output: summary table with METHOD | VERDICT (✅/❌/⚠) | DETAIL
-```
+### Step 1: Service 改名（低风险——只改文件名 + import）
+- `git mv` 10 个 service 文件
+- 更新 `main.py` 中的 import
+- 更新所有 router 文件中的 import
+- 更新所有 test 文件中的 import
+- 更新其他 service 文件之间的相互 import
+- 跑测试确认
 
-## 审计历史
+### Step 2: Router 拆分（中风险——内容移动 + 新文件）
+- 从 7 个大文件拆出 17 个新文件（合并原 +10）
+- 每个新文件：移动对应端点代码 + 独立 `router = APIRouter(prefix=...)`
+- 更新 `main.py` 注册所有新 router
+- 保留原文件中的剩余端点（缩小后的文件）
+- 跑测试确认
 
-| 日期 | 发现 | 修复 | 剩余 |
-|------|------|------|------|
-| 2026-07-05 | 35（15 Critical + 20 Partial） | 全修（10 批并行 agent） | 11 |
-| 2026-07-05 | 11 Partial | 全修（7 批并行 agent） | 0 |
+### Step 3: 文档更新
+- `file-mapping.md` 替换为最终映射
+- `file-mapping-proposed.md` 删除
+
+确认后按 1→2→3 执行？
