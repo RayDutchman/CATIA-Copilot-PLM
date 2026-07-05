@@ -16,10 +16,39 @@ svc = DocumentService()
 def list_templates(ws: str, current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     templates = svc.list_templates(db, ws)
-    return [{"id": t.id, "workspaceId": t.workspace_id,
-             "documentType": t.document_type, "mask": t.mask,
-             "idGenerated": t.id_generated, "attributesLocked": t.attributes_locked}
-            for t in templates]
+    result = []
+    for t in templates:
+        author = None
+        if t.author_login:
+            author = {"login": t.author_login, "name": t.author_login,
+                      "workspaceId": t.workspace_id}
+        acl = None
+        if t.acl_id:
+            from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+            acl_obj = db.query(ACL).filter(ACL.id == t.acl_id).first()
+            if acl_obj:
+                user_entries = db.query(AclUserEntry).filter(
+                    AclUserEntry.acl_id == t.acl_id).all()
+                group_entries = db.query(AclUserGroupEntry).filter(
+                    AclUserGroupEntry.acl_id == t.acl_id).all()
+                acl = {
+                    "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+                                    for e in user_entries},
+                    "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+                                     for e in group_entries},
+                }
+        result.append({
+            "id": t.id, "workspaceId": t.workspace_id,
+            "documentType": t.document_type, "mask": t.mask,
+            "idGenerated": t.id_generated,
+            "attributesLocked": t.attributes_locked,
+            "author": author,
+            "acl": acl,
+            "creationDate": str(t.creation_date) if t.creation_date else None,
+            "attachedFiles": [],
+            "attributeTemplates": [],
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/document-templates/{template_id}")
@@ -27,9 +56,34 @@ def get_template(ws: str, template_id: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     t = svc.get_template(db, ws, template_id)
-    return {"id": t.id, "workspaceId": t.workspace_id,
-            "documentType": t.document_type, "mask": t.mask,
-            "idGenerated": t.id_generated}
+    author = None
+    if t.author_login:
+        author = {"login": t.author_login, "name": t.author_login,
+                  "workspaceId": t.workspace_id}
+    acl = None
+    if t.acl_id:
+        from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+        acl_obj = db.query(ACL).filter(ACL.id == t.acl_id).first()
+        if acl_obj:
+            user_entries = db.query(AclUserEntry).filter(
+                AclUserEntry.acl_id == t.acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(
+                AclUserGroupEntry.acl_id == t.acl_id).all()
+            acl = {
+                "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+                                for e in user_entries},
+                "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+                                 for e in group_entries},
+            }
+    return {
+        "id": t.id, "workspaceId": t.workspace_id,
+        "documentType": t.document_type, "mask": t.mask,
+        "idGenerated": t.id_generated,
+        "attributesLocked": t.attributes_locked,
+        "author": author, "acl": acl,
+        "creationDate": str(t.creation_date) if t.creation_date else None,
+        "attachedFiles": [], "attributeTemplates": [],
+    }
 
 
 @router.post("/workspaces/{ws}/document-templates", status_code=201)

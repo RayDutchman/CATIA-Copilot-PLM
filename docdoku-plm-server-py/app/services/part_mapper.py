@@ -50,6 +50,23 @@ def _binary_dto(br: BinaryResource | None) -> BinaryResourceDTO | None:
     )
 
 
+def _build_acl(db: Session | None, acl_id: int | None) -> dict | None:
+    if db is None or acl_id is None:
+        return None
+    from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+    acl = db.query(ACL).filter(ACL.id == acl_id).first()
+    if not acl:
+        return None
+    user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+    group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+    return {
+        "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+                        for e in user_entries},
+        "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+                         for e in group_entries},
+    }
+
+
 def map_cad_instance(cad) -> CADInstanceDTO:
     return CADInstanceDTO(
         rotationType=cad.rotation_type,
@@ -197,5 +214,7 @@ def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO
         obsoleteDate=_to_utc(pr.obsolete_date),
         obsoleteAuthor=_user_dto(pr.obsolete_user_workspace, pr.obsolete_user_login, db),
         tags=[t.label for t in (pr.tags or [])],
+        workflow=None,
+        acl=_build_acl(db, pr.acl_id) if db else None,
         notifications=notification_list,
     )

@@ -73,6 +73,9 @@ def _doc_to_dict(rev):
         "publicShared": False, "attributesLocked": False,
         "commentLink": None, "iterationSubscription": False,
         "stateSubscription": False, "routePath": None,
+        "releaseAuthor": None,
+        "obsoleteAuthor": None,
+        "type": rev.document_master.type if rev.document_master else None,
         "author": {
             "login": rev.author_login, "name": rev.author_login,
             "email": None, "workspaceId": rev.workspace_id,
@@ -333,6 +336,13 @@ def unpublish(ws: str, doc_key: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     return {"publicShared": False}
+
+
+@router.get("/workspaces/{ws}/document-baselines")
+def list_doc_baselines(ws: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    return []
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")

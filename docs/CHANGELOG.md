@@ -6,6 +6,15 @@
 
 ---
 
+## 2026-07-05 — Parts/Documents FA 差距修复
+
+- fix(py): parts.py — 移除 4 处 `response_model_exclude_none=True`，使 Payara 存在的字段（releaseAuthor/obsoleteAuthor/workflow/acl 等）即使为 None 也返回
+- fix(py): part_mapper.py — map_revision 新增 `workflow` 和 `acl` 字段输出（ACL 按权限条目构建）
+- fix(py): parts.py — 新增 `GET /workspaces/{ws}/part-templates` 端点
+- fix(py): documents.py — _doc_to_dict 顶层新增 `releaseAuthor`、`obsoleteAuthor`、`type` 字段
+- fix(py): document_templates.py — list_templates/get_template 新增 `author`、`acl`、`creationDate`、`attachedFiles`、`attributeTemplates` 字段
+- feat(py): documents.py — 新增 `GET /workspaces/{ws}/document-baselines` 端点
+
 ## 2026-07-05 — P2/P3 缺失子端点补全
 
 - feat(py): documents.py 新增 8 个子端点——move/share/publish/unpublish + 4 个 notification 订阅
