@@ -1,7 +1,7 @@
 """PartRevision/PartIteration/PartUsageLink → DTO 映射工具。"""
 from datetime import timezone
 from sqlalchemy.orm import Session
-from app.models.part import PartRevision, PartIteration, PartUsageLink, BinaryResource
+from app.models.part import PartRevision, PartIteration, PartUsageLink, BinaryResource, PartMaster
 from app.models.auth import Account
 from app.schemas.part import (
     PartRevisionDTO, PartIterationDTO, PartUsageLinkDTO,
@@ -136,12 +136,27 @@ def map_iteration(it: PartIteration, db: Session | None = None) -> PartIteration
             "AND pidl.partrevision_version=:ver AND pidl.iteration=:it"
         ), {"ws": it.workspace_id, "pn": it.partmaster_partnumber,
             "ver": it.partrevision_version, "it": it.iteration}).fetchall()
-        linked_documents = [dict(row._mapping) for row in doc_rows]
+        linked_documents = [{
+            "id": row.id,
+            "workspaceId": row.target_workspace_id,
+            "documentMasterId": row.target_documentmaster_id,
+            "documentMasterVersion": row.target_docrevision_version,
+            "commentLink": row.commentdata,
+        } for row in doc_rows]
+
+    # PartMaster name
+    pm = (
+        db.query(PartMaster)
+        .filter(PartMaster.workspace_id == it.workspace_id,
+                PartMaster.number == it.partmaster_partnumber)
+        .first()
+    ) if db is not None else None
 
     return PartIterationDTO(
         workspaceId=it.workspace_id,
         number=it.partmaster_partnumber,
         version=it.partrevision_version,
+        name=pm.name if pm else "",
         iteration=it.iteration,
         iterationNote=it.iteration_note,
         author=_user_dto(it.author_workspace_id, it.author_login, db),

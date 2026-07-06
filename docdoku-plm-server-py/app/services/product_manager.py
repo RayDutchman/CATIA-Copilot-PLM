@@ -34,7 +34,8 @@ class ProductService:
 
     def get_revision(self, db: Session, workspace_id: str,
                      number: str, version: str,
-                     for_update: bool = False) -> PartRevision:
+                     for_update: bool = False,
+                     current_user_login: str = None) -> PartRevision:
         q = (
             db.query(PartRevision)
             .filter(
@@ -49,6 +50,13 @@ class ProductService:
         if pr is None:
             raise HTTPException(status_code=404,
                                 detail=f"Part {number}-{version} not found")
+        # 数据泄漏保护：签出状态对其他用户隐藏最新迭代
+        if (not for_update and pr.checkout_user_login
+                and current_user_login
+                and pr.checkout_user_login != current_user_login):
+            db.expunge(pr)
+            if list(pr.iterations):
+                pr.iterations.remove(pr.iterations[-1])
         return pr
 
     def get_latest_revision(self, db: Session, workspace_id: str,
@@ -66,12 +74,14 @@ class ProductService:
 
     def search_numbers(self, db: Session, workspace_id: str,
                        q: str, limit: int = 8) -> list:
+        from sqlalchemy import or_
         pattern = f"%{q}%"
         return (
             db.query(PartMaster)
             .filter(
                 PartMaster.workspace_id == workspace_id,
-                PartMaster.number.ilike(pattern),
+                or_(PartMaster.number.ilike(pattern),
+                    PartMaster.name.ilike(pattern)),
             )
             .limit(limit).all()
         )
@@ -415,10 +425,46 @@ class ProductService:
             self._sync_instance_attributes(db, target, body.instanceAttributes)
         # 更新子件列表
         if body.components is not None:
+            self._check_cyclic_assembly(db, target, body.components, workspace_id)
             self._sync_components(db, target, body.components, workspace_id)
         db.commit()
         db.refresh(pr)
         return pr
+
+    def _check_cyclic_assembly(self, db: Session, iteration: PartIteration,
+                              components_dto: list, workspace_id: str) -> None:
+        """检查新增子件是否会形成循环引用（BFS 遍历子件的子件链）。"""
+        from app.core.exceptions import EntityConstraintException
+        current_pn = iteration.partmaster_partnumber
+        # 收集所有新增子件的零件号
+        new_comp_numbers = set()
+        for comp_dto in components_dto:
+            if comp_dto.component and comp_dto.component.number:
+                new_comp_numbers.add(comp_dto.component.number)
+        if not new_comp_numbers:
+            return
+        # BFS：从每个新子件出发，检查其子件链是否包含当前零件号
+        visited = set()
+        queue = list(new_comp_numbers)
+        while queue:
+            pn = queue.pop(0)
+            if pn == current_pn:
+                raise EntityConstraintException("EntityConstraintException12")
+            if pn in visited:
+                continue
+            visited.add(pn)
+            # 查 pn 的装配使用了哪些子件（BFS 前向遍历）
+            sub_rows = db.query(PartUsageLink.component_partnumber).join(
+                part_iteration_usagelink,
+                part_iteration_usagelink.c.component_id == PartUsageLink.id,
+            ).filter(
+                part_iteration_usagelink.c.partmaster_partnumber == pn,
+                part_iteration_usagelink.c.workspace_id == workspace_id,
+            ).distinct().all()
+            for sr in sub_rows:
+                if sr[0] and sr[0] not in visited:
+                    queue.append(sr[0])
+        return
 
     def _sync_components(self, db: Session, iteration: PartIteration,
                           components_dto: list, workspace_id: str) -> None:

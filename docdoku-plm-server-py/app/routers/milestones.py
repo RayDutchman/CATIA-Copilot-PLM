@@ -186,9 +186,11 @@ def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[
     if db and current_user:
         writable = check_write_access(db, getattr(ms, "acl_id", None), current_user.login, is_admin)
 
+    dd = getattr(ms, "due_date", None)
     data = dict(
         acl=_get_acl_dict(db, getattr(ms, "acl_id", None)) or {},
         description=getattr(ms, "description", "") or "",
+        dueDate=dd.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dd.microsecond // 1000:03d}Z" if dd else None,
         id=ms.id,
         numberOfOrders=numberOfOrders,
         numberOfRequests=numberOfRequests,
@@ -196,9 +198,6 @@ def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[
         workspaceId=getattr(ms, "workspace_id", ""),
         writable=writable,
     )
-    dd = getattr(ms, "due_date", None)
-    if dd:
-        data["dueDate"] = dd.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dd.microsecond // 1000:03d}Z"
     return data
 
 

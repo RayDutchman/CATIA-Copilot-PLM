@@ -76,7 +76,19 @@ class UserMgmtService:
             db.execute(text(
                 "INSERT INTO userdata (login, workspace_id) VALUES (:l, :w)"
             ), {"l": login, "w": ws})
+        # 添加 workspaceusermembership 记录（enable_user 语义）
+        db.execute(text(
+            "INSERT INTO workspaceusermembership "
+            "(workspace_id, member_login, member_workspace_id) "
+            "VALUES (:ws, :login, :ws) "
+            "ON CONFLICT (workspace_id, member_login, member_workspace_id) DO NOTHING"
+        ), {"ws": ws, "login": login})
         if group_id:
+            # Payara 对齐：先移除直接 membership，避免双重成员关系
+            db.execute(text(
+                "DELETE FROM workspaceusermembership "
+                "WHERE workspace_id = :ws AND member_login = :login"
+            ), {"ws": ws, "login": login})
             db.execute(text(
                 "INSERT INTO usergroupmapping (login, groupname) VALUES (:l, :g) "
                 "ON CONFLICT DO NOTHING"

@@ -131,6 +131,29 @@ class ProductStructureService:
         if usage_link:
             is_virtual = getattr(usage_link, 'is_virtual', False)
             is_substitute = getattr(usage_link, 'is_substitute', False)
+        # substituteIds: 查询该零件的替件
+        sub_ids = []
+        if last_it:
+            sub_rows = db.execute(text(
+                "SELECT substitute_partnumber FROM partsubstitutelink "
+                "WHERE component_workspace_id = :ws AND component_partnumber = :pn "
+                "AND component_partversion = :ver"
+            ), {"ws": rev.workspace_id, "pn": rev.partmaster_partnumber,
+                "ver": rev.version}).fetchall()
+            sub_ids = [r[0] for r in sub_rows]
+        # notifications: 查询影响该零件主记录的修改通知
+        notif_rows = db.execute(text(
+            "SELECT id, acknowledged, ackauthor_login, acknowledgementcomment, "
+            "acknowledgementdate, ackauthor_workspace_id "
+            "FROM modificationnotification WHERE impacted_workspace_id = :ws "
+            "AND impacted_partmaster_partnumber = :pn"
+        ), {"ws": rev.workspace_id, "pn": rev.partmaster_partnumber}).fetchall()
+        notifications = [
+            {"id": r[0], "acknowledged": r[1], "ackAuthorLogin": r[2],
+             "ackComment": r[3], "ackDate": str(r[4]) if r[4] else None,
+             "ackAuthorWorkspaceId": r[5]}
+            for r in notif_rows
+        ]
         comp = {
             "number": rev.partmaster_partnumber,
             "name": rev.part_master.name or "",
@@ -158,8 +181,8 @@ class ProductStructureService:
             "accessDeny": False,
             "attributes": [],
             "components": [],
-            "substituteIds": [],
-            "notifications": [],
+            "substituteIds": sub_ids,
+            "notifications": notifications,
         }
         if last_it and (depth is None or depth > 0):
             child_depth = depth - 1 if depth is not None else None
@@ -177,7 +200,7 @@ class ProductStructureService:
         return comp
 
     def decode_path(self, db: Session, ws: str, ci_id: str, path_str: str):
-        """u1-u4-u7 → [{id, partNumber, version, amount}]"""
+        """u1-u4-u7 → LightPartLinkDTO[{number, name, referenceDescription, fullId}]"""
         ci = self.get_ci(db, ws, ci_id)
         root_pn = ci.partmaster_partnumber
         master = db.query(PartMaster).filter(
@@ -198,13 +221,13 @@ class ProductStructureService:
                 PartRevision.workspace_id == ws,
                 PartRevision.partmaster_partnumber == link.component_partnumber,
             ).order_by(PartRevision.version.desc()).first()
+            pn = link.component_partnumber
+            ver = rev.version if rev else "A"
             result.append({
-                "id": link.id,
-                "partNumber": link.component_partnumber,
-                "version": rev.version if rev else "A",
-                "amount": link.amount or 1.0,
-                "unit": link.unit,
-                "optional": link.optional or False,
+                "number": pn,
+                "name": rev.part_master.name if rev and rev.part_master.name else pn,
+                "referenceDescription": link.reference_description if link.reference_description else "",
+                "fullId": f"{ws}/{pn}/{ver}",
             })
         return result
 

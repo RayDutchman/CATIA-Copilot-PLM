@@ -263,7 +263,12 @@ def set_request_tags(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    svc.set_tags(db, ChangeRequest, ws, item_id, body.get("tags", []))
+    tags_raw = body.get("tags", [])
+    if tags_raw and isinstance(tags_raw, list) and isinstance(tags_raw[0], dict):
+        tags = [t.get("label", "") for t in tags_raw]
+    else:
+        tags = [str(t) for t in tags_raw] if tags_raw else []
+    svc.set_tags(db, ChangeRequest, ws, item_id, tags)
     return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db, current_user)
 
 
@@ -345,4 +350,4 @@ def set_request_acl(ws: str, item_id: int, body: dict,
                            body.get("groupEntries", {}))
     item.acl_id = new_acl_id
     db.commit()
-    return {"aclId": new_acl_id}
+    return _item_to_dict(item, db, current_user)

@@ -38,22 +38,23 @@ def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
 
 def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
     """构建基线列表摘要（含 hasObsoletePartRevisions + configurationItemLatestRevision）。"""
+    ws = b.configurationitem_workspace_id
     return {
         "id": b.id,
         "name": b.name,
         "type": b.type,
         "configurationItemId": b.configurationitem_id,
-        "author": _get_user(db, b.author_login or "", b.configurationitem_workspace_id),
+        "author": _get_user(db, b.author_login or "", ws),
         "creationDate": b.creation_date.isoformat() + "Z" if b.creation_date else None,
         "description": b.description or "",
-        "hasObsoletePartRevisions": False,
+        "hasObsoletePartRevisions": _has_obsolete_parts(db, b.partcollection_id),
         "configurationItemLatestRevision": _ci_latest_revision(
-            db, b.configurationitem_workspace_id, b.configurationitem_id
+            db, ws, b.configurationitem_id
         ),
         "baselinedParts": _query_baselined_parts(db, b.partcollection_id) if b.partcollection_id else [],
-        "substituteLinks": [],
-        "optionalUsageLinks": [],
-        "pathToPathLinks": [],
+        "substituteLinks": _query_substitute_links(db, ws, b.partcollection_id),
+        "optionalUsageLinks": _query_optional_links(db, ws, b.partcollection_id),
+        "pathToPathLinks": _query_path_to_path_links(db, ws),
         "substitutesParts": [],
         "optionalsParts": [],
     }
@@ -61,19 +62,20 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
 
 def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
     """构建基线详情（完整字段，含 substitutesParts + optionalsParts）。"""
+    ws = bl.configurationitem_workspace_id
     return {
         "id": bl.id,
         "name": bl.name,
         "type": bl.type,
         "configurationItemId": bl.configurationitem_id,
-        "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
+        "configurationItemWorkspaceId": ws,
         "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
         "description": bl.description or "",
-        "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
+        "author": _get_user(db, bl.author_login or "", ws),
         "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
-        "substituteLinks": [],
-        "optionalUsageLinks": [],
-        "pathToPathLinks": [],
+        "substituteLinks": _query_substitute_links(db, ws, bl.partcollection_id),
+        "optionalUsageLinks": _query_optional_links(db, ws, bl.partcollection_id),
+        "pathToPathLinks": _query_path_to_path_links(db, ws),
         "substitutesParts": [],
         "optionalsParts": [],
     }
@@ -154,6 +156,59 @@ def _query_baselined_parts(db: Session, partcollection_id: int | None) -> list:
     ]
 
 
+def _has_obsolete_parts(db: Session, partcollection_id: int | None) -> bool:
+    if partcollection_id is None:
+        return False
+    row = db.execute(sql_text(
+        "SELECT 1 FROM baselinedpart bp "
+        "JOIN partrevision pr ON bp.target_workspace_id = pr.workspace_id "
+        "AND bp.target_partmaster_partnumber = pr.partmaster_partnumber "
+        "AND bp.target_partrevision_version = pr.version "
+        "WHERE bp.partcollection_id = :pc_id AND pr.status = 2 LIMIT 1"
+    ), {"pc_id": partcollection_id}).first()
+    return row is not None
+
+
+def _query_path_to_path_links(db: Session, ws: str) -> list:
+    rows = db.execute(sql_text(
+        "SELECT id, type, name, sourcepath, targetpath, description "
+        "FROM pathtopathlink WHERE workspace_id = :ws"
+    ), {"ws": ws}).fetchall()
+    return [{"id": r[0], "type": r[1], "name": r[2],
+             "sourcePath": r[3], "targetPath": r[4], "description": r[5]}
+            for r in rows]
+
+
+def _query_substitute_links(db: Session, ws: str, partcollection_id: int | None) -> list:
+    if partcollection_id is None:
+        return []
+    rows = db.execute(sql_text(
+        "SELECT DISTINCT psl.substitute_partnumber, pm.name "
+        "FROM partsubstitutelink psl "
+        "JOIN baselinedpart bp ON bp.target_workspace_id = psl.component_workspace_id "
+        "AND bp.target_partmaster_partnumber = psl.component_partnumber "
+        "AND bp.target_partrevision_version = psl.component_partversion "
+        "LEFT JOIN partmaster pm ON pm.workspace_id = psl.substitute_workspace_id "
+        "AND pm.number = psl.substitute_partnumber "
+        "WHERE bp.partcollection_id = :pc_id"
+    ), {"pc_id": partcollection_id}).fetchall()
+    return [{"partNumber": r[0], "name": r[1] or r[0]} for r in rows]
+
+
+def _query_optional_links(db: Session, ws: str, partcollection_id: int | None) -> list:
+    if partcollection_id is None:
+        return []
+    rows = db.execute(sql_text(
+        "SELECT DISTINCT pul.component_partnumber "
+        "FROM partusagelink pul "
+        "JOIN baselinedpart bp ON bp.target_workspace_id = pul.component_workspace_id "
+        "AND bp.target_partmaster_partnumber = pul.component_partnumber "
+        "AND bp.target_partrevision_version = pul.component_partversion "
+        "WHERE bp.partcollection_id = :pc_id AND pul.optional = true"
+    ), {"pc_id": partcollection_id}).fetchall()
+    return [{"partNumber": r[0]} for r in rows]
+
+
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
 def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
@@ -173,18 +228,6 @@ def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
                        db: Session = Depends(get_db)):
     svc.delete_baseline(db, ws, bl_id)
     return {"status": "deleted"}
-
-
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
-def get_workspace_baseline(ws: str, bl_id: int,
-                           current_user: Account = Depends(get_current_user),
-                           db: Session = Depends(get_db)):
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
-    if not bl:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return _bl_detail_dict(bl, db)
 
 
 # ── products/{ci_id}/baselines ──
@@ -247,3 +290,43 @@ def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
                                         source: str, target: str,
                                         current_user: Account = Depends(get_current_user)):
     return {}
+
+
+# ── product-baselines/{id} direct endpoints ──
+
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
+def get_baseline_by_id(ws: str, bl_id: int,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    if not bl:
+        from app.core.exceptions import EntityNotFoundException
+        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
+    return _bl_detail_dict(bl, db)
+
+
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}-light")
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}-light/", include_in_schema=False)
+def get_baseline_light(ws: str, bl_id: int,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    if not bl:
+        from app.core.exceptions import EntityNotFoundException
+        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
+    return {
+        "id": bl.id, "name": bl.name, "type": bl.type,
+        "configurationItemId": bl.configurationitem_id,
+        "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
+        "description": bl.description or "",
+        "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
+    }
+
+
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}/export-files")
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}/export-files/", include_in_schema=False)
+def baseline_export_files(ws: str, bl_id: int,
+                           current_user: Account = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    return []

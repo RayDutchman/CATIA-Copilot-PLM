@@ -195,8 +195,14 @@ def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
     if not config:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
+    user_entries = body.get("userEntries", {})
+    group_entries = body.get("groupEntries", {})
+    if not user_entries and not group_entries:
+        config.acl_id = None
+        db.commit()
+        return {"aclId": None}
     acl_id = getattr(config, "acl_id", None)
-    new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
+    new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
     if config.acl_id != new_acl_id:
         config.acl_id = new_acl_id
         db.commit()

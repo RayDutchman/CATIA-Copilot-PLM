@@ -38,9 +38,9 @@ def get_part_revision(
     db: Session = Depends(get_db),
 ):
     number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
+    pr = svc.get_revision(db, workspace_id, number, version,
+                          current_user_login=current_user.login)
     return map_revision(pr, db)
-
 
 @router.delete("/workspaces/{workspace_id}/parts/{part_key}", status_code=204)
 @router.delete("/workspaces/{workspace_id}/parts/{part_key}/", status_code=204, include_in_schema=False)
@@ -304,8 +304,15 @@ def unpublish_part(workspace_id: str, part_key: str,
 def update_part_acl(workspace_id: str, part_key: str, body: dict,
                     db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
+    from app.core.exceptions import AccessRightException
     number, version = _split_part_key(part_key)
     pr = svc.get_revision(db, workspace_id, number, version)
+    # 仅 revision 作者或工作区管理员可修改 ACL
+    is_admin = db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": workspace_id, "l": current_user.login}).scalar()
+    if pr.author_login != current_user.login and not is_admin:
+        raise AccessRightException("AccessRightException")
     acl_id = getattr(pr, "acl_id", None)
     user_entries = body.get("userEntries", {})
     group_entries = body.get("groupEntries", {})

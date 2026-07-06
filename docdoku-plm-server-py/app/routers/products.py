@@ -280,13 +280,13 @@ def last_release(ws: str, ci_id: str,
     if rev is None:
         return []
     last_it = rev.last_iteration
-    return [{
+    return {
         "number": rev.partmaster_partnumber,
         "version": rev.version,
         "iteration": last_it.iteration if last_it else 1,
         "description": rev.description or "",
         "releaseDate": _fmt_date(rev.release_date),
-    }]
+    }
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/path-choices")
@@ -476,3 +476,23 @@ def cascade_undocheckout(ws: str, ci_id: str,
             errors.append({"part": pr.partmaster_partnumber + "-" + pr.version,
                            "error": str(e)})
     return {"status": "ok", "undoneCheckout": undone, "errors": errors}
+
+
+# ── Stub endpoints ──
+
+@router.get("/workspaces/{ws}/products/{ci_id}/paths")
+@router.get("/workspaces/{ws}/products/{ci_id}/paths/", include_in_schema=False)
+def ci_paths(ws: str, ci_id: str,
+             search: str = Query(None),
+             current_user: Account = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    return []
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/document-links/{pn}-{pv}-{pi}/{config_spec}")
+@router.get("/workspaces/{ws}/products/{ci_id}/document-links/{pn}-{pv}-{pi}/{config_spec}/", include_in_schema=False)
+def ci_document_links(ws: str, ci_id: str,
+                       pn: str, pv: str, pi: int, config_spec: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    return []
