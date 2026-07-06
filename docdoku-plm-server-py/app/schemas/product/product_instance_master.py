@@ -1,14 +1,20 @@
-"""DTO: ProductInstanceDTO. Auto-split from product.py."""
+"""DTO: ProductInstanceMasterDTO."""
 from __future__ import annotations
+from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
 
 
-class ProductInstanceDTO(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    serialNumber: Optional[str] = None
-    workspaceId: Optional[str] = None
-    configurationItemId: Optional[str] = None
+class ProductInstanceMasterDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
     identifier: Optional[str] = None
+    serialNumber: Optional[str] = None
+    configurationItemId: Optional[str] = None
+    productInstanceIterations: List["ProductInstanceIterationDTO"] = []
     acl: Optional[dict] = None
-    productInstanceIterations: List[ProductInstanceIterationDTO] = []
+
+
+from app.schemas.product.product_instance_iteration import ProductInstanceIterationDTO  # noqa: E402
+
+ProductInstanceMasterDTO.model_rebuild()
+ProductInstanceDTO = ProductInstanceMasterDTO  # 兼容旧名称
