@@ -19,10 +19,11 @@ def list_layers(ws: str, pid: str,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
     layers = db.query(Layer).filter(
-        Layer.workspace_id == ws,
+        Layer.configurationitem_workspace_id == ws,
         Layer.configurationitem_id == pid,
     ).all()
-    return [{"id": l.id, "name": l.name, "workspaceId": l.workspace_id,
+    return [{"id": l.id, "name": l.name,
+             "workspaceId": l.configurationitem_workspace_id,
              "configurationItemId": l.configurationitem_id} for l in layers]
 
 
@@ -31,10 +32,12 @@ def list_layers(ws: str, pid: str,
 def create_layer(ws: str, pid: str, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    layer = Layer(workspace_id=ws, configurationitem_id=pid,
-                  name=body.get("name", ""))
+    layer = Layer(configurationitem_workspace_id=ws, configurationitem_id=pid,
+                  name=body.get("name", ""),
+                  author_login=current_user.login)
     db.add(layer); db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name, "workspaceId": layer.workspace_id,
+    return {"id": layer.id, "name": layer.name,
+            "workspaceId": layer.configurationitem_workspace_id,
             "configurationItemId": layer.configurationitem_id}
 
 
@@ -44,7 +47,8 @@ def update_layer(ws: str, pid: str, layer_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     layer = db.query(Layer).filter(
-        Layer.id == layer_id, Layer.workspace_id == ws,
+        Layer.id == layer_id,
+        Layer.configurationitem_workspace_id == ws,
         Layer.configurationitem_id == pid,
     ).first()
     if not layer:
@@ -52,7 +56,8 @@ def update_layer(ws: str, pid: str, layer_id: int, body: dict,
     if "name" in body:
         layer.name = body["name"]
     db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name, "workspaceId": layer.workspace_id,
+    return {"id": layer.id, "name": layer.name,
+            "workspaceId": layer.configurationitem_workspace_id,
             "configurationItemId": layer.configurationitem_id}
 
 
@@ -62,12 +67,15 @@ def delete_layer(ws: str, pid: str, layer_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     layer = db.query(Layer).filter(
-        Layer.id == layer_id, Layer.workspace_id == ws,
+        Layer.id == layer_id,
+        Layer.configurationitem_workspace_id == ws,
         Layer.configurationitem_id == pid,
     ).first()
     if not layer:
         return Response(status_code=204)
-    db.execute(sql_text("DELETE FROM marker WHERE layer_id=:lid"), {"lid": layer_id})
+    db.execute(sql_text("DELETE FROM layer_marker WHERE layer_id=:lid"), {"lid": layer_id})
+    db.execute(sql_text("DELETE FROM marker WHERE id IN "
+                        "(SELECT marker_id FROM layer_marker WHERE layer_id=:lid)"), {"lid": layer_id})
     db.delete(layer)
     db.commit()
     return Response(status_code=204)
@@ -75,15 +83,26 @@ def delete_layer(ws: str, pid: str, layer_id: int,
 
 # ── Markers ──
 
+def _enrich_marker(db: Session, marker: Marker, layer_id: int) -> dict:
+    return {"id": marker.id, "x": marker.x, "y": marker.y, "z": marker.z,
+            "title": marker.title or "", "description": marker.description or "",
+            "layerId": layer_id}
+
+
 @router.get("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers")
 @router.get("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers/", include_in_schema=False)
 def list_markers(ws: str, pid: str, layer_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    markers = db.query(Marker).filter(Marker.layer_id == layer_id).all()
-    return [{"id": m.id, "x": m.x, "y": m.y, "z": m.z,
-             "title": m.title or "", "description": m.description or "",
-             "layerId": m.layer_id} for m in markers]
+    rows = db.execute(sql_text(
+        "SELECT m.id, m.x, m.y, m.z, m.title, m.description "
+        "FROM marker m "
+        "JOIN layer_marker lm ON m.id = lm.marker_id "
+        "WHERE lm.layer_id = :lid"
+    ), {"lid": layer_id}).fetchall()
+    return [{"id": r[0], "x": r[1], "y": r[2], "z": r[3],
+             "title": r[4] or "", "description": r[5] or "",
+             "layerId": layer_id} for r in rows]
 
 
 @router.post("/workspaces/{ws}/products/{pid}/layers/{layer_id}/markers", status_code=201)
@@ -92,7 +111,8 @@ def create_marker(ws: str, pid: str, layer_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     layer = db.query(Layer).filter(
-        Layer.id == layer_id, Layer.workspace_id == ws,
+        Layer.id == layer_id,
+        Layer.configurationitem_workspace_id == ws,
         Layer.configurationitem_id == pid,
     ).first()
     if not layer:
@@ -100,9 +120,11 @@ def create_marker(ws: str, pid: str, layer_id: int, body: dict,
     marker = Marker(
         x=body.get("x", 0), y=body.get("y", 0), z=body.get("z", 0),
         title=body.get("title", ""), description=body.get("description", ""),
-        layer_id=layer_id,
+        author_login=current_user.login,
     )
-    db.add(marker); db.commit(); db.refresh(marker)
-    return {"id": marker.id, "x": marker.x, "y": marker.y, "z": marker.z,
-            "title": marker.title or "", "description": marker.description or "",
-            "layerId": marker.layer_id}
+    db.add(marker); db.flush()
+    db.execute(sql_text(
+        "INSERT INTO layer_marker (layer_id, marker_id) VALUES (:lid, :mid)"
+    ), {"lid": layer_id, "mid": marker.id})
+    db.commit(); db.refresh(marker)
+    return _enrich_marker(db, marker, layer_id)

@@ -86,8 +86,12 @@ class Layer(Base):
     __tablename__ = "layer"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    workspace_id = Column(String, nullable=False)
-    configurationitem_id = Column(String, nullable=False)
+    color = Column(String)
+    creation_date = Column("creationdate", DateTime)
+    author_workspace_id = Column(String)
+    author_login = Column(String)
+    configurationitem_id = Column(String)
+    configurationitem_workspace_id = Column(String)
 
 
 class Marker(Base):
@@ -98,4 +102,6 @@ class Marker(Base):
     z = Column(Float, nullable=False)
     title = Column(String)
     description = Column(Text)
-    layer_id = Column(Integer, ForeignKey("layer.id"), nullable=False)
+    creation_date = Column("creationdate", DateTime)
+    author_workspace_id = Column(String)
+    author_login = Column(String)

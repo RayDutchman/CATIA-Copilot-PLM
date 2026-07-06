@@ -109,20 +109,6 @@ def get_workspace_baseline(ws: str, bl_id: int,
             "description": bl.description or ""}
 
 
-@router.get("/workspaces/{ws}/product-baselines")
-@router.get("/workspaces/{ws}/product-baselines/", include_in_schema=False)
-def list_all_baselines(ws: str,
-                       current_user: Account = Depends(get_current_user),
-                       db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
-    all_bl = db.query(ProductBaseline).filter(
-        ProductBaseline.configurationitem_workspace_id == ws
-    ).all()
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in all_bl]
-
-
 # ── products/{ci_id}/baselines ──
 
 @router.get("/workspaces/{ws}/products/{ci_id}/baselines")

@@ -224,7 +224,8 @@ def get_platform_options(db: Session = Depends(get_db)):
 
 @router.put("/admin/platform-options")
 @router.put("/admin/platform-options/", include_in_schema=False)
-def put_platform_options(body: dict, db: Session = Depends(get_db)):
+def put_platform_options(body: dict, db: Session = Depends(get_db),
+                        current_user: Account = Depends(get_current_user)):
     existing = db.execute(text(
         "SELECT id FROM platformoptions LIMIT 1"
     )).first()

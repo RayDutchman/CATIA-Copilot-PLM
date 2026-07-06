@@ -19,4 +19,4 @@ class UserGroupMapping(Base):
     __tablename__ = "usergroupmapping"
 
     login = Column(String, primary_key=True)
-    groupname = Column(String, primary_key=True)
+    groupname = Column(String)

@@ -26,14 +26,6 @@ def _account_to_dict(acc, db):
     return result
 
 
-@router.get("/accounts/me")
-@router.get("/accounts/me/", include_in_schema=False)
-def get_account(db: Session = Depends(get_db),
-                current_user: Account = Depends(get_current_user)):
-    """返回当前登录用户信息（与 Payara getMyAccount 一致）。"""
-    return _account_to_dict(current_user, db)
-
-
 @router.put("/accounts/me")
 @router.put("/accounts/me/", include_in_schema=False)
 def update_account(body: dict, db: Session = Depends(get_db),

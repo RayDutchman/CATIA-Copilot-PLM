@@ -4,6 +4,7 @@ from app.core.database import Base
 iteration_change_subscription = Table(
     "iterationchangesubscription", Base.metadata,
     Column("documentmaster_id", String, primary_key=True),
+    Column("documentrevision_version", String, primary_key=True),
     Column("documentmaster_workspace_id", String, primary_key=True),
     Column("subscriber_login", String, primary_key=True),
     Column("subscriber_workspace_id", String, primary_key=True),
@@ -12,6 +13,7 @@ iteration_change_subscription = Table(
 state_change_subscription = Table(
     "statechangesubscription", Base.metadata,
     Column("documentmaster_id", String, primary_key=True),
+    Column("documentrevision_version", String, primary_key=True),
     Column("documentmaster_workspace_id", String, primary_key=True),
     Column("subscriber_login", String, primary_key=True),
     Column("subscriber_workspace_id", String, primary_key=True),
