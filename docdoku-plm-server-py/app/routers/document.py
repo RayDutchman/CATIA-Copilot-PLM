@@ -2,9 +2,11 @@
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text as sql_text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.services.document_manager import DocumentService
 from app.services.acl_helper import apply_acl
 
@@ -19,7 +21,36 @@ def _split_doc_key(doc_key: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
-def _doc_to_dict(rev):
+def _get_user_info(db, login, ws):
+    """查 Account 表取真实 name/email/language。"""
+    if not login:
+        return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws or ""}
+    acc = db.query(Account).filter(Account.login == login).first()
+    return {
+        "login": login,
+        "name": acc.name if acc and acc.name else login,
+        "email": acc.email if acc else None,
+        "language": acc.language if acc else None,
+        "workspaceId": ws or "",
+    }
+
+
+def _doc_to_dict(db, rev):
+    _PERM_MAP = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+    acl_id = getattr(rev, "acl_id", None)
+    acl_data = None
+    if acl_id and db:
+        acl = db.query(ACL).filter(ACL.id == acl_id).first()
+        if acl:
+            user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+            acl_data = {
+                "userEntries": [{"key": e.principal_login, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in user_entries],
+                "groupEntries": [{"key": e.principal_id, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in group_entries],
+                "userEntriesMap": {e.principal_login: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in user_entries},
+                "userGroupEntriesMap": {},
+            }
+
     iterations = []
     for it in (rev.iterations or []):
         it_dict = {
@@ -37,10 +68,7 @@ def _doc_to_dict(rev):
             "instanceAttributes": [],
             "attachedFiles": [],
             "linkedDocuments": [],
-            "author": {
-                "login": it.author_login, "name": it.author_login,
-                "email": None, "language": None, "workspaceId": it.workspace_id,
-            },
+            "author": _get_user_info(db, it.author_login, it.workspace_id),
             "documentRevision": {
                 "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
                 "workspaceId": rev.workspace_id,
@@ -48,7 +76,7 @@ def _doc_to_dict(rev):
                 "documentMasterId": f"{rev.documentmaster_id}-{rev.version}",
                 "status": None,
                 "publicShared": False,
-                "acl": None,
+                "acl": acl_data,
                 "attributesLocked": False,
                 "checkOutUser": None,
                 "checkOutDate": None,
@@ -60,6 +88,23 @@ def _doc_to_dict(rev):
             },
         }
         iterations.append(it_dict)
+
+    iter_sub = None
+    state_sub = None
+    if db and rev.checkout_user_login:
+        iter_sub = db.execute(sql_text(
+            "SELECT 1 FROM iterationchangesubscription WHERE documentmaster_id=:did "
+            "AND documentmaster_workspace_id=:ws AND documentrevision_version=:ver "
+            "AND subscriber_login=:login AND subscriber_workspace_id=:sws LIMIT 1"
+        ), {"did": rev.documentmaster_id, "ws": rev.workspace_id, "ver": rev.version,
+            "login": rev.checkout_user_login, "sws": rev.checkout_user_workspace_id or rev.workspace_id}).scalar()
+        state_sub = db.execute(sql_text(
+            "SELECT 1 FROM statechangesubscription WHERE documentmaster_id=:did "
+            "AND documentmaster_workspace_id=:ws AND documentrevision_version=:ver "
+            "AND subscriber_login=:login AND subscriber_workspace_id=:sws LIMIT 1"
+        ), {"did": rev.documentmaster_id, "ws": rev.workspace_id, "ver": rev.version,
+            "login": rev.checkout_user_login, "sws": rev.checkout_user_workspace_id or rev.workspace_id}).scalar()
+
     dict_fields = {
         "id": f"{rev.documentmaster_id}-{rev.version}",
         "version": rev.version,
@@ -77,36 +122,28 @@ def _doc_to_dict(rev):
         "tags": [],
         "path": rev.location_completepath,
         "routePath": None,
-        "acl": getattr(rev, "acl_id", None),
+        "acl": acl_data,
         "publicShared": False, "attributesLocked": False,
-        "commentLink": None, "iterationSubscription": False,
-        "stateSubscription": False,
+        "commentLink": None, "iterationSubscription": iter_sub is not None,
+        "stateSubscription": state_sub is not None,
         "releaseAuthor": None,
         "obsoleteAuthor": None,
         "type": rev.document_master.type if rev.document_master else None,
-        "author": {
-            "login": rev.author_login, "name": rev.author_login,
-            "email": None, "language": None, "workspaceId": rev.workspace_id,
-        },
+        "author": _get_user_info(db, rev.author_login, rev.workspace_id),
     }
     if rev.checkout_user_login:
-        dict_fields["checkOutUser"] = {
-            "login": rev.checkout_user_login,
-            "name": rev.checkout_user_login,
-            "email": None,
-            "language": None,
-            "workspaceId": rev.checkout_user_workspace_id or rev.workspace_id,
-        }
+        dict_fields["checkOutUser"] = _get_user_info(
+            db, rev.checkout_user_login,
+            rev.checkout_user_workspace_id or rev.workspace_id,
+        )
     if rev.release_user_login:
-        dict_fields["releaseAuthor"] = {
-            "login": rev.release_user_login, "name": rev.release_user_login or "",
-            "email": None, "language": None, "workspaceId": rev.workspace_id,
-        }
+        dict_fields["releaseAuthor"] = _get_user_info(
+            db, rev.release_user_login, rev.workspace_id,
+        )
     if rev.obsolete_user_login:
-        dict_fields["obsoleteAuthor"] = {
-            "login": rev.obsolete_user_login, "name": rev.obsolete_user_login or "",
-            "email": None, "language": None, "workspaceId": rev.workspace_id,
-        }
+        dict_fields["obsoleteAuthor"] = _get_user_info(
+            db, rev.obsolete_user_login, rev.workspace_id,
+        )
     for k in ("description",):
         dict_fields.setdefault(k, "")
     return dict_fields
@@ -118,7 +155,7 @@ def get_doc(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.get_revision(db, ws, doc_id, ver))
+    return _doc_to_dict(db, svc.get_revision(db, ws, doc_id, ver))
 
 
 @router.delete("/workspaces/{ws}/documents/{doc_key}", status_code=204)
@@ -171,7 +208,7 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.update_iteration(db, ws, doc_id, ver, doc_iter, body))
+    return _doc_to_dict(db, svc.update_iteration(db, ws, doc_id, ver, doc_iter, body))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkout")
@@ -181,7 +218,7 @@ def checkout(ws: str, doc_key: str,
              db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     svc._ensure_last_revision(db, ws, doc_id, ver)
-    return _doc_to_dict(svc.checkout(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.checkout(db, ws, doc_id, ver, current_user.login))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkin")
@@ -190,7 +227,7 @@ def checkin(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.checkin(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.checkin(db, ws, doc_id, ver, current_user.login))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout")
@@ -199,7 +236,7 @@ def undo_checkout(ws: str, doc_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.undo_checkout(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.undo_checkout(db, ws, doc_id, ver, current_user.login))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/release")
@@ -208,7 +245,7 @@ def release(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.release(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.release(db, ws, doc_id, ver, current_user.login))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/obsolete")
@@ -217,7 +254,7 @@ def obsolete(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.mark_obsolete(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.mark_obsolete(db, ws, doc_id, ver, current_user.login))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/newVersion")
@@ -226,7 +263,7 @@ def new_version(ws: str, doc_key: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(svc.create_new_version(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.create_new_version(db, ws, doc_id, ver, current_user.login))
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/tags")
@@ -278,7 +315,7 @@ def move_document(ws: str, doc_key: str, body: dict,
                   db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     folder_path = body.get("parentFolder", "")
-    return _doc_to_dict(svc.move_document(db, ws, doc_id, ver, folder_path))
+    return _doc_to_dict(db, svc.move_document(db, ws, doc_id, ver, folder_path))
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/share")
@@ -318,26 +355,68 @@ def unpublish(ws: str, doc_key: str,
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe/", include_in_schema=False)
 def subscribe_iteration_change(ws: str, doc_key: str,
-                                current_user: Account = Depends(get_current_user)):
+                                current_user: Account = Depends(get_current_user),
+                                db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    db.execute(sql_text(
+        "INSERT INTO iterationchangesubscription "
+        "(documentmaster_id, documentrevision_version, documentmaster_workspace_id, "
+        "subscriber_login, subscriber_workspace_id) "
+        "VALUES (:did, :ver, :ws, :login, :sws) "
+        "ON CONFLICT (documentmaster_id, documentrevision_version, "
+        "documentmaster_workspace_id, subscriber_login, subscriber_workspace_id) "
+        "DO NOTHING"),
+        {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
+    db.commit()
     return {"status": "ok"}
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe")
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe/", include_in_schema=False)
 def unsubscribe_iteration_change(ws: str, doc_key: str,
-                                  current_user: Account = Depends(get_current_user)):
+                                  current_user: Account = Depends(get_current_user),
+                                  db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    db.execute(sql_text(
+        "DELETE FROM iterationchangesubscription "
+        "WHERE documentmaster_id=:did AND documentrevision_version=:ver "
+        "AND documentmaster_workspace_id=:ws AND subscriber_login=:login "
+        "AND subscriber_workspace_id=:sws"),
+        {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
+    db.commit()
     return {"status": "ok"}
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe")
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe/", include_in_schema=False)
 def subscribe_state_change(ws: str, doc_key: str,
-                            current_user: Account = Depends(get_current_user)):
+                            current_user: Account = Depends(get_current_user),
+                            db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    db.execute(sql_text(
+        "INSERT INTO statechangesubscription "
+        "(documentmaster_id, documentrevision_version, documentmaster_workspace_id, "
+        "subscriber_login, subscriber_workspace_id) "
+        "VALUES (:did, :ver, :ws, :login, :sws) "
+        "ON CONFLICT (documentmaster_id, documentrevision_version, "
+        "documentmaster_workspace_id, subscriber_login, subscriber_workspace_id) "
+        "DO NOTHING"),
+        {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
+    db.commit()
     return {"status": "ok"}
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe")
 @router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe/", include_in_schema=False)
 def unsubscribe_state_change(ws: str, doc_key: str,
-                              current_user: Account = Depends(get_current_user)):
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    db.execute(sql_text(
+        "DELETE FROM statechangesubscription "
+        "WHERE documentmaster_id=:did AND documentrevision_version=:ver "
+        "AND documentmaster_workspace_id=:ws AND subscriber_login=:login "
+        "AND subscriber_workspace_id=:sws"),
+        {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
+    db.commit()
     return {"status": "ok"}
