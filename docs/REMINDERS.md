@@ -8,11 +8,11 @@
 
 ### 高优先级
 
-- [x] ~~**throw matrix 补齐**~~ — 51/55 ✅，剩余 4 个异常（Storage/Effectivity/QueryAlreadyExists/Indexer）标记"不可实现"。throw matrix 已对齐完成。
+- [ ] **throw matrix 补齐**：17 个有异常类但无 raise 的条目（见 `docs/throw-matrix.md`——WorkflowNotFound/WebhookNotFound/UserGroupNotFound/TagNotFound/OrganizationNotFound/DocumentRevisionNotFound/ConfigurationItemNotFound/BaselineNotFound/WorkspaceAlreadyExists 等）。throw matrix 全部 ✅ 才算对齐完成。
 
-- [ ] **PathData 域未实现** — pathdata CRUD 和 path-to-path link CRUD 都是 stub。低频功能。
+- [ ] **PathData 域未实现**：PathDataMasterNotFoundException / PathToPathLinkNotFoundException / PathToPathLinkAlreadyExistsException / PathToPathCyclicException——pathdata CRUD 和 path-to-path link CRUD 都是 stub。实现后补 raise。
 
-- [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。
+- [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但全 FA 不加载。需 tcpdump 抓包或升级 Three.js。
 
 - [ ] **装配同步（_sync_components）未完整迁移** — assembly BOM 同步部分仍在 Payara 处理。
 
@@ -28,12 +28,13 @@
 
 ### 低优先级
 
-- [ ] **QueryAlreadyExistsException** — query CRUD 是 stub。低频功能。
-- [ ] **PasswordRecoveryRequestNotFoundException** — 邮件恢复流程未实现。低频功能。
-- [x] ~~IndexerNotAvailableException / IndexerRequestException~~ — 不适用，Python 版无 ES 索引器
-- [x] ~~GCMAccountNotFoundException / GCMAccountAlreadyExistsException~~ — 不适用，Python 版无 GCM 集成
-- [x] ~~EffectivityNotFoundException / StorageException~~ — 对应域全 stub，已标注 throw-matrix 不可实现
-- [x] ~~`ProductManagerBean.isCheckoutByAnotherUser` NPE~~ — Payara 遗留 bug，非 Python 问题
+- [ ] **QueryAlreadyExistsException** — query CRUD 是 stub（`parts.py:214,224` TODO）。实现 query 管理后补 raise。
+- [ ] **PasswordRecoveryRequestNotFoundException** — 邮件恢复流程未实现（`auth.py:114` TODO）
+- [ ] **IndexerNotAvailableException / IndexerRequestException** — 不适用，Python 版无 ES 索引器
+- [ ] **GCMAccountNotFoundException / GCMAccountAlreadyExistsException** — 不适用，Python 版无 GCM 集成
+- [ ] **EffectivityNotFoundException / StorageException** — 对应域未实现（effectivity 全 stub，storage 无中间层）
+
+- [ ] **`ProductManagerBean.isCheckoutByAnotherUser` NPE** — Payara 遗留 bug，不影响主要功能。
 
 ---
 
@@ -47,7 +48,6 @@
 
 ## 已解决（近期）
 
-- [x] **Share安全+Admin响应+Organization路由** — share.py 工作区成员校验+密码/过期专用HTTP响应、admin.py enable返回DTO+disk-usage扁平+index PUT、organizations.py 无组织204 (2026-07-06)
 - [x] **3项关键修复** — share密码绕过+document_files异常捕获+doc迭代instanceAttributes/linkedDocuments (2026-07-06)
 - [x] **File/Doc/Folder/User异常类抛出对齐Payara** — binary_storage.py/document_manager.py/folders.py/user_manager.py 9处异常替换 (2026-07-06)
 - [x] **Layer/Marker/Template/Part/Milestone/Platform异常对齐** — 10处异常替换 (2026-07-06)
