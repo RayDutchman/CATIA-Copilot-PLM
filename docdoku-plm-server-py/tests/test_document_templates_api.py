@@ -31,7 +31,7 @@ def test_generate_id():
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     tid = f"P2GEN-{hash(token) % 100000}"
     client.post(f"{PREFIX}/workspaces/{WS}/document-templates",
-                json={"reference": tid, "documentType": "doc"}, headers=h)
+                json={"reference": tid, "documentType": "doc", "idGenerated": True}, headers=h)
     resp = client.get(f"{PREFIX}/workspaces/{WS}/document-templates/{tid}/generate_id", headers=h)
     assert resp.status_code == 200
     assert resp.json() == {"generatedId": f"{tid}-001"}

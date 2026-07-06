@@ -194,25 +194,36 @@ def rename_part_file(
 
     db.commit()
     return {"status": "renamed", "fileName": new_file_name}
+def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
+    stat = file_path.stat()
+    mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+    return {
+        "Content-Disposition": f'attachment; filename="{file_name}"',
+        "Cache-Control": "max-age=86400",
+        "Last-Modified": mtime.strftime("%a, %d %b %Y %H:%M:%S GMT"),
+        "ETag": f'"{file_name}_{len(data)}_{int(stat.st_mtime)}"',
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+    }
+
+
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}")
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}/", include_in_schema=False)
 def download_with_subtype(
     ws: str, pn: str, ver: str, iteration: int, sub_type: str, file_name: str,
     current_user: Account = Depends(get_current_user),
 ):
+    from app.services.vault import _vault_root, part_nativecad_path, part_attached_path
+    if sub_type == "nativecad":
+        file_path = part_nativecad_path(ws, pn, ver, iteration, file_name)
+    else:
+        file_path = part_attached_path(ws, pn, ver, iteration, file_name)
     try:
         data = binary_storage.get_file_bytes(ws, pn, ver, iteration, sub_type, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
     return Response(content=data, media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{file_name}"',
-            "Cache-Control": "max-age=86400",
-            "Last-Modified": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
-            "ETag": f'"{file_name}_{len(data)}"',
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
-        })
+                    headers=_file_headers(data, file_path, file_name))
 
 
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}")
@@ -222,17 +233,12 @@ def download_direct(
     current_user: Account = Depends(get_current_user),
 ):
     """几何体 GLB 直下（fullname 无 subType 段）。"""
+    from app.services.vault import _vault_root
+    file_path = _vault_root() / ws / "parts" / pn / ver / str(iteration) / file_name
     try:
         data = binary_storage.get_file_bytes(ws, pn, ver, iteration, None, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
     return Response(content=data, media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{file_name}"',
-            "Cache-Control": "max-age=86400",
-            "Last-Modified": datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT"),
-            "ETag": f'"{file_name}_{len(data)}"',
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
-        })
+                    headers=_file_headers(data, file_path, file_name))
 

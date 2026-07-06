@@ -87,9 +87,14 @@ def test_versions_choices():
 
 
 def test_cascade_operations():
-    """PUT cascade-checkout/checkin/undocheckout stubs。"""
+    """PUT cascade-checkout/checkin/undocheckout 级联真实实现。"""
     token = _token(); h = {"Authorization": f"Bearer {token}"}
-    for op in ["cascade-checkout", "cascade-checkin", "cascade-undocheckout"]:
+    for op, key in [("cascade-checkout", "checkedOut"),
+                     ("cascade-checkin", "checkedIn"),
+                     ("cascade-undocheckout", "undoneCheckout")]:
         resp = client.put(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/{op}", headers=h)
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body[key] == []
+        assert body["errors"] == []

@@ -1,5 +1,6 @@
 """文档模板端点路由（DocumentTemplateResource）。"""
 from fastapi import APIRouter, Depends
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -143,8 +144,41 @@ def delete(ws: str, template_id: str,
 @router.get("/workspaces/{ws}/document-templates/{template_id}/generate_id")
 @router.get("/workspaces/{ws}/document-templates/{template_id}/generate_id/", include_in_schema=False)
 def generate_id(ws: str, template_id: str,
-                current_user: Account = Depends(get_current_user)):
-    return {"generatedId": f"{template_id}-001"}
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    import re
+    tpl = svc.get_template(db, ws, template_id)
+    mask = tpl.mask or ""
+    if not tpl.id_generated:
+        return {"generatedId": ""}
+    if mask:
+        prefix = re.sub(r'\{[^}]*\}', '', mask)
+        seq_part = re.search(r'\{(.*?)\}', mask)
+        seq_fmt = seq_part.group(1) if seq_part else "001"
+        like_pattern = re.escape(prefix) + '%'
+    else:
+        like_pattern = f"{template_id}-%"
+    rows = db.execute(sql_text(
+        "SELECT id FROM documentmaster WHERE workspace_id=:ws AND id LIKE :pat"
+    ), {"ws": ws, "pat": like_pattern}).fetchall()
+    max_seq = 0
+    for r in rows:
+        existing_id = r[0]
+        if mask and prefix:
+            seq_str = existing_id[len(prefix):]
+        else:
+            seq_str = existing_id[len(template_id) + 1:]
+        try:
+            seq_num = int(seq_str)
+            max_seq = max(max_seq, seq_num)
+        except ValueError:
+            pass
+    next_seq = max_seq + 1
+    if mask:
+        next_id = re.sub(r'\{[^}]*\}', str(next_seq).zfill(len(seq_fmt) if seq_fmt.isdigit() else len(seq_fmt)), mask)
+    else:
+        next_id = f"{template_id}-{next_seq:03d}"
+    return {"generatedId": next_id}
 
 
 @router.put("/workspaces/{ws}/document-templates/{template_id}/acl")

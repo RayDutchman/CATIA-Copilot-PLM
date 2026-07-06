@@ -178,14 +178,14 @@ def get_queries(workspace_id: str,
 def post_workspace_query(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user)):
-    return []
+    return {"id": 0}
 
 
 @router.post("/parts/queries")
 @router.post("/parts/queries/", include_in_schema=False)
 def post_queries(body: dict = Body(...),
                  current_user: Account = Depends(get_current_user)):
-    return []
+    return {"id": 0}
 
 
 @router.delete("/parts/queries/{query_id}", status_code=204)

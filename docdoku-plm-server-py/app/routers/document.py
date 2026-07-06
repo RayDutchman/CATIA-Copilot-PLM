@@ -170,36 +170,138 @@ def delete(ws: str, doc_key: str,
 @router.get("/workspaces/{ws}/documents/{doc_key}/aborted-workflows")
 @router.get("/workspaces/{ws}/documents/{doc_key}/aborted-workflows/", include_in_schema=False)
 def aborted_workflows(ws: str, doc_key: str,
+                      db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    return []
+    doc_id, ver = _split_doc_key(doc_key)
+    rev = svc.get_revision(db, ws, doc_id, ver)
+    workflow_id = getattr(rev, "workflow_id", None)
+    if not workflow_id:
+        return []
+    rows = db.execute(sql_text(
+        "SELECT id, aborteddate FROM workflow WHERE id=:wid AND aborteddate IS NOT NULL"
+    ), {"wid": workflow_id}).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "id": r[0],
+            "abortedDate": str(r[1]) if r[1] else None,
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-document-link")
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-document-link/", include_in_schema=False)
 def inverse_doc_link(ws: str, doc_key: str, iteration: int,
+                     db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    return []
+    doc_id, ver = _split_doc_key(doc_key)
+    rows = db.execute(sql_text(
+        "SELECT di.workspace_id, di.documentmaster_id, di.documentrevision_version, "
+        "di.iteration, dl.id AS link_id, dl.target_documentmaster_id, "
+        "dl.target_docrevision_version, dl.target_workspace_id, dl.commentdata "
+        "FROM documentiteration_documentlink didl "
+        "JOIN documentlink dl ON didl.documentlink_id = dl.id "
+        "JOIN documentiteration di ON "
+        "di.workspace_id=didl.workspace_id AND di.documentmaster_id=didl.documentmaster_id "
+        "AND di.documentrevision_version=didl.documentrevision_version "
+        "AND di.iteration=didl.iteration "
+        "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+        "AND dl.target_docrevision_version=:ver"
+    ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "workspaceId": r[0], "documentMasterId": r[1],
+            "documentRevisionVersion": r[2], "iteration": r[3],
+            "linkId": r[4], "targetDocumentMasterId": r[5],
+            "targetDocumentRevisionVersion": r[6], "targetWorkspaceId": r[7],
+            "commentLink": r[8],
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-part-link")
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-part-link/", include_in_schema=False)
 def inverse_part_link(ws: str, doc_key: str, iteration: int,
+                      db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    return []
+    doc_id, ver = _split_doc_key(doc_key)
+    rows = db.execute(sql_text(
+        "SELECT pi.workspace_id, pi.partmaster_partnumber, pi.partrevision_version, "
+        "pi.iteration, dl.id AS link_id, dl.target_documentmaster_id, "
+        "dl.target_docrevision_version, dl.target_workspace_id "
+        "FROM partiteration_documentlink pidl "
+        "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
+        "JOIN partiteration pi ON "
+        "pi.workspace_id=pidl.workspace_id AND pi.partmaster_partnumber=pidl.partmaster_partnumber "
+        "AND pi.partrevision_version=pidl.partrevision_version AND pi.iteration=pidl.iteration "
+        "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+        "AND dl.target_docrevision_version=:ver"
+    ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "workspaceId": r[0], "partMasterPartNumber": r[1],
+            "partRevisionVersion": r[2], "iteration": r[3],
+            "linkId": r[4], "targetDocumentMasterId": r[5],
+            "targetDocumentRevisionVersion": r[6], "targetWorkspaceId": r[7],
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-product-instances-link")
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-product-instances-link/", include_in_schema=False)
 def inverse_product_link(ws: str, doc_key: str, iteration: int,
+                         db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    return []
+    doc_id, ver = _split_doc_key(doc_key)
+    rows = db.execute(sql_text(
+        "SELECT pii.workspace_id, pii.serialnumber, pii.instanceiteration, "
+        "pii.ci_updatebranchid, dl.id AS link_id "
+        "FROM prdinstiteration_documentlink pidl "
+        "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
+        "JOIN prdinstiteration pii ON "
+        "pii.workspace_id=pidl.workspace_id AND pii.serialnumber=pidl.productinstanceserial "
+        "AND pii.instanceiteration=pidl.productinstance_iteration "
+        "AND pii.ci_updatebranchid=pidl.ci_updatebranchid "
+        "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+        "AND dl.target_docrevision_version=:ver"
+    ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "workspaceId": r[0], "serialNumber": r[1],
+            "instanceIteration": r[2], "ciUpdateBranchId": r[3],
+            "linkId": r[4],
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-path-data-link")
 @router.get("/workspaces/{ws}/documents/{doc_key}/{iteration}/inverse-path-data-link/", include_in_schema=False)
 def inverse_path_link(ws: str, doc_key: str, iteration: int,
+                      db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    return []
+    doc_id, ver = _split_doc_key(doc_key)
+    rows = db.execute(sql_text(
+        "SELECT pd.id AS path_data_id, pd.path, pdi.workspace_id, "
+        "pdi.productconfig_master_id, pdi.iteration, dl.id AS link_id "
+        "FROM pathdataiteration_documentlink pdl "
+        "JOIN documentlink dl ON pdl.documentlink_id = dl.id "
+        "JOIN pathdataiteration pdi ON "
+        "pdi.workspace_id=pdl.workspace_id AND pdi.id=pdl.pathdataiteration_id "
+        "JOIN pathdata pd ON pd.id = pdi.pathdata_id "
+        "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+        "AND dl.target_docrevision_version=:ver"
+    ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            "pathDataId": r[0], "path": r[1],
+            "workspaceId": r[2], "productConfigMasterId": r[3],
+            "iteration": r[4], "linkId": r[5],
+        })
+    return result
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}")

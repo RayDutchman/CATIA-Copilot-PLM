@@ -81,7 +81,7 @@ def list_configs(ws: str, current_user: Account = Depends(get_current_user),
              "configurationItemId": c.configurationitem_id,
              "description": c.description or "",
              "author": _get_user_dto(db, c.author_login, ws),
-             "acl": c.acl_id,
+             "acl": _build_acl(db, c.acl_id),
              "creationDate": _fmt_date(c.creation_date),
              "substituteLinks": [],
              "optionalUsageLinks": []}

@@ -5,10 +5,67 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.models.product import ProductBaseline, ConfigurationItem
+from app.models.part import PartRevision
 from app.services.product_structure import ProductStructureService
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
+
+
+def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
+    """查询 CI 的根零件最新版本信息。"""
+    ci = db.query(ConfigurationItem).filter(
+        ConfigurationItem.workspace_id == ws,
+        ConfigurationItem.id == ci_id,
+    ).first()
+    if not ci or not ci.partmaster_partnumber:
+        return None
+    rev = db.query(PartRevision).filter(
+        PartRevision.workspace_id == ws,
+        PartRevision.partmaster_partnumber == ci.partmaster_partnumber,
+    ).order_by(PartRevision.creation_date.desc()).first()
+    if not rev:
+        return None
+    return {
+        "partNumber": rev.partmaster_partnumber,
+        "version": rev.version,
+        "status": rev.status if rev.status is not None else 0,
+    }
+
+
+def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
+    """构建基线列表摘要（含 hasObsoletePartRevisions + configurationItemLatestRevision）。"""
+    return {
+        "id": b.id,
+        "name": b.name,
+        "type": b.type,
+        "configurationItemId": b.configurationitem_id,
+        "hasObsoletePartRevisions": False,
+        "configurationItemLatestRevision": _ci_latest_revision(
+            db, b.configurationitem_workspace_id, b.configurationitem_id
+        ),
+    }
+
+
+def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
+    """构建基线详情（完整字段，含 substitutesParts + optionalsParts）。"""
+    return {
+        "id": bl.id,
+        "name": bl.name,
+        "type": bl.type,
+        "configurationItemId": bl.configurationitem_id,
+        "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
+        "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
+        "description": bl.description or "",
+        "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
+        "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
+        "substituteLinks": [],
+        "optionalUsageLinks": [],
+        "pathToPathLinks": [],
+        "substitutesParts": [],
+        "optionalsParts": [],
+    }
 
 
 # ── product-baselines（前端实际使用的路径）──
@@ -18,13 +75,10 @@ svc = ProductStructureService()
 def ci_scoped_baselines_root(ws: str,
                              current_user: Account = Depends(get_current_user),
                              db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
     all_bl = db.query(ProductBaseline).filter(
         ProductBaseline.configurationitem_workspace_id == ws
     ).all()
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in all_bl]
+    return [_bl_summary_dict(b, db) for b in all_bl]
 
 
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines")
@@ -32,9 +86,7 @@ def ci_scoped_baselines_root(ws: str,
 def list_ci_baselines(ws: str, ci_id: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in svc.list_baselines(db, ws, ci_id)]
+    return [_bl_summary_dict(b, db) for b in svc.list_baselines(db, ws, ci_id)]
 
 
 @router.post("/workspaces/{ws}/product-baselines/{ci_id}/baselines", status_code=201)
@@ -81,20 +133,11 @@ def _query_baselined_parts(db: Session, partcollection_id: int | None) -> list:
 def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
     bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
     if not bl:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {"id": bl.id, "name": bl.name, "type": bl.type,
-            "configurationItemId": bl.configurationitem_id,
-            "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
-            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-            "description": bl.description or "",
-            "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
-            "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
-            "substituteLinks": [], "optionalUsageLinks": [],
-            "pathToPathLinks": []}
+    return _bl_detail_dict(bl, db)
 
 
 @router.delete("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}", status_code=204)
@@ -111,15 +154,11 @@ def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
 def get_workspace_baseline(ws: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
     bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
     if not bl:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {"id": bl.id, "name": bl.name, "type": bl.type,
-            "configurationItemId": bl.configurationitem_id,
-            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-            "description": bl.description or ""}
+    return _bl_detail_dict(bl, db)
 
 
 # ── products/{ci_id}/baselines ──
@@ -129,9 +168,7 @@ def get_workspace_baseline(ws: str, bl_id: int,
 def list_baselines(ws: str, ci_id: str,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
-    return [{"id": b.id, "name": b.name, "type": b.type,
-             "configurationItemId": b.configurationitem_id}
-            for b in svc.list_baselines(db, ws, ci_id)]
+    return [_bl_summary_dict(b, db) for b in svc.list_baselines(db, ws, ci_id)]
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
@@ -139,20 +176,11 @@ def list_baselines(ws: str, ci_id: str,
 def get_baseline(ws: str, ci_id: str, bl_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    from app.models.product import ProductBaseline
     bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
     if not bl:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {"id": bl.id, "name": bl.name, "type": bl.type,
-            "configurationItemId": bl.configurationitem_id,
-            "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
-            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-            "description": bl.description or "",
-            "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
-            "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
-            "substituteLinks": [], "optionalUsageLinks": [],
-            "pathToPathLinks": []}
+    return _bl_detail_dict(bl, db)
 
 
 @router.post("/workspaces/{ws}/products/{ci_id}/baselines", status_code=201)

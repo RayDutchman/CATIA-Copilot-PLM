@@ -26,10 +26,16 @@ def _check_workspace_write_access(db: Session, ws: str, login: str):
 def list_root(ws: str, current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     folders = svc.list_folders(db, ws)
-    # Payara 格式: id="ws:folderName", name=folderName, path=completePath
-    return [{"id": f"{ws}:{f.completepath.split('/')[-1] if '/' in f.completepath else f.completepath}",
-             "name": f.completepath.split('/')[-1],
-             "path": f.completepath, "home": False} for f in folders]
+    home_path = f"{ws}/~{current_user.login}"
+    result = []
+    for f in folders:
+        is_home = f.completepath == home_path
+        result.append({
+            "id": f"{ws}:{f.completepath.split('/')[-1] if '/' in f.completepath else f.completepath}",
+            "name": f.completepath.split('/')[-1],
+            "path": f.completepath, "home": is_home,
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders")
