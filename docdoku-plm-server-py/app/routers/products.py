@@ -9,7 +9,6 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.product import ConfigurationItem, ProductInstanceMaster, ProductInstanceIteration
 from app.models.part import PartMaster, PartRevision, PartIteration
-from app.models.notification import ModificationNotification
 from app.services.product_structure import ProductStructureService
 from app.services.product_manager import ProductService
 from app.schemas.product import ConfigurationItemDTO, ProductInstanceDTO
