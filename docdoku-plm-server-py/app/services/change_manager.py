@@ -36,9 +36,16 @@ class ChangeService:
             raise HTTPException(400, f"Unknown change type: {type_name}")
         return cls
 
-    def list_items(self, db: Session, ws: str, type_name: str):
+    def list_items(self, db: Session, ws: str, type_name: str,
+                   user_login: str = None, is_admin: bool = False):
         cls = self._cls(type_name)
-        return db.query(cls).filter(cls.workspace_id == ws).all()
+        items = db.query(cls).filter(cls.workspace_id == ws).all()
+        if user_login and not is_admin:
+            from app.services.acl_helper import check_read_access
+            items = [i for i in items
+                     if i.acl_id is None
+                     or check_read_access(db, i.acl_id, user_login, is_admin)]
+        return items
 
     def get_by_id(self, db: Session, cls, ws: str, item_id: int):
         item = db.query(cls).filter(

@@ -15,8 +15,8 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
 
 
-def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
-    """查询 CI 的根零件最新版本信息。"""
+def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> str | None:
+    """查询 CI 的根零件最新版本字符串。"""
     ci = db.query(ConfigurationItem).filter(
         ConfigurationItem.workspace_id == ws,
         ConfigurationItem.id == ci_id,
@@ -29,11 +29,7 @@ def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
     ).order_by(PartRevision.creation_date.desc()).first()
     if not rev:
         return None
-    return {
-        "partNumber": rev.partmaster_partnumber,
-        "version": rev.version,
-        "status": rev.status if rev.status is not None else 0,
-    }
+    return rev.version
 
 
 def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
@@ -194,10 +190,10 @@ def _query_substitute_links(db: Session, ws: str, partcollection_id: int | None)
         return []
     rows = db.execute(sql_text(
         "SELECT DISTINCT psl.substitute_partnumber, pm.name "
-        "FROM partsubstitutelink psl "
-        "JOIN baselinedpart bp ON bp.target_workspace_id = psl.component_workspace_id "
-        "AND bp.target_partmaster_partnumber = psl.component_partnumber "
-        "AND bp.target_partrevision_version = psl.component_partversion "
+        "FROM partusagelink pul "
+        "JOIN partsubstitutelink psl ON pul.id = psl.id "
+        "JOIN baselinedpart bp ON bp.target_workspace_id = pul.component_workspace_id "
+        "AND bp.target_partmaster_partnumber = pul.component_partnumber "
         "LEFT JOIN partmaster pm ON pm.workspace_id = psl.substitute_workspace_id "
         "AND pm.number = psl.substitute_partnumber "
         "WHERE bp.partcollection_id = :pc_id"

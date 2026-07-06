@@ -26,7 +26,13 @@ svc = ChangeService()
 def list_requests(ws: str, current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return [_item_to_dict(r, db, current_user) for r in svc.list_items(db, ws, "requests")]
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    return [_item_to_dict(r, db, current_user)
+            for r in svc.list_items(db, ws, "requests",
+                                     user_login=current_user.login,
+                                     is_admin=is_admin)]
 
 
 @router.post("/workspaces/{ws}/changes/requests", status_code=201, response_model=ChangeRequestDTO)
@@ -128,7 +134,8 @@ def set_request_affected_documents(ws: str, item_id: int, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changereq_affected_document", "changerequest_id")
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeRequest, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-parts")
@@ -140,7 +147,8 @@ def set_request_affected_parts(ws: str, item_id: int, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changereq_affected_part", "changerequest_id")
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeRequest, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-issues")
@@ -162,7 +170,8 @@ def set_request_affected_issues(ws: str, item_id: int, body: dict,
                 "VALUES (:rid, :iid)"
             ), {"rid": item_id, "iid": issue_id})
     db.commit()
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeRequest, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/acl")

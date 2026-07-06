@@ -95,7 +95,8 @@ class ProductStructureService:
         return ci
 
     def filter_product_structure(self, db: Session, ws: str, ci_id: str,
-                                  config_spec=None, path=None, depth=None):
+                                  config_spec=None, path=None, depth=None,
+                                  user_login: str = None, is_admin: bool = False):
         """返回递归 ComponentDTO 列表。每节点含 24 字段 + components[] 递归。"""
         ci = self.get_ci(db, ws, ci_id)
         root_pn = ci.partmaster_partnumber
@@ -104,10 +105,11 @@ class ProductStructureService:
         if master is None or not master.revisions:
             return []
         root_rev = master.last_revision
-        return [self._build_component(db, root_rev, None, ci_id, depth=depth)]
+        return [self._build_component(db, root_rev, None, ci_id, depth=depth,
+                                       user_login=user_login, is_admin=is_admin)]
 
     def _build_component(self, db: Session, rev: PartRevision, usage_link, path: str,
-                         depth=None):
+                          depth=None, user_login: str = None, is_admin: bool = False):
         last_it = rev.last_iteration
         # author: 对齐 Java ComponentDTO.setAuthor(pm.getAuthor().getName())
         author_name = rev.part_master.author_login or ""
@@ -137,7 +139,19 @@ class ProductStructureService:
         # substituteIds: 查询该零件的替件
         sub_ids = []
         if last_it:
-            sub_ids = []  # PartUsageLink.getSubstitutes() 需通过 usage_link 关联查询
+            sub_rows = db.execute(text(
+                "SELECT DISTINCT psl.substitute_partnumber "
+                "FROM partusagelink pul "
+                "JOIN partsubstitutelink psl ON pul.id = psl.id "
+                "WHERE pul.component_workspace_id = :ws "
+                "AND pul.component_partnumber = :pn"
+            ), {"ws": rev.workspace_id, "pn": rev.partmaster_partnumber}).fetchall()
+            sub_ids = [r[0] for r in sub_rows]
+        # accessDeny: 检查零件 ACL 权限
+        access_deny = False
+        if user_login and rev.acl_id:
+            from app.services.acl_helper import check_read_access
+            access_deny = not check_read_access(db, rev.acl_id, user_login, is_admin)
         # notifications: 查询影响该零件主记录的修改通知
         notif_rows = db.execute(text(
             "SELECT id, acknowledged, ackauthor_login, acknowledgementcomment, "
@@ -175,7 +189,7 @@ class ProductStructureService:
             "substitute": is_substitute,
             "partUsageLinkReferenceDescription": usage_link.reference_description if usage_link else None,
             "hasPathData": False,  # TODO: raise PathDataMasterNotFoundException when pathdata is implemented
-            "accessDeny": False,
+            "accessDeny": access_deny,
             "attributes": [],
             "components": [],
             "substituteIds": sub_ids,
@@ -192,7 +206,9 @@ class ProductStructureService:
                     continue
                 child_path = f"{path}-u{order_link.id}"
                 child_comp = self._build_component(db, child_part, order_link,
-                                                    child_path, depth=child_depth)
+                                                     child_path, depth=child_depth,
+                                                     user_login=user_login,
+                                                     is_admin=is_admin)
                 comp["components"].append(child_comp)
         return comp
 

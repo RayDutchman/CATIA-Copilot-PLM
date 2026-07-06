@@ -26,7 +26,13 @@ svc = ChangeService()
 def list_issues(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return [_item_to_dict(i, db, current_user) for i in svc.list_items(db, ws, "issues")]
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    return [_item_to_dict(i, db, current_user)
+            for i in svc.list_items(db, ws, "issues",
+                                     user_login=current_user.login,
+                                     is_admin=is_admin)]
 
 
 @router.post("/workspaces/{ws}/changes/issues", status_code=201, response_model=ChangeIssueDTO)
@@ -131,7 +137,8 @@ def set_issue_affected_documents(ws: str, item_id: int, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeissue_affected_document", "changeissue_id")
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeIssue, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/affected-parts")
@@ -143,7 +150,8 @@ def set_issue_affected_parts(ws: str, item_id: int, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeissue_affected_part", "changeissue_id")
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeIssue, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/acl")

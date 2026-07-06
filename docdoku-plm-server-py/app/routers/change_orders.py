@@ -26,7 +26,13 @@ svc = ChangeService()
 def list_orders(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return [_item_to_dict(o, db, current_user) for o in svc.list_items(db, ws, "orders")]
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    return [_item_to_dict(o, db, current_user)
+            for o in svc.list_items(db, ws, "orders",
+                                     user_login=current_user.login,
+                                     is_admin=is_admin)]
 
 
 @router.post("/workspaces/{ws}/changes/orders", status_code=201, response_model=ChangeOrderDTO)
@@ -128,7 +134,8 @@ def set_order_affected_documents(ws: str, item_id: int, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeorder_affected_document", "changeorder_id")
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeOrder, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-parts")
@@ -140,7 +147,8 @@ def set_order_affected_parts(ws: str, item_id: int, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeorder_affected_part", "changeorder_id")
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeOrder, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/affected-requests")
@@ -162,7 +170,8 @@ def set_order_affected_requests(ws: str, item_id: int, body: dict,
                 "VALUES (:oid, :rid)"
             ), {"oid": item_id, "rid": req_id})
     db.commit()
-    return {"status": "ok"}
+    it = svc.get_by_id(db, ChangeOrder, ws, item_id)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/acl")
