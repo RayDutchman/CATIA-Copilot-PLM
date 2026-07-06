@@ -43,7 +43,7 @@ def create_organization(
 ):
     name = body.get("name", "").strip()
     if not name:
-        raise NotAllowedException("NotAllowedException9", "名称")
+        raise NotAllowedException("NotAllowedException9", name)
     existing = db.execute(text(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": name}).fetchone()
@@ -134,7 +134,7 @@ def add_member(
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
-        raise NotAllowedException("NotAllowedException9")
+        raise NotAllowedException("NotAllowedException9", login)
     user = db.execute(text(
         "SELECT login FROM account WHERE login = :login"
     ), {"login": login}).fetchone()
@@ -174,7 +174,7 @@ def remove_member(
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
-        raise NotAllowedException("NotAllowedException9")
+        raise NotAllowedException("NotAllowedException9", login)
     db.execute(text(
         "DELETE FROM organization_account "
         "WHERE organization_name = :org AND account_login = :login"
@@ -198,7 +198,7 @@ def move_member(
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
-        raise NotAllowedException("NotAllowedException9")
+        raise NotAllowedException("NotAllowedException9", login)
     members = db.execute(text(
         "SELECT account_login, account_order FROM organization_account "
         "WHERE organization_name = :org ORDER BY account_order"

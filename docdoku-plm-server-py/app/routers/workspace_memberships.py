@@ -102,7 +102,7 @@ def add_user(ws: str, body: dict, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     login = body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         raise UserNotFoundException("UserNotFoundException")
@@ -116,7 +116,7 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     login = body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     user_mgmt_service.remove_user_from_workspace(db, ws, login)
     r = db.execute(text(
         "SELECT id, description, enabled, folderlocked, admin_login "
@@ -135,7 +135,7 @@ def remove_from_group(ws: str, gid: str, body: dict,
     """从工作组移除用户"""
     login = body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     group = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": gid, "ws": ws}).fetchone()
@@ -156,7 +156,7 @@ def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         raise UserNotFoundException("UserNotFoundException")
@@ -183,7 +183,7 @@ def enable_user(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     user_mgmt_service.enable_user(db, ws, login)
     return Response(status_code=204)
 
@@ -195,7 +195,7 @@ def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     user_mgmt_service.disable_user(db, ws, login)
     return Response(status_code=204)
 
@@ -208,7 +208,7 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("member", {}).get("login", "") or body.get("login", "")
     if not login:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", login)
     read_only = body.get("readOnly", False)
     db.execute(text("UPDATE account SET enabled = :en WHERE login = :l"),
                {"en": not read_only, "l": login})

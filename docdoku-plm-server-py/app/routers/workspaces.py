@@ -304,7 +304,7 @@ def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     label = body.get("label", "").strip()
     if not label:
-        raise NotAllowedException("NotAllowedException9", "标签")
+        raise NotAllowedException("NotAllowedException9", label)
     existing = db.execute(text(
         "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": label, "ws": ws}).fetchone()
@@ -387,7 +387,7 @@ def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     name = body.get("name", "").strip()
     if not name:
-        raise NotAllowedException("NotAllowedException9", "名称")
+        raise NotAllowedException("NotAllowedException9", name)
     existing = db.execute(text(
         "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
     ), {"name": name, "ws": ws}).fetchone()
@@ -502,7 +502,7 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
             raise AccessRightException("AccessRightException")
     ws_id = body.get("id", "").strip()
     if not ws_id:
-        raise NotAllowedException("NotAllowedException9")
+        raise NotAllowedException("NotAllowedException9", ws_id)
 
     existing = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
@@ -568,13 +568,13 @@ def change_admin(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     new_admin = body.get("login", "").strip()
     if not new_admin:
-        raise NotAllowedException("NotAllowedException9")
+        raise NotAllowedException("NotAllowedException9", new_admin)
     # 验证新管理员是工作区成员
     member = db.execute(text(
         "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :ws"
     ), {"l": new_admin, "ws": ws}).first()
     if not member:
-        raise NotAllowedException("NotAllowedException9", "login")
+        raise NotAllowedException("NotAllowedException9", new_admin)
     db.execute(text(
         "UPDATE workspace SET admin_login = :a WHERE id = :ws"
     ), {"a": new_admin, "ws": ws})

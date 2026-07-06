@@ -64,7 +64,7 @@ def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
     """启用工作组：写入 workspaceusergroupmembership 表"""
     group_id = body.get("id", "")
     if not group_id:
-        raise NotAllowedException("NotAllowedException9", "组id")
+        raise NotAllowedException("NotAllowedException9", group_id)
     existing = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
@@ -87,7 +87,7 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
     """禁用工作组：删除 workspaceusergroupmembership 记录"""
     group_id = body.get("id", "")
     if not group_id:
-        raise NotAllowedException("NotAllowedException9", "组id")
+        raise NotAllowedException("NotAllowedException9", group_id)
     existing = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
@@ -108,7 +108,7 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
     """设置工作组访问权限"""
     group_id = body.get("member", {}).get("id", "") or body.get("memberId", "")
     if not group_id:
-        raise NotAllowedException("NotAllowedException9", "组id")
+        raise NotAllowedException("NotAllowedException9", group_id)
     group = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
