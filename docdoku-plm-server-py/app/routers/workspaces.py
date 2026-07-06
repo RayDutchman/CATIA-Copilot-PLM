@@ -1,5 +1,5 @@
 """工作区 CRUD 端点。"""
-from typing import List
+from typing import Dict, List
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -118,7 +118,7 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
     }
 
 
-@router.get("/workspaces/{ws}/disk-usage")
+@router.get("/workspaces/{ws}/disk-usage", response_model=Dict[str, int])
 @router.get("/workspaces/{ws}/disk-usage/", include_in_schema=False)
 def disk_usage(ws: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
@@ -146,7 +146,7 @@ def disk_usage_stats(ws: str, db: Session = Depends(get_db),
             "partTemplates": 0, "documentTemplates": 0}
 
 
-@router.get("/workspaces/{ws}/checked-out-documents-stats")
+@router.get("/workspaces/{ws}/checked-out-documents-stats", response_model=Dict[str, List[dict]])
 @router.get("/workspaces/{ws}/checked-out-documents-stats/", include_in_schema=False)
 def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
@@ -167,7 +167,7 @@ def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
     return result
 
 
-@router.get("/workspaces/{ws}/checked-out-parts-stats")
+@router.get("/workspaces/{ws}/checked-out-parts-stats", response_model=Dict[str, List[dict]])
 @router.get("/workspaces/{ws}/checked-out-parts-stats/", include_in_schema=False)
 def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
                             current_user: Account = Depends(get_current_user)):
@@ -276,14 +276,14 @@ def save_back_options(ws: str, body: dict, db: Session = Depends(get_db),
     return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/index", status_code=202)
+@router.put("/workspaces/{ws}/index", status_code=202, response_model=dict)
 @router.put("/workspaces/{ws}/index/", status_code=202, include_in_schema=False)
 def reindex_workspace(ws: str, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
     return {"status": "accepted"}
 
 
-@router.get("/workspaces/{ws}/tags")
+@router.get("/workspaces/{ws}/tags", response_model=List[TagDTO])
 @router.get("/workspaces/{ws}/tags/", include_in_schema=False)
 def workspace_tags(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -293,7 +293,7 @@ def workspace_tags(ws: str, db: Session = Depends(get_db),
     return [{"id": r[0], "label": r[0], "workspaceId": r[1]} for r in rows]
 
 
-@router.post("/workspaces/{ws}/tags", status_code=201)
+@router.post("/workspaces/{ws}/tags", status_code=201, response_model=TagDTO)
 @router.post("/workspaces/{ws}/tags/", status_code=201, include_in_schema=False)
 def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
@@ -312,7 +312,7 @@ def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
     return {"id": label, "label": label, "workspaceId": ws}
 
 
-@router.post("/workspaces/{ws}/tags/multiple", status_code=201)
+@router.post("/workspaces/{ws}/tags/multiple", status_code=201, response_model=List[TagDTO])
 @router.post("/workspaces/{ws}/tags/multiple/", status_code=201, include_in_schema=False)
 def create_tags_multiple(ws: str, body: dict, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
@@ -350,14 +350,14 @@ def delete_tag(ws: str, tag_id: str, db: Session = Depends(get_db),
     db.commit()
 
 
-@router.get("/workspaces/{ws}/tags/{tag_id}/documents")
+@router.get("/workspaces/{ws}/tags/{tag_id}/documents", response_model=List[dict])
 @router.get("/workspaces/{ws}/tags/{tag_id}/documents/", include_in_schema=False)
 def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     return []
 
 
-@router.get("/workspaces/{ws}/lov")
+@router.get("/workspaces/{ws}/lov", response_model=Dict[str, List[LOVValueDTO]])
 @router.get("/workspaces/{ws}/lov/", include_in_schema=False)
 def list_of_values(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -376,7 +376,7 @@ def list_of_values(ws: str, db: Session = Depends(get_db),
     return result
 
 
-@router.post("/workspaces/{ws}/lov", status_code=201)
+@router.post("/workspaces/{ws}/lov", status_code=201, response_model=LOVDTO)
 @router.post("/workspaces/{ws}/lov/", status_code=201, include_in_schema=False)
 def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
@@ -402,7 +402,7 @@ def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
     return {"name": name, "workspaceId": ws, "values": values}
 
 
-@router.put("/workspaces/{ws}/lov/{name}")
+@router.put("/workspaces/{ws}/lov/{name}", response_model=LOVDTO)
 @router.put("/workspaces/{ws}/lov/{name}/", include_in_schema=False)
 def update_lov(ws: str, name: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
@@ -443,7 +443,7 @@ def delete_lov(ws: str, name: str, db: Session = Depends(get_db),
     db.commit()
 
 
-@router.get("/workspaces/{ws}/attributes/part-iterations")
+@router.get("/workspaces/{ws}/attributes/part-iterations", response_model=List[str])
 @router.get("/workspaces/{ws}/attributes/part-iterations/", include_in_schema=False)
 def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
@@ -455,7 +455,7 @@ def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
     return [r[0] for r in rows]
 
 
-@router.get("/workspaces/{ws}/attributes/path-data")
+@router.get("/workspaces/{ws}/attributes/path-data", response_model=List[str])
 @router.get("/workspaces/{ws}/attributes/path-data/", include_in_schema=False)
 def attributes_path_data(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):

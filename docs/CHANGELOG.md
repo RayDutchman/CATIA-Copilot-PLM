@@ -7,6 +7,24 @@
 ---
 
 
+## 2026-07-06 — response_model补满：workspaces/admin/auth/platform全端点
+
+- feat(py): workspaces.py — disk-usage 添加 `response_model=Dict[str, int]`
+- feat(py): workspaces.py — checked-out-documents/parts-stats 添加 `response_model=Dict[str, List[dict]]`
+- feat(py): workspaces.py — reindex_workspace 添加 `response_model=dict`
+- feat(py): workspaces.py — workspace_tags 添加 `response_model=List[TagDTO]`
+- feat(py): workspaces.py — create_tag/create_tags_multiple 添加 `response_model=TagDTO`/`List[TagDTO]`
+- feat(py): workspaces.py — tag_documents 添加 `response_model=List[dict]`
+- feat(py): workspaces.py — list_of_values 添加 `response_model=Dict[str, List[LOVValueDTO]]`
+- feat(py): workspaces.py — create_lov/update_lov 添加 `response_model=LOVDTO`
+- feat(py): workspaces.py — attributes/part-iterations + path-data 添加 `response_model=List[str]`
+- feat(py): admin.py — disk-usage-stats 添加 `response_model=Dict[str, DiskUsageDTO]`
+- feat(py): admin.py — users/documents/products/parts-stats 添加 `response_model=Dict[str, int]`
+- feat(py): admin.py — get_index 添加 `response_model=IndexStatusDTO`
+- feat(py): auth.py — list_providers 添加 `response_model=List[dict]`
+- feat(py): auth.py — get_provider/oauth_login 添加 `response_model=dict`
+- test: 144 passed
+
 ## 2026-07-06 — Stubs修复：admin统计+org单对象+health ok+LOV数组+Attributes完整+tasks字段
 
 ### Python 后端

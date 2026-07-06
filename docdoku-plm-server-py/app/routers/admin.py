@@ -1,5 +1,5 @@
 """管理员端点。"""
-from typing import List
+from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -7,7 +7,8 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.schemas.admin import (
-    AdminAccountDTO, WorkspaceDTO, PlatformOptionsDTO, IndexStatusDTO,
+    AdminAccountDTO, DiskUsageDTO, WorkspaceDTO,
+    PlatformOptionsDTO, IndexStatusDTO,
 )
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -284,7 +285,7 @@ def _get_admin_workspaces(db: Session, login: str) -> list[str]:
     return [r[0] for r in rows]
 
 
-@router.get("/admin/disk-usage-stats")
+@router.get("/admin/disk-usage-stats", response_model=Dict[str, DiskUsageDTO])
 @router.get("/admin/disk-usage-stats/", include_in_schema=False)
 def admin_disk_usage_stats(db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
@@ -306,7 +307,7 @@ def admin_disk_usage_stats(db: Session = Depends(get_db),
     return result
 
 
-@router.get("/admin/users-stats")
+@router.get("/admin/users-stats", response_model=Dict[str, int])
 @router.get("/admin/users-stats/", include_in_schema=False)
 def admin_users_stats(db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
@@ -320,7 +321,7 @@ def admin_users_stats(db: Session = Depends(get_db),
     return result
 
 
-@router.get("/admin/documents-stats")
+@router.get("/admin/documents-stats", response_model=Dict[str, int])
 @router.get("/admin/documents-stats/", include_in_schema=False)
 def admin_documents_stats(db: Session = Depends(get_db),
                           current_user: Account = Depends(get_current_user)):
@@ -334,7 +335,7 @@ def admin_documents_stats(db: Session = Depends(get_db),
     return result
 
 
-@router.get("/admin/products-stats")
+@router.get("/admin/products-stats", response_model=Dict[str, int])
 @router.get("/admin/products-stats/", include_in_schema=False)
 def admin_products_stats(db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
@@ -348,7 +349,7 @@ def admin_products_stats(db: Session = Depends(get_db),
     return result
 
 
-@router.get("/admin/parts-stats")
+@router.get("/admin/parts-stats", response_model=Dict[str, int])
 @router.get("/admin/parts-stats/", include_in_schema=False)
 def admin_parts_stats(db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
@@ -376,7 +377,7 @@ def post_index(ws: str, db: Session = Depends(get_db),
 
 
 # 保持旧 GET /admin/index 兼容
-@router.get("/admin/index")
+@router.get("/admin/index", response_model=IndexStatusDTO)
 @router.get("/admin/index/", include_in_schema=False)
 def get_index():
     return {"inProgress": False}

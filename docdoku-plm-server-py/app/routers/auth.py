@@ -1,4 +1,5 @@
 """认证相关路由：登录、登出、当前用户信息。"""
+from typing import List
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
@@ -59,7 +60,7 @@ def logout():
     return None
 
 
-@router.get("/auth/providers")
+@router.get("/auth/providers", response_model=List[dict])
 @router.get("/auth/providers/", include_in_schema=False)
 def list_providers():
     """返回外部认证提供商列表（与 Payara 一致，当前为空）。"""
@@ -86,7 +87,7 @@ def get_me(current_user: Account = Depends(get_current_user),
     }
 
 
-@router.get("/auth/providers/{provider_id}")
+@router.get("/auth/providers/{provider_id}", response_model=dict)
 @router.get("/auth/providers/{provider_id}/", include_in_schema=False)
 def get_provider(provider_id: str):
     """获取单个 OAuth provider。当前无 OAuth 配置，返回 404。"""
@@ -120,7 +121,7 @@ def execute_recover(body: dict, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
-@router.post("/auth/oauth")
+@router.post("/auth/oauth", response_model=dict)
 @router.post("/auth/oauth/", include_in_schema=False)
 def oauth_login(body: dict):
     """OAuth 登录。当前无 OAuth 配置，返回 501。"""

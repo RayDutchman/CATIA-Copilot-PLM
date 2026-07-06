@@ -202,3 +202,45 @@ class LightPartMasterDTO(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StatusDTO(BaseModel):
+    """通用状态响应"""
+    status: str
+    message: Optional[str] = None
+
+
+class SharedPartDTO(BaseModel):
+    """share endpoint 响应"""
+    uuid: str
+    workspaceId: str
+
+
+class AclIdDTO(BaseModel):
+    """ACL 更新响应"""
+    aclId: Optional[int] = None
+
+
+class GeneratedIdDTO(BaseModel):
+    """generate_id 响应"""
+    generatedId: str
+
+
+class PartTemplateDTO(BaseModel):
+    """零件模板 CRUD 响应，字段与 DocdokuPLM PartMasterTemplateDTO 一致"""
+    id: str = ""
+    workspaceId: Optional[str] = None
+    mask: Optional[str] = None
+    idGenerated: Optional[bool] = False
+    partType: Optional[str] = None
+    attributesLocked: Optional[bool] = False
+    authorLogin: Optional[str] = None
+    authorWorkspaceId: Optional[str] = None
+    creationDate: Optional[str] = None
+    modificationDate: Optional[str] = None
+    acl: Optional[dict] = None
+    aclId: Optional[int] = None
+    workflowModelId: Optional[str] = None
+
+    class Config:
+        from_attributes = True

@@ -10,7 +10,8 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.part import SharedEntity
-from app.schemas.part import PartRevisionDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO
+from app.schemas.part import PartRevisionDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO, StatusDTO, SharedPartDTO, AclIdDTO
+from app.schemas.workflow import WorkflowAbortedDTO
 from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision
 from app.services import converter
@@ -139,8 +140,10 @@ def get_conversion_status(
     )
 
 
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion",
+             response_model=StatusDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion/",
+            response_model=StatusDTO, include_in_schema=False)
 def conversion_callback(
     workspace_id: str,
     part_key: str,
@@ -228,8 +231,10 @@ def remove_tag(workspace_id: str, part_key: str, tag_label: str,
     return map_revision(pr, db)
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags",
+            response_model=list[str])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/tags/",
+            response_model=list[str], include_in_schema=False)
 def get_tags(workspace_id: str, part_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
@@ -238,8 +243,10 @@ def get_tags(workspace_id: str, part_key: str,
     return [t.label for t in (pr.tags or [])]
 
 
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/share")
-@router.post("/workspaces/{workspace_id}/parts/{part_key}/share/", include_in_schema=False)
+@router.post("/workspaces/{workspace_id}/parts/{part_key}/share",
+             response_model=SharedPartDTO)
+@router.post("/workspaces/{workspace_id}/parts/{part_key}/share/",
+             response_model=SharedPartDTO, include_in_schema=False)
 def share_part(workspace_id: str, part_key: str,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
@@ -262,8 +269,10 @@ def share_part(workspace_id: str, part_key: str,
     return {"uuid": shared_uuid, "workspaceId": workspace_id}
 
 
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/publish")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/publish/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/publish",
+            response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/publish/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def publish_part(workspace_id: str, part_key: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -274,8 +283,10 @@ def publish_part(workspace_id: str, part_key: str,
     return map_revision(pr, db)
 
 
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish",
+            response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def unpublish_part(workspace_id: str, part_key: str,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
@@ -286,8 +297,10 @@ def unpublish_part(workspace_id: str, part_key: str,
     return map_revision(pr, db)
 
 
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl",
+            response_model=AclIdDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/acl/",
+            response_model=AclIdDTO, include_in_schema=False)
 def update_part_acl(workspace_id: str, part_key: str, body: dict,
                     db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
@@ -315,8 +328,10 @@ def get_latest_revision(
     return map_revision(pr, db)
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component",
+            response_model=list[PartRevisionDTO])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-component/",
+            response_model=list[PartRevisionDTO], include_in_schema=False)
 def used_by_component(workspace_id: str, part_key: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
@@ -343,8 +358,10 @@ def used_by_component(workspace_id: str, part_key: str,
     return result
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute",
+            response_model=list[PartRevisionDTO])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-as-substitute/",
+            response_model=list[PartRevisionDTO], include_in_schema=False)
 def used_by_substitute(workspace_id: str, part_key: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
@@ -372,24 +389,30 @@ def used_by_substitute(workspace_id: str, part_key: str,
     return result
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances",
+            response_model=list[dict])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/instances/",
+            response_model=list[dict], include_in_schema=False)
 def get_instances(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     return []
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines",
+            response_model=list[dict])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines/",
+            response_model=list[dict], include_in_schema=False)
 def get_baselines(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     return []
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows",
+            response_model=list[WorkflowAbortedDTO])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows/",
+            response_model=list[WorkflowAbortedDTO], include_in_schema=False)
 def get_aborted_workflows(workspace_id: str, part_key: str,
                           current_user: Account = Depends(get_current_user),
                           db: Session = Depends(get_db)):
@@ -398,8 +421,10 @@ def get_aborted_workflows(workspace_id: str, part_key: str,
         db, workspace_id, number, version)
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters")
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters",
+            response_model=list[dict])
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/used-by-product-instance-masters/",
+            response_model=list[dict], include_in_schema=False)
 def used_by_product(workspace_id: str, part_key: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
