@@ -9,6 +9,15 @@ from app.models.auth import Account
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
+def _require_admin(db: Session, current_user: Account):
+    """验证当前用户是全局管理员（usergroupmapping groupname='admin'），否则 403。"""
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+
 def _account_to_dict(r) -> dict:
     return {
         "login": r[0],
@@ -38,6 +47,7 @@ def _workspace_to_dict(r) -> dict:
 @router.get("/admin/accounts/", include_in_schema=False)
 def list_accounts(db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     rows = db.execute(text(
         "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
         "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
@@ -53,6 +63,7 @@ def list_accounts(db: Session = Depends(get_db),
 @router.get("/admin/accounts/{login}/", include_in_schema=False)
 def get_account(login: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     r = db.execute(text(
         "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
         "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
@@ -70,6 +81,7 @@ def get_account(login: str, db: Session = Depends(get_db),
 @router.put("/admin/accounts/{login}/", include_in_schema=False)
 def update_account(login: str, body: dict, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     existing = db.execute(text(
         "SELECT login FROM account WHERE login = :login"
     ), {"login": login}).fetchone()
@@ -108,6 +120,7 @@ def update_account(login: str, body: dict, db: Session = Depends(get_db),
 @router.delete("/admin/accounts/{login}/", status_code=204, include_in_schema=False)
 def delete_account(login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     existing = db.execute(text(
         "SELECT login FROM account WHERE login = :login"
     ), {"login": login}).fetchone()
@@ -127,6 +140,7 @@ def delete_account(login: str, db: Session = Depends(get_db),
 @router.get("/admin/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     rows = db.execute(text(
         "SELECT id, description, enabled, folderlocked, admin_login "
         "FROM workspace ORDER BY id"
@@ -138,6 +152,7 @@ def list_workspaces(db: Session = Depends(get_db),
 @router.get("/admin/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     r = db.execute(text(
         "SELECT id, description, enabled, folderlocked, admin_login "
         "FROM workspace WHERE id = :id"
@@ -151,6 +166,7 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
 @router.put("/admin/workspaces/{ws}/", include_in_schema=False)
 def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     existing = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
@@ -183,6 +199,7 @@ def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
 @router.delete("/admin/workspaces/{ws}/", status_code=204, include_in_schema=False)
 def delete_workspace(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     existing = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
@@ -225,6 +242,7 @@ def get_platform_options(db: Session = Depends(get_db)):
 @router.put("/admin/platform-options/", include_in_schema=False)
 def put_platform_options(body: dict, db: Session = Depends(get_db),
                         current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     existing = db.execute(text(
         "SELECT id FROM platformoptions LIMIT 1"
     )).first()
@@ -248,54 +266,113 @@ def put_platform_options(body: dict, db: Session = Depends(get_db),
 
 # ============ Stats ============
 
+def _get_admin_workspaces(db: Session, login: str) -> list[str]:
+    """返回当前用户管理的 workspace 列表（全局 admin 看全部）。"""
+    is_global = db.execute(text(
+        "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": login}).scalar() > 0
+    if is_global:
+        rows = db.execute(text("SELECT id FROM workspace ORDER BY id")).fetchall()
+        return [r[0] for r in rows]
+    rows = db.execute(text(
+        "SELECT id FROM workspace WHERE admin_login=:l ORDER BY id"
+    ), {"l": login}).fetchall()
+    return [r[0] for r in rows]
+
+
 @router.get("/admin/disk-usage-stats")
 @router.get("/admin/disk-usage-stats/", include_in_schema=False)
-def admin_disk_usage_stats():
-    return {"documents": 0, "parts": 0, "partTemplates": 0, "documentTemplates": 0}
+def admin_disk_usage_stats(db: Session = Depends(get_db),
+                           current_user: Account = Depends(get_current_user)):
+    admin_ws = _get_admin_workspaces(db, current_user.login)
+    result = {}
+    for ws in admin_ws:
+        docs_size = db.execute(text(
+            "SELECT COALESCE(SUM(br.contentlength), 0) FROM binaryresource br "
+            "JOIN documentiteration_binres dib ON br.fullname = dib.attachedfile_fullname "
+            "WHERE dib.workspace_id = :ws"
+        ), {"ws": ws}).scalar() or 0
+        parts_size = db.execute(text(
+            "SELECT COALESCE(SUM(br.contentlength), 0) FROM binaryresource br "
+            "JOIN partiteration_binres pib ON br.fullname = pib.attachedfile_fullname "
+            "WHERE pib.workspace_id = :ws"
+        ), {"ws": ws}).scalar() or 0
+        result[ws] = {"documents": docs_size, "parts": parts_size,
+                       "partTemplates": 0, "documentTemplates": 0}
+    return result
 
 
 @router.get("/admin/users-stats")
 @router.get("/admin/users-stats/", include_in_schema=False)
-def admin_users_stats(db: Session = Depends(get_db)):
-    count = db.execute(text("SELECT COUNT(*) FROM account")).scalar() or 0
-    return {"count": count}
+def admin_users_stats(db: Session = Depends(get_db),
+                      current_user: Account = Depends(get_current_user)):
+    admin_ws = _get_admin_workspaces(db, current_user.login)
+    result = {}
+    for ws in admin_ws:
+        count = db.execute(text(
+            "SELECT COUNT(*) FROM userdata WHERE workspace_id=:ws"
+        ), {"ws": ws}).scalar() or 0
+        result[ws] = count
+    return result
 
 
 @router.get("/admin/documents-stats")
 @router.get("/admin/documents-stats/", include_in_schema=False)
-def admin_documents_stats(db: Session = Depends(get_db)):
-    count = db.execute(text("SELECT COUNT(*) FROM documentrevision")).scalar() or 0
-    return {"count": count}
+def admin_documents_stats(db: Session = Depends(get_db),
+                          current_user: Account = Depends(get_current_user)):
+    admin_ws = _get_admin_workspaces(db, current_user.login)
+    result = {}
+    for ws in admin_ws:
+        count = db.execute(text(
+            "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:ws"
+        ), {"ws": ws}).scalar() or 0
+        result[ws] = count
+    return result
 
 
 @router.get("/admin/products-stats")
 @router.get("/admin/products-stats/", include_in_schema=False)
-def admin_products_stats(db: Session = Depends(get_db)):
-    count = db.execute(text("SELECT COUNT(*) FROM configurationitem")).scalar() or 0
-    return {"count": count}
+def admin_products_stats(db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    admin_ws = _get_admin_workspaces(db, current_user.login)
+    result = {}
+    for ws in admin_ws:
+        count = db.execute(text(
+            "SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:ws"
+        ), {"ws": ws}).scalar() or 0
+        result[ws] = count
+    return result
 
 
 @router.get("/admin/parts-stats")
 @router.get("/admin/parts-stats/", include_in_schema=False)
-def admin_parts_stats(db: Session = Depends(get_db)):
-    count = db.execute(text("SELECT COUNT(*) FROM partrevision")).scalar() or 0
-    return {"count": count}
+def admin_parts_stats(db: Session = Depends(get_db),
+                      current_user: Account = Depends(get_current_user)):
+    admin_ws = _get_admin_workspaces(db, current_user.login)
+    result = {}
+    for ws in admin_ws:
+        count = db.execute(text(
+            "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:ws"
+        ), {"ws": ws}).scalar() or 0
+        result[ws] = count
+    return result
 
 
 # ============ Index ============
 
-@router.get("/admin/index")
-@router.get("/admin/index/", include_in_schema=False)
-def get_index():
-    return {"inProgress": False}
-
-
-@router.post("/admin/index", status_code=202)
-@router.post("/admin/index/", status_code=202, include_in_schema=False)
-def post_index():
+@router.post("/admin/index/{ws}", status_code=202)
+@router.post("/admin/index/{ws}/", status_code=202, include_in_schema=False)
+def post_index(ws: str, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
     try:
-        import elasticsearch.Transport
+        import elasticsearch
         return {"status": "accepted"}
     except ImportError:
         return {"status": "accepted", "note": "ES not configured"}
 
+
+# 保持旧 GET /admin/index 兼容
+@router.get("/admin/index")
+@router.get("/admin/index/", include_in_schema=False)
+def get_index():
+    return {"inProgress": False}

@@ -12,6 +12,20 @@ from app.models.auth import Account
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
+def _check_workspace_admin(db: Session, ws: str, current_user: Account):
+    """验证当前用户是全局管理员或工作区管理员，否则 403。"""
+    is_global_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if is_global_admin:
+        return
+    is_ws_admin = db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": ws, "l": current_user.login}).first()
+    if not is_ws_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+
 def _row_to_dict(r) -> dict:
     return {
         "id": r[0],
@@ -465,6 +479,16 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
 def create_workspace(body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user),
                      userLogin: str = Query(None)):
+    # 检查平台策略：ADMIN_VALIDATION 时仅管理员可创建
+    strategy_row = db.execute(text(
+        "SELECT workspacecreationstrategy FROM platformoptions LIMIT 1"
+    )).first()
+    if strategy_row and strategy_row[0] == 1:  # ADMIN_VALIDATION
+        is_admin = db.execute(text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": current_user.login}).first()
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="仅管理员可创建工作区")
     ws_id = body.get("id", "").strip()
     if not ws_id:
         raise HTTPException(status_code=400, detail="工作区 id 不能为空")
@@ -528,6 +552,7 @@ def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
 @router.delete("/workspaces/{ws}", status_code=204)
 def delete_workspace(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
+    _check_workspace_admin(db, ws, current_user)
     existing = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()

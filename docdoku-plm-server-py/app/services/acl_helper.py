@@ -1,5 +1,6 @@
 """ACL 辅助函数——创建/更新 ACL 条目、检查写权限。"""
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 
 # Java ACLPermission enum ordinals: FORBIDDEN=0, READ_ONLY=1, FULL_ACCESS=2
@@ -58,5 +59,13 @@ def check_write_access(db: Session, acl_id: int | None,
         AclUserEntry.principal_login == user_login,
     ).first()
     if entry and entry.permission == FULL_ACCESS:
+        return True
+    # 检查用户所在组的 ACL 条目（Java 也检查 AclUserGroupEntry）
+    group_entry = db.execute(text(
+        "SELECT 1 FROM aclusergroupentry ag "
+        "JOIN usergroupmapping m ON ag.principal_id = m.groupname "
+        "WHERE ag.acl_id = :acl AND m.login = :l AND ag.permission = :perm LIMIT 1"
+    ), {"acl": acl_id, "l": user_login, "perm": FULL_ACCESS}).first()
+    if group_entry:
         return True
     return False

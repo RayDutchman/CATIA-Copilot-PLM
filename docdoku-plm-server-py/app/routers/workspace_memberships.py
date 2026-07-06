@@ -11,6 +11,20 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
+def _check_workspace_admin(db: Session, ws: str, current_user: Account):
+    """验证当前用户是全局管理员或工作区管理员，否则 403。"""
+    is_global_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if is_global_admin:
+        return
+    is_ws_admin = db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": ws, "l": current_user.login}).first()
+    if not is_ws_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+
 def _group_to_dict(g):
     return {"id": g.id, "workspaceId": g.workspace_id}
 
@@ -130,6 +144,7 @@ def remove_from_group(ws: str, gid: str, body: dict,
 def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user)):
     """设置工作区管理员"""
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
         raise HTTPException(status_code=400, detail="login 不能为空")
@@ -156,6 +171,7 @@ def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/enable-user/", include_in_schema=False)
 def enable_user(ws: str, body: dict, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
         raise HTTPException(status_code=400, detail="login 不能为空")
@@ -167,6 +183,7 @@ def enable_user(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/disable-user/", include_in_schema=False)
 def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
         raise HTTPException(status_code=400, detail="login 不能为空")
@@ -179,6 +196,7 @@ def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
 def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     """设置用户访问权限"""
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("member", {}).get("login", "") or body.get("login", "")
     if not login:
         raise HTTPException(status_code=400, detail="login 不能为空")

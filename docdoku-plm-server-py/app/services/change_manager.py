@@ -54,6 +54,19 @@ class ChangeService:
                     body: dict, user_login: str):
         cls = self._cls(type_name)
         now = datetime.utcnow()
+        # 验证 milestone_id：创建 Request/Order 时 milestone 必须存在
+        if cls in (ChangeRequest, ChangeOrder) and body.get("milestone_id"):
+            ms = db.query(Milestone).filter(
+                Milestone.id == body["milestone_id"],
+                Milestone.workspace_id == ws,
+            ).first()
+            if not ms:
+                raise HTTPException(404, f"Milestone {body['milestone_id']} 不存在")
+        # 验证 initiator：创建 Issue 时 initiator 必须是有效用户
+        if cls is ChangeIssue and body.get("initiator"):
+            acc = db.query(Account).filter(Account.login == body["initiator"]).first()
+            if not acc:
+                raise HTTPException(404, f"发起人 {body['initiator']} 不存在")
         kwargs = dict(workspace_id=ws)
         if hasattr(cls, "creation_date"):
             kwargs["creation_date"] = now
