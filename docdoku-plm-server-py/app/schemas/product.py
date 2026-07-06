@@ -40,6 +40,7 @@ class ProductBaselineSummaryDTO(BaseModel):
     name: Optional[str] = None
     type: Optional[int] = None
     configurationItemId: Optional[str] = None
+    author: Optional[UserDTO] = None
     hasObsoletePartRevisions: bool = False
     configurationItemLatestRevision: Optional[ConfigurationItemLatestRevisionDTO] = None
 
@@ -73,6 +74,8 @@ class ProductConfigurationDTO(BaseModel):
     creationDate: Optional[str] = None
     substituteLinks: List[dict] = []
     optionalUsageLinks: List[dict] = []
+    substitutesParts: List[dict] = []
+    optionalsParts: List[dict] = []
 
 
 class ProductInstanceIterationDTO(BaseModel):

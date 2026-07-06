@@ -43,6 +43,7 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
         "name": b.name,
         "type": b.type,
         "configurationItemId": b.configurationitem_id,
+        "author": _get_user(db, b.author_login or "", b.configurationitem_workspace_id),
         "hasObsoletePartRevisions": False,
         "configurationItemLatestRevision": _ci_latest_revision(
             db, b.configurationitem_workspace_id, b.configurationitem_id
@@ -81,6 +82,21 @@ def ci_scoped_baselines_root(ws: str,
         ProductBaseline.configurationitem_workspace_id == ws
     ).all()
     return [_bl_summary_dict(b, db) for b in all_bl]
+
+
+@router.post("/workspaces/{ws}/product-baselines", status_code=201)
+def create_workspace_baseline(ws: str, body: dict,
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    """workspace 级创建基线，CI ID 从请求体获取（对应 Java POST /workspaces/{ws}/product-baselines）。"""
+    ci_id = body.get("configurationItemId", "")
+    bl_type = body.get("type", 0)
+    if isinstance(bl_type, str):
+        bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
+                               body.get("description", ""), bl_type,
+                               current_user.login, body.get("baselinedParts"))
+    return {"id": bl.id, "name": bl.name}
 
 
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines", response_model=List[ProductBaselineSummaryDTO])

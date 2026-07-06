@@ -72,10 +72,23 @@ def _config_to_dict(cfg, db) -> dict:
         "creationDate": _fmt_date(cfg.creation_date),
         "substituteLinks": [],
         "optionalUsageLinks": [],
+        "substitutesParts": [],
+        "optionalsParts": [],
     }
 
 
 # ── product-configurations ──
+
+@router.post("/workspaces/{ws}/product-configurations", status_code=201)
+def create_workspace_config(ws: str, body: dict,
+                             current_user: Account = Depends(get_current_user),
+                             db: Session = Depends(get_db)):
+    """workspace 级创建配置，CI ID 从请求体获取（对应 Java POST /workspaces/{ws}/product-configurations）。"""
+    ci_id = body.get("configurationItemId", "")
+    cfg = svc.create_config(db, ws, ci_id, body.get("name", ""),
+                             body.get("description", ""), current_user.login)
+    return {"id": cfg.id, "name": cfg.name}
+
 
 @router.get("/workspaces/{ws}/product-configurations", response_model=List[ProductConfigurationDTO])
 @router.get("/workspaces/{ws}/product-configurations/", include_in_schema=False)
@@ -89,7 +102,9 @@ def list_configs(ws: str, current_user: Account = Depends(get_current_user),
              "acl": _build_acl(db, c.acl_id),
              "creationDate": _fmt_date(c.creation_date),
              "substituteLinks": [],
-             "optionalUsageLinks": []}
+             "optionalUsageLinks": [],
+             "substitutesParts": [],
+             "optionalsParts": [],}
             for c in configs]
 
 
@@ -106,7 +121,9 @@ def list_ci_configs(ws: str, pid: str,
              "acl": _build_acl(db, c.acl_id),
              "creationDate": _fmt_date(c.creation_date),
              "substituteLinks": [],
-             "optionalUsageLinks": []}
+             "optionalUsageLinks": [],
+             "substitutesParts": [],
+             "optionalsParts": [],}
             for c in configs]
 
 

@@ -1,5 +1,5 @@
 """FastAPI 应用入口。"""
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share
@@ -26,6 +26,18 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["jwt"],  # 前端需要读取响应头中的 jwt
 )
+
+class TrailingSlashMiddleware(BaseHTTPMiddleware):
+    """去掉请求路径末尾的 /，防止前端带尾斜杠发起 POST/PUT/DELETE 时 405。"""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.scope.get("path", "")
+        if len(path) > 1 and path.endswith("/"):
+            request.scope["path"] = path.rstrip("/") or "/"
+        return await call_next(request)
+
+
+app.add_middleware(TrailingSlashMiddleware)
 
 register_exception_handlers(app)
 
