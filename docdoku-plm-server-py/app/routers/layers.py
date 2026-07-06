@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.core.exceptions import LayerNotFoundException, MarkerNotFoundException
 from app.models.product import Layer, Marker
 from app.schemas.product import LayerDTO, MarkerDTO
 
@@ -55,7 +56,7 @@ def update_layer(ws: str, pid: str, layer_id: int, body: dict,
         Layer.configurationitem_id == pid,
     ).first()
     if not layer:
-        raise HTTPException(404, "Layer not found")
+        raise LayerNotFoundException("LayerNotFoundException", str(layer_id))
     if "name" in body:
         layer.name = body["name"]
     if "color" in body:
@@ -121,7 +122,7 @@ def create_marker(ws: str, pid: str, layer_id: int, body: dict,
         Layer.configurationitem_id == pid,
     ).first()
     if not layer:
-        raise HTTPException(404, "Layer not found")
+        raise LayerNotFoundException("LayerNotFoundException", str(layer_id))
     marker = Marker(
         x=body.get("x", 0), y=body.get("y", 0), z=body.get("z", 0),
         title=body.get("title", ""), description=body.get("description", ""),
@@ -141,9 +142,10 @@ def delete_marker(ws: str, pid: str, lid: int, mid: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     marker = db.query(Marker).filter(Marker.id == mid).first()
-    if marker:
-        db.execute(sql_text("DELETE FROM layer_marker WHERE marker_id=:mid AND layer_id=:lid"),
-                   {"mid": mid, "lid": lid})
-        db.delete(marker)
-        db.commit()
+    if not marker:
+        raise MarkerNotFoundException("MarkerNotFoundException", str(mid))
+    db.execute(sql_text("DELETE FROM layer_marker WHERE marker_id=:mid AND layer_id=:lid"),
+               {"mid": mid, "lid": lid})
+    db.delete(marker)
+    db.commit()
     return Response(status_code=204)

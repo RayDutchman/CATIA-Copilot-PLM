@@ -473,6 +473,10 @@ def cascade_undocheckout(ws: str, ci_id: str,
 
 
 # ── Stub endpoints ──
+# TODO: raise PathToPathCyclicException when creating path-to-path links that form a cycle
+# TODO: raise PathToPathLinkAlreadyExistsException when creating duplicate path-to-path link
+# TODO: raise PathToPathLinkNotFoundException when path-to-path link not found
+#       (Java: PathToPathLinkDAO + ProductManagerBean — path-to-path link CRUD not yet implemented in Python)
 
 @router.get("/workspaces/{ws}/products/{ci_id}/paths")
 @router.get("/workspaces/{ws}/products/{ci_id}/paths/", include_in_schema=False)

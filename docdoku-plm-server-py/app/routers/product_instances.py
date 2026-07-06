@@ -5,6 +5,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import ProductInstanceIterationNotFoundException
 from app.models.auth import Account
 from app.services.product_structure import ProductStructureService
 from app.schemas.product import ProductInstanceDTO, ProductInstanceIterationDTO
@@ -124,7 +125,8 @@ def get_instance_iteration(ws: str, ci_id: str, sn: str, it: int,
         ProductInstanceIteration.iteration == it,
     ).first()
     if not iteration:
-        raise HTTPException(404, "Iteration not found")
+        raise ProductInstanceIterationNotFoundException(
+            "ProductInstanceIterationNotFoundException", sn, str(it))
     doc_rows = db.execute(sql_text(
         "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
         "dl.target_docrevision_version, dl.commentdata "

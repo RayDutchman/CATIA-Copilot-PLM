@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.core.exceptions import (
+    PartMasterTemplateAlreadyExistsException,
+    PartMasterTemplateNotFoundException,
+)
 from app.models.part import PartMaster, PartMasterTemplate
 from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.services.acl_helper import apply_acl
@@ -213,7 +217,7 @@ def get_part_template(workspace_id: str, template_id: str,
         .first()
     )
     if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
+        raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
     return {
         "id": t.id,
         "workspaceId": t.workspace_id,
@@ -239,6 +243,15 @@ def create_part_template(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user),
                          db: Session = Depends(get_db)):
+    existing = (
+        db.query(PartMasterTemplate)
+        .filter(PartMasterTemplate.workspace_id == workspace_id,
+                PartMasterTemplate.id == body.get("id", ""))
+        .first()
+    )
+    if existing:
+        raise PartMasterTemplateAlreadyExistsException(
+            "PartMasterTemplateAlreadyExistsException", body.get("id", ""))
     t = PartMasterTemplate(
         id=body.get("id", ""),
         workspace_id=workspace_id,
@@ -287,7 +300,7 @@ def update_part_template(workspace_id: str, template_id: str,
         .first()
     )
     if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
+        raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
     if "mask" in body:
         t.mask = body["mask"]
     if "idGenerated" in body:
@@ -329,7 +342,7 @@ def delete_part_template(workspace_id: str, template_id: str,
         .first()
     )
     if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
+        raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
     db.delete(t)
     db.commit()
     return Response(status_code=204)
@@ -349,7 +362,7 @@ def generate_part_id(workspace_id: str, template_id: str,
         .first()
     )
     if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
+        raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
 
     mask = t.mask
     if mask:
@@ -375,7 +388,7 @@ def update_part_template_acl(workspace_id: str, template_id: str,
         .first()
     )
     if t is None:
-        raise HTTPException(404, f"Template {template_id} not found")
+        raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
     user_entries = body.get("userEntries", {})
     group_entries = body.get("groupEntries", {})
     new_acl_id = apply_acl(db, t.acl_id, user_entries, group_entries)

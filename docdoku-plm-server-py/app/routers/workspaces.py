@@ -11,7 +11,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import (
     AccessRightException, EntityAlreadyExistsException,
     EntityNotFoundException, NotAllowedException,
-    WorkspaceNotFoundException,
+    WorkspaceNotFoundException, ListOfValuesNotFoundException,
 )
 from app.models.auth import Account
 from app.schemas.admin import (
@@ -415,7 +415,7 @@ def update_lov(ws: str, name: str, body: dict, db: Session = Depends(get_db),
         "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
     ), {"name": name, "ws": ws}).fetchone()
     if not existing:
-        raise EntityNotFoundException("LOVNotFoundException", name)
+        raise ListOfValuesNotFoundException("ListOfValuesNotFoundException", name)
     db.execute(text(
         "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
     ), {"name": name, "ws": ws})
@@ -438,7 +438,7 @@ def delete_lov(ws: str, name: str, db: Session = Depends(get_db),
         "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
     ), {"name": name, "ws": ws}).fetchone()
     if not existing:
-        raise EntityNotFoundException("LOVNotFoundException", name)
+        raise ListOfValuesNotFoundException("ListOfValuesNotFoundException", name)
     db.execute(text(
         "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
     ), {"name": name, "ws": ws})

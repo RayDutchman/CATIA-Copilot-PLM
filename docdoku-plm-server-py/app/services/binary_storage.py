@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.services import vault
+from app.core.exceptions import FileAlreadyExistsException, FileNotFoundException
 from app.models.part import (
     BinaryResource, PartIteration, part_iteration_binres,
 )
@@ -60,9 +61,13 @@ def save_nativecad(db: Session, ws: str, pn: str, ver: str, iteration: int,
     """写 nativecad 到 vault + upsert BinaryResource + 设 PartIteration.native_cad_file_fullname。
     对齐 Java saveNativeCADInPartIteration：先删除旧几何体再保存新 CAD。"""
     _delete_old_geometries(db, ws, pn, ver, iteration)
+    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
+    existing = db.query(BinaryResource).filter(
+        BinaryResource.full_name == full_name).first()
+    if existing is not None:
+        raise FileAlreadyExistsException("FileAlreadyExistsException", full_name)
     path = vault.part_nativecad_path(ws, pn, ver, iteration, filename)
     vault.write_file(path, data)
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
     br = _upsert_binaryresource(db, full_name, len(data))
     it = db.query(PartIteration).filter(
         PartIteration.workspace_id == ws,

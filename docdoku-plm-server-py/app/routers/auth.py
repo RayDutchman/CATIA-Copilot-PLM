@@ -111,6 +111,8 @@ def send_password_recovery(body: dict, db: Session = Depends(get_db)):
 @router.post("/auth/recover/", include_in_schema=False)
 def execute_recover(body: dict, db: Session = Depends(get_db)):
     """执行密码恢复。MVP: 直接更新密码。"""
+    # TODO: raise PasswordRecoveryRequestNotFoundException when recovery token is invalid/expired
+    #       (Java: PasswordRecoveryRequestDAO — 验证 recovery token 有效性)
     login = body.get("login", "")
     new_password = body.get("password", "")
     if not login or not new_password:

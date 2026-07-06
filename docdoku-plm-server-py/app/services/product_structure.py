@@ -11,7 +11,7 @@ from app.models.auth import Account
 from app.models.notification import ModificationNotification
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
-    EntityNotFoundException,
+    EntityNotFoundException, PartUsageLinkNotFoundException,
 )
 from app.services.acl_helper import apply_acl
 

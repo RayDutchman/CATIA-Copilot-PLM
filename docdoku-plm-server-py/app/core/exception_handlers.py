@@ -4,7 +4,7 @@ from app.core.exceptions import (
     ApplicationException, AccessRightException, NotAllowedException,
     EntityConstraintException, EntityNotFoundException,
     EntityAlreadyExistsException, CreationException,
-    WorkspaceNotEnabledException,
+    WorkspaceNotEnabledException, PlatformHealthException,
 )
 
 

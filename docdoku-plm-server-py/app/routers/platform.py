@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
+from app.core.exceptions import PlatformHealthException
 from app.schemas.misc import HealthDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -17,4 +18,4 @@ def platform_health(db: Session = Depends(get_db)):
         elapsed = int((time.time() - start) * 1000)
         return {"executionTime": elapsed, "status": "ok"}
     except Exception:
-        return {"executionTime": 0, "status": "error"}
+        raise PlatformHealthException("PlatformHealthException")
