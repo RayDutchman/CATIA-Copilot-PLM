@@ -10,7 +10,7 @@ from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder
 from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.services.change_manager import ChangeService
-from app.services.acl_helper import apply_acl
+from app.services.acl_helper import apply_acl, check_write_access
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ChangeService()
@@ -57,7 +57,7 @@ def _get_user_name(db: Session, login: str) -> str:
     return name
 
 
-def _item_to_dict(item, db: Optional[Session] = None) -> dict:
+def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Account] = None) -> dict:
     is_request = isinstance(item, ChangeRequest)
     is_order = isinstance(item, ChangeOrder)
     is_issue = isinstance(item, ChangeIssue)
@@ -75,6 +75,16 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
 
     name = getattr(item, "name", getattr(item, "title", ""))
 
+    is_admin = False
+    if current_user and db:
+        is_admin = db.execute(sql_text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": current_user.login}).first() is not None
+
+    writable = True
+    if db and current_user:
+        writable = check_write_access(db, getattr(item, "acl_id", None), current_user.login, is_admin)
+
     data = dict(
         acl=_get_acl_dict(db, getattr(item, "acl_id", None)),
         affectedDocuments=[],
@@ -91,8 +101,11 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
         priority=_PRIORITY_NAMES.get(getattr(item, "priority", None)),
         tags=[t.label for t in (getattr(item, "tags", None) or [])],
         workspaceId=getattr(item, "workspace_id", ""),
-        writable=True,
+        writable=writable,
     )
+
+    if is_issue:
+        data["initiator"] = getattr(item, "initiator", None)
 
     if is_request:
         data["milestoneId"] = getattr(item, "milestone_id", None) or -1
@@ -132,7 +145,7 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
                 issues = db.query(ChangeIssue).filter(
                     ChangeIssue.id.in_([r[0] for r in issue_ids])
                 ).all()
-                data["addressedChangeIssues"] = [_item_to_dict(i, db) for i in issues]
+                data["addressedChangeIssues"] = [_item_to_dict(i, db, current_user) for i in issues]
             else:
                 data["addressedChangeIssues"] = []
         elif is_order:
@@ -144,7 +157,7 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
                 requests = db.query(ChangeRequest).filter(
                     ChangeRequest.id.in_([r[0] for r in req_ids])
                 ).all()
-                data["addressedChangeRequests"] = [_item_to_dict(r, db) for r in requests]
+                data["addressedChangeRequests"] = [_item_to_dict(r, db, current_user) for r in requests]
             else:
                 data["addressedChangeRequests"] = []
 
@@ -190,7 +203,7 @@ def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
 def list_requests(ws: str, current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return [_item_to_dict(r, db) for r in svc.list_items(db, ws, "requests")]
+    return [_item_to_dict(r, db, current_user) for r in svc.list_items(db, ws, "requests")]
 
 
 @router.post("/workspaces/{ws}/changes/requests", status_code=201)
@@ -200,7 +213,7 @@ def create_request(ws: str, body: dict,
                    db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
     it = svc.create_item(db, ws, "request", body, current_user.login)
-    return _item_to_dict(it, db)
+    return _item_to_dict(it, db, current_user)
 
 
 @router.get("/workspaces/{ws}/changes/requests/link")
@@ -213,7 +226,7 @@ def search_requests(ws: str, q: str = "",
         ChangeRequest.workspace_id == ws,
         ChangeRequest.name.ilike(f'%{q}%')
     ).limit(8).all()
-    return [_item_to_dict(r, db) for r in items]
+    return [_item_to_dict(r, db, current_user) for r in items]
 
 
 @router.get("/workspaces/{ws}/changes/requests/{item_id}")
@@ -222,7 +235,7 @@ def get_request(ws: str, item_id: int,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
+    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}")
@@ -231,7 +244,7 @@ def update_request(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return _item_to_dict(svc.update_item(db, ws, "request", item_id, body), db)
+    return _item_to_dict(svc.update_item(db, ws, "request", item_id, body), db, current_user)
 
 
 @router.delete("/workspaces/{ws}/changes/requests/{item_id}", status_code=204)
@@ -250,7 +263,7 @@ def set_request_tags(ws: str, item_id: int, body: dict,
                      db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
     svc.set_tags(db, ChangeRequest, ws, item_id, body.get("tags", []))
-    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
+    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db, current_user)
 
 
 @router.post("/workspaces/{ws}/changes/requests/{item_id}/tags")
@@ -260,7 +273,7 @@ def add_request_tag(ws: str, item_id: int, body: dict,
                     db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
     svc.add_tag(db, ChangeRequest, ws, item_id, body.get("tag", ""))
-    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
+    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db, current_user)
 
 
 @router.delete("/workspaces/{ws}/changes/requests/{item_id}/tags/{tag_label}")
@@ -270,7 +283,7 @@ def remove_request_tag(ws: str, item_id: int, tag_label: str,
                        db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
     svc.remove_tag(db, ChangeRequest, ws, item_id, tag_label)
-    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db)
+    return _item_to_dict(svc.get_by_id(db, ChangeRequest, ws, item_id), db, current_user)
 
 
 @router.put("/workspaces/{ws}/changes/requests/{item_id}/affected-documents")

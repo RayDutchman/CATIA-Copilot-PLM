@@ -22,7 +22,7 @@ def list_layers(ws: str, pid: str,
         Layer.configurationitem_workspace_id == ws,
         Layer.configurationitem_id == pid,
     ).all()
-    return [{"id": l.id, "name": l.name,
+    return [{"id": l.id, "name": l.name, "color": l.color,
              "workspaceId": l.configurationitem_workspace_id,
              "configurationItemId": l.configurationitem_id} for l in layers]
 
@@ -34,9 +34,10 @@ def create_layer(ws: str, pid: str, body: dict,
                  db: Session = Depends(get_db)):
     layer = Layer(configurationitem_workspace_id=ws, configurationitem_id=pid,
                   name=body.get("name", ""),
+                  color=body.get("color"),
                   author_login=current_user.login)
     db.add(layer); db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name,
+    return {"id": layer.id, "name": layer.name, "color": layer.color,
             "workspaceId": layer.configurationitem_workspace_id,
             "configurationItemId": layer.configurationitem_id}
 
@@ -55,8 +56,10 @@ def update_layer(ws: str, pid: str, layer_id: int, body: dict,
         raise HTTPException(404, "Layer not found")
     if "name" in body:
         layer.name = body["name"]
+    if "color" in body:
+        layer.color = body["color"]
     db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name,
+    return {"id": layer.id, "name": layer.name, "color": layer.color,
             "workspaceId": layer.configurationitem_workspace_id,
             "configurationItemId": layer.configurationitem_id}
 

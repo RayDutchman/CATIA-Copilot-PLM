@@ -6,9 +6,10 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.product import ConfigurationItem, ProductInstanceMaster
-from app.models.part import PartMaster, PartRevision
+from app.models.part import PartMaster, PartRevision, PartIteration
 from app.models.notification import ModificationNotification
 from app.services.product_structure import ProductStructureService
+from app.services.product_manager import ProductService
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
@@ -85,7 +86,7 @@ def search_ci_numbers(ws: str, q: str = Query(""),
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
     cis = svc.search_numbers(db, ws, q)
-    return [c.id for c in cis]
+    return [_ci_to_dict(db, c) for c in cis]
 
 
 @router.post("/workspaces/{ws}/products", status_code=201)
@@ -237,22 +238,102 @@ def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
 
 # ── Cascade ──
 
+_part_svc = ProductService()
+
+
+def _collect_ci_parts(db: Session, ws: str, ci_id: str) -> list[PartRevision]:
+    """递归收集 CI 装配结构中的所有 PartRevision（去重）。CI 不存在时返回空列表。"""
+    try:
+        ci = svc.get_ci(db, ws, ci_id)
+    except HTTPException:
+        return []
+    root_pn = ci.partmaster_partnumber
+    master = db.query(PartMaster).filter(
+        PartMaster.workspace_id == ws,
+        PartMaster.number == root_pn,
+    ).first()
+    if not master or not master.revisions:
+        return []
+    seen: set[tuple] = set()
+    collected: list[PartRevision] = []
+
+    def collect(rev: PartRevision):
+        key = (rev.workspace_id, rev.partmaster_partnumber, rev.version)
+        if key in seen:
+            return
+        seen.add(key)
+        collected.append(rev)
+        last_it = rev.last_iteration
+        if last_it:
+            for link in (last_it.components or []):
+                child = db.query(PartRevision).filter(
+                    PartRevision.workspace_id == link.component_workspace_id,
+                    PartRevision.partmaster_partnumber == link.component_partnumber,
+                ).order_by(PartRevision.version.desc()).first()
+                if child:
+                    collect(child)
+
+    collect(master.last_revision)
+    return collected
+
+
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout/", include_in_schema=False)
 def cascade_checkout(ws: str, ci_id: str,
-                      current_user: Account = Depends(get_current_user)):
-    return {"status": "ok"}
+                      current_user: Account = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    parts = _collect_ci_parts(db, ws, ci_id)
+    checked_out = []
+    errors = []
+    for pr in parts:
+        try:
+            if not pr.checkout_user_login:
+                _part_svc.checkout(db, ws, pr.partmaster_partnumber,
+                                    pr.version, current_user.login)
+                checked_out.append(pr.partmaster_partnumber)
+        except Exception as e:
+            errors.append({"part": pr.partmaster_partnumber + "-" + pr.version,
+                           "error": str(e)})
+    return {"status": "ok", "checkedOut": checked_out, "errors": errors}
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkin")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkin/", include_in_schema=False)
 def cascade_checkin(ws: str, ci_id: str,
-                     current_user: Account = Depends(get_current_user)):
-    return {"status": "ok"}
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    parts = _collect_ci_parts(db, ws, ci_id)
+    checked_in = []
+    errors = []
+    for pr in parts:
+        if pr.checkout_user_login != current_user.login:
+            continue
+        try:
+            _part_svc.checkin(db, ws, pr.partmaster_partnumber,
+                               pr.version, current_user.login)
+            checked_in.append(pr.partmaster_partnumber)
+        except Exception as e:
+            errors.append({"part": pr.partmaster_partnumber + "-" + pr.version,
+                           "error": str(e)})
+    return {"status": "ok", "checkedIn": checked_in, "errors": errors}
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-undocheckout")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-undocheckout/", include_in_schema=False)
 def cascade_undocheckout(ws: str, ci_id: str,
-                          current_user: Account = Depends(get_current_user)):
-    return {"status": "ok"}
+                          current_user: Account = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    parts = _collect_ci_parts(db, ws, ci_id)
+    undone = []
+    errors = []
+    for pr in parts:
+        if pr.checkout_user_login != current_user.login:
+            continue
+        try:
+            _part_svc.undo_checkout(db, ws, pr.partmaster_partnumber,
+                                     pr.version, current_user.login)
+            undone.append(pr.partmaster_partnumber)
+        except Exception as e:
+            errors.append({"part": pr.partmaster_partnumber + "-" + pr.version,
+                           "error": str(e)})
+    return {"status": "ok", "undoneCheckout": undone, "errors": errors}

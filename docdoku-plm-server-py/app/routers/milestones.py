@@ -10,7 +10,7 @@ from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
 from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.services.change_manager import ChangeService
-from app.services.acl_helper import apply_acl
+from app.services.acl_helper import apply_acl, check_write_access
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ChangeService()
@@ -57,7 +57,7 @@ def _get_user_name(db: Session, login: str) -> str:
     return name
 
 
-def _item_to_dict(item, db: Optional[Session] = None) -> dict:
+def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Account] = None) -> dict:
     is_request = isinstance(item, ChangeRequest)
     is_order = isinstance(item, ChangeOrder)
     is_issue = isinstance(item, ChangeIssue)
@@ -75,6 +75,16 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
 
     name = getattr(item, "name", getattr(item, "title", ""))
 
+    is_admin = False
+    if current_user and db:
+        is_admin = db.execute(sql_text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": current_user.login}).first() is not None
+
+    writable = True
+    if db and current_user:
+        writable = check_write_access(db, getattr(item, "acl_id", None), current_user.login, is_admin)
+
     data = dict(
         acl=_get_acl_dict(db, getattr(item, "acl_id", None)),
         affectedDocuments=[],
@@ -91,8 +101,11 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
         priority=_PRIORITY_NAMES.get(getattr(item, "priority", None)),
         tags=[t.label for t in (getattr(item, "tags", None) or [])],
         workspaceId=getattr(item, "workspace_id", ""),
-        writable=True,
+        writable=writable,
     )
+
+    if is_issue:
+        data["initiator"] = getattr(item, "initiator", None)
 
     if is_request:
         data["milestoneId"] = getattr(item, "milestone_id", None) or -1
@@ -132,7 +145,7 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
                 issues = db.query(ChangeIssue).filter(
                     ChangeIssue.id.in_([r[0] for r in issue_ids])
                 ).all()
-                data["addressedChangeIssues"] = [_item_to_dict(i, db) for i in issues]
+                data["addressedChangeIssues"] = [_item_to_dict(i, db, current_user) for i in issues]
             else:
                 data["addressedChangeIssues"] = []
         elif is_order:
@@ -144,14 +157,14 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
                 requests = db.query(ChangeRequest).filter(
                     ChangeRequest.id.in_([r[0] for r in req_ids])
                 ).all()
-                data["addressedChangeRequests"] = [_item_to_dict(r, db) for r in requests]
+                data["addressedChangeRequests"] = [_item_to_dict(r, db, current_user) for r in requests]
             else:
                 data["addressedChangeRequests"] = []
 
     return data
 
 
-def _milestone_to_dict(ms, db: Optional[Session] = None) -> dict:
+def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[Account] = None) -> dict:
     numberOfOrders = 0
     numberOfRequests = 0
     if db is not None:
@@ -162,14 +175,25 @@ def _milestone_to_dict(ms, db: Optional[Session] = None) -> dict:
             "SELECT COUNT(*) FROM changerequest WHERE milestone_id=:mid"
         ), {"mid": ms.id}) or 0
 
+    is_admin = False
+    if current_user and db:
+        is_admin = db.execute(sql_text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": current_user.login}).first() is not None
+
+    writable = True
+    if db and current_user:
+        writable = check_write_access(db, getattr(ms, "acl_id", None), current_user.login, is_admin)
+
     data = dict(
+        acl=_get_acl_dict(db, getattr(ms, "acl_id", None)),
         description=getattr(ms, "description", "") or "",
         id=ms.id,
         numberOfOrders=numberOfOrders,
         numberOfRequests=numberOfRequests,
         title=getattr(ms, "title", "") or "",
         workspaceId=getattr(ms, "workspace_id", ""),
-        writable=True,
+        writable=writable,
     )
     dd = getattr(ms, "due_date", None)
     if dd:
@@ -184,7 +208,7 @@ def _milestone_to_dict(ms, db: Optional[Session] = None) -> dict:
 def list_milestones(ws: str, current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return [_milestone_to_dict(m, db) for m in svc.list_items(db, ws, "milestones")]
+    return [_milestone_to_dict(m, db, current_user) for m in svc.list_items(db, ws, "milestones")]
 
 
 @router.post("/workspaces/{ws}/changes/milestones", status_code=201)
@@ -194,25 +218,20 @@ def create_milestone(ws: str, body: dict,
                      db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
     ms = svc.create_item(db, ws, "milestone", body, current_user.login)
-    return _milestone_to_dict(ms, db)
-
-
+    return _milestone_to_dict(ms, db, current_user)
 @router.get("/workspaces/{ws}/changes/milestones/{item_id}")
 @router.get("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def get_milestone(ws: str, item_id: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db)
-
-
-@router.put("/workspaces/{ws}/changes/milestones/{item_id}")
+    return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db, current_user)@router.put("/workspaces/{ws}/changes/milestones/{item_id}")
 @router.put("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def update_milestone(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return _milestone_to_dict(svc.update_item(db, ws, "milestone", item_id, body), db)
+    return _milestone_to_dict(svc.update_item(db, ws, "milestone", item_id, body), db, current_user)
 
 
 @router.delete("/workspaces/{ws}/changes/milestones/{item_id}", status_code=204)
@@ -234,7 +253,7 @@ def get_milestone_requests(ws: str, milestone_id: int,
         ChangeRequest.workspace_id == ws,
         ChangeRequest.milestone_id == milestone_id
     ).all()
-    return [_item_to_dict(r, db) for r in items]
+    return [_item_to_dict(r, db, current_user) for r in items]
 
 
 @router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders")
@@ -247,7 +266,7 @@ def get_milestone_orders(ws: str, milestone_id: int,
         ChangeOrder.workspace_id == ws,
         ChangeOrder.milestone_id == milestone_id
     ).all()
-    return [_item_to_dict(o, db) for o in items]
+    return [_item_to_dict(o, db, current_user) for o in items]
 
 
 @router.put("/workspaces/{ws}/changes/milestones/{milestone_id}/acl")
