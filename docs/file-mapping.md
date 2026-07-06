@@ -110,19 +110,16 @@ You are auditing a Java→Python migration file pair.
 Java file: {JAVA_FILE_PATH}
 Python file: {PYTHON_FILE_PATH}
 
-Audit the Java→Python migration exhaustively. Read both files completely. Think independently about every aspect of correctness. Do not limit yourself to a checklist.
+Read both completely. Java is the ground truth — any divergence is a finding. Think independently. Do not limit yourself to a checklist. Common blind spots from past audits include:
 
-- **Coverage**: Does Python implement everything Java provides? Method by method. Logic equivalence matters more than name matching. Flag any missing functionality.
-- **Data integrity**: Compare every SQL query, every DB operation. Same tables? Same conditions? Same ordering? Java is the ground truth — any difference is a finding.
-- **Error handling**: For every failure path in Java, does Python have equivalent protection? Same i18n key? Same exception type? Also check: silent swallowing, new error conditions.
-- **API contract**: Every Java DTO field must have a Python response equivalent with matching camelCase name, nested structure, and type. Missing OR extra fields both count.
-- **Write verification**: Any Python code path that returns success without persisting data (db.commit()) is a critical finding. Check both explicit stubs (return []/{}) and implicit stubs (return 204 with no DB op).
-- **Value fidelity**: For every response field, trace the value to its origin. What DB column or computation produced it? Is it being transformed correctly? Would a consumer of this API get the same semantic meaning from both backends?
-- **Non-null defaults**: Array/list fields must NEVER be None/null — use `[]`. Object/dict fields must NEVER be None/null — use `{}`. Backbone.js models call `.length` and `.name` without null checks. Check EVERY response key in EVERY code path (both detail endpoints AND inline list comprehensions — they often differ).
-- **List vs Detail parity**: When an inline list comprehension builds response dicts separately from a `_to_dict()` helper used by the detail endpoint, check that both return the same set of keys. Missing fields in the list path are a common blind spot.
-- **Cross-cutting security**: For every Java Bean method entry point that calls `checkWorkspaceReadAccess`/`checkWorkspaceWriteAccess`/`checkAdmin`, verify the Python equivalent has the same check. Payara's `checkWorkspaceReadAccess` verifies: workspace exists + workspace enabled + user is workspace member. All three must be checked in Python at equivalent call sites.
+- **Incomplete list responses**: Inline dict comprehensions in list endpoints often have fewer fields than the detail `_to_dict()` helper.
+- **Null leaking into frontend**: Backbone.js (2008-era framework) calls `.length` and `.name` without null guards. Arrays must be `[]`, objects `{}`, never `None`.
+- **Security gaps**: Payara's `checkWorkspaceReadAccess`/`checkWorkspaceWriteAccess` verifies membership + enabled state. Often missing or simplified in Python.
+- **i18n bypass**: Hardcoded Chinese strings instead of `ApplicationException` subclasses with i18n keys like `NotAllowedException37` or `WorkspaceNotEnabledException`. The exception handler translates these automatically.
+- **Wrong column names**: Subagents sometimes guess DB column names. The real schema is in production — if a query uses columns that don't exist, that's a critical finding.
+- **Dead imports**: `from sqlalchemy import text` missing when `text()` is used.
 
-Go deep. Flag everything. Think beyond what I listed.
+Focus on what would actually break at runtime. Cross-reference Java with Python relentlessly.
 ```
 
 ## 五、审计历史
