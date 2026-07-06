@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-07-06 — 6维审计方法论确立 + 全量76项修复 + 路线图反思
+
+### 方法论
+- docs: 路线图+方法论重大修订——原始工作流根本错误（先实现后审计→stub扩散），修正为读Java源码后再写Python
+- docs: 审计Prompt从5维→6维（新增值语义正确性），从封闭式清单→开放式引导
+- docs: 方法论文档 `docs/migration-methodology.md` 全面重写
+
+### 4轮全量审计
+- 第1轮：60对→35问题（10批并行修）
+- 第2轮：→11问题（7批并行修）
+- 第3轮：→14问题（4批并行修——审计不比对Payara，只查Python自身质量）
+- 第4轮：→76问题（5批并行修——6维开放式Prompt全覆盖）
+- **最终：0残留**
+
+### 关键修复（4轮累积）
+- Critical安全：docFiles上传鉴权、share密码MD5对比、WF审批校验、change删除约束、deletePartRevision 4项EntityConstraint
+- 响应字段：author/checkOutUser查Account表取真实name、ACL完整对象（非裸acl_id整数）、枚举int→string映射、日期ISO格式
+- Stubs消除：gen_id mask递增、aborted/inverse links实查、cascade checkout/checkin、download头补全、generate_id真实实现
+- Stats对齐：count_parts/count_documents修正为 COUNT(PartRevision/DocumentRevision)
+- 事务安全：get_db()异常回滚、pool_recycle、statement_timeout
+
+### 文件重组
+- Router 22→32（每个Python文件1:1对应Java Resource）
+- Service 10个改名（对齐Java Bean命名）
+
+### 测试
+- 144 passed, 0 failed（首次全绿）
+- test_file_service vault路径修复（temp fixture消除2个预存失败）
+
 ## 2026-07-06 — products 域：baselines补字段 + configs ACL统一 + searchCI完整DTO + cascade真实实现 + instance字段名
 
 - fix(py): **product_baselines.py** — list/ci-scoped 端点新增 `hasObsoletePartRevisions`（stub False）和 `configurationItemLatestRevision`（查询 PartRevision）；detail 端点新增 `substitutesParts` 和 `optionalsParts`（stub []）

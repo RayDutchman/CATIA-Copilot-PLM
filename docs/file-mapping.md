@@ -110,19 +110,16 @@ You are auditing a Java→Python migration file pair.
 Java file: {JAVA_FILE_PATH}
 Python file: {PYTHON_FILE_PATH}
 
-Check each dimension with comprehensive coverage — don't limit yourself to pre-listed examples:
+Audit the Java→Python migration exhaustively. Read both files completely. Think independently about every aspect of correctness. Do not limit yourself to a checklist.
 
-1. **方法覆盖率** — Read the Java file first. Understand its full public API. Then check Python for logic equivalence, even if names differ. Flag ANY Java method without a Python equivalent.
+- **Coverage**: Does Python implement everything Java provides? Method by method. Logic equivalence matters more than name matching. Flag any missing functionality.
+- **Data integrity**: Compare every SQL query, every DB operation. Same tables? Same conditions? Same ordering? Java is the ground truth — any difference is a finding.
+- **Error handling**: For every failure path in Java, does Python have equivalent protection? Same i18n key? Same exception type? Also check: silent swallowing, new error conditions.
+- **API contract**: Every Java DTO field must have a Python response equivalent with matching camelCase name, nested structure, and type. Missing OR extra fields both count.
+- **Write verification**: Any Python code path that returns success without persisting data (db.commit()) is a critical finding. Check both explicit stubs (return []/{}) and implicit stubs (return 204 with no DB op).
+- **Value fidelity**: For every response field, trace the value to its origin. What DB column or computation produced it? Is it being transformed correctly? Would a consumer of this API get the same semantic meaning from both backends?
 
-2. **SQL 查询逻辑** — For EVERY DB operation, compare exact queries: table names, columns, JOINs, WHERE conditions, aggregate functions, GROUP BY, ORDER BY. Java is the ground truth. Flag ANY difference.
-
-3. **异常处理** — For every Java throw/catch, check Python has equivalent i18n key + exception type. Also check: does Python add new error conditions Java doesn't? Does Python silently swallow errors?
-
-4. **响应字段存在性** — Compare EVERY field: name (camelCase), nested structure depth, type (object/array/scalar). Missing or extra fields both count.
-
-5. **Stub 检测** — Any return of `[]`, `{}`, `{"status":"ok"}`, hardcoded booleans, or `Response(status_code=204)` without corresponding DB operations. Don't just pattern-match — verify db.commit() exists for every write path.
-
-6. **值语义正确性** — For each response field, trace the value to its source. What DB table/column? What transformation (type conversion, lookup, mapping, calculation)? Think broadly about ALL value types: nested objects, IDs, timestamps, boolean flags, file paths, URL patterns, enum values, permission codes, etc. If a value looks wrong, it probably is.
+Go deep. Flag everything. Think beyond what I listed.
 ```
 
 ## 五、审计历史
