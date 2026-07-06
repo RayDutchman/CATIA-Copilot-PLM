@@ -4,8 +4,8 @@ from datetime import datetime
 from app.models.workflow import WorkflowModel, Workflow, ActivityModel, TaskModel
 from app.models.auth import Account
 from app.core.exceptions import (
-    EntityAlreadyExistsException, EntityNotFoundException,
-    NotAllowedException,
+    EntityAlreadyExistsException, EntityConstraintException,
+    EntityNotFoundException, NotAllowedException,
 )
 
 # task status 整数到字符串映射（Java / 前端期望字符串）
@@ -26,6 +26,10 @@ class WorkflowService:
     def create_model(self, db: Session, ws: str, model_id: str,
                      final_state: str, user_login: str,
                      activity_models: list = None) -> WorkflowModel:
+        if not model_id or not model_id.strip():
+            raise ValueError("工作流模型名称不能为空")
+        if not activity_models:
+            raise ValueError("工作流模型至少需要一个活动")
         existing = db.query(WorkflowModel).filter(
             WorkflowModel.id == model_id, WorkflowModel.workspace_id == ws).first()
         if existing:
@@ -99,6 +103,20 @@ class WorkflowService:
 
     def delete_model(self, db: Session, ws: str, model_id: str):
         m = self.get_model(db, ws, model_id)
+        # 检查是否被文档模板引用
+        doc_tmpl = db.execute(text(
+            "SELECT 1 FROM documentmastertemplate "
+            "WHERE workflowmodel_id = :mid AND workspace_id = :ws LIMIT 1"
+        ), {"mid": model_id, "ws": ws}).first()
+        if doc_tmpl:
+            raise EntityConstraintException("EntityConstraintException24")
+        # 检查是否被零件模板引用
+        part_tmpl = db.execute(text(
+            "SELECT 1 FROM partmastertemplate "
+            "WHERE workflowmodel_id = :mid AND workspace_id = :ws LIMIT 1"
+        ), {"mid": model_id, "ws": ws}).first()
+        if part_tmpl:
+            raise EntityConstraintException("EntityConstraintException25")
         db.delete(m)
         db.commit()
 
@@ -202,7 +220,11 @@ class WorkflowService:
                 ), {"num": tm.num, "step": am.step, "wf_id": wf_id,
                     "title": tm.title or "", "instructions": tm.instructions or "",
                     "wl": worker_login, "wws": worker_ws,
-                    "dur": tm.duration})
+                     "dur": tm.duration})
+        # 将 step-0 的任务状态设为 IN_PROGRESS（1），启动工作流
+        db.execute(text(
+            "UPDATE task SET status = 1 WHERE workflow_id = :wf_id AND activity_step = 0"
+        ), {"wf_id": wf_id})
         # 创建 workspace_workflow 记录
         ww_id = str(uuid.uuid4())
         db.execute(text(
