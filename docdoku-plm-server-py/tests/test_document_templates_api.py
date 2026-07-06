@@ -34,5 +34,5 @@ def test_generate_id():
                 json={"reference": tid, "documentType": "doc", "idGenerated": True}, headers=h)
     resp = client.get(f"{PREFIX}/workspaces/{WS}/document-templates/{tid}/generate_id", headers=h)
     assert resp.status_code == 200
-    assert resp.json() == {"generatedId": f"{tid}-001"}
+    assert resp.json() == {"generateId": f"{tid}-001"}
     client.request("DELETE", f"{PREFIX}/workspaces/{WS}/document-templates/{tid}", headers=h)

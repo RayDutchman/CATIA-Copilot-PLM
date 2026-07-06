@@ -20,4 +20,4 @@ def test_create_and_delete_folder():
     # 删除
     resp2 = client.request("DELETE",
                            f"{PREFIX}/workspaces/{WS}/folders/{path}", headers=h)
-    assert resp2.status_code == 200
+    assert resp2.status_code == 204

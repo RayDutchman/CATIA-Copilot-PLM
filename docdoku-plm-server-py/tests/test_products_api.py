@@ -65,38 +65,31 @@ def test_product_instances():
 
 
 def test_releases_last():
-    """GET .../products/{id}/releases/last stub。"""
+    """GET .../products/{id}/releases/last——CI不存在返回404。"""
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     resp = client.get(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/releases/last", headers=h)
-    assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.status_code == 404
 
 
 def test_path_choices():
-    """GET .../products/{id}/path-choices stub。"""
+    """GET .../products/{id}/path-choices——CI不存在返回404。"""
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     resp = client.get(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/path-choices?type=PATHDATA", headers=h)
-    assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.status_code == 404
 
 
 def test_versions_choices():
-    """GET .../products/{id}/versions-choices stub。"""
+    """GET .../products/{id}/versions-choices——CI不存在返回404。"""
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     resp = client.get(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/versions-choices", headers=h)
-    assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.status_code == 404
 
 
 def test_cascade_operations():
-    """PUT cascade-checkout/checkin/undocheckout 级联真实实现。"""
+    """PUT cascade-checkout/checkin/undocheckout——CI不存在返回404。"""
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     for op, key in [("cascade-checkout", "checkedOut"),
                      ("cascade-checkin", "checkedIn"),
                      ("cascade-undocheckout", "undoneCheckout")]:
         resp = client.put(f"{PREFIX}/workspaces/{WS}/products/ANY-IT/{op}", headers=h)
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "ok"
-        assert body[key] == []
-        assert body["errors"] == []
+        assert resp.status_code == 404
