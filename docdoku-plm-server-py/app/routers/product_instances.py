@@ -5,7 +5,10 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import ProductInstanceIterationNotFoundException
+from app.core.exceptions import (
+    ProductInstanceIterationNotFoundException,
+    ProductInstanceMasterNotFoundException,
+)
 from app.models.auth import Account
 from app.services.product_structure import ProductStructureService
 from app.schemas.product import ProductInstanceDTO, ProductInstanceIterationDTO
@@ -57,7 +60,7 @@ def update_instance(ws: str, ci_id: str, sn: str, body: dict,
         ProductInstanceMaster.serialnumber == sn,
     ).first()
     if not inst:
-        raise HTTPException(404, "Instance not found")
+        raise ProductInstanceMasterNotFoundException("ProductInstanceMasterNotFoundException", sn)
     last_it = db.query(ProductInstanceIteration).filter(
         ProductInstanceIteration.workspace_id == ws,
         ProductInstanceIteration.configurationitem_id == ci_id,
@@ -170,7 +173,7 @@ def update_instance_acl(ws: str, ci_id: str, sn: str, body: dict,
         ProductInstanceMaster.serialnumber == sn,
     ).first()
     if not inst:
-        raise HTTPException(404, "Instance not found")
+        raise ProductInstanceMasterNotFoundException("ProductInstanceMasterNotFoundException", sn)
     user_entries = body.get("userEntries", {})
     group_entries = body.get("groupEntries", {})
     if not user_entries and not group_entries:

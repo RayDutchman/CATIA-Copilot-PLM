@@ -211,6 +211,7 @@ def get_queries(workspace_id: str,
 def post_workspace_query(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user)):
+    # TODO: raise QueryAlreadyExistsException when query ID already exists
     return {"id": 0}
 
 
@@ -220,6 +221,7 @@ def post_workspace_query(workspace_id: str,
              response_model=dict, include_in_schema=False)
 def post_queries(body: dict = Body(...),
                  current_user: Account = Depends(get_current_user)):
+    # TODO: raise QueryAlreadyExistsException when query ID already exists
     return {"id": 0}
 
 
