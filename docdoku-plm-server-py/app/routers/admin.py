@@ -1,6 +1,6 @@
 """管理员端点。"""
 from typing import Dict, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -381,3 +381,27 @@ def post_index(ws: str, db: Session = Depends(get_db),
 @router.get("/admin/index/", include_in_schema=False)
 def get_index():
     return {"inProgress": False}
+
+
+@router.put("/admin/workspace/{ws}/enable")
+@router.put("/admin/workspace/{ws}/enable/", include_in_schema=False)
+def enable_workspace(ws: str, enabled: bool = Query(True),
+                     db: Session = Depends(get_db),
+                     current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
+    db.execute(text("UPDATE workspace SET enabled = :e WHERE id = :w"),
+               {"e": enabled, "w": ws})
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.put("/admin/accounts/{login}/enable")
+@router.put("/admin/accounts/{login}/enable/", include_in_schema=False)
+def enable_account(login: str, enabled: bool = Query(True),
+                   db: Session = Depends(get_db),
+                   current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
+    db.execute(text("UPDATE account SET enabled = :e WHERE login = :l"),
+               {"e": enabled, "l": login})
+    db.commit()
+    return {"status": "ok"}
