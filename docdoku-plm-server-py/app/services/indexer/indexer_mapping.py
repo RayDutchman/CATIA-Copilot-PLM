@@ -1,0 +1,40 @@
+"""IndexerMapping——ES 索引字段名常量。
+
+对齐 Java IndexerMapping。"""
+# 索引命名
+INDEX_PREFIX = "docdoku-plm"
+INDEX_SEPARATOR = "-"
+INDEX_DOCUMENTS = "documents"
+INDEX_PARTS = "parts"
+DOC_TYPE = "_doc"
+
+# 文档字段名
+WORKSPACE_ID_KEY = "workspaceId"
+ITERATION_KEY = "iteration"
+VERSION_KEY = "version"
+DOCUMENT_ID_KEY = "docMId"
+PART_NUMBER_KEY = "partNumber"
+PART_NAME_KEY = "partName"
+TITLE_KEY = "title"
+DESCRIPTION_KEY = "description"
+TYPE_KEY = "type"
+AUTHOR_LOGIN_KEY = "authorLogin"
+AUTHOR_NAME_KEY = "authorName"
+TAGS_KEY = "tags"
+ATTRIBUTES_KEY = "attributes"
+ATTRIBUTE_NAME = "attr_name"
+ATTRIBUTE_VALUE = "attr_value"
+FILES_KEY = "files"
+FILE_NAME_KEY = "fileName"
+CONTENT_KEY = "content"
+WORKFLOW_KEY = "workflow"
+FOLDER_KEY = "folder"
+CREATION_DATE_KEY = "creationDate"
+MODIFICATION_DATE_KEY = "modificationDate"
+REVISION_NOTE_KEY = "revisionNote"
+STANDARD_PART_KEY = "standardPart"
+
+# ES 模板文件路径
+COMMON_TEMPLATE = "common-template.json"
+DOCUMENT_TEMPLATE = "document-template.json"
+PART_TEMPLATE = "part-template.json"

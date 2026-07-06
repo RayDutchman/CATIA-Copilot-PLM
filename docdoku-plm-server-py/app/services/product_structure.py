@@ -97,16 +97,81 @@ class ProductStructureService:
     def filter_product_structure(self, db: Session, ws: str, ci_id: str,
                                   config_spec=None, path=None, depth=None,
                                   user_login: str = None, is_admin: bool = False):
-        """返回递归 ComponentDTO 列表。每节点含 24 字段 + components[] 递归。"""
+        """返回递归 ComponentDTO 列表。每节点含 24 字段 + components[] 递归。
+
+        若提供 config_spec（ProductStructureFilter 或 ProductConfigSpec），
+        则使用 PSFilterVisitor 按配置规格遍历；否则走旧版全量遍历。
+        """
         ci = self.get_ci(db, ws, ci_id)
         root_pn = ci.partmaster_partnumber
         master = db.query(PartMaster).filter(
             PartMaster.workspace_id == ws, PartMaster.number == root_pn).first()
         if master is None or not master.revisions:
             return []
+
+        if config_spec is not None:
+            return self._filter_with_visitor(db, master, config_spec, depth,
+                                               ci_id, user_login, is_admin)
+
         root_rev = master.last_revision
         return [self._build_component(db, root_rev, None, ci_id, depth=depth,
                                        user_login=user_login, is_admin=is_admin)]
+
+    def _filter_with_visitor(self, db: Session, root_pm, config_spec,
+                              depth, ci_id, user_login, is_admin):
+        """使用 PSFilterVisitor 遍历产品结构。"""
+        from app.services.configuration import PSFilterVisitor
+
+        visitor = PSFilterVisitor(db, root_pm.workspace_id, config_spec,
+                                   stop_at_depth=depth)
+        root_component = visitor.visit_from_master(root_pm)
+        return [self._convert_visitor_component(db, root_component, ci_id,
+                                                  user_login, is_admin)]
+
+    def _convert_visitor_component(self, db: Session, comp, ci_id,
+                                     user_login, is_admin):
+        """将 PSFilterVisitor 返回的 Component 转为递归 dict。"""
+        retained = comp.retained_iteration
+        pm = comp.part_master
+        rev = None
+        if retained:
+            rev = retained.revision
+
+        result = {
+            "number": pm.number,
+            "name": pm.name or "",
+            "version": rev.version if rev else (pm.last_revision.version if pm.revisions else "A"),
+            "iteration": retained.iteration if retained else 0,
+            "path": ci_id,
+            "amount": 1.0,
+            "unit": None,
+            "optional": False,
+            "partUsageLinkId": "u1",
+            "description": rev.description if rev else "",
+            "standardPart": pm.standard_part or False,
+            "assembly": bool(retained and retained.components) if retained else False,
+            "released": rev.status == 1 if rev else False,
+            "obsolete": rev.status == 2 if rev else False,
+            "author": pm.author_login or "",
+            "authorLogin": pm.author_login or "",
+            "checkOutUser": None,
+            "checkOutDate": None,
+            "lastIterationNumber": rev.last_iteration_number if rev else 0,
+            "virtual": False,
+            "substitute": False,
+            "partUsageLinkReferenceDescription": None,
+            "hasPathData": False,
+            "accessDeny": False,
+            "attributes": [],
+            "components": [],
+            "substituteIds": [],
+            "notifications": [],
+        }
+        for child in comp.components:
+            child_dict = self._convert_visitor_component(db, child, ci_id,
+                                                           user_login, is_admin)
+            result["components"].append(child_dict)
+        return result
 
     def _build_component(self, db: Session, rev: PartRevision, usage_link, path: str,
                           depth=None, user_login: str = None, is_admin: bool = False):
