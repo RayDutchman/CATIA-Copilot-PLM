@@ -1,10 +1,10 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import EntityNotFoundException
+from app.core.exceptions import AccessRightException, EntityNotFoundException
 from app.models.auth import Account
 from app.models.workflow import Webhook, WebhookApp
 from app.schemas.misc import WebhookDTO
@@ -24,7 +24,7 @@ def _check_is_admin_or_workspace_admin(db: Session, ws: str, current_user: Accou
         "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
     ), {"w": ws, "l": current_user.login}).first()
     if not is_ws_admin:
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+        raise AccessRightException("AccessRightException")
 
 
 def _appname_from_dtype(dtype: str | None) -> str:

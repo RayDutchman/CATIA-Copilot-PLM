@@ -1,9 +1,10 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import UserNotFoundException, WorkspaceNotFoundException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.part import UserDTO
@@ -77,7 +78,7 @@ def get_admin(ws: str, db: Session = Depends(get_db),
         "WHERE w.id = :ws"
     ), {"ws": ws}).fetchone()
     if not r:
-        raise HTTPException(status_code=404, detail="工作区或管理员不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException")
     return {"login": r[0], "name": r[1] or "", "email": r[2] or "",
             "language": r[3] or "", "workspaceId": ws}
 
@@ -88,7 +89,7 @@ def get_user(ws: str, login: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise UserNotFoundException("UserNotFoundException")
     return {
         "login": acc.login,
         "name": acc.name or "",
@@ -106,7 +107,7 @@ def user_tag_subscriptions(ws: str, login: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise UserNotFoundException("UserNotFoundException")
     rows = db.execute(text(
         "SELECT tag_workspace_id, tag_label, oniterationchange, onstatechange "
         "FROM tagusersubscription "
@@ -127,7 +128,7 @@ def user_tag_subscription_put(ws: str, login: str, tagName: str,
                                current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise UserNotFoundException("UserNotFoundException")
     on_iter = (body or {}).get("onIterationChange", False)
     on_state = (body or {}).get("onStateChange", False)
     db.execute(text(

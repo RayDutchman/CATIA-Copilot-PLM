@@ -9,6 +9,10 @@ from jose import JWTError
 from app.core.database import get_db
 from app.core.security import create_token, verify_token, create_entity_token
 from app.core.deps import bearer_scheme
+from app.core.exceptions import (
+    AccessRightException, EntityNotFoundException, NotAllowedException,
+    PartRevisionNotFoundException, SharedEntityNotFoundException,
+)
 from app.models.auth import Account
 from app.models.document import DocumentRevision
 from app.models.part import PartRevision
@@ -61,11 +65,11 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
     ), {"uuid": uuid}).fetchone()
 
     if not entity:
-        raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
+        raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
     if password is not None and entity.password is not None and \
             hashlib.md5(password.encode()).hexdigest() != entity.password:
-        raise HTTPException(status_code=403, detail="密码错误")
+        raise AccessRightException("AccessRightException")
 
     if entity.expire_date is not None:
         now = datetime.now(timezone.utc)
@@ -74,7 +78,7 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
             # Java: deleteSharedEntityIfExpired — 过期后删除共享实体行
             db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
             db.commit()
-            raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
+            raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
     return entity
 
@@ -87,7 +91,7 @@ def get_shared_documents(uuid: str,
                          db: Session = Depends(get_db)):
     entity = _get_shared_entity(uuid, password, db)
     if entity.dtype != "SharedDocument":
-        raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
+        raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
     doc = db.execute(text(
         "SELECT d.title, d.description, d.status, d.author_login, d.creationdate, "
@@ -104,7 +108,7 @@ def get_shared_documents(uuid: str,
     }).fetchone()
 
     if not doc:
-        raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
+        raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
     response.headers["entity-token"] = create_entity_token(uuid)
     response.headers["shared-entity-token"] = create_entity_token(uuid)
@@ -129,7 +133,7 @@ def get_shared_parts(uuid: str,
                      db: Session = Depends(get_db)):
     entity = _get_shared_entity(uuid, password, db)
     if entity.dtype != "SharedPart":
-        raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
+        raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
     part = db.execute(text(
         "SELECT pr.description, pr.status, pr.author_login, pr.creationdate, "
@@ -146,7 +150,7 @@ def get_shared_parts(uuid: str,
     }).fetchone()
 
     if not part:
-        raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
+        raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
     response.headers["entity-token"] = create_entity_token(uuid)
     response.headers["shared-entity-token"] = create_entity_token(uuid)
@@ -180,10 +184,10 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
     ).first()
 
     if not doc:
-        raise HTTPException(status_code=404, detail="文档不存在")
+        raise EntityNotFoundException("DocumentRevisionNotFoundException", doc_id, ver)
 
     if not doc.public_shared and login is None:
-        raise HTTPException(status_code=403, detail="文档未公开共享")
+        raise NotAllowedException("NotAllowedException5")
 
     response.headers["entity-token"] = create_entity_token(ws, login or "")
     return {
@@ -216,10 +220,10 @@ def get_public_shared_part(ws: str, pn: str, ver: str,
     ).first()
 
     if not part:
-        raise HTTPException(status_code=404, detail="零件不存在")
+        raise PartRevisionNotFoundException("PartRevisionNotFoundException", pn, ver)
 
     if not part.public_shared and login is None:
-        raise HTTPException(status_code=403, detail="零件未公开共享")
+        raise NotAllowedException("NotAllowedException5")
 
     response.headers["entity-token"] = create_entity_token(ws, login or "")
     return {

@@ -1,10 +1,14 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import (
+    AccessRightException, EntityNotFoundException, NotAllowedException,
+    UserNotFoundException, WorkspaceNotFoundException,
+)
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -27,7 +31,7 @@ def _check_workspace_admin(db: Session, ws: str, current_user: Account):
         "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
     ), {"w": ws, "l": current_user.login}).first()
     if not is_ws_admin:
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+        raise AccessRightException("AccessRightException")
 
 
 def _group_to_dict(g):
@@ -98,10 +102,10 @@ def add_user(ws: str, body: dict, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     login = body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise UserNotFoundException("UserNotFoundException")
     user_mgmt_service.add_user(db, ws, login, body.get("group"))
     return Response(status_code=204)
 
@@ -112,14 +116,14 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     login = body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     user_mgmt_service.remove_user_from_workspace(db, ws, login)
     r = db.execute(text(
         "SELECT id, description, enabled, folderlocked, admin_login "
         "FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not r:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException")
     return _workspace_to_dict(r)
 
 
@@ -131,12 +135,12 @@ def remove_from_group(ws: str, gid: str, body: dict,
     """从工作组移除用户"""
     login = body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     group = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": gid, "ws": ws}).fetchone()
     if not group:
-        raise HTTPException(status_code=404, detail="工作组不存在")
+        raise EntityNotFoundException("UserGroupNotFoundException", gid)
     db.execute(text(
         "DELETE FROM usergroupmapping WHERE login = :l AND groupname = :g"
     ), {"l": login, "g": gid})
@@ -152,15 +156,15 @@ def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise UserNotFoundException("UserNotFoundException")
     ws_row = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not ws_row:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException")
     db.execute(text(
         "UPDATE workspace SET admin_login = :login WHERE id = :id"
     ), {"login": login, "id": ws})
@@ -179,7 +183,7 @@ def enable_user(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     user_mgmt_service.enable_user(db, ws, login)
     return Response(status_code=204)
 
@@ -191,7 +195,7 @@ def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     user_mgmt_service.disable_user(db, ws, login)
     return Response(status_code=204)
 
@@ -204,7 +208,7 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     login = body.get("member", {}).get("login", "") or body.get("login", "")
     if not login:
-        raise HTTPException(status_code=400, detail="login 不能为空")
+        raise NotAllowedException("NotAllowedException9", "login")
     read_only = body.get("readOnly", False)
     db.execute(text("UPDATE account SET enabled = :en WHERE login = :l"),
                {"en": not read_only, "l": login})

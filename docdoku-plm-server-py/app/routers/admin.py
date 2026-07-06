@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import (
+    AccessRightException, EntityNotFoundException, WorkspaceNotFoundException,
+)
 from app.models.auth import Account
 from app.schemas.admin import (
     AdminAccountDTO, DiskUsageDTO, WorkspaceDTO,
@@ -20,7 +23,7 @@ def _require_admin(db: Session, current_user: Account):
         "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
     ), {"l": current_user.login}).first()
     if not is_admin:
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+        raise AccessRightException("AccessRightException")
 
 
 def _account_to_dict(r) -> dict:
@@ -78,7 +81,7 @@ def get_account(login: str, db: Session = Depends(get_db),
         "WHERE a.login = :login"
     ), {"login": login}).fetchone()
     if not r:
-        raise HTTPException(status_code=404, detail="账户不存在")
+        raise EntityNotFoundException("AccountNotFoundException", login)
     return _account_to_dict(r)
 
 
@@ -91,7 +94,7 @@ def update_account(login: str, body: dict, db: Session = Depends(get_db),
         "SELECT login FROM account WHERE login = :login"
     ), {"login": login}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="账户不存在")
+        raise EntityNotFoundException("AccountNotFoundException", login)
 
     updates = {}
     if "email" in body:
@@ -130,7 +133,7 @@ def delete_account(login: str, db: Session = Depends(get_db),
         "SELECT login FROM account WHERE login = :login"
     ), {"login": login}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="账户不存在")
+        raise EntityNotFoundException("AccountNotFoundException", login)
 
     db.execute(text("DELETE FROM credential WHERE login = :login"), {"login": login})
     db.execute(text("DELETE FROM userdata WHERE login = :login"), {"login": login})
@@ -163,7 +166,7 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
         "FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not r:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     return _workspace_to_dict(r)
 
 
@@ -176,7 +179,7 @@ def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
 
     updates = {}
     if "description" in body:
@@ -209,7 +212,7 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
     db.commit()
 

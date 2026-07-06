@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.security import verify_password, create_token
-from app.core.exceptions import EntityNotFoundException, CreationException
+from app.core.exceptions import (
+    AccessRightException, EntityNotFoundException, CreationException,
+)
 from app.models.auth import Account, UserGroupMapping
 from app.models.user_mgmt import Credential
 from app.schemas.auth import LoginRequestDTO, AccountDTO
@@ -26,10 +28,10 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
     credential = db.query(Credential).filter(Credential.login == body.login).first()
 
     if not account or not credential or not account.enabled:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="认证失败")
+        raise AccessRightException("AccessRightException")
 
     if not verify_password(body.password, credential.password):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="认证失败")
+        raise AccessRightException("AccessRightException")
 
     # 从 usergroupmapping 表查询角色组（与 Payara UserGroupMapping 一致）
     mapping = db.query(UserGroupMapping).filter(UserGroupMapping.login == account.login).first()

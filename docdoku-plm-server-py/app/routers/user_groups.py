@@ -1,10 +1,11 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import EntityNotFoundException, NotAllowedException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -63,12 +64,12 @@ def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
     """启用工作组：写入 workspaceusergroupmembership 表"""
     group_id = body.get("id", "")
     if not group_id:
-        raise HTTPException(status_code=400, detail="组 id 不能为空")
+        raise NotAllowedException("NotAllowedException9", "组id")
     existing = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="工作组不存在")
+        raise EntityNotFoundException("UserGroupNotFoundException", group_id)
     db.execute(text(
         "INSERT INTO workspaceusergroupmembership "
         "(workspace_id, member_id, member_workspace_id, readonly) "
@@ -86,12 +87,12 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
     """禁用工作组：删除 workspaceusergroupmembership 记录"""
     group_id = body.get("id", "")
     if not group_id:
-        raise HTTPException(status_code=400, detail="组 id 不能为空")
+        raise NotAllowedException("NotAllowedException9", "组id")
     existing = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="工作组不存在")
+        raise EntityNotFoundException("UserGroupNotFoundException", group_id)
     db.execute(text(
         "DELETE FROM workspaceusergroupmembership "
         "WHERE workspace_id = :ws AND member_id = :gid"
@@ -107,12 +108,12 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
     """设置工作组访问权限"""
     group_id = body.get("member", {}).get("id", "") or body.get("memberId", "")
     if not group_id:
-        raise HTTPException(status_code=400, detail="组 id 不能为空")
+        raise NotAllowedException("NotAllowedException9", "组id")
     group = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
     if not group:
-        raise HTTPException(status_code=404, detail="工作组不存在")
+        raise EntityNotFoundException("UserGroupNotFoundException", group_id)
     read_only = body.get("readOnly", False)
     db.execute(text(
         "INSERT INTO workspaceusergroupmembership "
@@ -135,7 +136,7 @@ def group_tag_subscriptions(ws: str, groupId: str, db: Session = Depends(get_db)
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": groupId, "ws": ws}).fetchone()
     if not group:
-        raise HTTPException(status_code=404, detail="工作组不存在")
+        raise EntityNotFoundException("UserGroupNotFoundException", groupId)
     rows = db.execute(text(
         "SELECT tag_workspace_id, tag_label, oniterationchange, onstatechange "
         "FROM tagusergroupsubscription "
@@ -158,7 +159,7 @@ def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": groupId, "ws": ws}).fetchone()
     if not group:
-        raise HTTPException(status_code=404, detail="工作组不存在")
+        raise EntityNotFoundException("UserGroupNotFoundException", groupId)
     on_iter = (body or {}).get("onIterationChange", False)
     on_state = (body or {}).get("onStateChange", False)
     db.execute(text(

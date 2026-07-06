@@ -8,6 +8,11 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import (
+    AccessRightException, EntityAlreadyExistsException,
+    EntityNotFoundException, NotAllowedException,
+    WorkspaceNotFoundException,
+)
 from app.models.auth import Account
 from app.schemas.admin import (
     WorkspaceDTO, WorkspaceListDTO, StatsOverviewDTO, DiskUsageDTO,
@@ -29,7 +34,7 @@ def _check_workspace_admin(db: Session, ws: str, current_user: Account):
         "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
     ), {"w": ws, "l": current_user.login}).first()
     if not is_ws_admin:
-        raise HTTPException(status_code=403, detail="需要管理员权限")
+        raise AccessRightException("AccessRightException")
 
 
 def _row_to_dict(r) -> dict:
@@ -299,12 +304,12 @@ def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     label = body.get("label", "").strip()
     if not label:
-        raise HTTPException(status_code=400, detail="标签不能为空")
+        raise NotAllowedException("NotAllowedException9", "标签")
     existing = db.execute(text(
         "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": label, "ws": ws}).fetchone()
     if existing:
-        raise HTTPException(status_code=409, detail="标签已存在")
+        raise EntityAlreadyExistsException("TagAlreadyExistsException", label)
     db.execute(text(
         "INSERT INTO tag (label, workspace_id) VALUES (:label, :ws)"
     ), {"label": label, "ws": ws})
@@ -343,7 +348,7 @@ def delete_tag(ws: str, tag_id: str, db: Session = Depends(get_db),
         "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": tag_id, "ws": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="标签不存在")
+        raise EntityNotFoundException("TagNotFoundException", tag_id)
     db.execute(text(
         "DELETE FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": tag_id, "ws": ws})
@@ -382,12 +387,12 @@ def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
     name = body.get("name", "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="名称不能为空")
+        raise NotAllowedException("NotAllowedException9", "名称")
     existing = db.execute(text(
         "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
     ), {"name": name, "ws": ws}).fetchone()
     if existing:
-        raise HTTPException(status_code=409, detail="名称已存在")
+        raise EntityAlreadyExistsException("LOVAlreadyExistsException", name)
     db.execute(text(
         "INSERT INTO lov (name, workspace_id) VALUES (:name, :ws)"
     ), {"name": name, "ws": ws})
@@ -410,7 +415,7 @@ def update_lov(ws: str, name: str, body: dict, db: Session = Depends(get_db),
         "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
     ), {"name": name, "ws": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="名称不存在")
+        raise EntityNotFoundException("LOVNotFoundException", name)
     db.execute(text(
         "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
     ), {"name": name, "ws": ws})
@@ -433,7 +438,7 @@ def delete_lov(ws: str, name: str, db: Session = Depends(get_db),
         "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
     ), {"name": name, "ws": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="名称不存在")
+        raise EntityNotFoundException("LOVNotFoundException", name)
     db.execute(text(
         "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
     ), {"name": name, "ws": ws})
@@ -476,7 +481,7 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
         "FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not r:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     return _row_to_dict(r)
 
 
@@ -494,16 +499,16 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
             "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
         ), {"l": current_user.login}).first()
         if not is_admin:
-            raise HTTPException(status_code=403, detail="仅管理员可创建工作区")
+            raise AccessRightException("AccessRightException")
     ws_id = body.get("id", "").strip()
     if not ws_id:
-        raise HTTPException(status_code=400, detail="工作区 id 不能为空")
+        raise NotAllowedException("NotAllowedException9")
 
     existing = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws_id}).fetchone()
     if existing:
-        raise HTTPException(status_code=409, detail="工作区已存在")
+        raise EntityAlreadyExistsException("WorkspaceAlreadyExistsException", ws_id)
 
     admin = userLogin or current_user.login
     desc = body.get("description", "")
@@ -533,7 +538,7 @@ def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
 
     updates = {}
     if "description" in body:
@@ -563,13 +568,13 @@ def change_admin(ws: str, body: dict, db: Session = Depends(get_db),
     _check_workspace_admin(db, ws, current_user)
     new_admin = body.get("login", "").strip()
     if not new_admin:
-        raise HTTPException(status_code=400, detail="管理员 login 不能为空")
+        raise NotAllowedException("NotAllowedException9")
     # 验证新管理员是工作区成员
     member = db.execute(text(
         "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :ws"
     ), {"l": new_admin, "ws": ws}).first()
     if not member:
-        raise HTTPException(status_code=400, detail="新管理员不是工作区成员")
+        raise NotAllowedException("NotAllowedException9", "login")
     db.execute(text(
         "UPDATE workspace SET admin_login = :a WHERE id = :ws"
     ), {"a": new_admin, "ws": ws})
@@ -589,7 +594,7 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="工作区不存在")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
 
     # 级联删除：按依赖顺序从子到父
     # 1. 零件相关 join 表

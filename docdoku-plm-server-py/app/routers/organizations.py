@@ -5,6 +5,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import (
+    EntityAlreadyExistsException, EntityNotFoundException, NotAllowedException,
+)
 from app.models.auth import Account
 from app.schemas.misc import OrganizationDTO, OrganizationMemberResultDTO
 
@@ -40,12 +43,12 @@ def create_organization(
 ):
     name = body.get("name", "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="组织名称不能为空")
+        raise NotAllowedException("NotAllowedException9", "名称")
     existing = db.execute(text(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": name}).fetchone()
     if existing:
-        raise HTTPException(status_code=409, detail="组织已存在")
+        raise EntityAlreadyExistsException("OrganizationAlreadyExistsException", name)
     description = body.get("description", "")
     owner = current_user.login
     db.execute(text(
@@ -67,7 +70,7 @@ def get_organization(
         "SELECT name, description FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not r:
-        raise HTTPException(status_code=404, detail="组织不存在")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     return _org_to_dict(r)
 
 
@@ -83,7 +86,7 @@ def update_organization(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="组织不存在")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     description = body.get("description", "")
     db.execute(text(
         "UPDATE organization SET description = :description WHERE name = :name"
@@ -106,7 +109,7 @@ def delete_organization(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="组织不存在")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     db.execute(text(
         "DELETE FROM organization_account WHERE organization_name = :name"
     ), {"name": org_name})
@@ -128,15 +131,15 @@ def add_member(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="组织不存在")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
-        raise HTTPException(status_code=400, detail="用户登录名不能为空")
+        raise NotAllowedException("NotAllowedException9")
     user = db.execute(text(
         "SELECT login FROM account WHERE login = :login"
     ), {"login": login}).fetchone()
     if not user:
-        raise HTTPException(status_code=400, detail="用户不存在")
+        raise EntityNotFoundException("AccountNotFoundException", login)
     existing_member = db.execute(text(
         "SELECT account_login FROM organization_account "
         "WHERE organization_name = :org AND account_login = :login"
@@ -168,10 +171,10 @@ def remove_member(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="组织不存在")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
-        raise HTTPException(status_code=400, detail="用户登录名不能为空")
+        raise NotAllowedException("NotAllowedException9")
     db.execute(text(
         "DELETE FROM organization_account "
         "WHERE organization_name = :org AND account_login = :login"
@@ -192,10 +195,10 @@ def move_member(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
-        raise HTTPException(status_code=404, detail="组织不存在")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
-        raise HTTPException(status_code=400, detail="用户登录名不能为空")
+        raise NotAllowedException("NotAllowedException9")
     members = db.execute(text(
         "SELECT account_login, account_order FROM organization_account "
         "WHERE organization_name = :org ORDER BY account_order"
@@ -206,7 +209,7 @@ def move_member(
             idx = i
             break
     if idx is None:
-        raise HTTPException(status_code=404, detail="成员不在组织中")
+        raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     if idx == 0:
         return {"status": "ok"}
     prev_login, prev_order = members[idx - 1]
