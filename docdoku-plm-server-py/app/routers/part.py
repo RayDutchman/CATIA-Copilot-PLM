@@ -431,16 +431,20 @@ def used_by_product(workspace_id: str, part_key: str,
     return []
 
 
-@router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}")
-@router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}",
+            response_model=list[dict])
+@router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}/",
+            response_model=list[dict], include_in_schema=False)
 def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     return []
 
 
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion")
-@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion",
+            response_model=StatusDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion/",
+            response_model=StatusDTO, include_in_schema=False)
 def retry_conversion(workspace_id: str, part_key: str, iteration: int,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):

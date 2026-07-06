@@ -11,6 +11,7 @@ from app.services import binary_storage
 from app.services.product_manager import ProductService
 from app.services.kafka_producer import send_conversion_order
 from app.services.converter import find_pending_conversion
+from app.schemas.part import BinaryResourceDTO, StatusDTO
 from app.models.part import PartIteration
 from datetime import datetime, timezone
 
@@ -28,9 +29,10 @@ def _check_writable(db: Session, ws: str, pn: str, ver: str,
         raise NotAllowedException("NotAllowedException4")
 
 
-@router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/nativecad", status_code=201)
+@router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/nativecad",
+             status_code=201, response_model=BinaryResourceDTO)
 @router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/nativecad/",
-             status_code=201, include_in_schema=False)
+             status_code=201, response_model=BinaryResourceDTO, include_in_schema=False)
 def upload_nativecad(
     ws: str, pn: str, ver: str, iteration: int,
     request: Request,
@@ -43,23 +45,34 @@ def upload_nativecad(
     if ext not in CAD_WHITELIST:
         raise HTTPException(400, "Unsupported CAD file format")
     data = upload.file.read()
-    binary_storage.save_nativecad(db, ws, pn, ver, iteration, upload.filename, data)
+    br = binary_storage.save_nativecad(db, ws, pn, ver, iteration, upload.filename, data)
     # Fix 2: 检查是否已有 pending Conversion，避免重复发送 Kafka
     existing = find_pending_conversion(db, ws, pn, ver)
     if existing:
         db.commit()
-        return {"status": "uploaded", "message": "Conversion already pending, skipped"}
+        return BinaryResourceDTO(
+            fullName=br.full_name,
+            name=upload.filename,
+            contentLength=len(data),
+            lastModified=br.last_modified,
+        )
     svc.create_conversion(db, ws, pn, ver, iteration)
     db.commit()
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.startswith("Bearer ") else ""
     send_conversion_order(ws, pn, ver, iteration, upload.filename, token)
-    return {"status": "uploaded"}
+    return BinaryResourceDTO(
+        fullName=br.full_name,
+        name=upload.filename,
+        contentLength=len(data),
+        lastModified=br.last_modified,
+    )
 
 
-@router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles", status_code=201)
+@router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles",
+             status_code=201, response_model=BinaryResourceDTO)
 @router.post("/files/{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/",
-             status_code=201, include_in_schema=False)
+             status_code=201, response_model=BinaryResourceDTO, include_in_schema=False)
 def upload_attached(
     ws: str, pn: str, ver: str, iteration: int,
     upload: UploadFile = File(...),
@@ -68,9 +81,14 @@ def upload_attached(
 ):
     _check_writable(db, ws, pn, ver, iteration, current_user.login)
     data = upload.file.read()
-    binary_storage.save_attached(db, ws, pn, ver, iteration, upload.filename, data)
+    br = binary_storage.save_attached(db, ws, pn, ver, iteration, upload.filename, data)
     db.commit()
-    return {"status": "uploaded"}
+    return BinaryResourceDTO(
+        fullName=br.full_name,
+        name=upload.filename,
+        contentLength=len(data),
+        lastModified=br.last_modified,
+    )
 
 
 @router.delete("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}",
@@ -128,9 +146,9 @@ def delete_part_file(
 
 
 @router.put("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}",
-            status_code=200)
+            status_code=200, response_model=StatusDTO)
 @router.put("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}/",
-            status_code=200, include_in_schema=False)
+            status_code=200, response_model=StatusDTO, include_in_schema=False)
 def rename_part_file(
     ws: str, pn: str, ver: str, iteration: int, sub_type: str, file_name: str,
     body: dict = Body(...),
@@ -193,7 +211,7 @@ def rename_part_file(
         pass
 
     db.commit()
-    return {"status": "renamed", "fileName": new_file_name}
+    return StatusDTO(status="renamed", message=new_file_name)
 def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
     stat = file_path.stat()
     mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
@@ -207,8 +225,10 @@ def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
     }
 
 
-@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}")
-@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}/", include_in_schema=False)
+@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}",
+            response_class=Response)
+@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}/",
+            response_class=Response, include_in_schema=False)
 def download_with_subtype(
     ws: str, pn: str, ver: str, iteration: int, sub_type: str, file_name: str,
     current_user: Account = Depends(get_current_user),
@@ -226,8 +246,10 @@ def download_with_subtype(
                     headers=_file_headers(data, file_path, file_name))
 
 
-@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}")
-@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}/", include_in_schema=False)
+@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}",
+            response_class=Response)
+@router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}/",
+            response_class=Response, include_in_schema=False)
 def download_direct(
     ws: str, pn: str, ver: str, iteration: int, file_name: str,
     current_user: Account = Depends(get_current_user),

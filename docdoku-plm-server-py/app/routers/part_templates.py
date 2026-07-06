@@ -10,6 +10,7 @@ from app.models.auth import Account
 from app.models.part import PartMaster, PartMasterTemplate
 from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.services.acl_helper import apply_acl
+from app.schemas.part import PartTemplateDTO, GeneratedIdDTO, AclIdDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -156,8 +157,10 @@ def _generate_from_template_id(db: Session, workspace_id: str, template_id: str)
     return f"{template_id}-{max_seq + 1:03d}"
 
 
-@router.get("/workspaces/{workspace_id}/part-templates")
-@router.get("/workspaces/{workspace_id}/part-templates/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/part-templates",
+            response_model=list[PartTemplateDTO])
+@router.get("/workspaces/{workspace_id}/part-templates/",
+            response_model=list[PartTemplateDTO], include_in_schema=False)
 def list_part_templates(workspace_id: str,
                         current_user: Account = Depends(get_current_user),
                         db: Session = Depends(get_db)):
@@ -185,8 +188,10 @@ def list_part_templates(workspace_id: str,
     return result
 
 
-@router.get("/workspaces/{workspace_id}/part-templates/{template_id}")
-@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/part-templates/{template_id}",
+            response_model=PartTemplateDTO)
+@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/",
+            response_model=PartTemplateDTO, include_in_schema=False)
 def get_part_template(workspace_id: str, template_id: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
@@ -214,8 +219,10 @@ def get_part_template(workspace_id: str, template_id: str,
     }
 
 
-@router.post("/workspaces/{workspace_id}/part-templates", status_code=201)
-@router.post("/workspaces/{workspace_id}/part-templates/", status_code=201, include_in_schema=False)
+@router.post("/workspaces/{workspace_id}/part-templates",
+             status_code=201, response_model=PartTemplateDTO)
+@router.post("/workspaces/{workspace_id}/part-templates/",
+             status_code=201, response_model=PartTemplateDTO, include_in_schema=False)
 def create_part_template(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user),
@@ -252,8 +259,10 @@ def create_part_template(workspace_id: str,
     }
 
 
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}")
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/part-templates/{template_id}",
+            response_model=PartTemplateDTO)
+@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/",
+            response_model=PartTemplateDTO, include_in_schema=False)
 def update_part_template(workspace_id: str, template_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user),
@@ -312,8 +321,10 @@ def delete_part_template(workspace_id: str, template_id: str,
     return Response(status_code=204)
 
 
-@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/generate_id")
-@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/generate_id/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/generate_id",
+            response_model=GeneratedIdDTO)
+@router.get("/workspaces/{workspace_id}/part-templates/{template_id}/generate_id/",
+            response_model=GeneratedIdDTO, include_in_schema=False)
 def generate_part_id(workspace_id: str, template_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -335,8 +346,10 @@ def generate_part_id(workspace_id: str, template_id: str,
     return {"generatedId": generated}
 
 
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/acl")
-@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/acl/", include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/acl",
+            response_model=AclIdDTO)
+@router.put("/workspaces/{workspace_id}/part-templates/{template_id}/acl/",
+            response_model=AclIdDTO, include_in_schema=False)
 def update_part_template_acl(workspace_id: str, template_id: str,
                              body: dict = Body(...),
                              current_user: Account = Depends(get_current_user),

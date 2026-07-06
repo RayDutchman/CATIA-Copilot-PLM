@@ -87,8 +87,10 @@ def search_parts(
     return [map_revision(pr, db) for pr in revisions]
 
 
-@router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}")
-@router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}",
+            response_model=list[PartRevisionDTO])
+@router.get("/workspaces/{workspace_id}/parts/tags/{tag_id}/",
+            response_model=list[PartRevisionDTO], include_in_schema=False)
 def get_parts_by_tag(workspace_id: str, tag_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -105,8 +107,10 @@ def get_parts_by_tag(workspace_id: str, tag_id: str,
     return [map_revision(pr, db) for pr in revisions]
 
 
-@router.get("/workspaces/{workspace_id}/parts/parts_last_iter")
-@router.get("/workspaces/{workspace_id}/parts/parts_last_iter/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/parts_last_iter",
+            response_model=list[PartRevisionDTO])
+@router.get("/workspaces/{workspace_id}/parts/parts_last_iter/",
+            response_model=list[PartRevisionDTO], include_in_schema=False)
 def parts_last_iter(workspace_id: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -145,7 +149,7 @@ def parts_last_iter(workspace_id: str, q: str = Query(""),
     result = []
     for pr, max_iter in rows.all():
         dto = map_revision(pr, db)
-        result.append(dto.model_dump())
+        result.append(dto)
     return result
 
 
@@ -165,24 +169,30 @@ def create_part(
 
 # ── queries stubs ──────────────────────────────────────────────
 
-@router.get("/workspaces/{workspace_id}/parts/queries")
-@router.get("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/queries",
+            response_model=list[dict])
+@router.get("/workspaces/{workspace_id}/parts/queries/",
+            response_model=list[dict], include_in_schema=False)
 def get_queries(workspace_id: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     return []
 
 
-@router.post("/workspaces/{workspace_id}/parts/queries")
-@router.post("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
+@router.post("/workspaces/{workspace_id}/parts/queries",
+             response_model=dict)
+@router.post("/workspaces/{workspace_id}/parts/queries/",
+             response_model=dict, include_in_schema=False)
 def post_workspace_query(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user)):
     return {"id": 0}
 
 
-@router.post("/parts/queries")
-@router.post("/parts/queries/", include_in_schema=False)
+@router.post("/parts/queries",
+             response_model=dict)
+@router.post("/parts/queries/",
+             response_model=dict, include_in_schema=False)
 def post_queries(body: dict = Body(...),
                  current_user: Account = Depends(get_current_user)):
     return {"id": 0}
@@ -195,38 +205,48 @@ def delete_query(query_id: str,
     return Response(status_code=204)
 
 
-@router.get("/parts/query-export")
-@router.get("/parts/query-export/", include_in_schema=False)
+@router.get("/parts/query-export",
+            response_model=dict)
+@router.get("/parts/query-export/",
+            response_model=dict, include_in_schema=False)
 def query_export(current_user: Account = Depends(get_current_user)):
     return {}
 
 
 # ── imports ────────────────────────────────────────────────────
 
-@router.get("/workspaces/{workspace_id}/parts/imports/{filename}")
-@router.get("/workspaces/{workspace_id}/parts/imports/{filename}/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/imports/{filename}",
+            response_model=dict)
+@router.get("/workspaces/{workspace_id}/parts/imports/{filename}/",
+            response_model=dict, include_in_schema=False)
 def imports_get(workspace_id: str, filename: str,
                 current_user: Account = Depends(get_current_user)):
     return {}
 
 
-@router.get("/workspaces/{workspace_id}/parts/import/{import_id}")
-@router.get("/workspaces/{workspace_id}/parts/import/{import_id}/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/parts/import/{import_id}",
+            response_model=dict)
+@router.get("/workspaces/{workspace_id}/parts/import/{import_id}/",
+            response_model=dict, include_in_schema=False)
 def import_get(workspace_id: str, import_id: str,
                current_user: Account = Depends(get_current_user)):
     return {}
 
 
-@router.post("/parts/import", status_code=201)
-@router.post("/parts/import/", status_code=201, include_in_schema=False)
+@router.post("/parts/import",
+             status_code=201, response_model=dict)
+@router.post("/parts/import/",
+             status_code=201, response_model=dict, include_in_schema=False)
 def post_import(body: dict = Body(...),
                 current_user: Account = Depends(get_current_user)):
     import_id = f"import-{uuid.uuid4().hex[:12]}"
     return {"id": import_id}
 
 
-@router.post("/parts/importPreview", status_code=201)
-@router.post("/parts/importPreview/", status_code=201, include_in_schema=False)
+@router.post("/parts/importPreview",
+             status_code=201, response_model=dict)
+@router.post("/parts/importPreview/",
+             status_code=201, response_model=dict, include_in_schema=False)
 def post_import_preview(body: dict = Body(...),
                         current_user: Account = Depends(get_current_user)):
     import_id = f"import-{uuid.uuid4().hex[:12]}"
