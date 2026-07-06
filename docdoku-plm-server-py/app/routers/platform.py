@@ -14,6 +14,6 @@ def platform_health(db: Session = Depends(get_db)):
     try:
         db.execute(text("SELECT 1")).scalar()
         elapsed = int((time.time() - start) * 1000)
-        return {"executionTime": elapsed, "status": "UP"}
+        return {"executionTime": elapsed, "status": "ok"}
     except Exception:
-        return {"executionTime": 0, "status": "DOWN"}
+        return {"executionTime": 0, "status": "error"}

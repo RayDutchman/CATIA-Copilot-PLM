@@ -19,10 +19,14 @@ def list_organizations(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    rows = db.execute(text(
-        "SELECT name, description FROM organization ORDER BY name"
-    )).fetchall()
-    return [_org_to_dict(r) for r in rows]
+    r = db.execute(text(
+        "SELECT o.name, o.description FROM organization o "
+        "JOIN organization_account oa ON o.name = oa.organization_name "
+        "WHERE oa.account_login = :login"
+    ), {"login": current_user.login}).fetchone()
+    if not r:
+        return {}
+    return _org_to_dict(r)
 
 
 @router.post("/organizations", status_code=201)
@@ -182,4 +186,36 @@ def move_member(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
+    existing = db.execute(text(
+        "SELECT name FROM organization WHERE name = :name"
+    ), {"name": org_name}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="组织不存在")
+    login = body.get("login", "").strip()
+    if not login:
+        raise HTTPException(status_code=400, detail="用户登录名不能为空")
+    members = db.execute(text(
+        "SELECT account_login, account_order FROM organization_account "
+        "WHERE organization_name = :org ORDER BY account_order"
+    ), {"org": org_name}).fetchall()
+    idx = None
+    for i, (l, _) in enumerate(members):
+        if l == login:
+            idx = i
+            break
+    if idx is None:
+        raise HTTPException(status_code=404, detail="成员不在组织中")
+    if idx == 0:
+        return {"status": "ok"}
+    prev_login, prev_order = members[idx - 1]
+    cur_order = members[idx][1]
+    db.execute(text(
+        "UPDATE organization_account SET account_order = :ord "
+        "WHERE organization_name = :org AND account_login = :login"
+    ), {"ord": prev_order, "org": org_name, "login": login})
+    db.execute(text(
+        "UPDATE organization_account SET account_order = :ord "
+        "WHERE organization_name = :org AND account_login = :login"
+    ), {"ord": cur_order, "org": org_name, "login": prev_login})
+    db.commit()
     return {"status": "ok"}

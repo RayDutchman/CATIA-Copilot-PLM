@@ -6,6 +6,43 @@
 
 ---
 
+
+## 2026-07-06 — Stubs修复：admin统计+org单对象+health ok+LOV数组+Attributes完整+tasks字段
+
+### Python 后端
+- fix(admin): 统计端点改为按管理workspace返回（users/documents/products/parts each `{ws: count}`），不再全局 `{count: N}`
+- fix(admin): disk-usage-stats 从硬编码0改为查询 binaryresource.contentlength（joined via documentiteration_binres / partiteration_binres）
+- fix(admin): index 端点改为 `POST /admin/index/{ws}`，对齐 Java `PUT /admin/index/{workspaceId}`
+- fix(organizations): GET /organizations 从返回全部组织改为仅返回当前用户所在组织（单对象或空）
+- fix(organizations): move-member 从 stub `{"status":"ok"}` 改为真实 swap account_order 实现
+- fix(platform): health check status 从 "UP"/"DOWN" 改为 "ok"/"error"
+- fix(workspaces): LOV 响应从 dict 改为 ListOfValuesDTO 数组（含 name/id/workspaceId/values/deletable）
+- fix(workspaces): attributes/part-iterations 从只返回 name 字符串改为完整 InstanceAttributeDTO（type/name/value/mandatory）
+- fix(tasks): task-documents/parts 响应补全字段（description/type/checkOutUser/checkOutDate/path/author/creationDate）
+- fix(tasks): get_task 补充 holderType/holderReference/holderVersion/workspaceId 字段
+
+## 2026-07-06 — Products 6项关键修复：decodePath/substituteIds/notifications/attributes/BOM端点/instance详情/milestone语法
+
+### Python 后端
+- fix(products): decode_path 支持 `-1` 根节点前缀和 `s{id}` 替代件链接（对齐 Java ProductManagerBean.decodePath）
+- fix(products): _build_component 补充 `substituteIds`（查询 pusagelink_psubstitutelink）、`notifications`（查询 modificationnotification）、`attributes`（查询 instanceattribute via partiteration_attribute）
+- fix(products): `last_release`/`path_choices`/`versions_choices`/`export_files`/`path_to_path_links_types`/`path_to_path_links_detail` 从纯空返回值改为基本实现
+- feat(products): 新增 `GET {ciId}/bom` 端点，调用 filter_product_structure 并平铺为 PartRevisionDTO 列表
+- fix(products): get_product_instance 响应补充 `identifier` 和 `productInstanceIterations` 字段（对齐 Java ProductInstanceMasterDTO）
+- fix(milestones): 修复 line 228 语法错误（return 语句与 @router.put 装饰器挤在同一行）
+
+## 2026-07-06 — Share/安全关键修复：entity-token + 过期删除 + 公开共享逻辑
+
+### Python 后端
+- fix(share): UUID 共享访问添加 `shared-entity-token` 响应头（JWT，key=uuid），用于后续文件访问授权
+- fix(share): 公开共享端点添加 `entity-token` 响应头（JWT，key=ws），与 Java `createEntityToken` 对齐
+- fix(share): 共享实体过期后删除 `sharedentity` 行，匹配 Java `deleteSharedEntityIfExpired`
+- fix(share): 公开共享端点改为：public_shared=false + 未认证 → 403，public_shared=false + 已认证 → 正常访问（fallback）
+- fix(share): password 参数从 `Query(None)` 改为 `Header(None)`，匹配 Java `@HeaderParam("password")`
+- fix(security): 新增 `create_entity_token(key, login)` 和 `validate_entity_token(token)`，5 分钟短期 JWT
+- fix(exceptions): 新增 `UserNotFoundException`、`WorkspaceNotFoundException`、`SharedEntityNotFoundException`、`PlatformHealthException` 异常类
+- fix(exception_handlers): `PlatformHealthException` 映射 HTTP 503
+
 ## 2026-07-06 — 6维审计方法论确立 + 全量76项修复 + 路线图反思
 
 ### 方法论

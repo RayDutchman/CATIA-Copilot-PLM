@@ -23,16 +23,39 @@ def _parse_task_id(task_id: str):
     return None, None, task_id
 
 
-def _doc_to_dict_short(rev):
+def _doc_to_dict(rev):
     return {
         "id": f"{rev.documentmaster_id}-{rev.version}",
         "version": rev.version,
         "workspaceId": rev.workspace_id,
         "documentMasterId": rev.documentmaster_id,
         "title": rev.title or rev.documentmaster_id,
+        "description": rev.description or "",
+        "type": rev.document_master.type if rev.document_master else "",
         "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
-        "checkOutUser": None,
-        "checkOutDate": None,
+        "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else None,
+        "checkOutDate": int(rev.check_out_date.timestamp() * 1000) if rev.check_out_date else None,
+        "path": rev.location_completepath or "",
+        "author": {"login": rev.author_login, "name": rev.author_login},
+        "creationDate": int(rev.creation_date.timestamp() * 1000) if rev.creation_date else None,
+    }
+
+
+def _part_to_dict(rev):
+    return {
+        "partKey": f"{rev.partmaster_partnumber}-{rev.version}",
+        "partNumber": rev.partmaster_partnumber,
+        "version": rev.version,
+        "name": rev.name or rev.partmaster_partnumber,
+        "workspaceId": rev.workspace_id,
+        "description": rev.description or "",
+        "type": rev.part_master.type if rev.part_master else "",
+        "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
+        "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else None,
+        "checkOutDate": int(rev.check_out_date.timestamp() * 1000) if rev.check_out_date else None,
+        "standardPart": rev.part_master.standard_part if rev.part_master else False,
+        "author": {"login": rev.author_login, "name": rev.author_login},
+        "creationDate": int(rev.creation_date.timestamp() * 1000) if rev.creation_date else None,
     }
 
 
@@ -50,10 +73,40 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
     wf_id, step, num = _parse_task_id(task_id)
     if wf_id is not None and step is not None:
         t = workflow_service.get_task(db, ws, workflow_id=wf_id,
-                                      activity_step=step, task_num=num)
+                                       activity_step=step, task_num=num)
     else:
         t = workflow_service.get_task(db, ws, task_id=int(num) if isinstance(num, int) else num)
-    # t 是 row tuple，构建响应
+    # 查找 holder 信息
+    _wf_id = t[11] if len(t) > 11 else None
+    holder_type = None
+    holder_reference = None
+    holder_version = None
+    if _wf_id:
+        doc = db.execute(text(
+            "SELECT documentmaster_id, version FROM documentrevision "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": _wf_id, "ws": ws}).first()
+        if doc:
+            holder_type = "document"
+            holder_reference = doc[0]
+            holder_version = doc[1]
+        else:
+            part = db.execute(text(
+                "SELECT partmaster_partnumber, version FROM partrevision "
+                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+            ), {"wf_id": _wf_id, "ws": ws}).first()
+            if part:
+                holder_type = "part"
+                holder_reference = part[0]
+                holder_version = part[1]
+            else:
+                ww = db.execute(text(
+                    "SELECT id FROM workspace_workflow "
+                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+                ), {"wf_id": _wf_id, "ws": ws}).first()
+                if ww:
+                    holder_type = "workspace-workflow"
+                    holder_reference = ww[0]
     return {
         "num": t[0],
         "title": t[9] if len(t) > 9 else None,
@@ -63,6 +116,10 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
         "closureComment": t[1] if len(t) > 1 else None,
         "signature": t[5] if len(t) > 5 else None,
         "closureDate": t[2].isoformat() + "Z" if len(t) > 2 and t[2] else None,
+        "holderType": holder_type,
+        "holderReference": holder_reference,
+        "holderVersion": holder_version,
+        "workspaceId": ws,
     }
 
 
@@ -109,7 +166,7 @@ def task_documents(ws: str, login: str,
         DocumentRevision.workspace_id == ws,
         DocumentRevision.workflow_id.in_(wf_ids)
     ).all()
-    return [_doc_to_dict_short(d) for d in docs]
+    return [_doc_to_dict(d) for d in docs]
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/parts")
@@ -133,10 +190,4 @@ def task_parts(ws: str, login: str,
         PartRevision.workspace_id == ws,
         PartRevision.workflow_id.in_(wf_ids)
     ).all()
-    return [{
-        "partKey": f"{p.partmaster_partnumber}-{p.version}",
-        "partNumber": p.partmaster_partnumber,
-        "version": p.version,
-        "name": p.name or p.partmaster_partnumber,
-        "workspaceId": p.workspace_id,
-    } for p in parts]
+    return [_part_to_dict(p) for p in parts]
