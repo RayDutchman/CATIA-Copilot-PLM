@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-07 — P3B-A Router 层迁移
+
+- feat(router): R-003 attributes.py — GET /workspaces/{ws}/attributes/part-iterations + path-data，按属性名/类型去重
+- feat(router): R-016 lov.py — LOV（List of Values）完整 CRUD（GET/POST /lov，GET/PUT/DELETE /lov/{name}），委托 lov_service
+- feat(router): R-022 effectivity.py 升级 — 对接 effectivity_manager 和 Effectivity ORM 模型，实现 DateBased/SerialNumber/Lot 三种有效性类型的 POST（含关联 partrevision_effectivity 表），GET 从 join 查询
+- feat(router): R-033 tags.py — 标签完整 CRUD（GET/POST/DELETE /tags）、批量创建（/tags/multiple）、按标签查文档（GET /tags/{id}/documents）、在根目录创建文档并打标签（POST /tags/{id}/documents）
+- feat(router): R-043 workspace_workflow — 已在 workflow.py 中集成，CSV 标记已完成
+- feat(router): R-045 document_template_files.py — 文档模板文件上传（multipart）和下载，支持 HTTP Range 断点续传，文件路径 vault/ws/document-templates/{templateId}/
+- feat(router): R-047 part_template_files.py — 零件模板文件上传（multipart）和下载，支持 HTTP Range，文件路径 vault/ws/part-templates/{templateId}/
+- feat(router): R-014 FileResource — Python 直接实现各子资源（无需门面路由），CSV 标记已完成
+- chore(main): 注册 6 个新路由（attributes/lov/tags/document_template_files/part_template_files 到 main.py）
+
 ## 2026-07-07 — P2B 服务全量迁移完成
 
 - feat(py): Configuration 域 (S-030~S-042) — PSFilterVisitor 产品结构遍历引擎（stop/深度控制/循环引用检测）、PSFilterVisitorCallbacks（7 个回调钩子）、5 个 PSFilter 实现（LatestCheckedIn/LatestReleased/Released/UpdatePartIteration/WIP）、6 个 ConfigSpec 实现（EffectivityConfigSpec 基类 + DateBased/LotBased/SerialNumber effectivity + ProductBaselineCreation/ResolvedCollection）

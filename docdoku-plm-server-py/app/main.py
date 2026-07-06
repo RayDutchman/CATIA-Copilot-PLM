@@ -2,7 +2,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share
+from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share, attributes, lov, tags, document_template_files, part_template_files
 from app.core.exception_handlers import register_exception_handlers
 from app.core.security import verify_token
 from app.core.database import SessionLocal
@@ -104,6 +104,11 @@ app.include_router(languages.router)
 app.include_router(timezones.router)
 app.include_router(platform.router)
 app.include_router(share.router)
+app.include_router(attributes.router)
+app.include_router(lov.router)
+app.include_router(tags.router)
+app.include_router(document_template_files.router, prefix=API_PREFIX)
+app.include_router(part_template_files.router, prefix=API_PREFIX)
 
 
 @app.get(f"{API_PREFIX}/health")

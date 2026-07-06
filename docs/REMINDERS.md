@@ -82,3 +82,4 @@
 - [x] **es_query_builder 审计修复（C5-C7, W11）** — q→query_string bool should、folder→match+fuzziness、移除 standardPart（2026-07-07）
 - [x] **notifier/indexer_manager 审计修复** — notifier 重写对齐 Java INotifierLocal、indexer reindex_all 调用改为两个方法、bulk errors 提取修正 (2026-07-07)
 - [x] **P2B 服务全量迁移 (30 文件)** — Configuration 域 PSFilterVisitor+5 filter+6 spec、Listeners 4 个、Products 3 个、Documents 2 个、Indexer 6 个（mapping/utils/client/mapper/extractor）、Validation 1 个（attributes_consistency_utils）、GCM 1 个（gcm_sender）。176 测试全绿。(2026-07-07)
+- [x] **P3B-A Router 迁移 (8 端点文件)** — R-003 attributes.py（属性去重聚合）、R-016 lov.py（LOV CRUD）、R-022 effectivity.py 升级（真实 DB 写入+三种有效性类型）、R-033 tags.py（标签 CRUD+文档查询+创建文档打标签）、R-043 workspace_workflow（已在 workflow.py 集成）、R-045 document_template_files.py（multipart 上传+Range 下载）、R-047 part_template_files.py（multipart 上传+Range 下载）、R-014 FileResource（各子资源直接实现无需门面）。176 测试全绿。(2026-07-07)
