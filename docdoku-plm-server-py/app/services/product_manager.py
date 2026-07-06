@@ -36,6 +36,8 @@ class ProductService:
                      number: str, version: str,
                      for_update: bool = False,
                      current_user_login: str = None) -> PartRevision:
+        if current_user_login:
+            self._check_workspace_member(db, workspace_id, current_user_login)
         q = (
             db.query(PartRevision)
             .filter(
@@ -73,7 +75,10 @@ class ProductService:
         return master.last_revision
 
     def search_numbers(self, db: Session, workspace_id: str,
-                       q: str, limit: int = 8) -> list:
+                       q: str, limit: int = 8,
+                       current_user_login: str = None) -> list:
+        if current_user_login:
+            self._check_workspace_member(db, workspace_id, current_user_login)
         from sqlalchemy import or_
         pattern = f"%{q}%"
         return (
@@ -149,6 +154,15 @@ class ProductService:
             db.add(master)
             db.flush()
         return master
+
+    def _check_workspace_member(self, db: Session, workspace_id: str,
+                                 login: str) -> None:
+        from sqlalchemy import text
+        row = db.execute(text(
+            "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
+        ), {"l": login, "w": workspace_id}).first()
+        if not row:
+            raise HTTPException(403, "Access denied")
 
     def _next_version(self, current: str) -> str:
         if not current:
@@ -403,10 +417,12 @@ class ProductService:
                          number: str, version: str, iteration_num: int,
                          user_login: str,
                          body: PartIterationUpdateDTO) -> PartRevision:
-        from app.core.exceptions import NotAllowedException
+        from app.core.exceptions import NotAllowedException, AccessRightException
         pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException25", number)
+        if iteration_num != pr.last_iteration_number:
+            raise AccessRightException("AccessRightException")
         # 找目标迭代
         target = next(
             (it for it in pr.iterations if it.iteration == iteration_num), None

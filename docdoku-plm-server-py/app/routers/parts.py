@@ -47,7 +47,8 @@ def search_numbers(
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    masters = svc.search_numbers(db, workspace_id, q)
+    masters = svc.search_numbers(db, workspace_id, q,
+                                   current_user_login=current_user.login)
     return [LightPartMasterDTO(partNumber=m.number, partName=m.name or "") for m in masters]
 
 
