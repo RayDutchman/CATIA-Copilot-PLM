@@ -4,6 +4,7 @@ from app.core.exceptions import (
     ApplicationException, AccessRightException, NotAllowedException,
     EntityConstraintException, EntityNotFoundException,
     EntityAlreadyExistsException, CreationException,
+    PlatformHealthException,
 )
 
 
@@ -18,6 +19,8 @@ def _status_for(exc: ApplicationException) -> int:
         return 409
     if isinstance(exc, CreationException):
         return 500
+    if isinstance(exc, PlatformHealthException):
+        return 503
     return 500
 
 

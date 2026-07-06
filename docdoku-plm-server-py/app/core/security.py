@@ -50,3 +50,22 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     """验证明文密码是否匹配 MD5 哈希。"""
     return hash_password(plain) == hashed
+
+
+def create_entity_token(key: str, login: str = "") -> str:
+    """创建实体访问 token（用于共享文档/零件文件访问授权），5 分钟短期 token。"""
+    now = int(time.time())
+    subject = json.dumps({"key": key, "login": login})
+    payload = {
+        "sub": subject,
+        "iat": now,
+        "exp": now + 300,
+    }
+    return jwt.encode(payload, settings.JWT_KEY, algorithm="HS256")
+
+
+def validate_entity_token(token: str) -> dict:
+    """验证实体访问 token。返回 {"key": str, "login": str}。"""
+    raw = jwt.decode(token, settings.JWT_KEY, algorithms=["HS256"])
+    subject = json.loads(raw["sub"])
+    return {"key": subject["key"], "login": subject.get("login", "")}

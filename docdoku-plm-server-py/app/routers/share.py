@@ -1,10 +1,14 @@
 """共享文档/零件端点（公开访问，无需认证）。"""
 import hashlib
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header, Response
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from jose import JWTError
 from app.core.database import get_db
+from app.core.security import create_token, verify_token, create_entity_token
+from app.core.deps import bearer_scheme
 from app.models.auth import Account
 from app.models.document import DocumentRevision
 from app.models.part import PartRevision
@@ -33,6 +37,20 @@ def _get_author_dto(db: Session, login: str | None, ws: str) -> dict:
     }
 
 
+def _get_optional_login(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> str | None:
+    """可选的用户认证：有有效 token 返回 login，否则返回 None。"""
+    if credentials is None:
+        return None
+    try:
+        payload = verify_token(credentials.credentials)
+        return payload["login"]
+    except (JWTError, Exception):
+        return None
+
+
 def _get_shared_entity(uuid: str, password: str | None, db: Session):
     entity = db.execute(text(
         "SELECT uuid, dtype, entity_workspace_id, password, expire_date, "
@@ -52,6 +70,9 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
         now = datetime.now(timezone.utc)
         expire = entity.expire_date.replace(tzinfo=timezone.utc) if entity.expire_date.tzinfo is None else entity.expire_date
         if expire < now:
+            # Java: deleteSharedEntityIfExpired — 过期后删除共享实体行
+            db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
+            db.commit()
             raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
 
     return entity
@@ -60,7 +81,8 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
 @router.get("/shared/{uuid}/documents")
 @router.get("/shared/{uuid}/documents/", include_in_schema=False)
 def get_shared_documents(uuid: str,
-                         password: str | None = Query(None),
+                         response: Response,
+                         password: str | None = Header(None),
                          db: Session = Depends(get_db)):
     entity = _get_shared_entity(uuid, password, db)
     if entity.dtype != "SharedDocument":
@@ -83,6 +105,7 @@ def get_shared_documents(uuid: str,
     if not doc:
         raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
 
+    response.headers["shared-entity-token"] = create_entity_token(uuid)
     return {
         "id": doc.documentmaster_id,
         "workspaceId": doc.workspace_id,
@@ -99,7 +122,8 @@ def get_shared_documents(uuid: str,
 @router.get("/shared/{uuid}/parts")
 @router.get("/shared/{uuid}/parts/", include_in_schema=False)
 def get_shared_parts(uuid: str,
-                     password: str | None = Query(None),
+                     response: Response,
+                     password: str | None = Header(None),
                      db: Session = Depends(get_db)):
     entity = _get_shared_entity(uuid, password, db)
     if entity.dtype != "SharedPart":
@@ -122,6 +146,7 @@ def get_shared_parts(uuid: str,
     if not part:
         raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
 
+    response.headers["shared-entity-token"] = create_entity_token(uuid)
     return {
         "partNumber": part.partnumber,
         "version": part.version,
@@ -138,16 +163,26 @@ def get_shared_parts(uuid: str,
 @router.get("/shared/{ws}/documents/{doc_id}-{ver}")
 @router.get("/shared/{ws}/documents/{doc_id}-{ver}/", include_in_schema=False)
 def get_public_shared_document(ws: str, doc_id: str, ver: str,
-                                db: Session = Depends(get_db)):
-    """返回公开共享的文档详情（public_shared=True 即可访问，无需 sharedentity）。"""
+                               response: Response,
+                               db: Session = Depends(get_db),
+                               login: str | None = Depends(_get_optional_login)):
+    """返回公开共享的文档详情。
+    public_shared=True 时可公开访问；
+    public_shared=False 时若已认证可正常访问，否则返回 403。
+    """
     doc = db.query(DocumentRevision).filter(
         DocumentRevision.workspace_id == ws,
         DocumentRevision.documentmaster_id == doc_id,
         DocumentRevision.version == ver,
-        DocumentRevision.public_shared == True,
     ).first()
+
     if not doc:
-        raise HTTPException(status_code=404, detail="共享文档不存在或未公开")
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    if not doc.public_shared and login is None:
+        raise HTTPException(status_code=403, detail="文档未公开共享")
+
+    response.headers["entity-token"] = create_entity_token(ws, login or "")
     return {
         "id": doc.documentmaster_id,
         "workspaceId": doc.workspace_id,
@@ -164,16 +199,26 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
 @router.get("/shared/{ws}/parts/{pn}-{ver}")
 @router.get("/shared/{ws}/parts/{pn}-{ver}/", include_in_schema=False)
 def get_public_shared_part(ws: str, pn: str, ver: str,
-                            db: Session = Depends(get_db)):
-    """返回公开共享的零件详情（public_shared=True 即可访问，无需 sharedentity）。"""
+                           response: Response,
+                           db: Session = Depends(get_db),
+                           login: str | None = Depends(_get_optional_login)):
+    """返回公开共享的零件详情。
+    public_shared=True 时可公开访问；
+    public_shared=False 时若已认证可正常访问，否则返回 403。
+    """
     part = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
         PartRevision.partmaster_partnumber == pn,
         PartRevision.version == ver,
-        PartRevision.public_shared == True,
     ).first()
+
     if not part:
-        raise HTTPException(status_code=404, detail="共享零件不存在或未公开")
+        raise HTTPException(status_code=404, detail="零件不存在")
+
+    if not part.public_shared and login is None:
+        raise HTTPException(status_code=403, detail="零件未公开共享")
+
+    response.headers["entity-token"] = create_entity_token(ws, login or "")
     return {
         "partNumber": part.partmaster_partnumber,
         "version": part.version,

@@ -34,3 +34,19 @@ class EntityAlreadyExistsException(ApplicationException):
 
 class CreationException(ApplicationException):
     pass
+
+
+class UserNotFoundException(EntityNotFoundException):
+    pass
+
+
+class WorkspaceNotFoundException(EntityNotFoundException):
+    pass
+
+
+class SharedEntityNotFoundException(EntityNotFoundException):
+    pass
+
+
+class PlatformHealthException(ApplicationException):
+    pass
