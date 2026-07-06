@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+
+import httpx
+
 from app.services.hooks.webhook_runner import WebhookRunner
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,6 @@ class SimpleWebhookRunner(WebhookRunner):
         }
 
         try:
-            import httpx
             headers = {"authorization": authorization} if authorization else {}
             if method == "POST":
                 response = httpx.post(uri, json=payload, headers=headers)
@@ -35,7 +37,5 @@ class SimpleWebhookRunner(WebhookRunner):
                 logger.error("Unsupported method %s", method)
                 return
             logger.info("Webhook response status %s: %s", response.status_code, response.text[:200])
-        except ImportError:
-            logger.warning("httpx not installed, SimpleWebhookRunner skipped")
         except Exception:
             logger.exception("Webhook runner failed")

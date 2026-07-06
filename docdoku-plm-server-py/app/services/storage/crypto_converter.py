@@ -2,7 +2,10 @@
 from __future__ import annotations
 import base64
 import logging
+import os
 from typing import Optional
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +20,6 @@ class CryptoConverter:
         if not value:
             return value
         try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-            import os
             iv = os.urandom(16)
             cipher = Cipher(algorithms.AES(self._key), modes.CBC(iv))
             encryptor = cipher.encryptor()
@@ -35,7 +36,6 @@ class CryptoConverter:
         if not stored:
             return stored
         try:
-            from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
             parts = stored.split(".")
             iv = base64.b64decode(parts[0])
             encrypted = base64.b64decode(parts[1])

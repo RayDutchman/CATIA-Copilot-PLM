@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any
+
+import boto3
+
 from app.services.hooks.webhook_runner import WebhookRunner
 
 logger = logging.getLogger(__name__)
@@ -19,7 +22,6 @@ class SNSWebhookRunner(WebhookRunner):
         region = app.region
 
         try:
-            import boto3
             sns = boto3.client(
                 "sns",
                 region_name=region,
@@ -31,7 +33,5 @@ class SNSWebhookRunner(WebhookRunner):
                 "subject": subject, "content": content,
             })
             sns.publish(TopicArn=topic_arn, Message=message)
-        except ImportError:
-            logger.warning("boto3 not installed, SNS webhook skipped")
         except Exception:
             logger.exception("Cannot send notification to SNS service")
