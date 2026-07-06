@@ -232,9 +232,9 @@ S-063,Service,products,P2B,待新建,products/ProductBaselineManagerBean.java,pr
 S-064,Service,products,P2B,待新建,products/ProductInstanceManagerBean.java,products/product_instance_manager.py,,
 S-065,Service,documents,P2B,待新建,documents/DocumentBaselineManagerBean.java,documents/document_baseline_manager.py,,
 S-066,Service,documents,P2B,待新建,documents/DocumentWorkflowManagerBean.java,documents/document_workflow_manager.py,,
-S-067,Service,hooks,P2B,待新建,hooks/SNSWebhookRunner.java,hooks/sns_webhook_runner.py,,
-S-068,Service,hooks,P2B,待新建,hooks/SimpleWebhookRunner.java,hooks/simple_webhook_runner.py,,
-S-069,Service,hooks,P2B,待新建,hooks/WebhookRunner.java,hooks/webhook_runner.py,,
+S-067,Service,hooks,P2B,已完成,hooks/SNSWebhookRunner.java,hooks/sns_webhook_runner.py,,
+S-068,Service,hooks,P2B,已完成,hooks/SimpleWebhookRunner.java,hooks/simple_webhook_runner.py,,
+S-069,Service,hooks,P2B,已完成,hooks/WebhookRunner.java,hooks/webhook_runner.py,,
 S-070,Service,indexer,P2A,待拆分,indexer/IndexManagerBean.java,indexer/index_manager.py,indexer_manager.py,
 S-071,Service,indexer,P2A,待拆分,indexer/IndexerManagerBean.java,indexer/indexer_manager.py,indexer_manager.py,从 services/indexer_manager.py 拆分 index_manager 逻辑
 S-072,Service,indexer,P2A,已完成,indexer/IndexerQueryBuilder.java,indexer/indexer_query_builder.py,es_query_builder.py,从 services/es_query_builder.py 拆出（或重命名）
@@ -244,9 +244,9 @@ S-075,Service,indexer,P2B,待新建,indexer/client/IndexerClientProducer.java,in
 S-076,Service,indexer,P2B,待新建,indexer/util/EntityMapper.java,indexer/entity_mapper.py,,
 S-077,Service,indexer,P2B,待新建,indexer/util/IndexerMapping.java,indexer/indexer_mapping.py,,
 S-078,Service,indexer,P2B,待新建,indexer/util/IndicesUtils.java,indexer/indices_utils.py,,
-S-079,Service,storage,P2B,待新建,storage/CryptoConverter.java,storage/crypto_converter.py,,
-S-080,Service,storage,P2B,待新建,storage/StorageProvider.java,storage/storage_provider.py,,
-S-081,Service,storage,P2B,待新建,storage/filesystem/FileStorageProvider.java,storage/file_storage_provider.py,,
+S-079,Service,storage,P2B,已完成,storage/CryptoConverter.java,storage/crypto_converter.py,,
+S-080,Service,storage,P2B,已完成,storage/StorageProvider.java,storage/storage_provider.py,,
+S-081,Service,storage,P2B,已完成,storage/filesystem/FileStorageProvider.java,storage/file_storage_provider.py,,
 S-082,Service,validation,P2B,待新建,validation/AttributesConsistencyUtils.java,validation/attributes_consistency_utils.py,,
 S-083,Service,factory,P2A,已完成,factory/ACLFactory.java,factory/acl_factory.py,acl_helper.py,重命名 acl_helper.py → factory/acl_factory.py
 S-084,Service,gcm,P2B,待新建,gcm/GCMSenderBean.java,gcm/gcm_sender.py,,
