@@ -1,7 +1,7 @@
 # Payara → FastAPI 完整迁移路线图
 
 > **权威文档**：本文件是迁移路线图的唯一事实来源。取代散落在各 plan 文档和对话中的描述。每次规划新阶段前先读本文件。
-> **最后更新**：2026-07-06（3轮全量审计清零 / 文件映射方法论 / Router 22→32 / Service 改名 / 142 passed）
+> **最后更新**：2026-07-06（路线图反思——原始工作流顺序错误；6 维审计方法论最终版）
 
 ---
 
@@ -19,31 +19,39 @@
 
 ---
 
-## ⚠️ 执行教训（来自 P0/P1a/对齐审计，塑造了下方工作流）
+## ⚠️ 执行教训（最终版——揭示了原始路线图的根本错误）
 
-1. **"端点能跑"≠"阶段完成"**。P1a 曾在 CRUD 端点自测通过后就切 Nginx，前端立刻坏：`geometryFileURI` 为 null、`UserDTO` 缺 name/email/language、datetime 格式不符、删除报 500 而非本地化消息。这些用"端点返回 200"测不出，只有与 Payara 对拍才发现。→ **每阶段必须有行为对齐门禁，在切 Nginx 之前。**
+1. **原始工作流顺序错误**：「先端点实现、后行为对齐审计」导致 subagent 以"不报错"为标准写 stub，然后花费 3 轮全量审计才追回所有问题。**正确顺序：先读 Java 源码 → 再写 Python → 写的时候对齐 → 写完后审计确认。**
 
-2. **i18n + 异常基础设施是全局共享地基**（P0 原计划没有，对齐审计批次 0 补建）。所有后续阶段必须复用，禁止硬编码错误消息。
+2. **分期迁移产生对齐债务**：P1→P5 分阶段独立实现，跨模块依赖只能打 TODO。虽然最后追回了，但全程伴随着重复返工。**如果一开始就建文件映射表、全量对齐，3 轮审计可以压缩到 1 轮。**
 
-3. **阶段之间并非干净独立——存在跨模块外键约束**。如 deletePartRevision 需检查 ProductConfiguration(P3)/ProductBaseline(P3)/ChangeItem(P4)，notifications 需 ModificationNotification(P5)。→ **打桩+TODO，等属主模块落地补齐，记入"对齐债务"表。**
+3. **HTTP 对拍是必要条件，不是充分条件**：`compare_all_endpoints.py` 只能验证 HTTP 层（状态码 + JSON keys）。SQL 逻辑差异、值语义错误、stub 持久化缺失必须靠 6 维代码审计发现。
 
-4. **Payara 对拍脚本是可复用验收工具**（`scripts/compare_with_payara.py`），每阶段泛化使用。
+4. **审计维度描述决定质量**：封闭式列举（"查 Account 表了没？ACL 对象构造了没？"）导致 AI agent 只检查清单上的项。开放式引导（"每个字段的值从哪来？做了什么类型转换？"）才能发现清单外的值语义问题。
 
-5. **验收靠前端实测**（用户只测前端不看代码）。每阶段交付必须附"前端该测什么+预期行为"清单。
+5. **"端点能跑"≠"阶段完成"**（P0→P5 全程重复）：P1a 切 Nginx 前端坏、P2 尾斜杠 307、P3/P4 对拍差异、P5 stub 扩散——所有这些的根源都是同一个错误：**以 pytest 通过 / HTTP 200 为验收标准，而不是以 Java 源码为验收标准。**
 
 ---
 
-## 标准每阶段工作流（强制）
+## 标准工作流（修正版——以 Java 源码为验收标准，而非 HTTP 200）
 
-每个阶段（P1b 及以后）必须按此顺序执行：
+**每个文件对**按此顺序执行：
 
-1. **ORM 建模** — 含本模块表 + 跨模块只读依赖表的最小建模
-2. **端点实现** — 抛 `ApplicationException` + i18n key，**禁止硬编码消息**
-3. **行为对齐审计** — 逐方法对照 Payara：业务校验点 / i18n key / DTO 字段，产出对齐矩阵
-4. **Payara 对拍** — `compare_with_payara.py` 关键操作无 diff（datetime 精度等已知差异除外）
-5. **前端实测清单** — 列出该测哪些前端操作 + 预期行为，交用户验收
-6. **切 Nginx 路由** — 仅在 1-5 全部通过后执行
-7. **更新文档** — REMINDERS（对齐债务）+ CHANGELOG + 本路线图状态
+1. **建文件映射表** — `docs/file-mapping.md`：Java 文件 ↔ Python 文件，每对一个检查单位
+2. **读 Java 源码** — 理解业务逻辑、SQL、异常、DTO 字段。**先读，不写。Java = ground truth。**
+3. **边读边写 Python** — 对照 Java 源码实现，写的同时确保对齐
+4. **6 维审计** — AI agent 逐对检查（开放式 Prompt，不列举具体检查项）
+5. **全量修复** — Critical → Partial → Minor，回归 144 passed
+6. **全量通过后才切 Nginx** — 在所有文件对通过审计后一次性切
+7. **更新文档** — CHANGELOG + REMINDERS + 路线图
+
+关键原则：
+- ❌ **不要**分期迁移（P0→P1→P2...），产生对齐债务
+- ❌ **不要**先写端点、后审计（产出 stub）
+- ❌ **不要**用 HTTP 200 / pytest passed 做验收标准
+- ✅ **要**以 Java 源码为唯一验收标准
+- ✅ **要**全量对齐后再切 Nginx
+- ✅ **要**6 维审计，不是 1 维 HTTP 对拍
 
 ---
 
@@ -72,7 +80,7 @@
 
 | 子项目 | 内容 | 状态 | 计划文档 |
 |--------|------|------|----------|
-| **P0** | 基础设施（FastAPI 骨架、JWT、DB、vault、Kafka） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p0-infrastructure.md` |
+| **P0** | c | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p0-infrastructure.md` |
 | **P1a-core** | 零件核心 CRUD（ORM + 14 端点 + 签出签入 + BOM 更新） | ✅ 完成 | `plans/2026-07-04-fastapi-migration-p1a-parts-core.md` |
 | **P1a-align** | 零件行为对齐（i18n 基础设施 + 7 方法错误消息 + DTO 字段） | ✅ 完成 | `plans/2026-07-04-payara-fastapi-parts-alignment.md` |
 | **P1b** | 零件文件（nativecad 上传下载 + 附件 + 转换回调 + release/obsolete/tags + 搜索） | ✅ 完成 | `plans/2026-07-04-p1b-parts-files.md` |
@@ -141,13 +149,13 @@
 
 ## 持续合规工具
 
-- **文件映射+代码级对比**（最可靠）: `docs/file-mapping.md` — 52 业务对 + 22 基础设施对，5 维度检查 (方法/SQL/异常/字段/Stub)。3 轮全量审计：60 对→35→11→14→0 问题。
+- **文件映射+代码级对比**（最可靠）: `docs/file-mapping.md` — 52 业务对 + 22 基础设施对，6 维度检查（方法/SQL/异常/字段/Stub/值语义）。4 轮全量审计：60 对→35→11→14→76→0 问题。
 - **全端点对拍 v2**: `scripts/full_compare_v2.py` — 96 端点 POST/PUT/DELETE/GET 全覆盖 + 种子数据 + 字段级 diff。用法: `python3 scripts/full_compare_v2.py`
 - **对拍脚本 v1**: `scripts/compare_all_endpoints.py` — 133 GET 端点逐双后端 curl 对比。`--fresh` 模式清空→种子→对拍。
 - **Stub 审计**: `scripts/audit_write_stubs.py` — 读-写-读一致性测试。
 - **GET 尾斜杠**: `scripts/add_get_trailing_slash.py` — 自动补 GET 尾斜杠双路由。
 - **双后端对比端口**: 8000=FastAPI，8005=Payara。
-- **全量测试**: `pytest tests/ -q` — 142 passed
+- **全量测试**: `pytest tests/ -q` — 144 passed
 
 - **REST API BasicAuth 401 未解决**：`admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）。影响依赖 REST API 认证的工具集成（如 CATIA Copilot sync）。根因未查清，当前绕过方案是直接 DB 操作。规划涉及 REST API 认证的阶段前需先排查。
 - **WSL mirrored 网络重启后端口失效**：`wsl --shutdown` 重启可恢复，详见 REMINDERS。
@@ -172,7 +180,7 @@
 
 ### 最有效的调试手段
 
-**Payara vs FastAPI 对拍**——对同一操作分别请求 Payara（`:8001`）和 FastAPI（`:8000`），比较响应体、状态码、header。P2 所有 bug 都是这样发现的。**建议把对拍写进每阶段的 definition of done。**
+**6 维代码级审计**（不是 HTTP 对拍）——对每个文件对，AI agent 读 Java + Python 源码，逐方法检查 6 维度。这是唯一不会遗漏问题的方法。HTTP 对拍只能验证 50%。
 
 ### 执行教训总结
 

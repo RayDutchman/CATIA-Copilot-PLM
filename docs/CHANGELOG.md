@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-07-06 — products 域：baselines补字段 + configs ACL统一 + searchCI完整DTO + cascade真实实现 + instance字段名
+
+- fix(py): **product_baselines.py** — list/ci-scoped 端点新增 `hasObsoletePartRevisions`（stub False）和 `configurationItemLatestRevision`（查询 PartRevision）；detail 端点新增 `substitutesParts` 和 `optionalsParts`（stub []）
+- fix(py): **product_configurations.py** — `list_configs` ACL 从 `c.acl_id`（裸 int）改为 `_build_acl(db, c.acl_id)`，对齐 detail 端点和 Java 行为
+- fix(py): **products.py search_ci_numbers** — 返回完整 CI DTO（`_ci_to_dict`），不再仅返回 id 列表
+- feat(py): **products.py cascade-checkout/checkin/undocheckout** — 从 stub 改为真实实现：递归收集 CI 装配结构中的所有 PartRevision，执行 checkout/checkin/undo_checkout 操作
+- fix(py): **product_instances.py + products.py** — 确认所有 instance 响应 JSON key 为 `serialNumber`（camelCase），对齐 Java
+
 ## 2026-07-06 — stubs 消除：admin统计 + back-options写DB + LOV/Tag CRUD + notification完整响应 + webhook字段 + fallback
 
 - fix(py): **admin.py 5个统计端点** — disk-usage-stats/users-stats/documents-stats/products-stats/parts-stats 返回DB COUNT查询结果

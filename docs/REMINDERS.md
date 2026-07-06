@@ -57,3 +57,5 @@
 - [x] **转换服务 Python-only** — 2.7.0-py 镜像 (2026-07-04)
 - [x] **deletePartRevision 4 项 EntityConstraint 补齐** (2026-07-06)
 - [x] **test1 管理员权限修复** — workspace.admin_login = 'test1' (2026-07-06)
+- [x] **stubs 消除：gen_id mask递增 + 逆链接实查 + download头补全 + home检测** — generate_id 真实DB查询+mask支持、aborted-workflows+4个inverse links实查、part_files download Last-Modified真实文件时间、folders home检测 (2026-07-06)
+- [x] **products 域 5 项修复** — baselines 补字段、configs ACL 统一、searchCI 完整 DTO、cascade 真实实现、instance 字段名对齐 (2026-07-06)
