@@ -52,10 +52,10 @@ def _get_acl_dict(db: Session, acl_id: int | None) -> dict | None:
     return {
         "id": acl_id,
         "enabled": True,
-        "userEntries": {r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
-                        for r in user_rows},
-        "groupEntries": {r.principal_id: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
-                         for r in group_rows},
+        "userEntries": [{"key": r.principal_login, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")} for r in user_rows],
+        "groupEntries": [{"key": r.principal_id, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")} for r in group_rows],
+        "userEntriesMap": {r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN") for r in user_rows},
+        "userGroupEntriesMap": {},
     }
 
 

@@ -45,15 +45,18 @@ def _build_acl(db: Session, acl_id: int) -> dict | None:
         return None
     user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
     group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+    _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
     return {
-        "userEntries": {
-            f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+        "userEntries": [
+            {"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")}
             for e in user_entries
-        },
-        "groupEntries": {
-            f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+        ],
+        "groupEntries": [
+            {"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")}
             for e in group_entries
-        },
+        ],
+        "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
+        "userGroupEntriesMap": {},
     }
 
 

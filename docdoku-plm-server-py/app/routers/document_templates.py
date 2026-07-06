@@ -43,10 +43,10 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
                     AclUserGroupEntry.acl_id == t.acl_id).all()
             perm_map = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
             acl = {
-                "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
-                                for e in user_entries},
-                "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
-                                 for e in group_entries},
+                "userEntries": [{"key": e.principal_login, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in user_entries],
+                "groupEntries": [{"key": e.principal_id, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in group_entries],
+                "userEntriesMap": {e.principal_login: perm_map.get(e.permission, "FORBIDDEN") for e in user_entries},
+                "userGroupEntriesMap": {},
             }
         result.append({
             "id": t.id, "workspaceId": t.workspace_id,
@@ -89,10 +89,10 @@ def get_template(ws: str, template_id: str,
                 AclUserGroupEntry.acl_id == t.acl_id).all()
         perm_map = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
         acl = {
-            "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
-                            for e in user_entries},
-            "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
-                             for e in group_entries},
+            "userEntries": [{"key": e.principal_login, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in user_entries],
+            "groupEntries": [{"key": e.principal_id, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in group_entries],
+            "userEntriesMap": {e.principal_login: perm_map.get(e.permission, "FORBIDDEN") for e in user_entries},
+            "userGroupEntriesMap": {},
         }
     return {
         "id": t.id, "workspaceId": t.workspace_id,

@@ -33,15 +33,12 @@ def _model_to_dict(m, db: Session = None) -> dict:
                 AclUserEntry.acl_id == m.acl_id).all()
             group_entries = db.query(AclUserGroupEntry).filter(
                 AclUserGroupEntry.acl_id == m.acl_id).all()
+            _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
             acl_data = {
-                "userEntries": {
-                    f"{e.principal_login}:{e.principal_workspace_id}": e.permission
-                    for e in user_entries
-                },
-                "groupEntries": {
-                    f"{e.principal_id}:{e.principal_workspace_id}": e.permission
-                    for e in group_entries
-                },
+                "userEntries": [{"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in user_entries],
+                "groupEntries": [{"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in group_entries],
+                "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
+                "userGroupEntriesMap": {},
             }
 
     activity_models = []

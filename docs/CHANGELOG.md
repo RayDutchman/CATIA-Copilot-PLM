@@ -25,6 +25,15 @@
 - feat(py): auth.py — get_provider/oauth_login 添加 `response_model=dict`
 - test: 144 passed
 
+## 2026-07-06 — Pydantic DTO全量添加extra=forbid——自动拒绝响应多余字段
+
+- feat(py): 所有10个schema文件中的所有BaseModel子类添加 `model_config = ConfigDict(extra='forbid')`
+- feat(py): 旧式 `class Config` 全部迁移为 `model_config = ConfigDict(...)`（auth/part/misc共6处）
+- fix(py): WorkspaceInfoDTO 补充 `enabled`/`folderLocked` 字段
+- fix(py): DocumentIterationDTO 补充 `documentRevision` 嵌套字段
+- fix(py): DocumentRevisionDTO 补充 `lastIteration` 字段
+- test: 144 passed（7个初始失败→修复后全通过）
+
 ## 2026-07-06 — Stubs修复：admin统计+org单对象+health ok+LOV数组+Attributes完整+tasks字段
 
 ### Python 后端
