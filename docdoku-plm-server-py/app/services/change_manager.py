@@ -42,12 +42,19 @@ class ChangeService:
             raise HTTPException(404, f"{cls.__name__} not found")
         return item
 
-    def _check_assignee(self, db: Session, assignee_login: str):
+    def _check_assignee(self, db: Session, ws: str, assignee_login: str):
         if assignee_login:
             acc = db.query(Account).filter(Account.login == assignee_login).first()
             if not acc:
                 raise AccessRightException("NotAllowedException")
             if not acc.enabled:
+                raise AccessRightException("NotAllowedException")
+            # 检查用户在 workspace 中是否已启用 (Java isUserEnabled)
+            member = db.execute(sql_text(
+                "SELECT 1 FROM workspaceusermembership "
+                "WHERE workspace_id = :ws AND member_login = :login"
+            ), {"ws": ws, "login": assignee_login}).first()
+            if not member:
                 raise AccessRightException("NotAllowedException")
 
     def create_item(self, db: Session, ws: str, type_name: str,
@@ -80,7 +87,7 @@ class ChangeService:
                 kwargs[field] = body[field]
         if "assignee" in body and isinstance(body["assignee"], dict):
             assignee_login = body["assignee"].get("login")
-            self._check_assignee(db, assignee_login)
+            self._check_assignee(db, ws, assignee_login)
             kwargs["assignee_login"] = assignee_login
         if "dueDate" in body:
             kwargs["due_date"] = body["dueDate"]
@@ -97,7 +104,7 @@ class ChangeService:
         for key, val in body.items():
             if key == "assignee" and isinstance(val, dict):
                 assignee_login = val.get("login")
-                self._check_assignee(db, assignee_login)
+                self._check_assignee(db, ws, assignee_login)
                 item.assignee_login = assignee_login
             elif key == "dueDate":
                 item.due_date = val
@@ -130,7 +137,7 @@ class ChangeService:
                 "WHERE changeissue_id=:iid"
             ), {"iid": item_id}) or 0
             if linked > 0:
-                raise EntityConstraintException("EntityConstraintException")
+                raise EntityConstraintException("EntityConstraintException26")
         # Request 删除前检查是否已被 ChangeOrder 引用
         if cls is ChangeRequest:
             linked = db.scalar(sql_text(
@@ -138,7 +145,7 @@ class ChangeService:
                 "WHERE changerequest_id=:iid"
             ), {"iid": item_id}) or 0
             if linked > 0:
-                raise EntityConstraintException("EntityConstraintException")
+                raise EntityConstraintException("EntityConstraintException10")
         # 清理受影响关联（通过原始 SQL 写入的关联，ORM 不感知）
         prefix_map = {
             ChangeIssue: "changeissue",

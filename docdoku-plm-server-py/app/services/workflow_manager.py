@@ -4,6 +4,7 @@ from sqlalchemy import text
 from datetime import datetime
 from app.models.workflow import WorkflowModel, Workflow, ActivityModel, TaskModel
 from app.models.auth import Account
+from app.models.security import ACL, AclUserEntry
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     EntityNotFoundException, NotAllowedException,
@@ -14,8 +15,79 @@ STATUS_MAP = {0: "NOT_STARTED", 1: "IN_PROGRESS", 2: "APPROVED", 3: "REJECTED"}
 
 
 class WorkflowService:
-    def list_models(self, db: Session, ws: str) -> list[WorkflowModel]:
-        return db.query(WorkflowModel).filter(WorkflowModel.workspace_id == ws).all()
+    # ========== ACL 辅助 ==========
+
+    def _is_admin(self, db: Session, login: str) -> bool:
+        return db.execute(text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": login}).first() is not None
+
+    def _has_read_access(self, db: Session, acl_id: int | None, user_login: str) -> bool:
+        if acl_id is None:
+            return True
+        acl = db.query(ACL).filter(ACL.id == acl_id).first()
+        if not acl or not acl.enabled:
+            return True
+        entry = db.query(AclUserEntry).filter(
+            AclUserEntry.acl_id == acl_id,
+            AclUserEntry.principal_login == user_login,
+        ).first()
+        if entry and entry.permission >= 1:  # READ_ONLY 或 FULL_ACCESS
+            return True
+        group_entry = db.execute(text(
+            "SELECT 1 FROM aclusergroupentry ag "
+            "JOIN usergroupmapping m ON ag.principal_id = m.groupname "
+            "WHERE ag.acl_id = :acl AND m.login = :l AND ag.permission >= 1 LIMIT 1"
+        ), {"acl": acl_id, "l": user_login}).first()
+        return group_entry is not None
+
+    def _check_write_access(self, db: Session, acl_id: int | None,
+                            user_login: str) -> None:
+        from app.services.acl_helper import check_write_access
+        if not check_write_access(db, acl_id, user_login, self._is_admin(db, user_login)):
+            raise NotAllowedException("NotAllowedException34")
+
+    def _is_potential_worker(self, db: Session, ws: str, user_login: str,
+                              workflow_id: int, activity_step: int, task_num: int) -> bool:
+        """检查用户是否是该 task 的 potential worker（通过角色分配）。"""
+        task_role = db.execute(text(
+            "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
+            "JOIN activitymodel am ON tm.activitymodel_id = am.id "
+            "JOIN activity a ON am.step = a.step AND a.workflow_id = :wf_id "
+            "WHERE a.workflow_id = :wf_id AND a.step = :step AND tm.num = :num "
+            "LIMIT 1"
+        ), {"wf_id": workflow_id, "step": activity_step, "num": task_num}).first()
+        if not task_role or not task_role[0]:
+            return True  # 无角色限制 = 任何人是 potential worker
+        role_name = task_role[0]
+        role_ws = task_role[1] or ws
+        # 检查用户是否在该角色中
+        in_role = db.execute(text(
+            "SELECT 1 FROM role_user WHERE role_name = :rn AND role_workspace_id = :rw "
+            "AND user_login = :l AND user_workspace_id = :ws LIMIT 1"
+        ), {"rn": role_name, "rw": role_ws, "l": user_login, "ws": ws}).first()
+        if in_role:
+            return True
+        # 检查用户所在组是否在该角色中
+        group_in_role = db.execute(text(
+            "SELECT 1 FROM role_usergroup rug "
+            "JOIN usergroupmapping m ON rug.usergroup_id = m.groupname "
+            "WHERE rug.role_name = :rn AND rug.role_workspace_id = :rw "
+            "AND m.login = :l LIMIT 1"
+        ), {"rn": role_name, "rw": role_ws, "l": user_login}).first()
+        return group_in_role is not None
+
+    # ========== WorkflowModel CRUD ==========
+
+    def list_models(self, db: Session, ws: str, user_login: str = None) -> list[WorkflowModel]:
+        models = db.query(WorkflowModel).filter(
+            WorkflowModel.workspace_id == ws).all()
+        if not user_login:
+            return models
+        if self._is_admin(db, user_login):
+            return models
+        return [m for m in models
+                if self._has_read_access(db, m.acl_id, user_login)]
 
     def get_model(self, db: Session, ws: str, model_id: str) -> WorkflowModel:
         m = db.query(WorkflowModel).filter(
@@ -64,8 +136,11 @@ class WorkflowService:
 
     def update_model(self, db: Session, ws: str, model_id: str,
                      final_state: str,
-                     activity_models: list = None) -> WorkflowModel:
+                     activity_models: list = None,
+                     user_login: str = None) -> WorkflowModel:
         m = self.get_model(db, ws, model_id)
+        if user_login:
+            self._check_write_access(db, m.acl_id, user_login)
         m.finalLifecycleState = final_state
         if activity_models is not None:
             # 删除旧 ActivityModel（级联删除旧 TaskModel）
@@ -98,8 +173,11 @@ class WorkflowService:
         db.refresh(m)
         return m
 
-    def delete_model(self, db: Session, ws: str, model_id: str):
+    def delete_model(self, db: Session, ws: str, model_id: str,
+                     user_login: str = None):
         m = self.get_model(db, ws, model_id)
+        if user_login:
+            self._check_write_access(db, m.acl_id, user_login)
         # 检查是否被文档模板引用
         doc_tmpl = db.execute(text(
             "SELECT 1 FROM documentmastertemplate "
@@ -437,73 +515,66 @@ class WorkflowService:
     def process_task(self, db: Session, ws: str, task_id: int = None,
                      action: str = "", comment: str = "", signature: str = "",
                      user_login: str = "", workflow_id: int = None,
-                     activity_step: int = None, task_num: int = None):
+                     activity_step: int = None, task_num: int = None,
+                     skip_potential_worker_check: bool = False):
         from sqlalchemy import text
 
-        # 权限检查：获取当前 task 状态和指派人
+        # 取实际 wf_id/step/num
         if workflow_id is not None and activity_step is not None and task_num is not None:
-            t_cur = db.execute(text(
-                "SELECT status, worker_login FROM task "
-                "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num LIMIT 1"
-            ), {"wf_id": workflow_id, "step": activity_step, "num": task_num}).first()
+            wf_id, step, num = workflow_id, activity_step, task_num
         else:
-            t_cur = db.execute(text(
-                "SELECT status, worker_login FROM task WHERE num = :id LIMIT 1"
+            t_info = db.execute(text(
+                "SELECT workflow_id, activity_step, num FROM task WHERE num = :id LIMIT 1"
             ), {"id": task_id}).first()
+            if not t_info:
+                raise EntityNotFoundException("TaskNotFoundException", str(task_id))
+            wf_id, step, num = t_info[0], t_info[1], t_info[2]
+
+        # 权限检查：获取当前 task 状态和指派人
+        t_cur = db.execute(text(
+            "SELECT status, worker_login FROM task "
+            "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num LIMIT 1"
+        ), {"wf_id": wf_id, "step": step, "num": num}).first()
         if not t_cur:
-            raise EntityNotFoundException("TaskNotFoundException", str(task_id or task_num))
+            raise EntityNotFoundException("TaskNotFoundException",
+                                          f"{wf_id}-{step}-{num}")
         cur_status, cur_worker = t_cur[0], t_cur[1]
         if cur_status != 1:
-            raise NotAllowedException("NotAllowedException")
+            raise NotAllowedException("NotAllowedException40")
         if cur_worker != user_login:
-            is_admin = db.scalar(text(
-                "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-            ), {"l": user_login}) or 0
-            if not is_admin:
-                raise NotAllowedException("NotAllowedException")
+            if not self._is_admin(db, user_login):
+                raise NotAllowedException("NotAllowedException40")
+
+        # isPotentialWorker 检查：用户必须是指定角色的成员
+        if not skip_potential_worker_check:
+            if not self._is_potential_worker(db, ws, user_login, wf_id, step, num):
+                raise NotAllowedException("NotAllowedException41")
 
         status = 2 if action.upper() == "APPROVE" else 3
-        if workflow_id is not None and activity_step is not None and task_num is not None:
-            db.execute(text(
-                "UPDATE task SET status = :s, closurecomment = :c, "
-                "signature = :sig, closuredate = NOW() "
-                "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
-            ), {"s": status, "c": comment, "sig": signature,
-                "wf_id": workflow_id, "step": activity_step, "num": task_num})
-            t_row = db.execute(text(
-                "SELECT workflow_id FROM task "
-                "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num LIMIT 1"
-            ), {"wf_id": workflow_id, "step": activity_step, "num": task_num}).first()
-        else:
-            db.execute(text(
-                "UPDATE task SET status = :s, closurecomment = :c, "
-                "signature = :sig, closuredate = NOW() "
-                "WHERE num = :id"
-            ), {"s": status, "c": comment, "sig": signature, "id": task_id})
-            t_row = db.execute(text(
-                "SELECT workflow_id FROM task WHERE num = :id LIMIT 1"
-            ), {"id": task_id}).first()
+        db.execute(text(
+            "UPDATE task SET status = :s, closurecomment = :c, "
+            "signature = :sig, closuredate = NOW() "
+            "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
+        ), {"s": status, "c": comment, "sig": signature,
+            "wf_id": wf_id, "step": step, "num": num})
 
-        # 拒绝时：将当前活动之前的 task 状态重置为 NOT_STARTED（0），支持重新审批
-        if action.upper() == "REJECT" and t_row:
-            wf_id = t_row[0]
-            if workflow_id is not None and activity_step is not None:
-                db.execute(text(
-                    "UPDATE task SET status = 0 "
-                    "WHERE workflow_id = :wf_id AND activity_step < :step AND status = 1"
-                ), {"wf_id": wf_id, "step": activity_step})
-            else:
-                # 回退模式：按 status 全部重置
-                db.execute(text(
-                    "UPDATE task SET status = 0 "
-                    "WHERE workflow_id = :wf_id AND num < :num AND status = 1"
-                ), {"wf_id": wf_id, "num": task_id})
+        # 审批通过时：推进活动（start next tasks）
+        if action.upper() == "APPROVE":
+            self._advance_activity(db, ws, wf_id, step, num, user_login)
+
+        # 拒绝时：relaunchWorkflow（abort + clone + new workflow）
+        relaunched = None
+        if action.upper() == "REJECT":
+            relaunched = self._relaunch_workflow(db, ws, wf_id, step, num)
+
         holder_type = None
         holder_reference = None
         holder_version = None
-        if t_row:
-            wf_id = t_row[0]
-            # 检查是否挂载到文档
+        if relaunched:
+            holder_type = relaunched.get("holderType")
+            holder_reference = relaunched.get("holderReference")
+            holder_version = relaunched.get("holderVersion")
+        else:
             doc = db.execute(text(
                 "SELECT documentmaster_id, version FROM documentrevision "
                 "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
@@ -518,7 +589,6 @@ class WorkflowService:
                     "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
                 ), {"st": new_status, "ws": ws, "dm": doc[0], "v": doc[1]})
             else:
-                # 检查是否挂载到零件
                 part = db.execute(text(
                     "SELECT partmaster_partnumber, version FROM partrevision "
                     "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
@@ -547,6 +617,192 @@ class WorkflowService:
             "holderVersion": holder_version,
             "workspaceId": ws,
         }
+
+    def _advance_activity(self, db: Session, ws: str, wf_id: int,
+                           step: int, completed_num: int, user_login: str):
+        """审批通过后推进活动：根据 tasksToComplete 启动下一批 tasks。"""
+        from sqlalchemy import text
+        # 获取当前活动的 tasksToComplete 配置
+        activity = db.execute(text(
+            "SELECT tasksToComplete FROM activity WHERE workflow_id = :wf_id AND step = :step"
+        ), {"wf_id": wf_id, "step": step}).first()
+        if not activity:
+            return
+        ttc = activity[0] or 0
+        # 统计当前活动已审批的任务数
+        approved_cnt = db.scalar(text(
+            "SELECT COUNT(*) FROM task "
+            "WHERE workflow_id = :wf_id AND activity_step = :step AND status = 2"
+        ), {"wf_id": wf_id, "step": step}) or 0
+        running_cnt = db.scalar(text(
+            "SELECT COUNT(*) FROM task "
+            "WHERE workflow_id = :wf_id AND activity_step = :step AND status = 1"
+        ), {"wf_id": wf_id, "step": step}) or 0
+        if approved_cnt >= ttc:
+            # 当前活动已完成，所有剩余 running task 重置，启动下一个活动
+            db.execute(text(
+                "UPDATE task SET status = 0 "
+                "WHERE workflow_id = :wf_id AND activity_step = :step AND status = 1"
+            ), {"wf_id": wf_id, "step": step})
+            self._start_activity(db, ws, wf_id, step + 1)
+        elif running_cnt == 0 and approved_cnt < ttc:
+            # 没有 running task 且未完成 — 启动足够数量的 task
+            pending = db.execute(text(
+                "SELECT num FROM task WHERE workflow_id = :wf_id "
+                "AND activity_step = :step AND status = 0 ORDER BY num LIMIT :limit"
+            ), {"wf_id": wf_id, "step": step, "limit": ttc - approved_cnt}).fetchall()
+            for (tnum,) in pending:
+                db.execute(text(
+                    "UPDATE task SET status = 1, startdate = NOW() "
+                    "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
+                ), {"wf_id": wf_id, "step": step, "num": tnum})
+
+    def _start_activity(self, db: Session, ws: str, wf_id: int, step: int):
+        """启动指定活动的第一个 batch tasks."""
+        from sqlalchemy import text
+        activity = db.execute(text(
+            "SELECT taskstocomplete FROM activity WHERE workflow_id = :wf_id AND step = :step"
+        ), {"wf_id": wf_id, "step": step}).first()
+        if not activity:
+            return
+        ttc = activity[0] or 1
+        pending = db.execute(text(
+            "SELECT num FROM task WHERE workflow_id = :wf_id "
+            "AND activity_step = :step AND status = 0 ORDER BY num LIMIT :limit"
+        ), {"wf_id": wf_id, "step": step, "limit": ttc}).fetchall()
+        for (tnum,) in pending:
+            db.execute(text(
+                "UPDATE task SET status = 1, startdate = NOW() "
+                "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
+            ), {"wf_id": wf_id, "step": step, "num": tnum})
+
+    def _relaunch_workflow(self, db: Session, ws: str,
+                            wf_id: int, step: int, num: int) -> dict | None:
+        """拒绝时 relaunch：abort 当前工作流 + 基于原 model 创建新工作流。"""
+        from sqlalchemy import text
+        # 查找当前工作流对应的 workflow model（通过活动匹配）
+        model_row = db.execute(text(
+            "SELECT DISTINCT wm.id, wm.workspace_id FROM workflowmodel wm "
+            "JOIN activitymodel am ON wm.id = am.workflowmodel_id AND wm.workspace_id = am.workspace_id "
+            "JOIN activity a ON am.step = a.step "
+            "WHERE a.workflow_id = :wf_id LIMIT 1"
+        ), {"wf_id": wf_id}).first()
+        if not model_row:
+            return None
+        model_id = model_row[0]
+        model_ws = model_row[1] or ws
+
+        # 查找 holder（文档/零件/工作区工作流）
+        holder_part = db.execute(text(
+            "SELECT partmaster_partnumber, version FROM partrevision "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        relinked = None
+        if holder_part:
+            pm, ver = holder_part[0], holder_part[1]
+            # 记录 aborted workflow 关联
+            db.execute(text(
+                "INSERT INTO part_aborted_workflow "
+                "(partmaster_partnumber, partmaster_workspace_id, "
+                "partrevision_version, workflow_id) "
+                "VALUES (:pn, :ws, :v, :wf_id)"
+            ), {"pn": pm, "ws": ws, "v": ver, "wf_id": wf_id})
+            # abort 当前工作流
+            db.execute(text(
+                "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
+            ), {"id": wf_id})
+            # 实例化新工作流
+            role_mapping = {}
+            old_workers = db.execute(text(
+                "SELECT DISTINCT worker_login, worker_workspace_id "
+                "FROM task WHERE workflow_id = :wf_id AND worker_login IS NOT NULL"
+            ), {"wf_id": wf_id}).fetchall()
+            for ow in old_workers:
+                if ow[0]:
+                    task_roles = db.execute(text(
+                        "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
+                        "JOIN activitymodel am ON tm.activitymodel_id = am.id "
+                        "WHERE am.workflowmodel_id = :mid AND am.workspace_id = :mws "
+                        "AND tm.role_name IS NOT NULL"
+                    ), {"mid": model_id, "mws": model_ws}).fetchall()
+                    for tr in task_roles:
+                        role_key = f"{tr[1]}:{tr[0]}"
+                        role_mapping[role_key] = ow[0]
+            new_inst = self.instantiate_workflow(db, ws, model_id, role_mapping)
+            new_wf_id = new_inst["workflowId"]
+            # 重关联零件
+            db.execute(text(
+                "UPDATE partrevision SET workflow_id = :new_id "
+                "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :v"
+            ), {"new_id": new_wf_id, "ws": ws, "pn": pm, "v": ver})
+            relinked = {"holderType": "part", "holderReference": pm, "holderVersion": ver}
+        else:
+            holder_doc = db.execute(text(
+                "SELECT documentmaster_id, version FROM documentrevision "
+                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+            ), {"wf_id": wf_id, "ws": ws}).first()
+            if holder_doc:
+                dm, ver = holder_doc[0], holder_doc[1]
+                db.execute(text(
+                    "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
+                ), {"id": wf_id})
+                role_mapping = {}
+                old_workers = db.execute(text(
+                    "SELECT DISTINCT worker_login, worker_workspace_id "
+                    "FROM task WHERE workflow_id = :wf_id AND worker_login IS NOT NULL"
+                ), {"wf_id": wf_id}).fetchall()
+                for ow in old_workers:
+                    if ow[0]:
+                        task_roles = db.execute(text(
+                            "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
+                            "JOIN activitymodel am ON tm.activitymodel_id = am.id "
+                            "WHERE am.workflowmodel_id = :mid AND am.workspace_id = :mws "
+                            "AND tm.role_name IS NOT NULL"
+                        ), {"mid": model_id, "mws": model_ws}).fetchall()
+                        for tr in task_roles:
+                            role_key = f"{tr[1]}:{tr[0]}"
+                            role_mapping[role_key] = ow[0]
+                new_inst = self.instantiate_workflow(db, ws, model_id, role_mapping)
+                new_wf_id = new_inst["workflowId"]
+                db.execute(text(
+                    "UPDATE documentrevision SET workflow_id = :new_id "
+                    "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
+                ), {"new_id": new_wf_id, "ws": ws, "dm": dm, "v": ver})
+                relinked = {"holderType": "document", "holderReference": dm,
+                            "holderVersion": ver}
+            else:
+                ww = db.execute(text(
+                    "SELECT id FROM workspace_workflow "
+                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+                ), {"wf_id": wf_id, "ws": ws}).first()
+                if ww:
+                    db.execute(text(
+                        "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
+                    ), {"id": wf_id})
+                    role_mapping = {}
+                    old_workers = db.execute(text(
+                        "SELECT DISTINCT worker_login, worker_workspace_id "
+                        "FROM task WHERE workflow_id = :wf_id AND worker_login IS NOT NULL"
+                    ), {"wf_id": wf_id}).fetchall()
+                    for ow in old_workers:
+                        if ow[0]:
+                            task_roles = db.execute(text(
+                                "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
+                                "JOIN activitymodel am ON tm.activitymodel_id = am.id "
+                                "WHERE am.workflowmodel_id = :mid AND am.workspace_id = :mws "
+                                "AND tm.role_name IS NOT NULL"
+                            ), {"mid": model_id, "mws": model_ws}).fetchall()
+                            for tr in task_roles:
+                                role_key = f"{tr[1]}:{tr[0]}"
+                                role_mapping[role_key] = ow[0]
+                    new_inst = self.instantiate_workflow(db, ws, model_id, role_mapping)
+                    new_wf_id = new_inst["workflowId"]
+                    db.execute(text(
+                        "UPDATE workspace_workflow SET workflow_id = :new_id WHERE id = :wwid"
+                    ), {"new_id": new_wf_id, "wwid": ww[0]})
+                    relinked = {"holderType": "workspace-workflow",
+                                "holderReference": ww[0]}
+        return relinked
 
     def approve_task_on_workspace_workflow(self, db: Session, ws: str,
                                             task_id: int, comment: str,

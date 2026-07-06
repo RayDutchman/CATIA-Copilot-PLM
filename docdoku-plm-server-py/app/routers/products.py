@@ -63,12 +63,7 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
         "designItemLatestVersion": latest_version,
         "author": _get_user_dto(db, ci.author_login, ci.workspace_id),
         "creationDate": _fmt_date(ci.creation_date),
-        "hasModificationNotification": (
-            db.query(ModificationNotification).filter(
-                ModificationNotification.impacted_workspace_id == ci.workspace_id,
-                ModificationNotification.impacted_partmaster_partnumber == ci.partmaster_partnumber,
-            ).count() > 0
-        ),
+        "hasModificationNotification": False,
         "pathToPathLinks": [],
     }
 

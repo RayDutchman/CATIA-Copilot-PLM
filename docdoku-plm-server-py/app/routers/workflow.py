@@ -32,13 +32,22 @@ def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
     _check_workspace_access(db, ws, current_user.login)
     w = workflow_service.get_instance(db, ws, workflow_id)
     activities = db.query(Activity).filter(
-        Activity.workflow_id == workflow_id).all()
-    activity_dicts = [{
-        "step": a.step,
-        "type": a.dtype,
-        "lifeCycleState": a.lifecyclestate,
-        "tasksToComplete": a.taskstocomplete,
-    } for a in activities]
+        Activity.workflow_id == workflow_id).order_by(Activity.step).all()
+    activity_dicts = []
+    for a in activities:
+        tasks = db.execute(text(
+            "SELECT t.* FROM task t "
+            "WHERE t.workflow_id = :wf_id AND t.activity_step = :step "
+            "ORDER BY t.num"
+        ), {"wf_id": workflow_id, "step": a.step}).fetchall()
+        task_dicts = [workflow_service._task_row_to_dict(t, db) for t in tasks]
+        activity_dicts.append({
+            "step": a.step,
+            "type": a.dtype,
+            "lifeCycleState": a.lifecyclestate,
+            "tasksToComplete": a.taskstocomplete,
+            "tasks": task_dicts,
+        })
     return {
         "id": w.id,
         "abortedDate": w.aborteddate.isoformat() + "Z" if w.aborteddate else None,

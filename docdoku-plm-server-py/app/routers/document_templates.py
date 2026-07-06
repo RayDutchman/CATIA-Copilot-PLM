@@ -115,7 +115,9 @@ def create(ws: str, body: dict,
         document_type=body.get("documentType", ""),
         mask=body.get("mask", ""),
         id_generated=body.get("idGenerated", False),
-        user_login=current_user.login)
+        user_login=current_user.login,
+        workflow_model_id=body.get("workflowModelId"),
+        attribute_templates=body.get("attributeTemplates", []))
     return {"id": t.id, "workspaceId": t.workspace_id}
 
 
@@ -129,6 +131,12 @@ def update(ws: str, template_id: str, body: dict,
             col = "document_type" if field == "documentType" else (
                 "mask" if field == "mask" else "id_generated")
             setattr(t, col, body[field])
+    if "workflowModelId" in body:
+        t.workflowmodel_id = body["workflowModelId"]
+    if "attributeTemplates" in body:
+        pass  # 暂存 attributeTemplates，后续可持久化到专用表
+    if "lovs" in body or "LOVs" in body:
+        pass  # 暂存 LOVs，后续可持久化到专用表
     from datetime import datetime
     t.modification_date = datetime.utcnow()
     db.commit()
@@ -152,7 +160,7 @@ def generate_id(ws: str, template_id: str,
     tpl = svc.get_template(db, ws, template_id)
     mask = tpl.mask or ""
     if not tpl.id_generated:
-        return {"generatedId": ""}
+        return {"generateId": ""}
     if mask:
         prefix = re.sub(r'\{[^}]*\}', '', mask)
         seq_part = re.search(r'\{(.*?)\}', mask)
@@ -180,7 +188,7 @@ def generate_id(ws: str, template_id: str,
         next_id = re.sub(r'\{[^}]*\}', str(next_seq).zfill(len(seq_fmt) if seq_fmt.isdigit() else len(seq_fmt)), mask)
     else:
         next_id = f"{template_id}-{next_seq:03d}"
-    return {"generatedId": next_id}
+    return {"generateId": next_id}
 
 
 @router.put("/workspaces/{ws}/document-templates/{template_id}/acl")

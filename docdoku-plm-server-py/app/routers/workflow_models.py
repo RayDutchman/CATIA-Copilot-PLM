@@ -77,7 +77,8 @@ def _model_to_dict(m, db: Session = None) -> dict:
 @router.get(f"{PREFIX}/workflow-models/", include_in_schema=False)
 def list_models(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
-    return [_model_to_dict(m, db) for m in workflow_service.list_models(db, ws)]
+    return [_model_to_dict(m, db) for m in
+            workflow_service.list_models(db, ws, current_user.login)]
 
 
 @router.get(f"{PREFIX}/workflow-models/{{model_id}}", response_model=WorkflowModelDTO)
@@ -105,7 +106,8 @@ def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_d
     activity_models = body.get("activityModels")
     m = workflow_service.update_model(db, ws, model_id,
                                        body.get("finalLifecycleState", ""),
-                                       activity_models=activity_models)
+                                       activity_models=activity_models,
+                                       user_login=current_user.login)
     result = _model_to_dict(m, db)
     if activity_models:
         result["activityModels"] = activity_models
@@ -116,7 +118,7 @@ def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_d
 @router.delete(f"{PREFIX}/workflow-models/{{model_id}}/", status_code=204, include_in_schema=False)
 def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
-    workflow_service.delete_model(db, ws, model_id)
+    workflow_service.delete_model(db, ws, model_id, user_login=current_user.login)
 
 
 @router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl", response_model=WorkflowModelDTO)

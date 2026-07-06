@@ -125,7 +125,7 @@ def _doc_to_dict(db, rev, current_user_login=None):
         "path": rev.location_completepath,
         "routePath": None,
         "acl": acl_data or {},
-        "publicShared": False, "attributesLocked": False,
+        "publicShared": bool(getattr(rev, "public_shared", False)), "attributesLocked": False,
         "commentLink": None, "iterationSubscription": iter_sub is not None,
         "stateSubscription": state_sub is not None,
         "releaseAuthor": None,
@@ -148,6 +148,29 @@ def _doc_to_dict(db, rev, current_user_login=None):
         )
     for k in ("description",):
         dict_fields.setdefault(k, "")
+    # 计算 lifeCycleState（来自关联的 workflow）
+    wf_id = getattr(rev, "workflow_id", None)
+    if wf_id and db:
+        wf_row = db.execute(sql_text(
+            "SELECT id, finallifecyclestate FROM workflow WHERE id=:wid"
+        ), {"wid": wf_id}).first()
+        if wf_row:
+            act = db.execute(sql_text(
+                "SELECT lifecyclestate FROM activity "
+                "WHERE workflow_id=:wid AND dtype!='org.docdoku.plm.server.core.workflow.ParallelActivity' "
+                "ORDER BY step ASC"
+            ), {"wid": wf_id}).first()
+            lcs = act[0] if act else wf_row[1]
+            dict_fields["lifeCycleState"] = lcs
+    dict_fields.setdefault("lifeCycleState", None)
+    # 查询标签
+    if db:
+        tag_rows = db.execute(sql_text(
+            "SELECT tag_label FROM documentrevision_tag "
+            "WHERE documentmaster_workspace_id=:ws AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"
+        ), {"ws": rev.workspace_id, "did": rev.documentmaster_id, "ver": rev.version}).fetchall()
+        dict_fields["tags"] = [tr[0] for tr in tag_rows]
     return dict_fields
 
 
@@ -180,13 +203,53 @@ def aborted_workflows(ws: str, doc_key: str,
     if not workflow_id:
         return []
     rows = db.execute(sql_text(
-        "SELECT id, aborteddate FROM workflow WHERE id=:wid AND aborteddate IS NOT NULL"
+        "SELECT id, aborteddate, finallifecyclestate FROM workflow WHERE id=:wid AND aborteddate IS NOT NULL"
     ), {"wid": workflow_id}).fetchall()
     result = []
     for r in rows:
+        activities = db.execute(sql_text(
+            "SELECT step, dtype, lifecyclestate, taskstocomplete FROM activity "
+            "WHERE workflow_id=:wid ORDER BY step ASC"
+        ), {"wid": r[0]}).fetchall()
+        activity_list = []
+        for a in activities:
+            tasks = db.execute(sql_text(
+                "SELECT num, title, instructions, status, worker_login, "
+                "worker_workspace_id, duration, signature, closuredate, "
+                "closurecomment, startdate, targetiteration "
+                "FROM task WHERE workflow_id=:wid AND activity_step=:step "
+                "ORDER BY num ASC"
+            ), {"wid": r[0], "step": a[0]}).fetchall()
+            task_list = []
+            for t in tasks:
+                worker = None
+                if t[4]:
+                    worker = _get_user_info(db, t[4], t[5] or ws)
+                task_list.append({
+                    "num": t[0],
+                    "title": t[1],
+                    "instructions": t[2],
+                    "status": t[3],
+                    "worker": worker,
+                    "duration": t[6],
+                    "signature": t[7],
+                    "closureDate": str(t[8]) if t[8] else None,
+                    "closureComment": t[9],
+                    "startDate": str(t[10]) if t[10] else None,
+                    "targetIteration": t[11],
+                })
+            activity_list.append({
+                "step": a[0],
+                "type": a[1],
+                "lifeCycleState": a[2],
+                "tasksToComplete": a[3],
+                "tasks": task_list,
+            })
         result.append({
             "id": r[0],
             "abortedDate": str(r[1]) if r[1] else None,
+            "finalLifeCycleState": r[2],
+            "activities": activity_list,
         })
     return result
 
@@ -342,6 +405,46 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
     target_it = next((it for it in rev.iterations if it.iteration == doc_iter), None)
     if target_it is None:
         raise HTTPException(404, "Iteration not found after update")
+    # 查询 attachedFiles
+    attached_rows = db.execute(sql_text(
+        "SELECT attachedfile_fullname FROM documentiteration_binres "
+        "WHERE workspace_id=:ws AND documentmaster_id=:did "
+        "AND documentrevision_version=:ver AND iteration=:iter"
+    ), {"ws": ws, "did": doc_id, "ver": ver, "iter": doc_iter}).fetchall()
+    attached_files = []
+    for ar in attached_rows:
+        from app.models.part import BinaryResource
+        br = db.query(BinaryResource).filter(
+            BinaryResource.full_name == ar[0]).first()
+        if br:
+            attached_files.append({
+                "fullName": br.full_name,
+                "contentLength": br.content_length or 0,
+                "lastModified": str(br.last_modified) if br.last_modified else None,
+            })
+        else:
+            attached_files.append({"fullName": ar[0]})
+    # 查询 linkedDocuments
+    linked_rows = db.execute(sql_text(
+        "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
+        "dl.target_docrevision_version, dl.commentdata "
+        "FROM documentiteration_documentlink didl "
+        "JOIN documentlink dl ON didl.documentlink_id = dl.id "
+        "WHERE didl.workspace_id=:ws AND didl.documentmaster_id=:did "
+        "AND didl.documentrevision_version=:ver AND didl.iteration=:iter"
+    ), {"ws": ws, "did": doc_id, "ver": ver, "iter": doc_iter}).fetchall()
+    linked_documents = []
+    for lr in linked_rows:
+        try:
+            linked_rev = svc.get_revision(db, lr[1], lr[2], lr[3])
+            ld = _doc_to_dict(db, linked_rev, current_user.login)
+            ld["commentLink"] = lr[4] or ""
+            linked_documents.append(ld)
+        except HTTPException:
+            linked_documents.append({
+                "workspaceId": lr[1], "documentMasterId": lr[2],
+                "version": lr[3], "commentLink": lr[4] or "",
+            })
     it_dict = {
         "id": f"{rev.documentmaster_id}-{rev.version}-{doc_iter}",
         "iteration": doc_iter,
@@ -355,8 +458,8 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
         "modificationDate": str(target_it.modification_date) if target_it.modification_date else None,
         "checkInDate": str(target_it.check_in_date) if target_it.check_in_date else None,
         "instanceAttributes": [],
-        "attachedFiles": [],
-        "linkedDocuments": [],
+        "attachedFiles": attached_files,
+        "linkedDocuments": linked_documents,
         "author": _get_user_info(db, target_it.author_login, target_it.workspace_id),
         "documentRevision": {
             "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
@@ -421,14 +524,34 @@ def obsolete(ws: str, doc_key: str,
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/newVersion")
 @router.put("/workspaces/{ws}/documents/{doc_key}/newVersion/", include_in_schema=False)
-def new_version(ws: str, doc_key: str,
+def new_version(ws: str, doc_key: str, body: dict = {},
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
+    title = body.get("title")
+    description = body.get("description")
+    workflow_model_id = body.get("workflowModelId")
+    acl = body.get("acl", {})
+    user_entries = acl.get("userEntriesMap") if acl else None
+    user_group_entries = acl.get("userGroupEntriesMap") if acl else None
+    role_mapping = body.get("roleMapping")
+    user_role_mapping = {}
+    group_role_mapping = {}
+    if role_mapping:
+        for rm in role_mapping:
+            role_name = rm.get("roleName", "")
+            if role_name:
+                user_role_mapping[role_name] = rm.get("userLogins", [])
+                group_role_mapping[role_name] = rm.get("groupIds", [])
     old_rev = svc.get_revision(db, ws, doc_id, ver)
-    new_rev = svc.create_new_version(db, ws, doc_id, ver, current_user.login)
-    return [_doc_to_dict(db, old_rev, current_user.login),
-            _doc_to_dict(db, new_rev, current_user.login)]
+    new_rev = svc.create_new_version(db, ws, doc_id, ver, current_user.login,
+                                     title=title, description=description,
+                                     workflow_model_id=workflow_model_id,
+                                     user_entries=user_entries,
+                                     user_group_entries=user_group_entries)
+    old_dict = _doc_to_dict(db, old_rev, current_user.login)
+    new_dict = _doc_to_dict(db, new_rev, current_user.login)
+    return [old_dict, new_dict]
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/tags")
@@ -453,7 +576,22 @@ def add_tag(ws: str, doc_key: str, body: dict,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return svc.add_tag(db, ws, doc_id, ver, body.get("tag", ""))
+    raw_tags = body.get("tags", [])
+    if raw_tags and isinstance(raw_tags[0], dict):
+        new_labels = [t.get("label", "") for t in raw_tags if t.get("label")]
+    else:
+        new_labels = raw_tags
+    if not new_labels:
+        return _doc_to_dict(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
+    existing_rows = db.execute(sql_text(
+        "SELECT tag_label FROM documentrevision_tag "
+        "WHERE documentmaster_workspace_id=:ws AND documentmaster_id=:did "
+        "AND documentrevision_version=:ver"
+    ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    existing_labels = [r[0] for r in existing_rows]
+    merged = list(dict.fromkeys(existing_labels + new_labels))
+    svc.set_tags(db, ws, doc_id, ver, merged)
+    return _doc_to_dict(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
 
 
 @router.delete("/workspaces/{ws}/documents/{doc_key}/tags/{tag_label}")
@@ -486,7 +624,7 @@ def move_document(ws: str, doc_key: str, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    folder_path = body.get("parentFolder", "")
+    folder_path = body.get("path", "")
     return _doc_to_dict(db, svc.move_document(db, ws, doc_id, ver, folder_path), current_user.login)
 
 

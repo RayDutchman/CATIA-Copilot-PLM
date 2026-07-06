@@ -86,7 +86,11 @@ def create_workspace_config(ws: str, body: dict,
     """workspace 级创建配置，CI ID 从请求体获取（对应 Java POST /workspaces/{ws}/product-configurations）。"""
     ci_id = body.get("configurationItemId", "")
     cfg = svc.create_config(db, ws, ci_id, body.get("name", ""),
-                             body.get("description", ""), current_user.login)
+                              body.get("description", ""), current_user.login,
+                              body.get("substituteLinks"),
+                              body.get("optionalUsageLinks"),
+                              body.get("userEntries"),
+                              body.get("groupEntries"))
     return {"id": cfg.id, "name": cfg.name}
 
 
@@ -169,7 +173,11 @@ def create_config(ws: str, ci_id: str, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     cfg = svc.create_config(db, ws, ci_id, body.get("name", ""),
-                             body.get("description", ""), current_user.login)
+                              body.get("description", ""), current_user.login,
+                              body.get("substituteLinks"),
+                              body.get("optionalUsageLinks"),
+                              body.get("userEntries"),
+                              body.get("groupEntries"))
     return {"id": cfg.id, "name": cfg.name}
 
 
@@ -207,3 +215,11 @@ def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
         config.acl_id = new_acl_id
         db.commit()
     return {"aclId": new_acl_id}
+
+
+@router.post("/workspaces/{ws}/products/{pid}/path-to-path-links", status_code=201)
+def create_path_to_path_link(ws: str, pid: str, body: dict,
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    """创建路径间链接 stub。"""
+    return {"id": -1, "status": "stub"}

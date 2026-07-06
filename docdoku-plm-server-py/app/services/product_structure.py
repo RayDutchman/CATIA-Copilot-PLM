@@ -1,6 +1,5 @@
 """产品结构服务：ConfigurationItem CRUD + ComponentDTO 递归 + decodePath。"""
 from datetime import datetime
-from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.models.product import (
@@ -10,7 +9,11 @@ from app.models.product import (
 from app.models.part import PartMaster, PartRevision, PartUsageLink
 from app.models.auth import Account
 from app.models.notification import ModificationNotification
-from app.core.exceptions import EntityAlreadyExistsException, EntityConstraintException
+from app.core.exceptions import (
+    EntityAlreadyExistsException, EntityConstraintException,
+    EntityNotFoundException,
+)
+from app.services.acl_helper import apply_acl
 
 
 class ProductStructureService:
@@ -30,7 +33,7 @@ class ProductStructureService:
             PartMaster.number == part_number,
         ).first()
         if master is None:
-            raise HTTPException(404, f"未找到零件\"{part_number}\"")
+            raise EntityNotFoundException("PartMasterNotFoundException", part_number)
         ci = ConfigurationItem(
             workspace_id=ws, id=ci_id, description=description,
             creation_date=datetime.utcnow(),
@@ -48,7 +51,7 @@ class ProductStructureService:
             ConfigurationItem.workspace_id == ws,
             ConfigurationItem.id == ci_id).first()
         if ci is None:
-            raise HTTPException(404, "Configuration item not found")
+            raise EntityNotFoundException("ConfigurationItemNotFoundException", ci_id)
         return ci
 
     def delete_ci(self, db: Session, ws: str, ci_id: str):
@@ -84,7 +87,7 @@ class ProductStructureService:
                 PartMaster.number == design_item,
             ).first()
             if master is None:
-                raise HTTPException(404, f"未找到零件\"{design_item}\"")
+                raise EntityNotFoundException("PartMasterNotFoundException", design_item)
             ci.partmaster_partnumber = design_item
             ci.partmaster_workspace_id = ws
         db.commit()
@@ -242,7 +245,9 @@ class ProductStructureService:
 
     def create_baseline(self, db: Session, ws: str, ci_id: str, name: str,
                         desc: str, bl_type: int, user_login: str,
-                        baselined_parts: list | None = None):
+                        baselined_parts: list | None = None,
+                        substitute_links: list | None = None,
+                        optional_usage_links: list | None = None):
         ci = self.get_ci(db, ws, ci_id)
         # 创建 PartCollection
         db.execute(text(
@@ -268,6 +273,24 @@ class ProductStructureService:
                 ), {"ws": ws, "pn": bp.get("partNumber", ""),
                     "ver": bp.get("version", "A"), "iter": bp.get("iteration", 1),
                     "pcid": pc_id})
+        if substitute_links:
+            for sl in substitute_links:
+                db.execute(text(
+                    "INSERT INTO partsubstitutelink "
+                    "(component_workspace_id, component_partnumber, "
+                    "substitute_workspace_id, substitute_partnumber) "
+                    "VALUES (:cws, :cpn, :sws, :spn)"
+                ), {"cws": ws, "cpn": sl.get("partNumber", ""),
+                    "sws": ws, "spn": sl.get("substitutePartNumber", "")})
+        if optional_usage_links:
+            for ol in optional_usage_links:
+                db.execute(text(
+                    "UPDATE partusagelink SET optional = true "
+                    "WHERE component_workspace_id = :ws "
+                    "AND component_partnumber = :pn "
+                    "AND component_partversion = :ver"
+                ), {"ws": ws, "pn": ol.get("partNumber", ""),
+                    "ver": ol.get("version", "A")})
         db.commit(); db.refresh(bl)
         return bl
 
@@ -275,21 +298,48 @@ class ProductStructureService:
         bl = db.query(ProductBaseline).filter(
             ProductBaseline.id == bl_id).first()
         if bl is None:
-            raise HTTPException(404, "Baseline not found")
+            raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
         db.delete(bl); db.commit()
 
     # ── Configuration ──
 
     def create_config(self, db: Session, ws: str, ci_id: str, name: str,
-                       desc: str, user_login: str):
+                       desc: str, user_login: str,
+                       substitute_links: list | None = None,
+                       optional_usage_links: list | None = None,
+                       acl_user_entries: dict | None = None,
+                       acl_group_entries: dict | None = None):
         ci = self.get_ci(db, ws, ci_id)
+        acl_id = None
+        if acl_user_entries or acl_group_entries:
+            acl_id = apply_acl(db, None, acl_user_entries or {}, acl_group_entries or {})
         cfg = ProductConfiguration(
             name=name, description=desc,
             configurationitem_workspace_id=ws,
             configurationitem_id=ci_id,
             author_workspace_id=ws, author_login=user_login,
+            acl_id=acl_id,
             creation_date=datetime.utcnow())
-        db.add(cfg); db.commit(); db.refresh(cfg)
+        db.add(cfg); db.flush()
+        if substitute_links:
+            for sl in substitute_links:
+                db.execute(text(
+                    "INSERT INTO partsubstitutelink "
+                    "(component_workspace_id, component_partnumber, "
+                    "substitute_workspace_id, substitute_partnumber) "
+                    "VALUES (:cws, :cpn, :sws, :spn)"
+                ), {"cws": ws, "cpn": sl.get("partNumber", ""),
+                    "sws": ws, "spn": sl.get("substitutePartNumber", "")})
+        if optional_usage_links:
+            for ol in optional_usage_links:
+                db.execute(text(
+                    "UPDATE partusagelink SET optional = true "
+                    "WHERE component_workspace_id = :ws "
+                    "AND component_partnumber = :pn "
+                    "AND component_partversion = :ver"
+                ), {"ws": ws, "pn": ol.get("partNumber", ""),
+                    "ver": ol.get("version", "A")})
+        db.commit(); db.refresh(cfg)
         return cfg
 
     def list_configs(self, db: Session, ws: str, ci_id=None):
@@ -303,7 +353,7 @@ class ProductStructureService:
         cfg = db.query(ProductConfiguration).filter(
             ProductConfiguration.id == cfg_id).first()
         if cfg is None:
-            raise HTTPException(404, "Configuration not found")
+            raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
         db.delete(cfg); db.commit()
 
     # ── Instance ──
@@ -343,7 +393,7 @@ class ProductStructureService:
             ProductInstanceMaster.configurationitem_id == ci_id,
             ProductInstanceMaster.serialnumber == serial).first()
         if inst is None:
-            raise HTTPException(404, "Instance not found")
+            raise EntityNotFoundException("ProductInstanceMasterNotFoundException", serial)
         db.execute(text("DELETE FROM productinstanceiteration WHERE "
             "workspace_id=:ws AND configurationitem_id=:ci AND "
             "prdinstancemaster_serialnumber=:sn"),

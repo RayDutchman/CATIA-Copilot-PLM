@@ -141,7 +141,9 @@ def count_checked_out(ws: str,
 def search_doc_revs(ws: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
-    return [_doc_to_dict(db, r, current_user.login) for r in svc.search(db, ws, doc_id=q)]
+    return [{"workspaceId": r.workspace_id, "docMasterId": r.documentmaster_id,
+             "title": r.title, "version": r.version}
+            for r in svc.search(db, ws, doc_id=q)]
 
 
 @router.post("/workspaces/{ws}/documents", status_code=201, response_model=DocumentRevisionDTO)

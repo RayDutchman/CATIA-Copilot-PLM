@@ -36,7 +36,7 @@ class DocumentService:
                    DocumentRevision.version).offset(start).limit(length).all()
 
     def create_document(self, db, ws, doc_id, title, user_login,
-                        folder_path=None):
+                        folder_path=None, template_id=None, workflow_model_id=None):
         existing = db.query(DocumentMaster).filter(
             DocumentMaster.workspace_id == ws,
             DocumentMaster.id == doc_id,
@@ -49,6 +49,29 @@ class DocumentService:
         master = DocumentMaster(
             id=doc_id, workspace_id=ws, creation_date=now,
             author_workspace_id=ws, author_login=user_login)
+        if template_id:
+            tpl = self.get_template(db, ws, template_id)
+            if tpl.id_generated and tpl.mask:
+                import re
+                prefix = re.sub(r'\{[^}]*\}', '', tpl.mask)
+                like_pattern = re.escape(prefix) + '%'
+                rows = db.execute(sql_text(
+                    "SELECT id FROM documentmaster WHERE workspace_id=:ws AND id LIKE :pat"
+                ), {"ws": ws, "pat": like_pattern}).fetchall()
+                max_seq = 0
+                for r in rows:
+                    try:
+                        seq_num = int(r[0][len(prefix):])
+                        max_seq = max(max_seq, seq_num)
+                    except ValueError:
+                        pass
+                next_seq = max_seq + 1
+                doc_id = re.sub(r'\{[^}]*\}', str(next_seq).zfill(3), tpl.mask)
+                master.id = doc_id
+            master.type = tpl.document_type
+            master.attributes_locked = tpl.attributes_locked
+        else:
+            master.type = ""
         db.add(master); db.flush()
         rev = DocumentRevision(
             workspace_id=ws, documentmaster_id=doc_id, version="A",
@@ -57,13 +80,20 @@ class DocumentService:
             author_workspace_id=ws, author_login=user_login,
             checkout_user_workspace_id=ws, checkout_user_login=user_login,
             check_out_date=now)
+        if workflow_model_id:
+            rev.workflow_id = workflow_model_id
         db.add(rev); db.flush()
         it = DocumentIteration(
             workspace_id=ws, documentmaster_id=doc_id,
             documentrevision_version="A", iteration=1,
             creation_date=now, author_workspace_id=ws,
             author_login=user_login)
-        db.add(it)
+        db.add(it); db.flush()
+
+        if template_id:
+            self._copy_template_instance_attrs(db, ws, template_id, doc_id)
+            self._copy_template_files(db, ws, template_id, doc_id)
+
         db.commit(); db.refresh(rev)
         return rev
 
@@ -298,6 +328,165 @@ class DocumentService:
                 documentrevision_version=ver, iteration=dst_iter,
                 attachedfile_fullname=new_full))
 
+    _ATTR_TYPE_MAP = {
+        0: "InstanceTextAttribute",
+        1: "InstanceNumberAttribute",
+        2: "InstanceDateAttribute",
+        3: "InstanceBooleanAttribute",
+        4: "InstanceURLAttribute",
+        5: "InstanceLongTextAttribute",
+    }
+
+    def _copy_template_instance_attrs(self, db, ws, template_id, doc_id):
+        rows = db.execute(sql_text(
+            "SELECT iat.id, iat.name, iat.mandatory, iat.locked, iat.attributetype "
+            "FROM instanceattributetemplate iat "
+            "JOIN documentmastertemplate_attr dta "
+            "  ON dta.instanceattributetemplate_id = iat.id "
+            "WHERE dta.workspace_id=:ws AND dta.documentmastertemplate_id=:tid "
+            "ORDER BY dta.attr_order"
+        ), {"ws": ws, "tid": template_id}).fetchall()
+        for order, row in enumerate(rows):
+            attr_type = row[4] if row[4] is not None else 0
+            dtype = self._ATTR_TYPE_MAP.get(attr_type, "InstanceTextAttribute")
+            result = db.execute(sql_text(
+                "INSERT INTO instanceattribute "
+                "(dtype, name, mandatory, locked) "
+                "VALUES (:dtype, :name, :mand, :locked) RETURNING id"
+            ), {"dtype": dtype, "name": row[1],
+                "mand": row[2] or False, "locked": row[3] or False})
+            attr_id = result.fetchone()[0]
+            db.execute(sql_text(
+                "INSERT INTO documentiteration_attribute "
+                "(workspace_id, documentmaster_id, documentrevision_version, "
+                "iteration, instanceattribute_id, attribute_order) "
+                "VALUES (:ws, :did, :ver, :iter, :aid, :order)"
+            ), {"ws": ws, "did": doc_id, "ver": "A", "iter": 1,
+                "aid": attr_id, "order": order})
+
+    def _copy_template_files(self, db, ws, template_id, doc_id):
+        import shutil
+        from pathlib import Path
+        from app.core.config import settings
+        from app.models.part import BinaryResource
+        rows = db.execute(sql_text(
+            "SELECT attachedfile_fullname FROM documentmastertemplate_binres "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id}).fetchall()
+        vault_root = Path(settings.VAULT_PATH)
+        for row in rows:
+            old_full = row[0]
+            filename = old_full.rsplit("/", 1)[-1] if "/" in old_full else old_full
+            new_full = f"{ws}/documents/{doc_id}/A/1/{filename}"
+            old_br = db.query(BinaryResource).filter(
+                BinaryResource.full_name == old_full).first()
+            if old_br:
+                existing = db.query(BinaryResource).filter(
+                    BinaryResource.full_name == new_full).first()
+                if existing is None:
+                    db.add(BinaryResource(
+                        full_name=new_full, dtype="BinaryResource",
+                        content_length=old_br.content_length,
+                        last_modified=datetime.utcnow(),
+                        quality=old_br.quality,
+                    ))
+                    db.flush()
+                try:
+                    old_path = vault_root / old_full
+                    new_path = vault_root / new_full
+                    if old_path.exists() and not new_path.exists():
+                        new_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(old_path), str(new_path))
+                except Exception:
+                    pass
+            db.execute(document_iteration_binres.insert().values(
+                workspace_id=ws, documentmaster_id=doc_id,
+                documentrevision_version="A", iteration=1,
+                attachedfile_fullname=new_full))
+
+    def _copy_linked_documents(self, db, ws, doc_id, src_ver, src_iter,
+                               dst_ver, dst_iter):
+        rows = db.execute(sql_text(
+            "SELECT dl.id, dl.commentdata, dl.target_documentmaster_id, "
+            "dl.target_docrevision_version, dl.target_workspace_id "
+            "FROM documentlink dl "
+            "JOIN documentiteration_documentlink didl ON didl.documentlink_id = dl.id "
+            "WHERE didl.workspace_id=:ws AND didl.documentmaster_id=:did "
+            "AND didl.documentrevision_version=:ver AND didl.iteration=:iter"
+        ), {"ws": ws, "did": doc_id, "ver": src_ver, "iter": src_iter}).fetchall()
+        for row in rows:
+            existing = db.execute(sql_text(
+                "SELECT id FROM documentlink "
+                "WHERE target_workspace_id=:tws AND target_documentmaster_id=:tdm "
+                "AND target_docrevision_version=:tdv AND commentdata=:cmt "
+                "LIMIT 1"
+            ), {"tws": row[4], "tdm": row[2], "tdv": row[3],
+                "cmt": row[1] or ""}).first()
+            if existing:
+                link_id = existing[0]
+            else:
+                result = db.execute(sql_text(
+                    "INSERT INTO documentlink "
+                    "(commentdata, target_documentmaster_id, "
+                    "target_docrevision_version, target_workspace_id) "
+                    "VALUES (:cmt, :tdm, :tdv, :tws) RETURNING id"
+                ), {"cmt": row[1] or "", "tdm": row[2],
+                    "tdv": row[3], "tws": row[4]})
+                link_id = result.fetchone()[0]
+            # 检查目标迭代是否已存在同 link 引用，避免重复插入
+            dup = db.execute(sql_text(
+                "SELECT 1 FROM documentiteration_documentlink "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:iter "
+                "AND documentlink_id=:lid LIMIT 1"
+            ), {"ws": ws, "did": doc_id, "ver": dst_ver,
+                "iter": dst_iter, "lid": link_id}).first()
+            if not dup:
+                db.execute(sql_text(
+                    "INSERT INTO documentiteration_documentlink "
+                    "(workspace_id, documentmaster_id, documentrevision_version, "
+                    "iteration, documentlink_id) "
+                    "VALUES (:ws, :did, :ver, :iter, :lid)"
+                ), {"ws": ws, "did": doc_id, "ver": dst_ver,
+                    "iter": dst_iter, "lid": link_id})
+
+    def _copy_instance_attributes(self, db, ws, doc_id, src_ver, src_iter,
+                                  dst_ver, dst_iter):
+        rows = db.execute(sql_text(
+            "SELECT ia.id, ia.dtype, ia.name, ia.mandatory, ia.locked, "
+            "ia.booleanvalue, ia.datevalue, ia.indexvalue, ia.numbervalue, "
+            "ia.textvalue, ia.longtextvalue, ia.urlvalue, "
+            "dia.attribute_order "
+            "FROM instanceattribute ia "
+            "JOIN documentiteration_attribute dia "
+            "  ON dia.instanceattribute_id = ia.id "
+            "WHERE dia.workspace_id=:ws AND dia.documentmaster_id=:did "
+            "AND dia.documentrevision_version=:ver AND dia.iteration=:iter "
+            "ORDER BY dia.attribute_order"
+        ), {"ws": ws, "did": doc_id, "ver": src_ver, "iter": src_iter}).fetchall()
+        for row in rows:
+            result = db.execute(sql_text(
+                "INSERT INTO instanceattribute "
+                "(dtype, name, mandatory, locked, "
+                "booleanvalue, datevalue, indexvalue, numbervalue, "
+                "textvalue, longtextvalue, urlvalue) "
+                "VALUES (:dtype, :name, :mand, :locked, "
+                ":bv, :dv, :iv, :nv, :tv, :ltv, :uv) RETURNING id"
+            ), {
+                "dtype": row[1] or "InstanceTextAttribute",
+                "name": row[2], "mand": row[3] or False, "locked": row[4] or False,
+                "bv": row[5], "dv": row[6], "iv": row[7], "nv": row[8],
+                "tv": row[9], "ltv": row[10], "uv": row[11],
+            })
+            attr_id = result.fetchone()[0]
+            db.execute(sql_text(
+                "INSERT INTO documentiteration_attribute "
+                "(workspace_id, documentmaster_id, documentrevision_version, "
+                "iteration, instanceattribute_id, attribute_order) "
+                "VALUES (:ws, :did, :ver, :iter, :aid, :order)"
+            ), {"ws": ws, "did": doc_id, "ver": dst_ver,
+                "iter": dst_iter, "aid": attr_id, "order": row[12] or 0})
+
     def checkin(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
         if pr.checkout_user_login != user_login:
@@ -426,7 +615,10 @@ class DocumentService:
         db.commit(); db.refresh(pr)
         return pr
 
-    def create_new_version(self, db, ws, doc_id, ver, user_login):
+    def create_new_version(self, db, ws, doc_id, ver, user_login,
+                            title=None, description=None, workflow_model_id=None,
+                            user_entries=None, user_group_entries=None,
+                            user_role_mapping=None, group_role_mapping=None):
         pr = self.get_revision(db, ws, doc_id, ver)
         if pr.checkout_user_login:
             raise NotAllowedException("NotAllowedException40")
@@ -434,20 +626,37 @@ class DocumentService:
             raise NotAllowedException("NotAllowedException27")
         now = datetime.utcnow()
         new_ver = self._next_version(ver)
+        new_title = title or pr.title
+        new_description = description if description is not None else pr.description
         new_pr = DocumentRevision(
             workspace_id=ws, documentmaster_id=doc_id, version=new_ver,
-            title=pr.title, description=pr.description, status=0,
+            title=new_title, description=new_description, status=0,
             creation_date=now,
             location_completepath=pr.location_completepath,
             author_workspace_id=ws, author_login=user_login,
             checkout_user_workspace_id=ws, checkout_user_login=user_login,
             check_out_date=now)
+        if user_entries or user_group_entries:
+            from app.services.acl_helper import apply_acl
+            new_acl_id = apply_acl(db, None, user_entries, user_group_entries)
+            new_pr.acl_id = new_acl_id
         db.add(new_pr); db.flush()
-        db.add(DocumentIteration(
+        new_it = DocumentIteration(
             workspace_id=ws, documentmaster_id=doc_id,
             documentrevision_version=new_ver, iteration=1,
             creation_date=now, author_workspace_id=ws,
-            author_login=user_login))
+            author_login=user_login)
+        db.add(new_it); db.flush()
+
+        last_iter = pr.last_iteration
+        if last_iter:
+            self._copy_attached_files(db, ws, doc_id, new_ver,
+                                      last_iter.iteration, 1)
+            self._copy_linked_documents(db, ws, doc_id, ver, last_iter.iteration,
+                                        new_ver, 1)
+            self._copy_instance_attributes(db, ws, doc_id, ver, last_iter.iteration,
+                                           new_ver, 1)
+
         db.commit(); db.refresh(new_pr)
         return new_pr
 
@@ -617,7 +826,8 @@ class DocumentService:
         return t
 
     def create_template(self, db, ws, template_id, document_type, mask,
-                        id_generated, user_login):
+                        id_generated, user_login, workflow_model_id=None,
+                        attribute_templates=None):
         existing = db.query(DocumentMasterTemplate).filter(
             DocumentMasterTemplate.workspace_id == ws,
             DocumentMasterTemplate.id == template_id).first()
@@ -629,7 +839,8 @@ class DocumentService:
             workspace_id=ws, id=template_id,
             document_type=document_type, mask=mask,
             id_generated=id_generated, creation_date=now,
-            author_workspace_id=ws, author_login=user_login)
+            author_workspace_id=ws, author_login=user_login,
+            workflowmodel_id=workflow_model_id)
         db.add(t); db.commit(); db.refresh(t)
         return t
 
@@ -637,7 +848,20 @@ class DocumentService:
         t = self.get_template(db, ws, template_id)
         db.delete(t); db.commit()
 
-    def save_file(self, db, ws, doc_id, ver, iteration, filename, data):
+    def save_file(self, db, ws, doc_id, ver, iteration, filename, data,
+                  user_login=None):
+        if user_login:
+            dr = db.query(DocumentRevision).filter(
+                DocumentRevision.workspace_id == ws,
+                DocumentRevision.documentmaster_id == doc_id,
+                DocumentRevision.version == ver,
+            ).first()
+            if dr is None:
+                raise NotAllowedException("NotAllowedException4")
+            if dr.checkout_user_login != user_login:
+                raise NotAllowedException("NotAllowedException4")
+            if dr.last_iteration_number != iteration:
+                raise NotAllowedException("NotAllowedException4")
         from app.services import vault as vault_svc
         from app.models.part import BinaryResource
         path = (vault_svc._vault_root() / ws / "documents" / doc_id

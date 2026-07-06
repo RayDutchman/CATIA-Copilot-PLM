@@ -133,3 +133,17 @@ def create_marker(ws: str, pid: str, layer_id: int, body: dict,
     ), {"lid": layer_id, "mid": marker.id})
     db.commit(); db.refresh(marker)
     return _enrich_marker(db, marker, layer_id)
+
+
+@router.delete("/workspaces/{ws}/products/{pid}/layers/{lid}/markers/{mid}", status_code=204)
+@router.delete("/workspaces/{ws}/products/{pid}/layers/{lid}/markers/{mid}/", status_code=204, include_in_schema=False)
+def delete_marker(ws: str, pid: str, lid: int, mid: int,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    marker = db.query(Marker).filter(Marker.id == mid).first()
+    if marker:
+        db.execute(sql_text("DELETE FROM layer_marker WHERE marker_id=:mid AND layer_id=:lid"),
+                   {"mid": mid, "lid": lid})
+        db.delete(marker)
+        db.commit()
+    return Response(status_code=204)

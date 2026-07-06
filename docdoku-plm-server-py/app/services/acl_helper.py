@@ -45,6 +45,31 @@ def apply_acl(db: Session, acl_id: int | None,
     return acl_id
 
 
+def check_read_access(db: Session, acl_id: int | None,
+                      user_login: str, is_admin: bool) -> bool:
+    if is_admin:
+        return True
+    if acl_id is None:
+        return True
+    acl = db.query(ACL).filter(ACL.id == acl_id).first()
+    if not acl or not acl.enabled:
+        return True
+    entry = db.query(AclUserEntry).filter(
+        AclUserEntry.acl_id == acl_id,
+        AclUserEntry.principal_login == user_login,
+    ).first()
+    if entry and entry.permission in (READ_ONLY, FULL_ACCESS):
+        return True
+    group_entry = db.execute(text(
+        "SELECT 1 FROM aclusergroupentry ag "
+        "JOIN usergroupmapping m ON ag.principal_id = m.groupname "
+        "WHERE ag.acl_id = :acl AND m.login = :l AND ag.permission IN (1,2) LIMIT 1"
+    ), {"acl": acl_id, "l": user_login}).first()
+    if group_entry:
+        return True
+    return False
+
+
 def check_write_access(db: Session, acl_id: int | None,
                        user_login: str, is_admin: bool) -> bool:
     if is_admin:

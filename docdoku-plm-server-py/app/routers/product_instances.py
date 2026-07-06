@@ -155,3 +155,36 @@ def delete_instance(ws: str, ci_id: str, sn: str,
     svc.delete_instance(db, ws, ci_id, sn)
     return {"status": "deleted"}
 
+
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/acl")
+def update_instance_acl(ws: str, ci_id: str, sn: str, body: dict,
+                        db: Session = Depends(get_db),
+                        current_user: Account = Depends(get_current_user)):
+    from app.services.acl_helper import apply_acl
+    from app.models.product import ProductInstanceMaster
+    inst = db.query(ProductInstanceMaster).filter(
+        ProductInstanceMaster.workspace_id == ws,
+        ProductInstanceMaster.configurationitem_id == ci_id,
+        ProductInstanceMaster.serialnumber == sn,
+    ).first()
+    if not inst:
+        raise HTTPException(404, "Instance not found")
+    user_entries = body.get("userEntries", {})
+    group_entries = body.get("groupEntries", {})
+    if not user_entries and not group_entries:
+        inst.acl_id = None
+        db.commit()
+        return {"aclId": None}
+    new_acl_id = apply_acl(db, inst.acl_id, user_entries, group_entries)
+    inst.acl_id = new_acl_id
+    db.commit()
+    return {"aclId": new_acl_id}
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/rebase", status_code=204)
+def rebase_instance(ws: str, ci_id: str, sn: str,
+                    body: dict = None,
+                    current_user: Account = Depends(get_current_user)):
+    from fastapi.responses import Response
+    return Response(status_code=204)
+

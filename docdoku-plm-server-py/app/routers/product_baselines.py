@@ -1,6 +1,6 @@
 """产品基线（ProductBaseline）端点路由。"""
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -96,6 +96,7 @@ def ci_scoped_baselines_root(ws: str,
 
 @router.post("/workspaces/{ws}/product-baselines", status_code=201)
 def create_workspace_baseline(ws: str, body: dict,
+                              dryRun: bool = Query(False),
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     """workspace 级创建基线，CI ID 从请求体获取（对应 Java POST /workspaces/{ws}/product-baselines）。"""
@@ -103,9 +104,13 @@ def create_workspace_baseline(ws: str, body: dict,
     bl_type = body.get("type", 0)
     if isinstance(bl_type, str):
         bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    if dryRun:
+        return {"id": -1, "name": body.get("name", ""), "dryRun": True}
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"))
+                               current_user.login, body.get("baselinedParts"),
+                               body.get("substituteLinks"),
+                               body.get("optionalUsageLinks"))
     return {"id": bl.id, "name": bl.name}
 
 
@@ -120,14 +125,19 @@ def list_ci_baselines(ws: str, ci_id: str,
 @router.post("/workspaces/{ws}/product-baselines/{ci_id}/baselines", status_code=201)
 @router.post("/workspaces/{ws}/product-baselines/{ci_id}/baselines/", status_code=201, include_in_schema=False)
 def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
+                              dryRun: bool = Query(False),
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     bl_type = body.get("type", 0)
     if isinstance(bl_type, str):
         bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    if dryRun:
+        return {"id": -1, "name": body.get("name", ""), "dryRun": True}
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"))
+                               current_user.login, body.get("baselinedParts"),
+                               body.get("substituteLinks"),
+                               body.get("optionalUsageLinks"))
     return {"id": bl.id, "name": bl.name}
 
 
@@ -255,14 +265,19 @@ def get_baseline(ws: str, ci_id: str, bl_id: int,
 @router.post("/workspaces/{ws}/products/{ci_id}/baselines", status_code=201)
 @router.post("/workspaces/{ws}/products/{ci_id}/baselines/", status_code=201, include_in_schema=False)
 def create_baseline(ws: str, ci_id: str, body: dict,
+                    dryRun: bool = Query(False),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     bl_type = body.get("type", 0)
     if isinstance(bl_type, str):
         bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    if dryRun:
+        return {"id": -1, "name": body.get("name", ""), "dryRun": True}
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"))
+                               current_user.login, body.get("baselinedParts"),
+                               body.get("substituteLinks"),
+                               body.get("optionalUsageLinks"))
     return {"id": bl.id, "name": bl.name}
 
 
