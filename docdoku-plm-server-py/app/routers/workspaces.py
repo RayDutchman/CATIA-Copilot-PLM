@@ -48,9 +48,9 @@ def _row_to_dict(r) -> dict:
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
-        "SELECT id, description, admin_login FROM workspace ORDER BY id"
+        "SELECT id, description, enabled, folderlocked, admin_login FROM workspace ORDER BY id"
     )).fetchall()
-    all_ws = [{"id": r[0], "description": r[1] or "", "admin": r[2] or ""} for r in rows]
+    all_ws = [_row_to_dict(r) for r in rows]
 
     # 全局管理员（usergroupmapping groupname='admin'）看全部 workspace
     is_global_admin = db.execute(text(
