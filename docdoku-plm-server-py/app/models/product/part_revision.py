@@ -82,7 +82,10 @@ class PartRevision(Base):
             & (PartRevision.partmaster_partnumber == part_revision_tags.c.partmaster_partnumber)
             & (PartRevision.version == part_revision_tags.c.partrevision_version)
         ),
-        secondaryjoin="and_(foreign(Tag.workspace_id)==remote(part_revision_tags.c.tag_workspace_id), foreign(Tag.label)==remote(part_revision_tags.c.tag_label))",
+        secondaryjoin=lambda: (
+            (Tag.workspace_id == part_revision_tags.c.tag_workspace_id)
+            & (Tag.label == part_revision_tags.c.tag_label)
+        ),
     )
 
     @property

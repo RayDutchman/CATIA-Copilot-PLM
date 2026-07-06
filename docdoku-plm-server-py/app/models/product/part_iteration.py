@@ -165,7 +165,7 @@ class PartIteration(Base):
             & (PartIteration.partrevision_version == part_iteration_usagelink.c.partrevision_version)
             & (PartIteration.iteration == part_iteration_usagelink.c.iteration)
         ),
-        secondaryjoin=lambda: "PartUsageLink.id == part_iteration_usagelink.c.component_id",
+        secondaryjoin=lambda: PartUsageLink.id == part_iteration_usagelink.c.component_id,
         order_by=part_iteration_usagelink.c.component_order,
     )
     conversions: Mapped[List["Conversion"]] = relationship(
@@ -182,3 +182,4 @@ class PartIteration(Base):
 
 from app.models.part import BinaryResource  # noqa: E402
 from app.models.product.conversion import Conversion  # noqa: E402
+from app.models.product.part_usage_link import PartUsageLink  # noqa: E402

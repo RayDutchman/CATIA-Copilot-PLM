@@ -33,6 +33,12 @@ class ChangeOrder(Base):
     tags: Mapped[List["Tag"]] = relationship(
         "Tag",
         secondary=change_order_tags,
-        primaryjoin="ChangeOrder.id==change_order_tags.c.changeorder_id",
-        secondaryjoin="and_(Tag.workspace_id==change_order_tags.c.tag_workspace_id, Tag.label==change_order_tags.c.tag_label)",
+        primaryjoin=lambda: ChangeOrder.id == change_order_tags.c.changeorder_id,
+        secondaryjoin=lambda: (
+            (Tag.workspace_id == change_order_tags.c.tag_workspace_id)
+            & (Tag.label == change_order_tags.c.tag_label)
+        ),
     )
+
+
+from app.models.part import Tag  # noqa: E402

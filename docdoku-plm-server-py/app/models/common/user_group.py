@@ -19,5 +19,21 @@ class UserGroup(Base):
     id = Column(String(100), primary_key=True)
     workspace_id = Column(String, ForeignKey("workspace.id"), primary_key=True)
 
-    workspace = relationship("Workspace", foreign_keys=[workspace_id])
-    users = relationship("User", secondary=usergroup_user)
+    workspace = relationship("Workspace", foreign_keys=[workspace_id], viewonly=True)
+    users = relationship(
+        "User",
+        secondary=usergroup_user,
+        primaryjoin=lambda: (
+            (UserGroup.id == usergroup_user.c.usergroup_id)
+            & (UserGroup.workspace_id == usergroup_user.c.usergroup_id_workspace_id)
+        ),
+        secondaryjoin=lambda: (
+            (User.workspace_id == usergroup_user.c.user_workspace_id)
+            & (User.login == usergroup_user.c.user_login)
+        ),
+        viewonly=True,
+    )
+
+
+from app.models.common.workspace import Workspace  # noqa: E402
+from app.models.common.user import User  # noqa: E402
