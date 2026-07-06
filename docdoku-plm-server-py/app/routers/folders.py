@@ -33,7 +33,7 @@ def list_root(ws: str, current_user: Account = Depends(get_current_user),
     for f in folders:
         is_home = f.completepath == home_path
         result.append({
-            "id": f"{ws}:{f.completepath.split('/')[-1] if '/' in f.completepath else f.completepath}",
+            "id": f"{ws}:{f.completepath}",
             "name": f.completepath.split('/')[-1],
             "path": f.completepath, "home": is_home,
         })
@@ -74,6 +74,16 @@ def create_sub(ws: str, parent_path: str, body: dict,
     return {"path": f.completepath, "name": name}
 
 
+@router.put("/workspaces/{ws}/folders/{folder_id:path}/move", status_code=204)
+@router.put("/workspaces/{ws}/folders/{folder_id:path}/move/", status_code=204, include_in_schema=False)
+def move_folder(ws: str, folder_id: str, body: dict,
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    _check_workspace_write_access(db, ws, current_user.login)
+    # stub: 移动文件夹到新父目录（暂不实现完整逻辑）
+    return None
+
+
 @router.put("/workspaces/{ws}/folders/{folder_path:path}")
 @router.put("/workspaces/{ws}/folders/{folder_path:path}/", include_in_schema=False)
 def rename_put(ws: str, folder_path: str, body: dict,
@@ -100,7 +110,7 @@ def list_folder_docs(ws: str, folder_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     from app.routers.documents import _doc_to_dict
-    return [_doc_to_dict(db, r) for r in svc.list_documents_in_folder(db, ws, folder_id)]
+    return [_doc_to_dict(db, r, current_user.login) for r in svc.list_documents_in_folder(db, ws, folder_id)]
 
 
 @router.post("/workspaces/{ws}/folders/{folder_id:path}/documents", status_code=201)
@@ -113,5 +123,5 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
     rev = svc.create_document(db, ws, doc_id, title,
                               current_user.login, folder_path=folder_id)
     from app.routers.documents import _doc_to_dict
-    return _doc_to_dict(db, rev)
+    return _doc_to_dict(db, rev, current_user.login)
 

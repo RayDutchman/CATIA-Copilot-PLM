@@ -37,7 +37,7 @@ def _get_user_info(db, login, ws):
     }
 
 
-def _doc_to_dict(db, rev):
+def _doc_to_dict(db, rev, current_user_login=None):
     _PERM_MAP = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
     acl_id = getattr(rev, "acl_id", None)
     acl_data = None
@@ -93,19 +93,19 @@ def _doc_to_dict(db, rev):
 
     iter_sub = None
     state_sub = None
-    if db and rev.checkout_user_login:
+    if db and current_user_login:
         iter_sub = db.execute(sql_text(
             "SELECT 1 FROM iterationchangesubscription WHERE documentmaster_id=:did "
             "AND documentmaster_workspace_id=:ws AND documentrevision_version=:ver "
             "AND subscriber_login=:login AND subscriber_workspace_id=:sws LIMIT 1"
         ), {"did": rev.documentmaster_id, "ws": rev.workspace_id, "ver": rev.version,
-            "login": rev.checkout_user_login, "sws": rev.checkout_user_workspace_id or rev.workspace_id}).scalar()
+            "login": current_user_login, "sws": rev.workspace_id}).scalar()
         state_sub = db.execute(sql_text(
             "SELECT 1 FROM statechangesubscription WHERE documentmaster_id=:did "
             "AND documentmaster_workspace_id=:ws AND documentrevision_version=:ver "
             "AND subscriber_login=:login AND subscriber_workspace_id=:sws LIMIT 1"
         ), {"did": rev.documentmaster_id, "ws": rev.workspace_id, "ver": rev.version,
-            "login": rev.checkout_user_login, "sws": rev.checkout_user_workspace_id or rev.workspace_id}).scalar()
+            "login": current_user_login, "sws": rev.workspace_id}).scalar()
 
     dict_fields = {
         "id": f"{rev.documentmaster_id}-{rev.version}",
@@ -157,7 +157,7 @@ def get_doc(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.get_revision(db, ws, doc_id, ver))
+    return _doc_to_dict(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
 
 
 @router.delete("/workspaces/{ws}/documents/{doc_key}", status_code=204)
@@ -210,15 +210,16 @@ def inverse_doc_link(ws: str, doc_key: str, iteration: int,
         "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
         "AND dl.target_docrevision_version=:ver"
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    # 去重，返回源文档的完整 DTO
+    seen = set()
     result = []
     for r in rows:
-        result.append({
-            "workspaceId": r[0], "documentMasterId": r[1],
-            "documentRevisionVersion": r[2], "iteration": r[3],
-            "linkId": r[4], "targetDocumentMasterId": r[5],
-            "targetDocumentRevisionVersion": r[6], "targetWorkspaceId": r[7],
-            "commentLink": r[8],
-        })
+        key = (r[0], r[1], r[2])
+        if key in seen:
+            continue
+        seen.add(key)
+        rev = svc.get_revision(db, r[0], r[1], r[2])
+        result.append(_doc_to_dict(db, rev, current_user.login))
     return result
 
 
@@ -240,14 +241,18 @@ def inverse_part_link(ws: str, doc_key: str, iteration: int,
         "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
         "AND dl.target_docrevision_version=:ver"
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    from app.services.product_manager import ProductService
+    from app.services.part_mapper import map_revision
+    psvc = ProductService()
+    seen = set()
     result = []
     for r in rows:
-        result.append({
-            "workspaceId": r[0], "partMasterPartNumber": r[1],
-            "partRevisionVersion": r[2], "iteration": r[3],
-            "linkId": r[4], "targetDocumentMasterId": r[5],
-            "targetDocumentRevisionVersion": r[6], "targetWorkspaceId": r[7],
-        })
+        key = (r[0], r[1], r[2])
+        if key in seen:
+            continue
+        seen.add(key)
+        pr = psvc.get_revision(db, r[0], r[1], r[2])
+        result.append(map_revision(pr, db).model_dump())
     return result
 
 
@@ -258,8 +263,8 @@ def inverse_product_link(ws: str, doc_key: str, iteration: int,
                          current_user: Account = Depends(get_current_user)):
     doc_id, ver = _split_doc_key(doc_key)
     rows = db.execute(sql_text(
-        "SELECT pii.workspace_id, pii.serialnumber, pii.instanceiteration, "
-        "pii.ci_updatebranchid, dl.id AS link_id "
+        "SELECT DISTINCT pii.workspace_id, pii.serialnumber, "
+        "pii.instanceiteration, pii.ci_updatebranchid "
         "FROM prdinstiteration_documentlink pidl "
         "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
         "JOIN prdinstiteration pii ON "
@@ -271,11 +276,31 @@ def inverse_product_link(ws: str, doc_key: str, iteration: int,
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
     result = []
     for r in rows:
-        result.append({
-            "workspaceId": r[0], "serialNumber": r[1],
-            "instanceIteration": r[2], "ciUpdateBranchId": r[3],
-            "linkId": r[4],
-        })
+        # 查询产品实例主数据
+        pinst = db.execute(sql_text(
+            "SELECT pi.id, pi.serialnumber, pi.productmaster_id, "
+            "pii.instanceiteration, pii.iterationnote, pii.creationdate, "
+            "pii.author_login, pii.author_workspace_id "
+            "FROM productinstance pi "
+            "JOIN prdinstiteration pii ON pi.id=pii.productinstance_id "
+            "AND pii.instanceiteration=:iter AND pii.ci_updatebranchid=:br "
+            "WHERE pi.workspace_id=:ws AND pi.serialnumber=:sn"
+        ), {"ws": r[0], "sn": r[1], "iter": r[2], "br": r[3]}).fetchone()
+        if pinst:
+            result.append({
+                "id": pinst[0], "serialNumber": pinst[1],
+                "productMasterId": pinst[2],
+                "instanceIteration": pinst[3],
+                "iterationNote": pinst[4] or "",
+                "creationDate": str(pinst[5]) if pinst[5] else None,
+                "author": _get_user_info(db, pinst[6], pinst[7] or ws),
+                "workspaceId": r[0],
+            })
+        else:
+            result.append({
+                "workspaceId": r[0], "serialNumber": r[1],
+                "instanceIteration": r[2], "ciUpdateBranchId": r[3],
+            })
     return result
 
 
@@ -286,8 +311,8 @@ def inverse_path_link(ws: str, doc_key: str, iteration: int,
                       current_user: Account = Depends(get_current_user)):
     doc_id, ver = _split_doc_key(doc_key)
     rows = db.execute(sql_text(
-        "SELECT pd.id AS path_data_id, pd.path, pdi.workspace_id, "
-        "pdi.productconfig_master_id, pdi.iteration, dl.id AS link_id "
+        "SELECT DISTINCT pd.id AS path_data_id, pd.path, pdi.workspace_id, "
+        "pdi.productconfig_master_id, pdi.iteration "
         "FROM pathdataiteration_documentlink pdl "
         "JOIN documentlink dl ON pdl.documentlink_id = dl.id "
         "JOIN pathdataiteration pdi ON "
@@ -301,18 +326,51 @@ def inverse_path_link(ws: str, doc_key: str, iteration: int,
         result.append({
             "pathDataId": r[0], "path": r[1],
             "workspaceId": r[2], "productConfigMasterId": r[3],
-            "iteration": r[4], "linkId": r[5],
+            "iteration": r[4],
         })
     return result
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}", response_model=DocumentRevisionDTO)
+@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}")
 @router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/", include_in_schema=False)
 def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.update_iteration(db, ws, doc_id, ver, doc_iter, body))
+    rev = svc.update_iteration(db, ws, doc_id, ver, doc_iter, body)
+    # 返回该迭代的 dict，不是整个 revision
+    target_it = next((it for it in rev.iterations if it.iteration == doc_iter), None)
+    if target_it is None:
+        raise HTTPException(404, "Iteration not found after update")
+    it_dict = {
+        "id": f"{rev.documentmaster_id}-{rev.version}-{doc_iter}",
+        "iteration": doc_iter,
+        "workspaceId": rev.workspace_id,
+        "documentMasterId": rev.documentmaster_id,
+        "documentRevisionVersion": rev.version,
+        "version": rev.version,
+        "title": rev.title,
+        "revisionNote": target_it.revision_note,
+        "creationDate": str(target_it.creation_date) if target_it.creation_date else None,
+        "modificationDate": str(target_it.modification_date) if target_it.modification_date else None,
+        "checkInDate": str(target_it.check_in_date) if target_it.check_in_date else None,
+        "instanceAttributes": [],
+        "attachedFiles": [],
+        "linkedDocuments": [],
+        "author": _get_user_info(db, target_it.author_login, target_it.workspace_id),
+        "documentRevision": {
+            "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
+            "workspaceId": rev.workspace_id,
+            "version": rev.version,
+            "documentMasterId": f"{rev.documentmaster_id}-{rev.version}",
+            "status": None, "publicShared": False, "acl": {},
+            "attributesLocked": False, "checkOutUser": None,
+            "checkOutDate": None, "releaseAuthor": None,
+            "releaseDate": None, "iterationSubscription": False,
+            "stateSubscription": False, "commentLink": None,
+        },
+    }
+    return it_dict
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkout", response_model=DocumentRevisionDTO)
@@ -322,7 +380,7 @@ def checkout(ws: str, doc_key: str,
              db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     svc._ensure_last_revision(db, ws, doc_id, ver)
-    return _doc_to_dict(db, svc.checkout(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.checkout(db, ws, doc_id, ver, current_user.login), current_user.login)
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkin", response_model=DocumentRevisionDTO)
@@ -331,7 +389,7 @@ def checkin(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.checkin(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.checkin(db, ws, doc_id, ver, current_user.login), current_user.login)
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout", response_model=DocumentRevisionDTO)
@@ -340,7 +398,7 @@ def undo_checkout(ws: str, doc_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.undo_checkout(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.undo_checkout(db, ws, doc_id, ver, current_user.login), current_user.login)
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/release", response_model=DocumentRevisionDTO)
@@ -349,7 +407,7 @@ def release(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.release(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.release(db, ws, doc_id, ver, current_user.login), current_user.login)
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/obsolete", response_model=DocumentRevisionDTO)
@@ -358,16 +416,19 @@ def obsolete(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.mark_obsolete(db, ws, doc_id, ver, current_user.login))
+    return _doc_to_dict(db, svc.mark_obsolete(db, ws, doc_id, ver, current_user.login), current_user.login)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/newVersion", response_model=DocumentRevisionDTO)
+@router.put("/workspaces/{ws}/documents/{doc_key}/newVersion")
 @router.put("/workspaces/{ws}/documents/{doc_key}/newVersion/", include_in_schema=False)
 def new_version(ws: str, doc_key: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return _doc_to_dict(db, svc.create_new_version(db, ws, doc_id, ver, current_user.login))
+    old_rev = svc.get_revision(db, ws, doc_id, ver)
+    new_rev = svc.create_new_version(db, ws, doc_id, ver, current_user.login)
+    return [_doc_to_dict(db, old_rev, current_user.login),
+            _doc_to_dict(db, new_rev, current_user.login)]
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/tags")
@@ -376,7 +437,14 @@ def set_tags(ws: str, doc_key: str, body: dict,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return svc.set_tags(db, ws, doc_id, ver, body.get("tags", []))
+    raw_tags = body.get("tags", [])
+    # 兼容 Java TagListDTO 格式: {tags: [{label: "xx"}, ...]}
+    if raw_tags and isinstance(raw_tags[0], dict):
+        labels = [t.get("label", "") for t in raw_tags if t.get("label")]
+    else:
+        labels = raw_tags
+    svc.set_tags(db, ws, doc_id, ver, labels)
+    return _doc_to_dict(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
 
 
 @router.post("/workspaces/{ws}/documents/{doc_key}/tags")
@@ -419,7 +487,7 @@ def move_document(ws: str, doc_key: str, body: dict,
                   db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     folder_path = body.get("parentFolder", "")
-    return _doc_to_dict(db, svc.move_document(db, ws, doc_id, ver, folder_path))
+    return _doc_to_dict(db, svc.move_document(db, ws, doc_id, ver, folder_path), current_user.login)
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/share")

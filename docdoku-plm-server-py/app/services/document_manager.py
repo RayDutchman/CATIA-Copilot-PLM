@@ -222,7 +222,7 @@ class DocumentService:
 
     def checkout(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
-        if pr.checkout_user_login:
+        if pr.checkout_user_login and pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException37")
         if pr.status != 0:
             raise NotAllowedException("NotAllowedException47")
@@ -333,6 +333,16 @@ class DocumentService:
         pr.checkout_user_workspace_id = None
         pr.check_out_date = None
         db.commit(); db.refresh(pr)
+        # 清理 vault 物理文件
+        try:
+            import shutil
+            from pathlib import Path
+            from app.core.config import settings
+            vault_dir = Path(settings.VAULT_PATH) / ws / "documents" / doc_id / ver / str(last_iter_num)
+            if vault_dir.exists():
+                shutil.rmtree(vault_dir)
+        except Exception:
+            pass
         return pr
 
     def release(self, db, ws, doc_id, ver, user_login):
