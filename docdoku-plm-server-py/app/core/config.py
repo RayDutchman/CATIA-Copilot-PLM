@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
     KAFKA_CONVERSION_TOPIC: str = "CONVERT"
 
+    # ES 搜索
+    ES_URL: str = "http://es:9200"
+
     # 转换临时目录（与 conversion 服务共享 conversion-volume）
     CONVERSIONS_PATH: str = "/var/lib/docdoku/conversions"
 
