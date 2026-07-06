@@ -43,7 +43,7 @@ def _model_to_dict(m, db: Session = None) -> dict:
 
     activity_models = []
     if db:
-        from app.models.workflow import ActivityModel
+        from app.models.workflow import ActivityModel, TaskModel
         ams = db.query(ActivityModel).filter(
             ActivityModel.workflowmodel_id == m.id,
             ActivityModel.workspace_id == m.workspace_id,
@@ -53,6 +53,18 @@ def _model_to_dict(m, db: Session = None) -> dict:
             "type": a.dtype,
             "lifeCycleState": a.lifecyclestate,
             "tasksToComplete": a.taskstocomplete,
+            "tasks": [{
+                "num": t.num,
+                "title": t.title or "",
+                "instructions": t.instructions or "",
+                "duration": t.duration,
+                "role": {
+                    "name": t.role_name or "",
+                    "workspaceId": t.role_workspace_id or m.workspace_id,
+                },
+            } for t in db.query(TaskModel).filter(
+                TaskModel.activitymodel_id == a.id,
+            ).order_by(TaskModel.num).all()],
         } for a in ams]
 
     result = {
@@ -108,10 +120,7 @@ def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_d
                                        body.get("finalLifecycleState", ""),
                                        activity_models=activity_models,
                                        user_login=current_user.login)
-    result = _model_to_dict(m, db)
-    if activity_models:
-        result["activityModels"] = activity_models
-    return result
+    return _model_to_dict(m, db)
 
 
 @router.delete(f"{PREFIX}/workflow-models/{{model_id}}", status_code=204)

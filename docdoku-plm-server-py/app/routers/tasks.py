@@ -94,7 +94,7 @@ def in_progress_tasks(ws: str, login: str, db: Session = Depends(get_db),
                 "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
             ), {"wf_id": wf_id, "ws": ws}).first()
             if doc:
-                holder_type = "document"
+                holder_type = "documents"
                 holder_reference = doc[0]
                 holder_version = doc[1]
             else:
@@ -165,7 +165,7 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
             "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
         ), {"wf_id": _wf_id, "ws": ws}).first()
         if doc:
-            holder_type = "document"
+            holder_type = "documents"
             holder_reference = doc[0]
             holder_version = doc[1]
         else:

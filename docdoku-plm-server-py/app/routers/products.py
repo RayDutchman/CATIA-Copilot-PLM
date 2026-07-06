@@ -132,7 +132,13 @@ def filter_structure(ws: str, ci_id: str,
                      depth: int = Query(None),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    result = svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth)
+    from app.services.acl_helper import check_read_access
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    result = svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth,
+                                           user_login=current_user.login,
+                                           is_admin=is_admin)
     if not result:
         return {}
     return result[0]
@@ -154,23 +160,20 @@ def bom(ws: str, ci_id: str,
         current_user: Account = Depends(get_current_user),
         db: Session = Depends(get_db)):
     """BOM 端点，返回过滤后的 PartRevisionDTO 列表。"""
-    result = svc.filter_product_structure(db, ws, ci_id, configSpec, path)
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    result = svc.filter_product_structure(db, ws, ci_id, configSpec, path,
+                                           user_login=current_user.login,
+                                           is_admin=is_admin)
     if not result:
         return []
     # 平铺 ComponentDTO 树为 PartRevisionDTO 列表
     parts = []
 
     def flatten(comp, level=0):
-        ci = svc.get_ci(db, ws, ci_id)
-        rev = db.query(PartRevision).filter(
-            PartRevision.workspace_id == ws,
-            PartRevision.partmaster_partnumber == comp["number"],
-        ).order_by(PartRevision.version.desc()).first()
-        if rev is None:
-            return
-        last_it = rev.last_iteration
-        acct = db.query(Account).filter(Account.login == rev.part_master.author_login).first()
         parts.append({
+            "partKey": f"{comp['number']}-{comp['version']}",
             "number": comp["number"],
             "version": comp["version"],
             "iteration": comp["iteration"],
@@ -185,6 +188,7 @@ def bom(ws: str, ci_id: str,
             "assembly": comp["assembly"],
             "workspaceId": ws,
             "configurationItemId": ci_id,
+            "notifications": comp.get("notifications", []),
         })
         for child in comp.get("components", []):
             flatten(child, level + 1)
@@ -274,12 +278,40 @@ def last_release(ws: str, ci_id: str,
     if rev is None:
         return []
     last_it = rev.last_iteration
+    author_name = rev.part_master.author_login or ""
+    pm_author = db.query(Account).filter(Account.login == rev.part_master.author_login).first()
+    if pm_author and pm_author.name:
+        author_name = pm_author.name
+    chk_user = None
+    if rev.checkout_user_login:
+        chk_user = {
+            "login": rev.checkout_user_login,
+            "name": rev.checkout_user_login,
+            "email": None,
+            "language": None,
+            "workspaceId": rev.checkout_user_workspace_id or ws,
+        }
+        chk_acct = db.query(Account).filter(Account.login == rev.checkout_user_login).first()
+        if chk_acct:
+            chk_user["name"] = chk_acct.name or chk_acct.login
+            chk_user["email"] = chk_acct.email
+            chk_user["language"] = chk_acct.language
     return {
+        "partKey": f"{rev.partmaster_partnumber}-{rev.version}",
         "number": rev.partmaster_partnumber,
         "version": rev.version,
+        "name": rev.part_master.name or "",
         "iteration": last_it.iteration if last_it else 1,
         "description": rev.description or "",
+        "author": author_name,
+        "authorLogin": rev.part_master.author_login or "",
+        "checkOutUser": chk_user,
+        "checkOutDate": _fmt_date(rev.check_out_date),
         "releaseDate": _fmt_date(rev.release_date),
+        "standardPart": rev.part_master.standard_part or False,
+        "assembly": bool(last_it and last_it.components),
+        "workspaceId": ws,
+        "configurationItemId": ci_id,
     }
 
 
@@ -324,11 +356,20 @@ def versions_choices(ws: str, ci_id: str,
     except HTTPException:
         return []
     root_pn = ci.partmaster_partnumber
-    revs = db.query(PartRevision.version).filter(
+    revs = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
         PartRevision.partmaster_partnumber == root_pn,
     ).order_by(PartRevision.version).all()
-    return [r[0] for r in revs]
+    result = []
+    for rev in revs:
+        last_it = rev.last_iteration
+        result.append({
+            "partNumber": rev.partmaster_partnumber,
+            "version": rev.version,
+            "iteration": last_it.iteration if last_it else 1,
+            "name": rev.part_master.name or "",
+        })
+    return result
 
 
 @router.get("/workspaces/{ws}/products/{pid}/export-files")

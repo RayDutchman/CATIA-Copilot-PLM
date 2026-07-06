@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import NotAllowedException, UserGroupNotFoundException
+from app.core.exceptions import AccessRightException, NotAllowedException, UserGroupNotFoundException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -14,6 +14,19 @@ from app.schemas.user_mgmt import (
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
+
+
+def _check_is_admin(db: Session, ws: str, current_user: Account):
+    is_global_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if is_global_admin:
+        return
+    is_ws_admin = db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": ws, "l": current_user.login}).first()
+    if not is_ws_admin:
+        raise AccessRightException("AccessRightException")
 
 
 def _group_to_dict(g):
@@ -33,6 +46,7 @@ def list_groups(ws: str, db: Session = Depends(get_db),
 @router.post(f"{PREFIX}/groups/", status_code=201, include_in_schema=False)
 def create_group(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
+    _check_is_admin(db, ws, current_user)
     g = user_mgmt_service.create_group(db, ws, body.get("id", ""))
     return _group_to_dict(g)
 
@@ -41,6 +55,7 @@ def create_group(ws: str, body: dict, db: Session = Depends(get_db),
 @router.delete(f"{PREFIX}/groups/{{group_id}}/", status_code=204, include_in_schema=False)
 def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
+    _check_is_admin(db, ws, current_user)
     user_mgmt_service.delete_group(db, ws, group_id)
 
 
@@ -155,6 +170,7 @@ def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
                                 body: dict = None,
                                 db: Session = Depends(get_db),
                                 current_user: Account = Depends(get_current_user)):
+    _check_is_admin(db, ws, current_user)
     group = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": groupId, "ws": ws}).fetchone()
@@ -183,6 +199,7 @@ def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
 def group_tag_subscription_delete(ws: str, groupId: str, tagName: str,
                                    db: Session = Depends(get_db),
                                    current_user: Account = Depends(get_current_user)):
+    _check_is_admin(db, ws, current_user)
     db.execute(text(
         "DELETE FROM tagusergroupsubscription "
         "WHERE tag_workspace_id = :ws AND tag_label = :tag "

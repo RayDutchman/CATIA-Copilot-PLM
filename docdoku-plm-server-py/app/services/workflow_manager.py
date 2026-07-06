@@ -346,6 +346,8 @@ class WorkflowService:
             "VALUES (:id, :ws, :wf_id)"
         ), {"id": ww_id, "ws": ws, "wf_id": wf_id})
         db.commit()
+        # TODO: send notification — Java MailerBean.sendApproval() notifies
+        # potential workers of the newly instantiated workflow tasks
         return {"id": ww_id, "workspaceId": ws, "workflowId": wf_id}
 
     def get_workspace_workflow(self, db: Session, ws: str, ww_id: str) -> dict:
@@ -499,7 +501,7 @@ class WorkflowService:
                 "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
             ), {"wf_id": wf_id, "ws": ws}).first()
             if doc:
-                holder_type = "document"
+                holder_type = "documents"
                 holder_reference = doc[0]
                 holder_version = doc[1]
             else:
@@ -626,7 +628,7 @@ class WorkflowService:
                 "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
             ), {"wf_id": wf_id, "ws": ws}).first()
             if doc:
-                holder_type = "document"
+                holder_type = "documents"
                 holder_reference = doc[0]
                 holder_version = doc[1]
                 new_status = 1 if status == 2 else 0
@@ -814,7 +816,7 @@ class WorkflowService:
                     "UPDATE documentrevision SET workflow_id = :new_id "
                     "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
                 ), {"new_id": new_wf_id, "ws": ws, "dm": dm, "v": ver})
-                relinked = {"holderType": "document", "holderReference": dm,
+                relinked = {"holderType": "documents", "holderReference": dm,
                             "holderVersion": ver}
             else:
                 ww = db.execute(text(

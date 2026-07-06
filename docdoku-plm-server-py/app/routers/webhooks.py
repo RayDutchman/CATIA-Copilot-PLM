@@ -55,6 +55,7 @@ def _webhook_to_dict(w, app=None) -> dict:
 @router.get(f"{PREFIX}/webhooks/", include_in_schema=False)
 def list_webhooks(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
+    _check_is_admin_or_workspace_admin(db, ws, current_user)
     hooks = db.query(Webhook).filter(Webhook.workspace_id == ws).all()
     return [_webhook_to_dict(h) for h in hooks]
 
@@ -63,6 +64,7 @@ def list_webhooks(ws: str, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/webhooks/{{webhook_id}}/", include_in_schema=False)
 def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
+    _check_is_admin_or_workspace_admin(db, ws, current_user)
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if not w:

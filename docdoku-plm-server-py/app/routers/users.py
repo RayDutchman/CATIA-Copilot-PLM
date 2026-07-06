@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import UserNotFoundException, WorkspaceNotFoundException
+from app.core.exceptions import AccessRightException, UserNotFoundException, WorkspaceNotFoundException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.part import UserDTO
@@ -14,6 +14,19 @@ from app.schemas.user_mgmt import (
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
+
+
+def _check_is_admin(db: Session, ws: str, current_user: Account):
+    is_global_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if is_global_admin:
+        return
+    is_ws_admin = db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": ws, "l": current_user.login}).first()
+    if not is_ws_admin:
+        raise AccessRightException("AccessRightException")
 
 
 def _user_to_dict(u):
@@ -126,6 +139,7 @@ def user_tag_subscription_put(ws: str, login: str, tagName: str,
                                body: dict = None,
                                db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
+    _check_is_admin(db, ws, current_user)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         raise UserNotFoundException("UserNotFoundException")
@@ -152,6 +166,7 @@ def user_tag_subscription_put(ws: str, login: str, tagName: str,
 def user_tag_subscription_delete(ws: str, login: str, tagName: str,
                                  db: Session = Depends(get_db),
                                  current_user: Account = Depends(get_current_user)):
+    _check_is_admin(db, ws, current_user)
     db.execute(text(
         "DELETE FROM tagusersubscription "
         "WHERE tag_workspace_id = :ws AND tag_label = :tag "

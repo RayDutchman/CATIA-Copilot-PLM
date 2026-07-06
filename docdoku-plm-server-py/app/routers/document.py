@@ -38,6 +38,27 @@ def _get_user_info(db, login, ws):
     }
 
 
+def _compute_route_path(db: Session, workspace_id: str, complete_path: str | None) -> list[dict]:
+    """根据 location_completepath 查询 pathdatamaster 表构建 routePath 列表。"""
+    if not complete_path or complete_path == "/":
+        return []
+    segments = [s for s in complete_path.strip("/").split("/") if s]
+    if not segments:
+        return []
+    result = []
+    accumulated = ""
+    for seg in segments:
+        accumulated += "/" + seg
+        row = db.execute(sql_text(
+            "SELECT id, path FROM pathdatamaster WHERE workspace_id=:ws AND path=:p LIMIT 1"
+        ), {"ws": workspace_id, "p": accumulated}).first()
+        if row:
+            result.append({"id": row[0], "path": row[1]})
+        else:
+            result.append({"path": accumulated})
+    return result
+
+
 def _doc_to_dict(db, rev, current_user_login=None):
     _PERM_MAP = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
     acl_id = getattr(rev, "acl_id", None)
@@ -51,7 +72,7 @@ def _doc_to_dict(db, rev, current_user_login=None):
                 "userEntries": [{"key": e.principal_login, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in user_entries],
                 "groupEntries": [{"key": e.principal_id, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in group_entries],
                 "userEntriesMap": {e.principal_login: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in user_entries},
-                "userGroupEntriesMap": {},
+                "userGroupEntriesMap": {e.principal_id: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in group_entries},
             }
 
     iterations = []
@@ -158,7 +179,7 @@ def _doc_to_dict(db, rev, current_user_login=None):
         "documentIterations": iterations,
         "tags": [],
         "path": rev.location_completepath,
-        "routePath": None,
+        "routePath": _compute_route_path(db, rev.workspace_id, rev.location_completepath) if db else [],
         "acl": acl_data or {},
         "publicShared": bool(getattr(rev, "public_shared", False)), "attributesLocked": False,
         "commentLink": None, "iterationSubscription": iter_sub is not None,
