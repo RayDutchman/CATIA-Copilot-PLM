@@ -23,6 +23,8 @@ def _build_notification_dict(n, db: Session) -> dict:
         "modifiedPartVersion": n.modified_partrevision_version,
         "modifiedPartIteration": n.modified_iteration or 0,
         "ackComment": n.acknowledgementcomment or "",
+        "ackAuthor": {},
+        "author": {},
     }
     if n.acknowledgementdate:
         result["ackDate"] = int(n.acknowledgementdate.timestamp() * 1000)

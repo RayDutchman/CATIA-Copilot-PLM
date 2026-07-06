@@ -121,7 +121,18 @@ def update_webhook(ws: str, webhook_id: int, body: dict, db: Session = Depends(g
         w.name = body["name"]
     if "active" in body:
         w.active = body["active"]
+    app_data = body.get("webhookApp", {})
+    app = None
+    if app_data:
+        app = db.query(WebhookApp).filter(WebhookApp.id == w.webhookapp_id).first()
+        if app:
+            if "method" in app_data:
+                app.method = app_data["method"]
+            if "uri" in app_data:
+                app.uri = app_data["uri"]
     db.commit()
     db.refresh(w)
-    return _webhook_to_dict(w)
+    if app:
+        db.refresh(app)
+    return _webhook_to_dict(w, app)
 

@@ -106,6 +106,7 @@ def get_shared_documents(uuid: str,
     if not doc:
         raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
 
+    response.headers["entity-token"] = create_entity_token(uuid)
     response.headers["shared-entity-token"] = create_entity_token(uuid)
     return {
         "id": doc.documentmaster_id,
@@ -147,6 +148,7 @@ def get_shared_parts(uuid: str,
     if not part:
         raise HTTPException(status_code=404, detail="共享实体不存在或已过期")
 
+    response.headers["entity-token"] = create_entity_token(uuid)
     response.headers["shared-entity-token"] = create_entity_token(uuid)
     return {
         "partNumber": part.partnumber,
