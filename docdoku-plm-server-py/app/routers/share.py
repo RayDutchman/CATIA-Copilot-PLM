@@ -2,6 +2,7 @@
 import hashlib
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Header, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -12,6 +13,7 @@ from app.core.deps import bearer_scheme
 from app.core.exceptions import (
     AccessRightException, EntityNotFoundException, NotAllowedException,
     PartRevisionNotFoundException, SharedEntityNotFoundException,
+    WorkspaceNotFoundException,
 )
 from app.models.auth import Account
 from app.models.document import DocumentRevision
@@ -56,6 +58,23 @@ def _get_optional_login(
         return None
 
 
+def _check_workspace_member(db: Session, login: str, ws: str):
+    """对齐 Payara checkWorkspaceReadAccess：验证工作区启用且用户是成员。"""
+    row = db.execute(text(
+        "SELECT enabled FROM workspace WHERE id = :w"
+    ), {"w": ws}).first()
+    if not row:
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
+    if not bool(row[0]):
+        from app.core.exceptions import WorkspaceNotEnabledException
+        raise WorkspaceNotEnabledException("WorkspaceNotEnabledException", ws)
+    member = db.execute(text(
+        "SELECT 1 FROM userdata WHERE login=:l AND workspace_id=:w"
+    ), {"l": login, "w": ws}).first()
+    if not member:
+        raise EntityNotFoundException("UserNotFoundException", login)
+
+
 def _get_shared_entity(uuid: str, password: str | None, db: Session):
     entity = db.execute(text(
         "SELECT uuid, dtype, entity_workspace_id, password, expire_date, "
@@ -69,16 +88,23 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
 
     if entity.password is not None:
         if password is None or hashlib.md5(password.encode()).hexdigest() != entity.password:
-            raise AccessRightException("AccessRightException")
+            raise HTTPException(
+                status_code=403,
+                detail={"forbidden": "password-protected"},
+                headers={"Reason-Phrase": "password-protected"},
+            )
 
     if entity.expire_date is not None:
         now = datetime.now(timezone.utc)
         expire = entity.expire_date.replace(tzinfo=timezone.utc) if entity.expire_date.tzinfo is None else entity.expire_date
         if expire < now:
-            # Java: deleteSharedEntityIfExpired — 过期后删除共享实体行
             db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
             db.commit()
-            raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
+            raise HTTPException(
+                status_code=404,
+                detail={"forbidden": "entity-expired"},
+                headers={"Reason-Phrase": "entity-expired"},
+            )
 
     return entity
 
@@ -177,6 +203,9 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
     public_shared=True 时可公开访问；
     public_shared=False 时若已认证可正常访问，否则返回 403。
     """
+    if login is not None:
+        _check_workspace_member(db, login, ws)
+
     doc = db.query(DocumentRevision).filter(
         DocumentRevision.workspace_id == ws,
         DocumentRevision.documentmaster_id == doc_id,
@@ -213,6 +242,9 @@ def get_public_shared_part(ws: str, pn: str, ver: str,
     public_shared=True 时可公开访问；
     public_shared=False 时若已认证可正常访问，否则返回 403。
     """
+    if login is not None:
+        _check_workspace_member(db, login, ws)
+
     part = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
         PartRevision.partmaster_partnumber == pn,

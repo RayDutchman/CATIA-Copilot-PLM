@@ -288,7 +288,7 @@ def _get_admin_workspaces(db: Session, login: str) -> list[str]:
     return [r[0] for r in rows]
 
 
-@router.get("/admin/disk-usage-stats", response_model=Dict[str, DiskUsageDTO])
+@router.get("/admin/disk-usage-stats", response_model=Dict[str, int])
 @router.get("/admin/disk-usage-stats/", include_in_schema=False)
 def admin_disk_usage_stats(db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
@@ -305,8 +305,7 @@ def admin_disk_usage_stats(db: Session = Depends(get_db),
             "JOIN partiteration_binres pib ON br.fullname = pib.attachedfile_fullname "
             "WHERE pib.workspace_id = :ws"
         ), {"ws": ws}).scalar() or 0
-        result[ws] = {"documents": docs_size, "parts": parts_size,
-                       "partTemplates": 0, "documentTemplates": 0}
+        result[ws] = docs_size + parts_size
     return result
 
 
@@ -368,10 +367,10 @@ def admin_parts_stats(db: Session = Depends(get_db),
 
 # ============ Index ============
 
-@router.post("/admin/index/{ws}", status_code=202)
-@router.post("/admin/index/{ws}/", status_code=202, include_in_schema=False)
-def post_index(ws: str, db: Session = Depends(get_db),
-               current_user: Account = Depends(get_current_user)):
+@router.put("/admin/index/{ws}", status_code=202)
+@router.put("/admin/index/{ws}/", status_code=202, include_in_schema=False)
+def put_index(ws: str, db: Session = Depends(get_db),
+              current_user: Account = Depends(get_current_user)):
     try:
         import elasticsearch
         return {"status": "accepted"}
@@ -386,25 +385,47 @@ def get_index():
     return {"inProgress": False}
 
 
-@router.put("/admin/workspace/{ws}/enable")
+@router.put("/admin/workspace/{ws}/enable", response_model=WorkspaceDTO)
 @router.put("/admin/workspace/{ws}/enable/", include_in_schema=False)
 def enable_workspace(ws: str, enabled: bool = Query(True),
                      db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
     _require_admin(db, current_user)
+    existing = db.execute(text(
+        "SELECT id FROM workspace WHERE id = :w"
+    ), {"w": ws}).fetchone()
+    if not existing:
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     db.execute(text("UPDATE workspace SET enabled = :e WHERE id = :w"),
                {"e": enabled, "w": ws})
     db.commit()
-    return {"status": "ok"}
+    r = db.execute(text(
+        "SELECT id, description, enabled, folderlocked, admin_login "
+        "FROM workspace WHERE id = :id"
+    ), {"id": ws}).fetchone()
+    return _workspace_to_dict(r)
 
 
-@router.put("/admin/accounts/{login}/enable")
+@router.put("/admin/accounts/{login}/enable", response_model=AdminAccountDTO)
 @router.put("/admin/accounts/{login}/enable/", include_in_schema=False)
 def enable_account(login: str, enabled: bool = Query(True),
                    db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     _require_admin(db, current_user)
+    existing = db.execute(text(
+        "SELECT login FROM account WHERE login = :login"
+    ), {"login": login}).fetchone()
+    if not existing:
+        raise EntityNotFoundException("AccountNotFoundException", login)
     db.execute(text("UPDATE account SET enabled = :e WHERE login = :l"),
                {"e": enabled, "l": login})
     db.commit()
-    return {"status": "ok"}
+    r = db.execute(text(
+        "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
+        "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
+        "FROM account a "
+        "LEFT JOIN userdata u ON a.login = u.login "
+        "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
+        "WHERE a.login = :login"
+    ), {"login": login}).fetchone()
+    return _account_to_dict(r)

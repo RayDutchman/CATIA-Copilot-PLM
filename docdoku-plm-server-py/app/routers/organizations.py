@@ -1,6 +1,6 @@
 """组织管理端点。"""
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -19,19 +19,22 @@ def _org_to_dict(r) -> dict:
     return {"name": r[0], "description": r[1] or ""}
 
 
-@router.get("/organizations", response_model=OrganizationDTO)
+@router.get("/organizations", response_model=OrganizationDTO | None)
 @router.get("/organizations/", include_in_schema=False)
 def list_organizations(
+    response: Response,
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
+    """返回当前用户的组织（Java 为 'my organization' 模型）。无组织时返回 204。"""
     r = db.execute(text(
         "SELECT o.name, o.description FROM organization o "
         "JOIN organization_account oa ON o.name = oa.organization_name "
         "WHERE oa.account_login = :login"
     ), {"login": current_user.login}).fetchone()
     if not r:
-        return {}
+        response.status_code = 204
+        return None
     return _org_to_dict(r)
 
 
