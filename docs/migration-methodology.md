@@ -4,86 +4,102 @@
 
 ---
 
-## 一、核心方法：文件映射 + 6 维代码审计
+## 一、核心方法：预生成清单 + 文件映射 + 7 维审计
 
-用 HTTP 对比或 pytest 作为验收标准是不够的——它们只能验证"端点返回 200"，测不出 SQL 逻辑差异、值语义错误、stub 持久化缺失。
+**错误做法**（我们实际做的——修了 3 轮才收敛）：先写全部代码 → 审计发现 35+11+14=60 个问题 → 反复修复 → 最后靠用户报 bug 补漏。
 
-唯一可靠的方法：**读 Java 源码，对着 Java 写 Python，写完立即审计**。
-
-### 全流程
+**正确做法**：写代码前先生成系统化清单，对照清单逐条验证，所有条件满足才算"对齐完成"。
 
 ```
-1. 建文件映射表   →  每个 Java 文件对应一个 Python 文件
-2. 读 Java 源码    →  理解业务逻辑、SQL、异常、响应字段
-3. 写 Python 实现  →  对着 Java 写，写的同时就对齐
-4. 6 维代码审计    →  AI agent 读 Java + Python 双向对比，输出差异
-5. 按优先级修复    →  Critical → Warning，修复后回归测试
-6. 全量测试通过    →  144 passed, 0 failed
-7. 切路由 + 前端实测 →  全量通过后一次性切
+1. 建文件映射表    →  每个 Java 文件对应一个 Python 文件
+2. 预生成检查清单   →  grep Payara 源码生成 throw matrix + method list
+3. 读 Java 源码     →  理解业务逻辑、SQL、异常、响应字段
+4. 写 Python 实现   →  对着 Java 写，写的同时就对齐
+5. 7 维代码审计     →  AI agent 对照 throw matrix + method list 逐条检查
+6. 按优先级修复     →  Critical → Warning，修复后回归测试
+7. 验收"对齐完成"   →  全部 7 个硬性条件满足
+8. 切路由 + 前端实测 →  全量通过后一次性切
 ```
-
-关键原则：**Java 源码是唯一验收标准**。不是"端点返回 200"，不是"pytest 通过"，是"Python 代码与 Java 代码逻辑等价"。
 
 ---
 
-## 二、文件映射表
+## 二、预生成检查清单（步骤 2，写代码前必做）
+
+### 2.1 生成 throw matrix
+
+```bash
+# 从 Payara 源码抓取所有 throw 语句，去重统计
+grep -rn "throw new" docdoku-plm-server-ejb/ --include='*.java' \
+  | sed 's/.*throw new \([A-Za-z]*\).*/\1/' | sort | uniq -c | sort -rn
+```
+
+产物：`docs/throw-matrix.md` —— 每个 Payara 异常的抛出次数 + Python 对齐状态。
+
+**写代码前就建立这张表，它将是第 7 维审计的依据。**
+
+### 2.2 生成方法覆盖清单
+
+```bash
+# Java Bean 的所有 public 方法签名
+grep -A1 "public " <Bean>.java | grep "throws"
+```
+
+每个方法标注 Python 是否实现，是否对齐。审计时逐方法检查。
+
+---
+
+## 三、文件映射表
 
 核心资产：`docs/file-mapping.md`。每一行是一个检查单位。
 
-```
-| # | Java Bean | Java REST Resource | Python Service | Python Router | 功能域 |
-|---|-----------|-------------------|----------------|---------------|--------|
-| 1 | ProductManagerBean.java | — | product_manager.py | — | 零件 CRUD |
-| 3 | — | PartsResource.java | — | parts.py | 零件列表/搜索 |
-```
+---
 
-**前端迁移时**：`Backbone Model/View ↔ React Component/Hook`，同样的表格结构。
+## 四、7 维代码审计
+
+**6 维 → 7 维**。新增第 7 维 `Exception throw parity`。
+
+### 第 7 维：Exception throw parity
+
+**操作**：对照 `docs/throw-matrix.md`，逐行检查 Python 是否有等价 `raise`。不是"随机发现报什么"，是系统化清单。
+
+Agent 指令：`Read docs/throw-matrix.md. For each row marked "缺 raise", check the Python file-mapping peer and add the appropriate raise statement.`
+
+**评估**：throw matrix 中所有行都是 ✅ 才算通过。
+
+### 其他 6 维（保持不变）
+
+**Coverage / Data integrity / Error handling / API contract / Write verification / Value fidelity** —— 与之前一致，但配合 throw matrix 使用时，agent 不再需要随机发现异常缺陷。
 
 ---
 
-## 三、6 维代码审计
+## 五、"对齐完成"标准（硬性条件）
 
-审计 Prompt 要求 AI agent **读 Java 源码 + Python 源码**，双向对比，从 6 个维度发现差异：
+全部满足才算完成，缺一条就是没对齐：
 
-**Coverage** — Python 实现了 Java 的全部方法吗？逻辑等价即可，不要求命名一致。
-
-**Data integrity** — 每条 SQL 查询：同一张表？相同的 JOIN/WHERE/ORDER？Java 是真值。
-
-**Error handling** — Java 的每个 throw → Python 的 raise，i18n key 对齐。遗漏的异常和静默吞掉的错误都要标记。
-
-**API contract** — Java DTO 的每个字段在 Python dict 里有同名 camelCase key 吗？嵌套深度一致？类型一致（object/array/scalar）？
-
-**Write verification** — Python 返回了 200/204，但调了 `db.commit()` 吗？硬编码的 `[]`/`{}`/`{"status":"ok"}` 是 Stub，必须标记。
-
-**Value fidelity** — 每个响应字段的值从哪来？查了正确的 DB 表？做了正确的类型转换？枚举映射了吗？日期格式是 ISO 8601 吗？
-
-**审计维度描述必须是开放式的**，不能列举具体检查项——那会把 AI agent 框死在清单内，遗漏清单外的问题。
+| # | 条件 | 验证方法 |
+|---|------|---------|
+| 1 | 所有 Java public 方法有 Python 等价实现 | file-mapping.md 逐行 ✅ |
+| 2 | 所有 Payara throw 有 Python raise | `throw-matrix.md` 全部 ✅ |
+| 3 | 所有 i18n key 注册异常类 | `test_i18n_bypass.py` PASSED |
+| 4 | 无硬编码中文/英文 HTTPException | `test_i18n_bypass.py` PASSED |
+| 5 | 所有 DTO 字段匹配（name/type/nesting） | HTTP 对比 + 值语义审计 |
+| 6 | 所有不可实现项入 REMINDERS | `grep TODO app/` 行数 ≤ `grep TODO REMINDERS.md` |
+| 7 | 全量测试通过 | `pytest tests/ -q` 144 passed |
 
 ---
 
-## 四、工具链
+## 六、TODO 追踪
+
+**任何代码中的 TODO/FIXME/HACK 注释**，必须在 `docs/REMINDERS.md` 中有对应条目。回生规则：每次提交前检查 `grep TODO app/ | wc -l` 与 `grep TODO REMINDERS.md | wc -l` 的一致性。
+
+---
+
+## 七、工具链
 
 | 工具 | 用途 |
 |------|------|
-| `docs/file-mapping.md` | 文件映射表 + 6 维审计 Prompt |
-| `scripts/full_compare_v2.py` | HTTP 层 96 端点兜底对比（辅助，不是主要验证手段） |
-| `pytest tests/ -q` | 回归测试（144 passed） |
-
----
-
-## 五、前端迁移适配
-
-核心方法不变：**建映射 → 读旧代码 → 写新代码 → 6 维审计 → 修复 → 全量通过 → 一次性切**。调整点：
-
-| 后端维度 | 前端维度 |
-|---------|---------|
-| 方法覆盖率 | 组件覆盖率（每个 Backbone View → React Component） |
-| SQL 查询逻辑 | 状态管理逻辑（Backbone Model get/set → Redux/Zustand store） |
-| 异常对齐 | 错误处理对齐（错误码、toast、全局 error handler） |
-| API 契约 | Props/State 字段完整性 |
-| Write 验证 | 空组件检测（渲染了但不发 API 请求） |
-| 值语义正确性 | 交互行为一致性（截图对比 + 流程录制） |
-
-**额外工具**：Playwright 录制旧前端每页截图 + 关键交互 → 新前端逐页对比。
-
-**额外验收标准**：前端比"长得像不像"和"交互行为是否一致"。
+| `docs/throw-matrix.md` | **新增**——预生成的异常对照表 |
+| `docs/file-mapping.md` | 文件映射表 + 7 维审计 Prompt |
+| `tests/test_i18n_bypass.py` | **新增**——零容忍 i18n 绕过 |
+| `scripts/full_compare_v2.py` | HTTP 层兜底对比 |
+| `pytest tests/ -q` | 回归测试 |
