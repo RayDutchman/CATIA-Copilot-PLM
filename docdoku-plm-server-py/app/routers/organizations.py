@@ -6,7 +6,8 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
-    EntityAlreadyExistsException, EntityNotFoundException, NotAllowedException,
+    AccessRightException, CreationException, EntityAlreadyExistsException,
+    EntityNotFoundException, NotAllowedException,
 )
 from app.models.auth import Account
 from app.schemas.misc import OrganizationDTO, OrganizationMemberResultDTO
@@ -43,12 +44,12 @@ def create_organization(
 ):
     name = body.get("name", "").strip()
     if not name:
-        raise NotAllowedException("NotAllowedException9", name)
+        raise CreationException("NotAllowedException9", name)
     existing = db.execute(text(
         "SELECT name FROM organization WHERE name = :name"
     ), {"name": name}).fetchone()
     if existing:
-        raise EntityAlreadyExistsException("OrganizationAlreadyExistsException", name)
+        raise CreationException("OrganizationAlreadyExistsException", name)
     description = body.get("description", "")
     owner = current_user.login
     db.execute(text(
@@ -83,10 +84,12 @@ def update_organization(
     current_user: Account = Depends(get_current_user),
 ):
     existing = db.execute(text(
-        "SELECT name FROM organization WHERE name = :name"
+        "SELECT name, owner_login FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
+    if current_user.login != existing[1]:
+        raise AccessRightException("AccessRightException")
     description = body.get("description", "")
     db.execute(text(
         "UPDATE organization SET description = :description WHERE name = :name"
@@ -106,10 +109,12 @@ def delete_organization(
     current_user: Account = Depends(get_current_user),
 ):
     existing = db.execute(text(
-        "SELECT name FROM organization WHERE name = :name"
+        "SELECT name, owner_login FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
+    if current_user.login != existing[1]:
+        raise AccessRightException("AccessRightException")
     db.execute(text(
         "DELETE FROM organization_account WHERE organization_name = :name"
     ), {"name": org_name})
@@ -192,10 +197,12 @@ def move_member(
     current_user: Account = Depends(get_current_user),
 ):
     existing = db.execute(text(
-        "SELECT name FROM organization WHERE name = :name"
+        "SELECT name, owner_login FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
+    if current_user.login != existing[1]:
+        raise AccessRightException("AccessRightException")
     login = body.get("login", "").strip()
     if not login:
         raise NotAllowedException("NotAllowedException9", login)

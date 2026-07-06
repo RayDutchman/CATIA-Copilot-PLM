@@ -9,6 +9,7 @@ from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     EntityNotFoundException, NotAllowedException,
     TaskNotFoundException, WorkflowNotFoundException,
+    WorkflowNameEmptyException,
 )
 
 # task status 整数到字符串映射（Java / 前端期望字符串）
@@ -100,6 +101,20 @@ class WorkflowService:
     def create_model(self, db: Session, ws: str, model_id: str,
                      final_state: str, user_login: str,
                      activity_models: list = None) -> WorkflowModel:
+        if not model_id or not model_id.strip():
+            raise WorkflowNameEmptyException("WorkflowNameEmptyException")
+        if activity_models is not None:
+            if not activity_models:
+                raise NotAllowedException("NotAllowedException2")
+            for am in activity_models:
+                if not am.get("lifeCycleState"):
+                    raise NotAllowedException("NotAllowedException3")
+                tasks = am.get("tasks", [])
+                if not tasks:
+                    raise NotAllowedException("NotAllowedException3")
+                for task in tasks:
+                    if not task.get("role"):
+                        raise NotAllowedException("NotAllowedException13")
         existing = db.query(WorkflowModel).filter(
             WorkflowModel.id == model_id, WorkflowModel.workspace_id == ws).first()
         if existing:
@@ -297,6 +312,29 @@ class WorkflowService:
                     "title": tm.title or "", "instructions": tm.instructions or "",
                     "wl": worker_login, "wws": worker_ws,
                      "dur": tm.duration})
+        # 检查每个 task 至少有一个 potential worker
+        role_tasks = db.execute(text(
+            "SELECT t.worker_login, t.worker_workspace_id, "
+            "tm.role_name, tm.role_workspace_id "
+            "FROM task t "
+            "JOIN activity a ON t.workflow_id = a.workflow_id AND t.activity_step = a.step "
+            "JOIN activitymodel am ON am.step = a.step AND am.workflowmodel_id = :mid "
+            "    AND am.workspace_id = :ws "
+            "JOIN taskmodel tm ON tm.activitymodel_id = am.id AND tm.num = t.num "
+            "WHERE t.workflow_id = :wf_id AND tm.role_name IS NOT NULL AND t.worker_login IS NULL"
+        ), {"wf_id": wf_id, "mid": model_id, "ws": ws}).fetchall()
+        for rt in role_tasks:
+            role_name, role_ws = rt[2], rt[3] or ws
+            has_user = db.execute(text(
+                "SELECT 1 FROM role_user WHERE role_name = :rn "
+                "AND role_workspace_id = :rw LIMIT 1"
+            ), {"rn": role_name, "rw": role_ws}).first()
+            has_group = db.execute(text(
+                "SELECT 1 FROM role_usergroup WHERE role_name = :rn "
+                "AND role_workspace_id = :rw LIMIT 1"
+            ), {"rn": role_name, "rw": role_ws}).first()
+            if not has_user and not has_group:
+                raise NotAllowedException("NotAllowedException56")
         # 将 step-0 的任务状态设为 IN_PROGRESS（1），启动工作流
         db.execute(text(
             "UPDATE task SET status = 1 WHERE workflow_id = :wf_id AND activity_step = 0"
@@ -530,6 +568,13 @@ class WorkflowService:
             if not t_info:
                 raise TaskNotFoundException("TaskNotFoundException", str(task_id))
             wf_id, step, num = t_info[0], t_info[1], t_info[2]
+
+        # 检查工作流是否存在
+        wf_exists = db.execute(text(
+            "SELECT 1 FROM workflow WHERE id = :id LIMIT 1"
+        ), {"id": wf_id}).first()
+        if not wf_exists:
+            raise WorkflowNotFoundException("WorkflowNotFoundException", str(wf_id))
 
         # 权限检查：获取当前 task 状态和指派人
         t_cur = db.execute(text(

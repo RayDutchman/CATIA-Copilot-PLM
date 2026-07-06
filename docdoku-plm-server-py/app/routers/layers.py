@@ -25,9 +25,7 @@ def list_layers(ws: str, pid: str,
         Layer.configurationitem_workspace_id == ws,
         Layer.configurationitem_id == pid,
     ).all()
-    return [{"id": l.id, "name": l.name, "color": l.color,
-             "workspaceId": l.configurationitem_workspace_id,
-             "configurationItemId": l.configurationitem_id} for l in layers]
+    return [{"id": l.id, "name": l.name, "color": l.color} for l in layers]
 
 
 @router.post("/workspaces/{ws}/products/{pid}/layers", status_code=201, response_model=LayerDTO)
@@ -40,9 +38,7 @@ def create_layer(ws: str, pid: str, body: dict,
                   color=body.get("color"),
                   author_login=current_user.login)
     db.add(layer); db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name, "color": layer.color,
-            "workspaceId": layer.configurationitem_workspace_id,
-            "configurationItemId": layer.configurationitem_id}
+    return {"id": layer.id, "name": layer.name, "color": layer.color}
 
 
 @router.put("/workspaces/{ws}/products/{pid}/layers/{layer_id}", response_model=LayerDTO)
@@ -62,9 +58,7 @@ def update_layer(ws: str, pid: str, layer_id: int, body: dict,
     if "color" in body:
         layer.color = body["color"]
     db.commit(); db.refresh(layer)
-    return {"id": layer.id, "name": layer.name, "color": layer.color,
-            "workspaceId": layer.configurationitem_workspace_id,
-            "configurationItemId": layer.configurationitem_id}
+    return {"id": layer.id, "name": layer.name, "color": layer.color}
 
 
 @router.delete("/workspaces/{ws}/products/{pid}/layers/{layer_id}", status_code=204)

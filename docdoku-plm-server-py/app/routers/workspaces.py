@@ -91,9 +91,22 @@ def list_more_workspaces(db: Session = Depends(get_db),
 @router.get("/workspaces/reachable-users/", include_in_schema=False)
 def reachable_users(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
-    """Payara 的 getReachableUsersForCaller。返回除当前用户外的所有账号。"""
+    """返回与当前用户有共同工作区的其他用户。"""
     from app.models.auth import Account as Acct
-    users = db.query(Acct).filter(Acct.login != current_user.login).all()
+    caller_ws = db.execute(text(
+        "SELECT workspace_id FROM userdata WHERE login = :l"
+    ), {"l": current_user.login}).fetchall()
+    ws_ids = [r[0] for r in caller_ws]
+    if not ws_ids:
+        return []
+    user_logins = db.execute(text(
+        "SELECT DISTINCT u.login FROM userdata u "
+        "WHERE u.workspace_id = ANY(:ws) AND u.login != :caller"
+    ), {"ws": ws_ids, "caller": current_user.login}).fetchall()
+    logins = [r[0] for r in user_logins]
+    if not logins:
+        return []
+    users = db.query(Acct).filter(Acct.login.in_(logins)).all()
     return [{"login": u.login, "name": u.name, "email": u.email} for u in users]
 
 
