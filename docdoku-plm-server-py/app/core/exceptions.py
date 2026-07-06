@@ -295,16 +295,10 @@ class WorkspaceAlreadyExistsException(EntityAlreadyExistsException):
 # ============================================================
 
 
-class BaselineWarningException(ApplicationException):
-    pass
-
 
 class ConvertedResourceException(ApplicationException):
     pass
 
-
-class IndexNamingException(ApplicationException):
-    pass
 
 
 class IndexerNotAvailableException(ApplicationException):
@@ -314,9 +308,6 @@ class IndexerNotAvailableException(ApplicationException):
 class IndexerRequestException(ApplicationException):
     pass
 
-
-class IndexerServerException(ApplicationException):
-    pass
 
 
 class LOVNameEmptyException(ApplicationException):
@@ -330,9 +321,6 @@ class LOVPossibleValueException(ApplicationException):
 class MaskCreationException(ApplicationException):
     pass
 
-
-class MissingIndexException(ApplicationException):
-    pass
 
 
 class PartRevisionNotReleasedException(ApplicationException):
