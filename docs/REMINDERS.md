@@ -38,7 +38,8 @@
 
 ## 已解决（近期）
 
-- [x] **Stubs修复：admin统计+org+health+LOV+Attributes+tasks** — 统计per-ws格式+disk-usage真实查询+org单对象+move-member真实实现+health ok/error+LOV数组格式+Attributes完整DTO+tasks字段补全 (2026-07-06)
+- [x] **File/Doc/Folder/User异常类抛出对齐Payara** — binary_storage.py/document_manager.py/folders.py/user_manager.py 9处异常替换 (2026-07-06)
+- [x] **Layer/Marker/Template/Part/Milestone/Platform异常对齐** — 10处异常替换 (2026-07-06)
 - [x] **Products 6项关键修复** — decodePath -1前缀+替代件链接支持、_build_component 补充 substituteIds/notifications/attributes、6个stub端点基本实现、BOM端点新增、instance详情补充iteration、milestones语法修复 (2026-07-06)
 - [x] **Share/安全关键修复** — entity-token 头 + 过期删除 + 公开共享逻辑 + password header + security entity token + exception 类 (2026-07-06)
 - [x] **乐观锁 SELECT FOR UPDATE** — checkout/checkin/undo/update_iteration 添加行级锁，消除并发竞态窗口 (2026-07-06)

@@ -1,7 +1,7 @@
 """零件模板端点（PartTemplateResource）。"""
 import re
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db

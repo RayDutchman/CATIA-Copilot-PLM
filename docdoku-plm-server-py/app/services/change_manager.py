@@ -2,7 +2,10 @@ from datetime import datetime
 from fastapi import HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
-from app.core.exceptions import AccessRightException, EntityConstraintException
+from app.core.exceptions import (
+    AccessRightException, EntityConstraintException,
+    MilestoneNotFoundException, MilestoneAlreadyExistsException,
+)
 from app.models.auth import Account
 from app.models.change import (
     ChangeIssue, ChangeRequest, ChangeOrder, Milestone,
@@ -39,6 +42,8 @@ class ChangeService:
         item = db.query(cls).filter(
             cls.workspace_id == ws, cls.id == item_id).first()
         if item is None:
+            if cls is Milestone:
+                raise MilestoneNotFoundException("MilestoneNotFoundException", str(item_id))
             raise HTTPException(404, f"{cls.__name__} not found")
         return item
 
@@ -68,12 +73,21 @@ class ChangeService:
                 Milestone.workspace_id == ws,
             ).first()
             if not ms:
-                raise HTTPException(404, f"Milestone {body['milestone_id']} 不存在")
+                raise MilestoneNotFoundException(
+                    "MilestoneNotFoundException", str(body["milestone_id"]))
         # 验证 initiator：创建 Issue 时 initiator 必须是有效用户
         if cls is ChangeIssue and body.get("initiator"):
             acc = db.query(Account).filter(Account.login == body["initiator"]).first()
             if not acc:
                 raise HTTPException(404, f"发起人 {body['initiator']} 不存在")
+        if cls is Milestone:
+            existing = db.query(Milestone).filter(
+                Milestone.workspace_id == ws,
+                Milestone.title == body.get("title"),
+            ).first()
+            if existing:
+                raise MilestoneAlreadyExistsException(
+                    "MilestoneAlreadyExistsException", body.get("title", ""))
         kwargs = dict(workspace_id=ws)
         if hasattr(cls, "creation_date"):
             kwargs["creation_date"] = now

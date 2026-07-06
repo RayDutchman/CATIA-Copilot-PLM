@@ -294,6 +294,7 @@ def path_choices(ws: str, ci_id: str,
         ci = svc.get_ci(db, ws, ci_id)
     except HTTPException:
         return []
+    # TODO: raise PathDataMasterNotFoundException when pathdata is implemented
     try:
         rows = db.execute(text(
             "SELECT DISTINCT pdm.path, pdm.id FROM pathdatamaster pdm "

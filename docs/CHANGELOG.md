@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-07-06 — 异常对齐：补 Layer/Marker/Template/Part/Milestone/Platform 异常
+
+- fix(py): `layers.py` — `update_layer`/`create_marker` 图层不存在时抛出 `LayerNotFoundException` 替代 `HTTPException(404)`
+- fix(py): `layers.py` — `delete_marker` 标记不存在时抛出 `MarkerNotFoundException` 替代静默返回 204
+- fix(py): `part_templates.py` — `get_part_template`/`update_part_template`/`delete_part_template`/`generate_part_id`/`update_part_template_acl` 模板不存在时抛出 `PartMasterTemplateNotFoundException` 替代 `HTTPException(404)`
+- fix(py): `part_templates.py` — `create_part_template` 模板 ID 重复时抛出 `PartMasterTemplateAlreadyExistsException`
+- fix(py): `product_manager.py` — `create_new_version` 版本号重复时抛出 `PartRevisionAlreadyExistsException`
+- fix(py): `product_manager.py` — 补充顶层 import：`EntityNotFoundException`/`PartMasterNotFoundException`/`PartRevisionNotFoundException`/`PartIterationNotFoundException`/`AccessRightException`/`NotAllowedException`（修复 NameError）
+- fix(py): `product_structure.py` — `decode_path` 用法链接不存在时抛出 `PartUsageLinkNotFoundException` 替代静默 break
+- fix(py): `change_manager.py` — `get_by_id` 里程碑不存在时抛出 `MilestoneNotFoundException` 替代 `HTTPException(404)`
+- fix(py): `change_manager.py` — `create_item` 引用 milestone 不存在时抛出 `MilestoneNotFoundException` 替代 `HTTPException(404)`
+- fix(py): `change_manager.py` — `create_item` 创建 milestone title 重复时抛出 `MilestoneAlreadyExistsException`
+- fix(py): `platform.py` — 健康检查失败时抛出 `PlatformHealthException` 替代静默返回 error 状态
+- chore(py): `product_structure.py`/`products.py` — 添加 `# TODO: raise PathDataMasterNotFoundException when pathdata is implemented` 注释
+- test: `test_product_service.py` — 适配异常类型 `HTTPException`→`EntityNotFoundException`/`PartMasterNotFoundException`
+
+## 2026-07-06 — fix: 补File/Doc/Folder/User异常类抛出——对齐Payara
+
+- fix(py): `binary_storage.py` — `save_nativecad`/`save_attached` 保存前检查 BinaryResource 是否存在，冲突抛 `FileAlreadyExistsException`
+- fix(py): `binary_storage.py` — `get_file_bytes` 文件未找到时抛 `FileNotFoundException("FileNotFoundException", fullName)` 替代内置 FileNotFoundError
+- fix(py): `document_manager.py` — `save_file` 文件已存在时抛 `FileAlreadyExistsException` 替代 upsert 更新
+- fix(py): `document_manager.py` — `get_file_bytes` 文件未找到时抛 `FileNotFoundException`
+- fix(py): `document_manager.py` — `create_new_version` 新版本已存在时抛 `DocumentRevisionAlreadyExistsException`
+- fix(py): `document_manager.py` — `rename_folder`/`delete_folder` 文件夹未找到时抛 `FolderNotFoundException` 替代 `HTTPException(404)`
+- fix(py): `folders.py` — `move_folder` 源文件夹未找到时抛 `FolderNotFoundException`
+- fix(py): `user_manager.py` — `add_user` 用户已存在于 workspace 时抛 `UserAlreadyExistsException`
+- feat(py): `user_manager.py` — 新增 `check_user_active` 方法，用户存在但 workspace 成员未激活时抛 `UserNotActiveException`
+- test: `144 passed, 1 skipped`
 
 ## 2026-07-06 — OPS: OpenCode 接入 Chrome DevTools MCP 替代 Playwright MCP
 

@@ -5,6 +5,7 @@ from app.models.user_mgmt import UserGroup, Credential
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityNotFoundException,
     EntityConstraintException,
+    UserAlreadyExistsException, UserNotActiveException,
 )
 import hashlib
 
@@ -72,10 +73,11 @@ class UserMgmtService:
         existing = db.execute(text(
             "SELECT COUNT(*) FROM userdata WHERE login = :l AND workspace_id = :w"
         ), {"l": login, "w": ws}).scalar()
-        if existing == 0:
-            db.execute(text(
-                "INSERT INTO userdata (login, workspace_id) VALUES (:l, :w)"
-            ), {"l": login, "w": ws})
+        if existing > 0:
+            raise UserAlreadyExistsException("UserAlreadyExistsException", login)
+        db.execute(text(
+            "INSERT INTO userdata (login, workspace_id) VALUES (:l, :w)"
+        ), {"l": login, "w": ws})
         # 添加 workspaceusermembership 记录（enable_user 语义）
         db.execute(text(
             "INSERT INTO workspaceusermembership "
@@ -103,6 +105,21 @@ class UserMgmtService:
             "DELETE FROM usergroupmapping WHERE login = :l"
         ), {"l": login})
         db.commit()
+
+    def check_user_active(self, db: Session, ws: str, login: str) -> bool:
+        """检查用户是否在 workspace 中处于激活状态。"""
+        row = db.execute(text(
+            "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
+        ), {"l": login, "w": ws}).first()
+        if not row:
+            raise EntityNotFoundException("UserNotFoundException", login)
+        membership = db.execute(text(
+            "SELECT 1 FROM workspaceusermembership "
+            "WHERE workspace_id = :ws AND member_login = :login"
+        ), {"ws": ws, "login": login}).first()
+        if not membership:
+            raise UserNotActiveException("UserNotActiveException", login, ws)
+        return True
 
     def enable_user(self, db: Session, ws: str, login: str):
         db.execute(text(

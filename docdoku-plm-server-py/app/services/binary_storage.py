@@ -84,9 +84,13 @@ def save_nativecad(db: Session, ws: str, pn: str, ver: str, iteration: int,
 def save_attached(db: Session, ws: str, pn: str, ver: str, iteration: int,
                   filename: str, data: bytes) -> BinaryResource:
     """写附件到 vault + upsert BinaryResource + insert part_iteration_binres 关联。"""
+    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/{filename}"
+    existing = db.query(BinaryResource).filter(
+        BinaryResource.full_name == full_name).first()
+    if existing is not None:
+        raise FileAlreadyExistsException("FileAlreadyExistsException", full_name)
     path = vault.part_attached_path(ws, pn, ver, iteration, filename)
     vault.write_file(path, data)
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/{filename}"
     br = _upsert_binaryresource(db, full_name, len(data))
     exists = db.execute(
         part_iteration_binres.select().where(
@@ -110,6 +114,12 @@ def save_attached(db: Session, ws: str, pn: str, ver: str, iteration: int,
 def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
                    sub_type: str | None, filename: str) -> bytes:
     """从 vault 读文件，若当前 iteration 不存在则回退到更早 iteration。"""
+    if sub_type is None:
+        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{filename}"
+    elif sub_type == "nativecad":
+        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
+    else:
+        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/{filename}"
     for iter_num in range(iteration, 0, -1):
         try:
             if sub_type is None:
@@ -122,7 +132,7 @@ def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
             return vault.read_file(path)
         except FileNotFoundError:
             if iter_num == 1:
-                raise
+                raise FileNotFoundException("FileNotFoundException", full_name)
             continue
-    raise FileNotFoundError(f"文件未找到: {ws}/{pn}/{ver}/{iteration}/{filename}")
+    raise FileNotFoundException("FileNotFoundException", full_name)
 

@@ -5,7 +5,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import AccessRightException, EntityAlreadyExistsException
+from app.core.exceptions import AccessRightException, EntityAlreadyExistsException, FolderNotFoundException
 from app.models.auth import Account
 from app.services.document_manager import DocumentService
 from app.schemas.misc import FolderDTO, FolderStatusDTO
@@ -84,7 +84,7 @@ def move_folder(ws: str, folder_id: str, body: dict,
     from fastapi import HTTPException
     folder = db.query(Folder).filter(Folder.completepath == folder_id).first()
     if not folder:
-        raise HTTPException(404, "Folder not found")
+        raise FolderNotFoundException("FolderNotFoundException", folder_id)
     new_parent = body.get("parentFolder", ws)
     old_prefix = folder.completepath
     old_name = old_prefix.split('/')[-1]

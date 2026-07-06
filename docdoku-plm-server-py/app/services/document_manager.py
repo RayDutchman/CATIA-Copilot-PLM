@@ -9,6 +9,8 @@ from app.models.document import (
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     NotAllowedException, EntityNotFoundException,
+    FileAlreadyExistsException, FileNotFoundException,
+    DocumentRevisionAlreadyExistsException, FolderNotFoundException,
 )
 
 
@@ -626,6 +628,14 @@ class DocumentService:
             raise NotAllowedException("NotAllowedException27")
         now = datetime.utcnow()
         new_ver = self._next_version(ver)
+        existing_new = db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.documentmaster_id == doc_id,
+            DocumentRevision.version == new_ver,
+        ).first()
+        if existing_new is not None:
+            raise DocumentRevisionAlreadyExistsException(
+                "DocumentRevisionAlreadyExistsException", doc_id)
         new_title = title or pr.title
         new_description = description if description is not None else pr.description
         new_pr = DocumentRevision(
@@ -776,7 +786,7 @@ class DocumentService:
         folder = db.query(Folder).filter(
             Folder.completepath == completepath).first()
         if folder is None:
-            raise HTTPException(404, "Folder not found")
+            raise FolderNotFoundException("FolderNotFoundException", completepath)
         parent = folder.parentfolder_completepath or ""
         new_path = f"{parent}/{new_name}" if parent else new_name
         existing = db.query(Folder).filter(
@@ -800,7 +810,7 @@ class DocumentService:
         folder = db.query(Folder).filter(
             Folder.completepath == completepath).first()
         if folder is None:
-            raise HTTPException(404, "Folder not found")
+            raise FolderNotFoundException("FolderNotFoundException", completepath)
         # 级联删除文件夹内所有文档
         docs = db.query(DocumentRevision).filter(
             DocumentRevision.location_completepath.like(f"{completepath}%")
@@ -871,13 +881,11 @@ class DocumentService:
         br = db.query(BinaryResource).filter(
             BinaryResource.full_name == full_name).first()
         now = datetime.utcnow()
-        if br is None:
-            br = BinaryResource(full_name=full_name, content_length=len(data),
-                                last_modified=now, dtype="BinaryResource")
-            db.add(br)
-        else:
-            br.content_length = len(data)
-            br.last_modified = now
+        if br is not None:
+            raise FileAlreadyExistsException("FileAlreadyExistsException", full_name)
+        br = BinaryResource(full_name=full_name, content_length=len(data),
+                            last_modified=now, dtype="BinaryResource")
+        db.add(br)
         db.flush()
         exists = db.execute(document_iteration_binres.select().where(
             document_iteration_binres.c.workspace_id == ws,
@@ -896,9 +904,13 @@ class DocumentService:
 
     def get_file_bytes(self, ws, doc_id, ver, iteration, filename):
         from app.services import vault as vault_svc
+        full_name = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{filename}"
         path = (vault_svc._vault_root() / ws / "documents" / doc_id
                 / ver / str(iteration) / filename)
-        return vault_svc.read_file(path)
+        try:
+            return vault_svc.read_file(path)
+        except FileNotFoundError:
+            raise FileNotFoundException("FileNotFoundException", full_name)
 
     def _next_version(self, current):
         if not current: return "A"

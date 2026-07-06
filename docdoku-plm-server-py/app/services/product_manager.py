@@ -3,6 +3,12 @@ from datetime import datetime
 from typing import Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from app.core.exceptions import (
+    AccessRightException, EntityConstraintException,
+    EntityNotFoundException, NotAllowedException,
+    PartMasterNotFoundException, PartRevisionNotFoundException,
+    PartIterationNotFoundException,
+)
 from app.models.part import (
     PartMaster, PartRevision, PartIteration,
     PartUsageLink, CADInstance, Conversion,
@@ -174,7 +180,7 @@ class ProductService:
 
     def create_part(self, db: Session, workspace_id: str,
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
-        from app.core.exceptions import EntityAlreadyExistsException
+        from app.core.exceptions import EntityAlreadyExistsException, PartRevisionAlreadyExistsException
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)
@@ -688,7 +694,7 @@ class ProductService:
 
     def create_new_version(self, db: Session, ws: str, pn: str, ver: str,
                            user_login: str) -> PartRevision:
-        from app.core.exceptions import NotAllowedException
+        from app.core.exceptions import NotAllowedException, EntityAlreadyExistsException, PartRevisionAlreadyExistsException
         pr = self.get_revision(db, ws, pn, ver)
         if pr.checkout_user_login:
             raise NotAllowedException("NotAllowedException40")
@@ -696,6 +702,17 @@ class ProductService:
             raise NotAllowedException("NotAllowedException41")
         now = datetime.utcnow()
         new_ver = self._next_version(ver)
+        # 检查新版本是否已存在
+        existing_new = (
+            db.query(PartRevision)
+            .filter(PartRevision.workspace_id == ws,
+                    PartRevision.partmaster_partnumber == pn,
+                    PartRevision.version == new_ver)
+            .first()
+        )
+        if existing_new:
+            raise PartRevisionAlreadyExistsException(
+                "PartRevisionAlreadyExistsException", pn, new_ver)
         new_pr = PartRevision(
             workspace_id=ws, partmaster_partnumber=pn, version=new_ver,
             description=pr.description, status=0, creation_date=now,

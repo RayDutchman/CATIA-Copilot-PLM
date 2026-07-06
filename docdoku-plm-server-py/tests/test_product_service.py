@@ -1,6 +1,7 @@
 """ProductService 业务逻辑测试。"""
 import pytest
 from app.services.product_manager import ProductService
+from app.core.exceptions import EntityNotFoundException, PartMasterNotFoundException
 from app.schemas.part import PartCreationDTO
 
 
@@ -21,19 +22,17 @@ def test_count_parts_returns_int(db):
 
 
 def test_get_revision_not_found_raises_404(db):
-    from fastapi import HTTPException
     svc = ProductService()
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(EntityNotFoundException) as exc:
         svc.get_revision(db, WS, "NONEXISTENT-PART", "A")
-    assert exc.value.status_code == 404
+    assert exc.value.key == "PartRevisionNotFoundException"
 
 
 def test_get_latest_revision_not_found_raises_404(db):
-    from fastapi import HTTPException
     svc = ProductService()
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PartMasterNotFoundException) as exc:
         svc.get_latest_revision(db, WS, "NONEXISTENT-PART")
-    assert exc.value.status_code == 404
+    assert exc.value.key == "PartMasterNotFoundException"
 
 
 def test_find_or_create_creates_when_missing(db):

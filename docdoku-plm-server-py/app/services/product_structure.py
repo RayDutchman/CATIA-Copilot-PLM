@@ -174,7 +174,7 @@ class ProductStructureService:
             "virtual": is_virtual,
             "substitute": is_substitute,
             "partUsageLinkReferenceDescription": usage_link.reference_description if usage_link else None,
-            "hasPathData": False,
+            "hasPathData": False,  # TODO: raise PathDataMasterNotFoundException when pathdata is implemented
             "accessDeny": False,
             "attributes": [],
             "components": [],
@@ -213,7 +213,7 @@ class ProductStructureService:
             link = db.query(PartUsageLink).filter(
                 PartUsageLink.id == link_id).first()
             if link is None:
-                break
+                raise PartUsageLinkNotFoundException("PartUsageLinkNotFoundException", str(link_id))
             rev = db.query(PartRevision).filter(
                 PartRevision.workspace_id == ws,
                 PartRevision.partmaster_partnumber == link.component_partnumber,

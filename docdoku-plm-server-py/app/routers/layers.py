@@ -1,6 +1,6 @@
 """产品图层与标记（Layer / Marker）端点路由。"""
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
