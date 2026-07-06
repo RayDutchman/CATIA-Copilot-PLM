@@ -1,5 +1,6 @@
 import uuid
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import datetime
 from app.models.workflow import WorkflowModel, Workflow, ActivityModel, TaskModel
 from app.models.auth import Account
@@ -26,10 +27,6 @@ class WorkflowService:
     def create_model(self, db: Session, ws: str, model_id: str,
                      final_state: str, user_login: str,
                      activity_models: list = None) -> WorkflowModel:
-        if not model_id or not model_id.strip():
-            raise ValueError("工作流模型名称不能为空")
-        if not activity_models:
-            raise ValueError("工作流模型至少需要一个活动")
         existing = db.query(WorkflowModel).filter(
             WorkflowModel.id == model_id, WorkflowModel.workspace_id == ws).first()
         if existing:

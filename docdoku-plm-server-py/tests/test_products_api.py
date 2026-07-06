@@ -11,6 +11,8 @@ def _token():
 
 def test_create_and_filter():
     token = _token(); h = {"Authorization": f"Bearer {token}"}
+    # 清理残留数据
+    client.request("DELETE", f"{PREFIX}/workspaces/{WS}/products/P3API-1", headers=h)
     resp = client.post(f"{PREFIX}/workspaces/{WS}/products/",
                        json={"id":"P3API-1","description":"T","partNumber":"Assem1"}, headers=h)
     assert resp.status_code == 201

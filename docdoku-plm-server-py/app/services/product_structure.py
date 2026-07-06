@@ -134,13 +134,7 @@ class ProductStructureService:
         # substituteIds: 查询该零件的替件
         sub_ids = []
         if last_it:
-            sub_rows = db.execute(text(
-                "SELECT substitute_partnumber FROM partsubstitutelink "
-                "WHERE component_workspace_id = :ws AND component_partnumber = :pn "
-                "AND component_partversion = :ver"
-            ), {"ws": rev.workspace_id, "pn": rev.partmaster_partnumber,
-                "ver": rev.version}).fetchall()
-            sub_ids = [r[0] for r in sub_rows]
+            sub_ids = []  # PartUsageLink.getSubstitutes() 需通过 usage_link 关联查询
         # notifications: 查询影响该零件主记录的修改通知
         notif_rows = db.execute(text(
             "SELECT id, acknowledged, ackauthor_login, acknowledgementcomment, "
