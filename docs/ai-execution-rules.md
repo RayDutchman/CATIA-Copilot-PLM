@@ -204,3 +204,83 @@ SQLAlchemy 在评估该字符串时无法访问当前模块的变量（如 `part
    ```
 
 4. **`relationship()` 的第一个参数用字符串没问题**（如 `"PartMaster"`），这些类名由 SQLAlchemy mapper registry 解析，不依赖模块作用域。
+
+---
+
+## P1B Schema 新建阶段的经验教训
+
+### 问题 1：CSV 目标路径可能已过时
+
+部分 P1B 项在早期阶段（P0A/P1A）已被拆分到了子目录中，但 CSV 目标路径未更新：
+
+| 编号 | CSV 目标 | 实际位置 |
+|------|---------|---------|
+| D-034 | `layer.py` | `product/layer.py` |
+| D-044 | `marker.py` | `product/marker.py` |
+| D-075 | `shared_document.py` | `misc/shared_document.py` |
+| D-076 | `shared_part.py` | `misc/shared_part.py` |
+
+**教训**：开始新批次前，先用 `grep -rl "ClassName" app/schemas/` 检查 DTO 是否已存在，不要盲目按 CSV 路径创建。
+
+### 问题 2：缺失的隐式依赖 DTO
+
+Java 源码引用了 CSV 未列出的 DTO，必须一并创建：
+
+| 隐式依赖 | 被谁引用 | 来源 |
+|----------|---------|------|
+| `LightPartRevisionDTO` | `ImportPreviewDTO` | D-039 标记 P1A 已完成但文件不存在 |
+| `ConfigurationItemKeyDTO` | `EffectivityDTO` | Java `ConfigurationItemKey` 值对象，不在 DTO 列表中 |
+
+**教训**：写 Schema 前先扫描 `List["ClassName"]` 等引用，对照已存在文件，缺失则先补。
+
+### 问题 3：覆盖已有文件需保持类名兼容
+
+`product_instance_master.py` 和 `product_instance_iteration.py` 已存在，旧代码使用 `ProductInstanceDTO` 类名。Java 版本为 `ProductInstanceMasterDTO`。全部字段更新后必须添加别名：
+
+```python
+ProductInstanceDTO = ProductInstanceMasterDTO  # 兼容旧名称
+```
+
+**教训**：修改已有文件时，先 `grep -rn "OldClassName" app/` 找所有引用，必要时添加别名保持兼容。
+
+### 问题 4：CSV 列索引错误
+
+用 Python 自动化更新 CSV 时，错误替换了优先级列（`row[3]`）而非目标路径列（`row[6]`）。修复脚本同样需要验证。
+
+**教训**：更新 CSV 后必须 `grep` 几个关键行验证列内容正确。
+
+### 问题 5：Java DTO 继承合并
+
+`EffectivityDTO` 在 Java 中已包含所有子类型字段（`startDate`/`endDate`/`startLotId`/`endLotId`/`startNumber`/`endNumber`）。子类 `DateBasedEffectivityDTO`、`LotBasedEffectivityDTO`、`SerialNumberBasedEffectivityDTO` 虽然 `extends EffectivityDTO`，但添加的字段已在父类中。Pydantic 中直接做空子类即可：
+
+```python
+class DateBasedEffectivityDTO(EffectivityDTO):
+    pass
+```
+
+### 问题 6：Pydantic 循环引用标准模式
+
+复杂 DTO（如 `ProductInstanceIterationDTO`、`PathDataMasterDTO`）互相嵌套引用，必须用 **string annotations + 底部 lazy import + `model_rebuild()`** 三步法：
+
+```python
+# 步骤 1: 类型注解用字符串
+class ParentDTO(BaseModel):
+    children: List["ChildDTO"] = []
+
+# 步骤 2: 文件底部 lazy import
+from app.schemas.xxx.child import ChildDTO  # noqa: E402
+
+# 步骤 3: model_rebuild 解决前向引用
+ParentDTO.model_rebuild()
+```
+
+**关键**：这些 DTO 不涉及 SQLAlchemy relationship，所以只需 `model_rebuild()`，**不需要 lambda**（lambda 规则仅适用于 ORM 模型的 `secondaryjoin`/`primaryjoin`）。
+
+### 问题 7：Java 集合继承 → Pydantic RootModel
+
+`StringListDTO extends ArrayList<String>` 和 `CheckedOutStatsResponseDTO extends HashMap<...>` 这类集合继承，在 Pydantic V2 中用 `RootModel` 或自定义 `__root__`：
+
+```python
+# StringListDTO → JSON 序列化为纯字符串数组
+StringListDTO = RootModel[List[str]]
+```
