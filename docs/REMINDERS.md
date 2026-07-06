@@ -28,6 +28,7 @@
 
 ### 低优先级
 
+- [ ] **QueryAlreadyExistsException** — query CRUD 是 stub（`parts.py:214,224` TODO）。实现 query 管理后补 raise。
 - [ ] **PasswordRecoveryRequestNotFoundException** — 邮件恢复流程未实现（`auth.py:114` TODO）
 - [ ] **IndexerNotAvailableException / IndexerRequestException** — 不适用，Python 版无 ES 索引器
 - [ ] **GCMAccountNotFoundException / GCMAccountAlreadyExistsException** — 不适用，Python 版无 GCM 集成
