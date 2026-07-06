@@ -100,6 +100,7 @@ class ACLDTO(BaseModel):
 from app.schemas.workflow.activity_model import ActivityModelDTO  # noqa: E402, F401
 from app.schemas.workflow.workflow_model import WorkflowModelDTO  # noqa: E402, F401
 from app.schemas.workflow.task import TaskDTO  # noqa: E402, F401
+from app.schemas.part.user import UserDTO  # noqa: E402
 from app.schemas.workflow.activity import WorkflowActivityDTO  # noqa: E402, F401
 from app.schemas.workflow.workflow import WorkflowDTO  # noqa: E402, F401
 from app.schemas.workflow.task_model import TaskModelDTO  # noqa: E402, F401

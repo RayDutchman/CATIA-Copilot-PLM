@@ -1,4 +1,5 @@
 """DTO: ChangeItemDTO. Auto-split from change.py."""
+from __future__ import annotations
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
 

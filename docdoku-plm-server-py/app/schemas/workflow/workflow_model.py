@@ -1,6 +1,8 @@
 """DTO: WorkflowModelDTO. Auto-split from workflow.py."""
+from __future__ import annotations
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
+from app.schemas.part.user import UserDTO
 
 
 class WorkflowModelDTO(BaseModel):
@@ -11,5 +13,5 @@ class WorkflowModelDTO(BaseModel):
     finalLifeCycleState: Optional[str] = None
     creationDate: Optional[str] = None
     author: Optional[UserDTO] = None
-    acl: Optional[ACLDTO] = None
-    activityModels: List[ActivityModelDTO] = []
+    acl: Optional["ACLDTO"] = None
+    activityModels: List["ActivityModelDTO"] = []

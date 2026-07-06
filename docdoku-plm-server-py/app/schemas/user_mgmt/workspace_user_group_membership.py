@@ -1,4 +1,5 @@
 """DTO: WorkspaceUserGroupMembershipDTO. Auto-split from user_mgmt.py."""
+from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 

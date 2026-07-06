@@ -1,4 +1,5 @@
 """DTO: ChangeOrderDTO. Auto-split from change.py."""
+from __future__ import annotations
 from app.schemas.change.change_item import ChangeItemDTO
 from typing import Optional, List
 

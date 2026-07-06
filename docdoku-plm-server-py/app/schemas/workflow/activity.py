@@ -1,4 +1,5 @@
 """DTO: WorkflowActivityDTO. Auto-split from workflow.py."""
+from __future__ import annotations
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
 
@@ -15,4 +16,4 @@ class WorkflowActivityDTO(BaseModel):
     inProgress: bool = False
     toDo: bool = False
     relaunchStep: Optional[int] = None
-    tasks: List[TaskDTO] = []
+    tasks: List["TaskDTO"] = []
