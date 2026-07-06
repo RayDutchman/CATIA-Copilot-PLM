@@ -189,6 +189,7 @@ class ProductService:
     def create_part(self, db: Session, workspace_id: str,
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
         from app.core.exceptions import EntityAlreadyExistsException, PartRevisionAlreadyExistsException
+        from app.services.acl_helper import apply_acl
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)
@@ -228,6 +229,35 @@ class ProductService:
         )
         db.add(revision)
         db.flush()
+        # 处理 ACL
+        if body.acl:
+            user_entries = body.acl.get("userEntriesMap") or {}
+            group_entries = body.acl.get("userGroupEntriesMap") or {}
+            if user_entries or group_entries:
+                new_acl_id = apply_acl(db, None, user_entries, group_entries)
+                revision.acl_id = new_acl_id
+        # 处理 workflowModelId + roleMapping
+        if body.workflow_model_id:
+            from sqlalchemy import text as sql_text
+            wf_result = db.execute(sql_text(
+                "INSERT INTO workflow (id, workspace_id, startdate, finallifecyclestate) "
+                "VALUES (nextval('seq_workflow_id'), :ws, :now, 'IN_PROGRESS') RETURNING id"
+            ), {"ws": workspace_id, "now": now}).fetchone()
+            wf_id = wf_result[0]
+            revision.workflow_id = wf_id
+            if body.role_mapping:
+                for rm in body.role_mapping:
+                    role_name = rm.get("roleName", "")
+                    for user_login in rm.get("userLogins", []) or []:
+                        db.execute(sql_text(
+                            "INSERT INTO workflow_usergroup (workflow_id, rolename, userlogin) "
+                            "VALUES (:wf, :role, :login)"
+                        ), {"wf": wf_id, "role": role_name, "login": user_login})
+                    for group_id in rm.get("groupIds", []) or []:
+                        db.execute(sql_text(
+                            "INSERT INTO workflow_usergroup (workflow_id, rolename, groupid) "
+                            "VALUES (:wf, :role, :gid)"
+                        ), {"wf": wf_id, "role": role_name, "gid": group_id})
         # 创建首个 PartIteration（iteration=1）
         iteration = PartIteration(
             workspace_id=workspace_id,
@@ -892,10 +922,11 @@ class ProductService:
             )
 
     def search_parts(self, db: Session, ws: str, name=None,
-                     number=None, type_=None,
+                     number=None, type_=None, author=None,
                      created_after=None, created_before=None,
                      modified_after=None, modified_before=None,
-                     tags: list | None = None, content=None,
+                     tags: list | None = None, attributes: list | None = None,
+                     content=None,
                      start: int = 0, length: int = 100) -> list:
         q = db.query(PartMaster).filter(PartMaster.workspace_id == ws)
         if name:
@@ -904,6 +935,8 @@ class ProductService:
             q = q.filter(PartMaster.number.ilike(f"%{number}%"))
         if type_:
             q = q.filter(PartMaster.type.ilike(f"%{type_}%"))
+        if author:
+            q = q.filter(PartMaster.author_login == author)
         if created_after:
             q = q.filter(PartMaster.creation_date >= created_after)
         if created_before:
@@ -929,6 +962,36 @@ class ProductService:
                            & (PartRevision.partmaster_partnumber == part_revision_tags.c.partmaster_partnumber)
                            & (PartRevision.version == part_revision_tags.c.partrevision_version))
                 q = q.filter(part_revision_tags.c.tag_label.in_(tag_list))
+                q = q.distinct()
+        if attributes:
+            from sqlalchemy import text
+            attr_list = [a.strip() for a in attributes if a.strip()]
+            if attr_list:
+                q = q.join(PartRevision,
+                           (PartMaster.workspace_id == PartRevision.workspace_id)
+                           & (PartMaster.number == PartRevision.partmaster_partnumber))
+                q = q.join(PartIteration,
+                           (PartRevision.workspace_id == PartIteration.workspace_id)
+                           & (PartRevision.partmaster_partnumber == PartIteration.partmaster_partnumber)
+                           & (PartRevision.version == PartIteration.partrevision_version))
+                from app.models.part import part_iteration_attribute
+                q = q.join(part_iteration_attribute,
+                           (PartIteration.workspace_id == part_iteration_attribute.c.workspace_id)
+                           & (PartIteration.partmaster_partnumber == part_iteration_attribute.c.partmaster_partnumber)
+                           & (PartIteration.partrevision_version == part_iteration_attribute.c.partrevision_version)
+                           & (PartIteration.iteration == part_iteration_attribute.c.iteration))
+                # 查询匹配属性的 instanceattribute_id
+                attr_ids = []
+                for a in attr_list:
+                    attr_rows = db.execute(text(
+                        "SELECT id FROM instanceattribute WHERE name=:n OR "
+                        "textvalue ILIKE :v OR longtextvalue ILIKE :vl"
+                    ), {"n": a, "v": f"%{a}%", "vl": f"%{a}%"}).fetchall()
+                    attr_ids.extend([r[0] for r in attr_rows])
+                if attr_ids:
+                    q = q.filter(part_iteration_attribute.c.instanceattribute_id.in_(attr_ids))
+                else:
+                    q = q.filter(PartMaster.number == None)
                 q = q.distinct()
         if content:
             from sqlalchemy import or_

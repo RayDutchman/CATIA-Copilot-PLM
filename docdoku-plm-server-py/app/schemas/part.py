@@ -158,6 +158,7 @@ class PartCreationDTO(BaseModel):
     workflow_model_id: Optional[str] = None
     template_id: Optional[str] = None
     acl: Optional[dict] = None
+    role_mapping: Optional[List[dict]] = None
 
 
 class PartIterationUpdateDTO(BaseModel):

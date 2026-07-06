@@ -40,18 +40,18 @@ def _get_user_info(db, login, ws):
 
 def _compute_route_path(db: Session, workspace_id: str, complete_path: str | None) -> list[dict]:
     """根据 location_completepath 查询 pathdatamaster 表构建 routePath 列表。"""
-    if not complete_path or complete_path == "/":
+    if not complete_path:
         return []
-    segments = [s for s in complete_path.strip("/").split("/") if s]
-    if not segments:
+    components = complete_path.strip("/").split("/")
+    if not components or components == [""]:
         return []
     result = []
     accumulated = ""
-    for seg in segments:
+    for seg in components:
         accumulated += "/" + seg
         row = db.execute(sql_text(
-            "SELECT id, path FROM pathdatamaster WHERE workspace_id=:ws AND path=:p LIMIT 1"
-        ), {"ws": workspace_id, "p": accumulated}).first()
+            "SELECT id, path FROM pathdatamaster WHERE path=:p LIMIT 1"
+        ), {"p": accumulated}).first()
         if row:
             result.append({"id": row[0], "path": row[1]})
         else:

@@ -1,4 +1,5 @@
 """文档集合路由（DocumentsResource）。"""
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, text as sql_text
@@ -82,25 +83,29 @@ def search_documents(
         else:
             query = query.filter(DocumentRevision.documentmaster_id == None)
     if createdFrom:
-        query = query.filter(DocumentRevision.creation_date >= createdFrom)
+        cf = datetime.fromisoformat(createdFrom)
+        query = query.filter(DocumentRevision.creation_date >= cf)
     if createdTo:
-        query = query.filter(DocumentRevision.creation_date <= createdTo)
+        ct = datetime.fromisoformat(createdTo)
+        query = query.filter(DocumentRevision.creation_date <= ct)
     if modifiedFrom:
         from app.models.document import DocumentIteration as DI
+        mf = datetime.fromisoformat(modifiedFrom)
         matched_ids = [row[0] for row in db.execute(sql_text(
             "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
             "WHERE di.workspace_id = :w AND di.modificationdate >= :d"
-        ), {"w": ws, "d": modifiedFrom}).fetchall()]
+        ), {"w": ws, "d": mf}).fetchall()]
         if matched_ids:
             query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
         else:
             query = query.filter(DocumentRevision.documentmaster_id == None)
     if modifiedTo:
         from app.models.document import DocumentIteration as DI
+        mt = datetime.fromisoformat(modifiedTo)
         matched_ids = [row[0] for row in db.execute(sql_text(
             "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
             "WHERE di.workspace_id = :w AND di.modificationdate <= :d"
-        ), {"w": ws, "d": modifiedTo}).fetchall()]
+        ), {"w": ws, "d": mt}).fetchall()]
         if matched_ids:
             query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
         else:

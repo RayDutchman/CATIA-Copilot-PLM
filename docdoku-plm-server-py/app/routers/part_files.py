@@ -222,7 +222,28 @@ def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
         "ETag": f'"{file_name}_{len(data)}_{int(stat.st_mtime)}"',
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+        "Accept-Ranges": "bytes",
     }
+
+
+def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | None:
+    """解析 Range 请求头，返回 (start, end) 或 None。"""
+    import re
+    if not range_header:
+        return None
+    m = re.match(r'^bytes=(\d+)-(\d*)$', range_header.strip())
+    if not m:
+        return None
+    start = int(m.group(1))
+    end_str = m.group(2)
+    if end_str:
+        end = int(end_str)
+    else:
+        end = file_size - 1
+    if start > end or start >= file_size:
+        return None
+    end = min(end, file_size - 1)
+    return (start, end)
 
 
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}",
@@ -231,6 +252,7 @@ def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
             response_class=Response, include_in_schema=False)
 def download_with_subtype(
     ws: str, pn: str, ver: str, iteration: int, sub_type: str, file_name: str,
+    request: Request,
     current_user: Account = Depends(get_current_user),
 ):
     from app.services.vault import _vault_root, part_nativecad_path, part_attached_path
@@ -242,8 +264,21 @@ def download_with_subtype(
         data = binary_storage.get_file_bytes(ws, pn, ver, iteration, sub_type, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
-    return Response(content=data, media_type="application/octet-stream",
-                    headers=_file_headers(data, file_path, file_name))
+    headers = _file_headers(data, file_path, file_name)
+    range_header = request.headers.get("range", "")
+    if range_header:
+        file_size = len(data)
+        parsed = _parse_range_header(range_header, file_size)
+        if parsed:
+            start, end = parsed
+            chunk = data[start:end + 1]
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            headers["Content-Length"] = str(len(chunk))
+            return Response(content=chunk, status_code=206,
+                            media_type="application/octet-stream", headers=headers)
+        else:
+            raise HTTPException(416, detail="Requested Range Not Satisfiable")
+    return Response(content=data, media_type="application/octet-stream", headers=headers)
 
 
 @router.get("/files/{ws}/parts/{pn}/{ver}/{iteration}/{file_name}",
@@ -252,6 +287,7 @@ def download_with_subtype(
             response_class=Response, include_in_schema=False)
 def download_direct(
     ws: str, pn: str, ver: str, iteration: int, file_name: str,
+    request: Request,
     current_user: Account = Depends(get_current_user),
 ):
     """几何体 GLB 直下（fullname 无 subType 段）。"""
@@ -261,6 +297,19 @@ def download_direct(
         data = binary_storage.get_file_bytes(ws, pn, ver, iteration, None, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
-    return Response(content=data, media_type="application/octet-stream",
-                    headers=_file_headers(data, file_path, file_name))
+    headers = _file_headers(data, file_path, file_name)
+    range_header = request.headers.get("range", "")
+    if range_header:
+        file_size = len(data)
+        parsed = _parse_range_header(range_header, file_size)
+        if parsed:
+            start, end = parsed
+            chunk = data[start:end + 1]
+            headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            headers["Content-Length"] = str(len(chunk))
+            return Response(content=chunk, status_code=206,
+                            media_type="application/octet-stream", headers=headers)
+        else:
+            raise HTTPException(416, detail="Requested Range Not Satisfiable")
+    return Response(content=data, media_type="application/octet-stream", headers=headers)
 

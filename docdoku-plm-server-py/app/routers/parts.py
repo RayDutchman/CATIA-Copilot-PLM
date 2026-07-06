@@ -79,11 +79,13 @@ def search_parts(
     name: str = Query(None),
     number: str = Query(None),
     type: str = Query(None),
+    author: str = Query(None),
     createdAfter: str = Query(None),
     createdBefore: str = Query(None),
     modifiedAfter: str = Query(None),
     modifiedBefore: str = Query(None),
     tags: str = Query(None),
+    attributes: str = Query(None),
     content: str = Query(None),
     start: int = Query(0, ge=0, alias="from"),
     length: int = Query(50, ge=1, le=500, alias="size"),
@@ -91,17 +93,19 @@ def search_parts(
     db: Session = Depends(get_db),
 ):
     from datetime import datetime
+    author_val = author if author else None
     ca = datetime.fromisoformat(createdAfter) if createdAfter else None
     cb = datetime.fromisoformat(createdBefore) if createdBefore else None
     ma = datetime.fromisoformat(modifiedAfter) if modifiedAfter else None
     mb = datetime.fromisoformat(modifiedBefore) if modifiedBefore else None
     tag_list = tags.split(",") if tags else None
+    attr_list = attributes.split(",") if attributes else None
     revisions = svc.search_parts(
         db, workspace_id,
-        name=name, number=number, type_=type,
+        name=name, number=number, type_=type, author=author_val,
         created_after=ca, created_before=cb,
         modified_after=ma, modified_before=mb,
-        tags=tag_list, content=content,
+        tags=tag_list, attributes=attr_list, content=content,
         start=start, length=length,
     )
     return [map_revision(pr, db) for pr in revisions]

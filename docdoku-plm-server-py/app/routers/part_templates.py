@@ -29,8 +29,57 @@ def _build_acl(db: Session, acl_id: int) -> dict | None:
         "userEntries": [{"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in user_entries],
         "groupEntries": [{"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in group_entries],
         "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
-        "userGroupEntriesMap": {},
+        "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
     }
+
+
+def _build_template_attrs(db: Session, workspace_id: str, template_id: str) -> list[dict]:
+    """查询 partmastertemplate_attr + instanceattributetemplate 构造属性模板列表。"""
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT iat.id, iat.name, iat.dtype, iat.mandatory, iat.locked, "
+        "iat.attributetype, iat.lov_name, iat.lov_workspace_id, "
+        "pta.attr_order "
+        "FROM partmastertemplate_attr pta "
+        "JOIN instanceattributetemplate iat ON iat.id = pta.instanceattributetemplate_id "
+        "WHERE pta.workspace_id = :ws AND pta.partmastertemplate_id = :tid "
+        "ORDER BY pta.attr_order"
+    ), {"ws": workspace_id, "tid": template_id}).fetchall()
+    return [{
+        "id": row.id,
+        "name": row.name,
+        "dtype": row.dtype,
+        "mandatory": row.mandatory,
+        "locked": row.locked,
+        "attributeType": row.attributetype,
+        "lovName": row.lov_name,
+        "lovWorkspaceId": row.lov_workspace_id,
+        "attrOrder": row.attr_order,
+    } for row in rows]
+
+
+def _build_instance_attr_templates(db: Session, workspace_id: str, template_id: str) -> list[dict]:
+    """查询 instanceattributetemplate 构造实例属性模板列表。"""
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT iat.id, iat.name, iat.dtype, iat.mandatory, iat.locked, "
+        "iat.attributetype, iat.lov_name, iat.lov_workspace_id, pta.attr_order "
+        "FROM instanceattributetemplate iat "
+        "JOIN partmastertemplate_attr pta ON pta.instanceattributetemplate_id = iat.id "
+        "WHERE pta.workspace_id = :ws AND pta.partmastertemplate_id = :tid "
+        "ORDER BY pta.attr_order"
+    ), {"ws": workspace_id, "tid": template_id}).fetchall()
+    return [{
+        "id": row.id,
+        "name": row.name,
+        "dtype": row.dtype,
+        "mandatory": row.mandatory,
+        "locked": row.locked,
+        "attributeType": row.attributetype,
+        "lovName": row.lov_name,
+        "lovWorkspaceId": row.lov_workspace_id,
+        "attrOrder": row.attr_order,
+    } for row in rows]
 
 
 def _build_author(db: Session, login: str | None, workspace_id: str) -> dict:
@@ -197,8 +246,8 @@ def list_part_templates(workspace_id: str,
             "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
             "acl": _build_acl(db, t.acl_id) or {},
             "workflowModelId": t.workflowmodel_id,
-            "attributeTemplates": [],
-            "attributeInstanceTemplates": [],
+            "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
+            "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
         })
     return result
 
@@ -230,8 +279,8 @@ def get_part_template(workspace_id: str, template_id: str,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
         "acl": _build_acl(db, t.acl_id) or {},
         "workflowModelId": t.workflowmodel_id,
-        "attributeTemplates": [],
-        "attributeInstanceTemplates": [],
+        "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
+        "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
     }
 
 
@@ -280,8 +329,8 @@ def create_part_template(workspace_id: str,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
         "acl": _build_acl(db, t.acl_id) or {},
         "workflowModelId": t.workflowmodel_id,
-        "attributeTemplates": [],
-        "attributeInstanceTemplates": [],
+        "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
+        "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
     }
 
 
@@ -325,8 +374,8 @@ def update_part_template(workspace_id: str, template_id: str,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
         "acl": _build_acl(db, t.acl_id) or {},
         "workflowModelId": t.workflowmodel_id,
-        "attributeTemplates": [],
-        "attributeInstanceTemplates": [],
+        "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
+        "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
     }
 
 
