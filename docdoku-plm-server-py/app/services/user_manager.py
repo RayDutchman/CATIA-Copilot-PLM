@@ -4,8 +4,9 @@ from app.models.auth import Account
 from app.models.user_mgmt import UserGroup, Credential
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityNotFoundException,
-    EntityConstraintException,
-    UserAlreadyExistsException, UserNotActiveException,
+    EntityConstraintException, UserAlreadyExistsException,
+    UserGroupAlreadyExistsException, UserGroupNotFoundException,
+    UserNotActiveException,
 )
 import hashlib
 
@@ -38,7 +39,7 @@ class UserMgmtService:
         existing = db.query(UserGroup).filter(
             UserGroup.id == group_id, UserGroup.workspace_id == ws).first()
         if existing:
-            raise EntityAlreadyExistsException("UserGroupAlreadyExistsException", group_id)
+            raise UserGroupAlreadyExistsException("UserGroupAlreadyExistsException", group_id)
         g = UserGroup(id=group_id, workspace_id=ws)
         db.add(g)
         db.execute(text(
@@ -55,7 +56,7 @@ class UserMgmtService:
         g = db.query(UserGroup).filter(
             UserGroup.id == group_id, UserGroup.workspace_id == ws).first()
         if not g:
-            raise EntityNotFoundException("UserGroupNotFoundException", group_id)
+            raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
         # 检查成员
         members = db.execute(text(
             "SELECT COUNT(*) FROM usergroupmapping WHERE groupname = :g"

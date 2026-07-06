@@ -8,6 +8,7 @@ from app.models.security import ACL, AclUserEntry
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     EntityNotFoundException, NotAllowedException,
+    TaskNotFoundException, WorkflowNotFoundException,
 )
 
 # task status 整数到字符串映射（Java / 前端期望字符串）
@@ -198,7 +199,7 @@ class WorkflowService:
     def get_instance(self, db: Session, ws: str, workflow_id: int) -> Workflow:
         w = db.query(Workflow).filter(Workflow.id == workflow_id).first()
         if not w:
-            raise EntityNotFoundException("WorkflowNotFoundException", str(workflow_id))
+            raise WorkflowNotFoundException("WorkflowNotFoundException", str(workflow_id))
         return w
 
     def list_workspace_workflows(self, db: Session, ws: str) -> list:
@@ -236,7 +237,7 @@ class WorkflowService:
             "FROM workflow WHERE id = :id AND aborteddate IS NOT NULL"
         ), {"id": workflow_id}).first()
         if not row:
-            raise EntityNotFoundException("WorkflowNotFoundException", str(workflow_id))
+            raise WorkflowNotFoundException("WorkflowNotFoundException", str(workflow_id))
         tasks = db.execute(text(
             "SELECT t.* FROM task t WHERE t.workflow_id = :id"
         ), {"id": workflow_id}).fetchall()
@@ -322,7 +323,7 @@ class WorkflowService:
             "SELECT * FROM workflow WHERE id = :id"
         ), {"id": wf_id}).first()
         if not wf:
-            raise EntityNotFoundException("WorkflowNotFoundException", str(wf_id))
+            raise WorkflowNotFoundException("WorkflowNotFoundException", str(wf_id))
         activities = db.execute(text(
             "SELECT * FROM activity WHERE workflow_id = :id ORDER BY step"
         ), {"id": wf_id}).fetchall()
@@ -438,7 +439,7 @@ class WorkflowService:
                 "WHERE t.num = :id LIMIT 1"
             ), {"id": task_id}).first()
         if not row:
-            raise EntityNotFoundException("TaskNotFoundException", str(task_id or task_num))
+            raise TaskNotFoundException("TaskNotFoundException", str(task_id or task_num))
         return row
 
     def get_assigned_tasks(self, db: Session, ws: str, login: str) -> list:
@@ -527,7 +528,7 @@ class WorkflowService:
                 "SELECT workflow_id, activity_step, num FROM task WHERE num = :id LIMIT 1"
             ), {"id": task_id}).first()
             if not t_info:
-                raise EntityNotFoundException("TaskNotFoundException", str(task_id))
+                raise TaskNotFoundException("TaskNotFoundException", str(task_id))
             wf_id, step, num = t_info[0], t_info[1], t_info[2]
 
         # 权限检查：获取当前 task 状态和指派人
@@ -536,7 +537,7 @@ class WorkflowService:
             "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num LIMIT 1"
         ), {"wf_id": wf_id, "step": step, "num": num}).first()
         if not t_cur:
-            raise EntityNotFoundException("TaskNotFoundException",
+            raise TaskNotFoundException("TaskNotFoundException",
                                           f"{wf_id}-{step}-{num}")
         cur_status, cur_worker = t_cur[0], t_cur[1]
         if cur_status != 1:

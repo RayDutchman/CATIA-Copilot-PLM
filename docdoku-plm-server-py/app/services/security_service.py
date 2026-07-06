@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from app.models.security import Role, role_user, role_usergroup
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
-    EntityNotFoundException,
+    EntityNotFoundException, RoleAlreadyExistsException,
+    RoleNotFoundException,
 )
 from sqlalchemy import text
 
@@ -31,7 +32,7 @@ class SecurityService:
                     default_groups: list | None = None) -> Role:
         existing = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if existing:
-            raise EntityAlreadyExistsException("RoleAlreadyExistsException", name)
+            raise RoleAlreadyExistsException("RoleAlreadyExistsException", name)
         role = Role(name=name, workspace_id=ws)
         db.add(role)
         db.commit()
@@ -44,14 +45,14 @@ class SecurityService:
                     default_groups: list | None = None) -> Role:
         role = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if not role:
-            raise EntityNotFoundException("RoleNotFoundException", name)
+            raise RoleNotFoundException("RoleNotFoundException", name)
         self._update_role_assignments(db, ws, name, default_users, default_groups)
         return role
 
     def delete_role(self, db: Session, ws: str, name: str):
         role = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if not role:
-            raise EntityNotFoundException("RoleNotFoundException", name)
+            raise RoleNotFoundException("RoleNotFoundException", name)
         rows = db.execute(text(
             "SELECT COUNT(*) FROM role_user WHERE role_name=:n AND role_workspace_id=:w "
             "UNION ALL SELECT COUNT(*) FROM role_usergroup WHERE role_name=:n AND role_workspace_id=:w"

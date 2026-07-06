@@ -11,6 +11,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import (
     AccessRightException, EntityAlreadyExistsException,
     EntityNotFoundException, NotAllowedException,
+    TagAlreadyExistsException, TagNotFoundException,
     WorkspaceNotFoundException, ListOfValuesNotFoundException,
 )
 from app.models.auth import Account
@@ -309,7 +310,7 @@ def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
         "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": label, "ws": ws}).fetchone()
     if existing:
-        raise EntityAlreadyExistsException("TagAlreadyExistsException", label)
+        raise TagAlreadyExistsException("TagAlreadyExistsException", label)
     db.execute(text(
         "INSERT INTO tag (label, workspace_id) VALUES (:label, :ws)"
     ), {"label": label, "ws": ws})
@@ -348,7 +349,7 @@ def delete_tag(ws: str, tag_id: str, db: Session = Depends(get_db),
         "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": tag_id, "ws": ws}).fetchone()
     if not existing:
-        raise EntityNotFoundException("TagNotFoundException", tag_id)
+        raise TagNotFoundException("TagNotFoundException", tag_id)
     db.execute(text(
         "DELETE FROM tag WHERE label = :label AND workspace_id = :ws"
     ), {"label": tag_id, "ws": ws})

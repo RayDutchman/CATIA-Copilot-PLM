@@ -6,6 +6,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import BaselineNotFoundException
 from app.models.auth import Account
 from app.schemas.document import DocumentBaselineDTO
 
@@ -119,7 +120,7 @@ def delete_doc_baseline(ws: str, baseline_id: int,
         "SELECT documentcollection_id FROM documentbaseline WHERE id = :bid"
     ), {"bid": baseline_id}).fetchone()
     if not baseline:
-        raise HTTPException(404, "Baseline not found")
+        raise BaselineNotFoundException("BaselineNotFoundException", str(baseline_id))
     collection_id = baseline[0]
     db.execute(sql_text("DELETE FROM baselineddocument WHERE documentcollection_id = :cid"), {"cid": collection_id})
     db.execute(sql_text("DELETE FROM documentbaseline WHERE id = :bid"), {"bid": baseline_id})

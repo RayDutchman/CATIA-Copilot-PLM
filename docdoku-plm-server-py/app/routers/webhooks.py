@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import AccessRightException, EntityNotFoundException
+from app.core.exceptions import AccessRightException, WebhookNotFoundException
 from app.models.auth import Account
 from app.models.workflow import Webhook, WebhookApp
 from app.schemas.misc import WebhookDTO
@@ -66,7 +66,7 @@ def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if not w:
-        raise EntityNotFoundException("WebhookNotFoundException", str(webhook_id))
+        raise WebhookNotFoundException("WebhookNotFoundException", str(webhook_id))
     return _webhook_to_dict(w)
 
 
@@ -116,7 +116,7 @@ def update_webhook(ws: str, webhook_id: int, body: dict, db: Session = Depends(g
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if not w:
-        raise EntityNotFoundException("WebhookNotFoundException", str(webhook_id))
+        raise WebhookNotFoundException("WebhookNotFoundException", str(webhook_id))
     if "name" in body:
         w.name = body["name"]
     if "active" in body:

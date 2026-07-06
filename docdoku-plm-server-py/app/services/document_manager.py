@@ -9,6 +9,7 @@ from app.models.document import (
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     NotAllowedException, EntityNotFoundException,
+    DocumentRevisionNotFoundException,
     FileAlreadyExistsException, FileNotFoundException,
     DocumentRevisionAlreadyExistsException, FolderNotFoundException,
 )
@@ -23,7 +24,7 @@ class DocumentService:
             DocumentRevision.version == ver,
         ).first()
         if pr is None:
-            raise HTTPException(404, f"Document {doc_id}-{ver} not found")
+            raise DocumentRevisionNotFoundException("DocumentRevisionNotFoundException", doc_id, ver)
         return pr
 
     def count_documents(self, db, ws):

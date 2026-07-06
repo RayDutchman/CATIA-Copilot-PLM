@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+from app.core.exceptions import DocumentRevisionNotFoundException
 from app.services.document_manager import DocumentService
 from app.services.acl_helper import apply_acl
 from app.schemas.document import DocumentRevisionDTO
@@ -440,7 +441,7 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
             ld = _doc_to_dict(db, linked_rev, current_user.login)
             ld["commentLink"] = lr[4] or ""
             linked_documents.append(ld)
-        except HTTPException:
+        except Exception:
             linked_documents.append({
                 "workspaceId": lr[1], "documentMasterId": lr[2],
                 "version": lr[3], "commentLink": lr[4] or "",

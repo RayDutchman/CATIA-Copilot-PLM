@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-06 — 异常raise补齐：Workflow/Webhook/Role/Task/Tag/Group
+
+- fix(py): `workflow_manager.py` — `get_instance`/`get_aborted_workflow_instance`/`get_workspace_workflow` 工作流不存在时抛出 `WorkflowNotFoundException` 替代 `EntityNotFoundException`
+- fix(py): `workflow_manager.py` — `get_task`/`process_task` task 不存在时抛出 `TaskNotFoundException` 替代 `EntityNotFoundException`
+- fix(py): `webhooks.py` — `get_webhook`/`update_webhook` webhook 不存在时抛出 `WebhookNotFoundException` 替代 `EntityNotFoundException`
+- fix(py): `security_service.py` — `create_role` role 重复时抛出 `RoleAlreadyExistsException`；`update_role`/`delete_role` role 不存在时抛出 `RoleNotFoundException` 替代 `EntityAlreadyExistsException`/`EntityNotFoundException`
+- fix(py): `workspaces.py` — `create_tag` tag 重复时抛出 `TagAlreadyExistsException`；`delete_tag` tag 不存在时抛出 `TagNotFoundException` 替代基类异常
+- fix(py): `user_manager.py` — `create_group` 重复时抛出 `UserGroupAlreadyExistsException`；`delete_group` 不存在时抛出 `UserGroupNotFoundException`
+- fix(py): `user_groups.py` — `enable_group`/`disable_group`/`set_group_access`/`group_tag_subscriptions`/`group_tag_subscription_put` group 不存在时抛出 `UserGroupNotFoundException` 替代 `EntityNotFoundException`
+
 ## 2026-07-06 — 异常对齐：补 Layer/Marker/Template/Part/Milestone/Platform 异常
 
 - fix(py): `layers.py` — `update_layer`/`create_marker` 图层不存在时抛出 `LayerNotFoundException` 替代 `HTTPException(404)`

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import EntityNotFoundException, NotAllowedException
+from app.core.exceptions import NotAllowedException, UserGroupNotFoundException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -69,7 +69,7 @@ def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
     if not existing:
-        raise EntityNotFoundException("UserGroupNotFoundException", group_id)
+        raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
     db.execute(text(
         "INSERT INTO workspaceusergroupmembership "
         "(workspace_id, member_id, member_workspace_id, readonly) "
@@ -92,7 +92,7 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
     if not existing:
-        raise EntityNotFoundException("UserGroupNotFoundException", group_id)
+        raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
     db.execute(text(
         "DELETE FROM workspaceusergroupmembership "
         "WHERE workspace_id = :ws AND member_id = :gid"
@@ -113,7 +113,7 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": group_id, "ws": ws}).fetchone()
     if not group:
-        raise EntityNotFoundException("UserGroupNotFoundException", group_id)
+        raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
     read_only = body.get("readOnly", False)
     db.execute(text(
         "INSERT INTO workspaceusergroupmembership "
@@ -136,7 +136,7 @@ def group_tag_subscriptions(ws: str, groupId: str, db: Session = Depends(get_db)
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": groupId, "ws": ws}).fetchone()
     if not group:
-        raise EntityNotFoundException("UserGroupNotFoundException", groupId)
+        raise UserGroupNotFoundException("UserGroupNotFoundException", groupId)
     rows = db.execute(text(
         "SELECT tag_workspace_id, tag_label, oniterationchange, onstatechange "
         "FROM tagusergroupsubscription "
@@ -159,7 +159,7 @@ def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": groupId, "ws": ws}).fetchone()
     if not group:
-        raise EntityNotFoundException("UserGroupNotFoundException", groupId)
+        raise UserGroupNotFoundException("UserGroupNotFoundException", groupId)
     on_iter = (body or {}).get("onIterationChange", False)
     on_state = (body or {}).get("onStateChange", False)
     db.execute(text(
