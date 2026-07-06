@@ -38,6 +38,7 @@
 
 ## 已解决（近期）
 
+- [x] **乐观锁 SELECT FOR UPDATE** — checkout/checkin/undo/update_iteration 添加行级锁，消除并发竞态窗口 (2026-07-06)
 - [x] **文件映射+代码级对比方法论** — `docs/file-mapping.md` 52业务对+22基础设施对，5维度检查 (2026-07-06)
 - [x] **3 轮全量审计清零** — 60对→35→11→14→0 问题 (2026-07-06)
 - [x] **Router 22→32 拆分** — 每个 Python 文件 1:1 对应 Java Resource (2026-07-06)

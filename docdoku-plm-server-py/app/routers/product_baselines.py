@@ -51,6 +51,18 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
     return {"id": bl.id, "name": bl.name}
 
 
+def _get_user(db: Session, login: str, ws: str) -> dict:
+    if not login:
+        return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws}
+    acc = db.query(Account).filter(Account.login == login).first()
+    return {
+        "login": login, "name": acc.name if acc else login,
+        "email": acc.email if acc else None,
+        "language": acc.language if acc else None,
+        "workspaceId": ws,
+    }
+
+
 def _query_baselined_parts(db: Session, partcollection_id: int | None) -> list:
     if partcollection_id is None:
         return []
@@ -79,7 +91,7 @@ def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
             "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
             "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
             "description": bl.description or "",
-            "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
+            "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
             "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
             "substituteLinks": [], "optionalUsageLinks": [],
             "pathToPathLinks": []}
@@ -137,7 +149,7 @@ def get_baseline(ws: str, ci_id: str, bl_id: int,
             "configurationItemWorkspaceId": bl.configurationitem_workspace_id,
             "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
             "description": bl.description or "",
-            "author": {"login": bl.author_login or "", "name": bl.author_login or ""},
+            "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
             "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
             "substituteLinks": [], "optionalUsageLinks": [],
             "pathToPathLinks": []}

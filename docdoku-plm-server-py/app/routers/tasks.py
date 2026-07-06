@@ -62,7 +62,7 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
         "worker": {"login": t[13]} if len(t) > 13 and t[13] else None,
         "closureComment": t[1] if len(t) > 1 else None,
         "signature": t[5] if len(t) > 5 else None,
-        "closureDate": str(t[2]) if len(t) > 2 and t[2] else None,
+        "closureDate": t[2].isoformat() + "Z" if len(t) > 2 and t[2] else None,
     }
 
 

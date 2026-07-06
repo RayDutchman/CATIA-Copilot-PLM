@@ -36,7 +36,7 @@ def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
     } for a in activities]
     return {
         "id": w.id,
-        "abortedDate": str(w.aborteddate) if w.aborteddate else None,
+        "abortedDate": w.aborteddate.isoformat() + "Z" if w.aborteddate else None,
         "finalLifecycleState": w.finallifecyclestate,
         "activities": activity_dicts,
         "currentStep": 0,
@@ -56,7 +56,7 @@ def get_aborted(ws: str, workflow_id: int, db: Session = Depends(get_db),
 def list_wwf(ws: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     rows = workflow_service.list_workspace_workflows(db, ws)
-    return [{"id": r[0], "abortedDate": str(r[1]) if r[1] else None,
+    return [{"id": r[0], "abortedDate": r[1].isoformat() + "Z" if r[1] else None,
              "finalLifecycleState": r[2]} for r in rows]
 
 

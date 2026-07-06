@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-07-06 — document.py 作者/ACL/订阅修复
+
+- fix(py): **document.py `_doc_to_dict` 查询 Account 真实 name** — author/checkOutUser/releaseAuthor 不再用 login 填充 name，改查 account 表取 name/email/language
+- fix(py): **document.py acl 字段完整对象** — 从 `acl_id` 查 acl/acluserentry/aclusergroupentry 表构建完整 ACL 字典（userEntries/groupEntries/userEntriesMap/userGroupEntriesMap）
+- fix(py): **document.py subscription 写 DB** — subscribe/unsubscribe 端点从 stub `{"status":"ok"}` 改为真实写入 iterationchangesubscription / statechangesubscription 表（ON CONFLICT DO NOTHING）
+- fix(py): **_doc_to_dict 签名变更** — `_doc_to_dict(rev)` → `_doc_to_dict(db, rev)`，所有调用方（document/documents/folders 路由）同步传递 db session
+
+## 2026-07-06 — 事务边界加固 + 乐观锁 SELECT FOR UPDATE
+
+### 路由与代码质量修复
+
+- fix(py): **54个尾斜杠双路由补全** — 所有 POST/PUT/DELETE 端点新增 `include_in_schema=False` 的 trailing-slash 变体，涵盖 auth/document/part/change_issues/change_requests/change_orders/milestones/folders/product_baselines/product_configurations/products/roles/user_groups 等模块
+- fix(py): **28个未用 import 清理** — 移除 security/change/document/notification/part/product/workflow 模型、admin/auth/document_templates/folders/organizations/part/part_files/parts/users 路由、part schemas、binary_storage/converter/document_manager/product_structure/security_service/user_manager/workflow_manager 服务中的未使用导入
+
+### 迁移风险评估与修复
+
+- chore: **迁移风险评估报告** — 对比 Python FastAPI 与 Java Payara 在事务边界/乐观锁/连接池三方面的差异
+- fix(py): **P0 事务边界** — `_sync_components` 和 `handle_callback` 添加 `db.begin_nested()` savepoint 保护，部分 flush 失败时只回滚当前操作，不污染外层 session
+- fix(py): **P1 乐观锁** — `get_revision` 新增 `for_update` 参数，checkout/checkin/undo_checkout/update_iteration 四个并发关键路径使用 `SELECT ... FOR UPDATE` 行级锁，消除 TOCTOU 竞态窗口
+- docs: **P1 _sync_components 注释更新** — 标注父级 FOR UPDATE 已提供串行化保护，移除过时的"未来需修复"备注
+- chore: **P2 连接池** — 已完工（database.py 已有 pool_recycle=1800, statement_timeout=30000, application_name），无需额外修复
+
+### 风险现状
+
+- **事务边界**: `get_db()` 已有 `except: db.rollback()` 安全网 + savepoint 保护复杂操作。134 处 `db.commit()` 分布合理，无同一请求内多次 commit。
+- **乐观锁**: `SELECT ... FOR UPDATE` 行级锁已覆盖 checkout/checkin/undo_checkout/update_iteration 四个并发关键路径。不加 version_id 列（避免改 schema）。
+- **连接池**: 配置齐全，当前单 worker 下连接数充足。
+
+---
+
 ## 2026-07-06 — 收尾：方法沉淀 + 文件重组 + 3轮审计清零
 
 ### 方法论沉淀

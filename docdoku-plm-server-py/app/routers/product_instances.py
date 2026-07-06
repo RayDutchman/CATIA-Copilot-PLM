@@ -11,6 +11,18 @@ router = APIRouter()
 svc = ProductStructureService()
 
 
+def _get_user(db: Session, login: str, ws: str) -> dict:
+    if not login:
+        return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws}
+    acc = db.query(Account).filter(Account.login == login).first()
+    return {
+        "login": login, "name": acc.name if acc else login,
+        "email": acc.email if acc else None,
+        "language": acc.language if acc else None,
+        "workspaceId": ws,
+    }
+
+
 @router.get("/workspaces/{ws}/products/{ci_id}/instances")
 @router.get("/workspaces/{ws}/products/{ci_id}/instances/", include_in_schema=False)
 def list_instances(ws: str, ci_id: str,
@@ -90,7 +102,7 @@ def list_instance_iterations(ws: str, ci_id: str, sn: str,
             "iterationNote": it.iteration_note,
             "creationDate": it.creation_date.isoformat() + "Z" if it.creation_date else None,
             "modificationDate": it.modification_date.isoformat() + "Z" if it.modification_date else None,
-            "author": {"login": it.author_login or "", "name": it.author_login or ""},
+            "author": _get_user(db, it.author_login or "", ws),
             "productBaselineId": it.productbaseline_id,
         }
         for it in iterations
@@ -124,7 +136,7 @@ def get_instance_iteration(ws: str, ci_id: str, sn: str, it: int,
         "iterationNote": iteration.iteration_note,
         "creationDate": iteration.creation_date.isoformat() + "Z" if iteration.creation_date else None,
         "modificationDate": iteration.modification_date.isoformat() + "Z" if iteration.modification_date else None,
-        "author": {"login": iteration.author_login or "", "name": iteration.author_login or ""},
+        "author": _get_user(db, iteration.author_login or "", ws),
         "productBaselineId": iteration.productbaseline_id,
         "linkedDocuments": [
             {"id": r[0], "workspaceId": r[1], "documentMasterId": r[2],

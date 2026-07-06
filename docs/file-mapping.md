@@ -110,13 +110,18 @@ You are auditing a Java→Python migration file pair.
 Java file: {JAVA_FILE_PATH}
 Python file: {PYTHON_FILE_PATH}
 
-Check these 5 dimensions:
+Check these 6 dimensions:
 
 1. **方法覆盖率** — List all public methods in Java. Which ones have a Python equivalent? Mark ❌ for missing.
 2. **SQL查询逻辑** — Same tables/JOINs/WHERE? 🚨 Java = ground truth
 3. **异常对齐** — Java throw → Python raise with same i18n key?
-4. **响应字段** — Java DTO fields → Python dict keys?
+4. **响应字段存在性** — Java DTO fields → Python dict keys?
 5. **Stub检测** — Hardcoded `[]`/`{}`/`{"status":"ok"}` without `db.commit()`?
+6. **值语义正确性** — 逐字段检查 Python 代码赋值来源：
+   - 用户字段(author/checkOutUser/releaseAuthor)查了Account表取name/email/language? 还是只用login?
+   - ACL字段返回完整`{userEntries:[{key,value}],...}`对象? 还是裸acl_id整数?
+   - Boolean标记(subscription/hasNotification)查了真实DB表? 还是硬编码true/false?
+   - 枚举字段(status/permission/priority/category)做了int→string映射? 还是直接返回DB原始整数?
 
 Output: METHOD | VERDICT (✅/❌/⚠) | DETAIL
 ```

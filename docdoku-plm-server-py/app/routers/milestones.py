@@ -8,6 +8,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
+from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.services.change_manager import ChangeService
 from app.services.acl_helper import apply_acl
 
@@ -15,6 +16,25 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ChangeService()
 
 _NAME_CACHE: dict = {}
+
+_PRIORITY_NAMES = {0: "LOW", 1: "MEDIUM", 2: "HIGH", 3: "EMERGENCY"}
+_CATEGORY_NAMES = {0: "ADAPTIVE", 1: "CORRECTIVE", 2: "PERFECTIVE", 3: "PREVENTIVE", 4: "OTHER"}
+_PERMISSION_NAMES = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+
+
+def _get_acl_dict(db: Session, acl_id: int | None) -> dict | None:
+    if acl_id is None:
+        return None
+    user_rows = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+    group_rows = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+    return {
+        "id": acl_id,
+        "enabled": True,
+        "userEntries": {r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
+                        for r in user_rows},
+        "groupEntries": {r.principal_id: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
+                         for r in group_rows},
+    }
 
 
 def _check_workspace_access(db: Session, ws: str, login: str):
@@ -56,19 +76,19 @@ def _item_to_dict(item, db: Optional[Session] = None) -> dict:
     name = getattr(item, "name", getattr(item, "title", ""))
 
     data = dict(
-        acl=None,
+        acl=_get_acl_dict(db, getattr(item, "acl_id", None)),
         affectedDocuments=[],
         affectedParts=[],
         assignee=None,
         assigneeName=assignee_name or None,
         author=author_login,
         authorName=author_name or author_login,
-        category=getattr(item, "category", None),
+        category=_CATEGORY_NAMES.get(getattr(item, "category", None)),
         creationDate=creation_date,
         description=getattr(item, "description", "") or "",
         id=item.id,
         name=name,
-        priority=getattr(item, "priority", None),
+        priority=_PRIORITY_NAMES.get(getattr(item, "priority", None)),
         tags=[t.label for t in (getattr(item, "tags", None) or [])],
         workspaceId=getattr(item, "workspace_id", ""),
         writable=True,
