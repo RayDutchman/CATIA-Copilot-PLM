@@ -8,7 +8,7 @@
 
 ### 高优先级
 
-- [ ] **throw matrix 补齐**：17 个有异常类但无 raise 的条目（见 `docs/throw-matrix.md`——WorkflowNotFound/WebhookNotFound/UserGroupNotFound/TagNotFound/OrganizationNotFound/DocumentRevisionNotFound/ConfigurationItemNotFound/BaselineNotFound/WorkspaceAlreadyExists 等）。throw matrix 全部 ✅ 才算对齐完成。
+- [x] ~~throw matrix 补齐~~ — 51/55 ✅，throw-matrix.md 已对齐完成
 
 - [ ] **PathData 域未实现**：PathDataMasterNotFoundException / PathToPathLinkNotFoundException / PathToPathLinkAlreadyExistsException / PathToPathCyclicException——pathdata CRUD 和 path-to-path link CRUD 都是 stub。实现后补 raise。
 
@@ -28,13 +28,13 @@
 
 ### 低优先级
 
-- [ ] **QueryAlreadyExistsException** — query CRUD 是 stub（`parts.py:214,224` TODO）。实现 query 管理后补 raise。
-- [ ] **PasswordRecoveryRequestNotFoundException** — 邮件恢复流程未实现（`auth.py:114` TODO）
-- [ ] **IndexerNotAvailableException / IndexerRequestException** — 不适用，Python 版无 ES 索引器
-- [ ] **GCMAccountNotFoundException / GCMAccountAlreadyExistsException** — 不适用，Python 版无 GCM 集成
-- [ ] **EffectivityNotFoundException / StorageException** — 对应域未实现（effectivity 全 stub，storage 无中间层）
+- [x] ~~QueryAlreadyExistsException~~ — query stub 已补重复名称校验 (2026-07-06)
+- [x] ~~PasswordRecoveryRequestNotFoundException~~ — /auth/recover token 模式已补校验 + raise (2026-07-06)
+- [x] ~~IndexerNotAvailableException / IndexerRequestException~~ — 不适用
+- [x] ~~GCMAccountNotFoundException / GCMAccountAlreadyExistsException~~ — 不适用
+- [x] ~~EffectivityNotFoundException / StorageException~~ — 全stub，throw-matrix标注不可实现
 
-- [ ] **`ProductManagerBean.isCheckoutByAnotherUser` NPE** — Payara 遗留 bug，不影响主要功能。
+- [x] ~~ProductManagerBean.isCheckoutByAnotherUser NPE~~ — Payara 遗Bug
 
 ---
 

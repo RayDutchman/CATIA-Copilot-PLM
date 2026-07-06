@@ -215,7 +215,21 @@ def get_queries(workspace_id: str,
 def post_workspace_query(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user)):
-    # TODO: raise QueryAlreadyExistsException when query ID already exists
+    """Query CRUD 是 stub，仅做重复名称检查。"""
+    from app.core.exceptions import QueryAlreadyExistsException
+    from sqlalchemy import text
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        name = body.get("name") or body.get("id")
+        if name:
+            exists = db.execute(text(
+                "SELECT 1 FROM query WHERE name=:n AND author_workspace_id=:w"
+            ), {"n": name, "w": workspace_id}).first()
+            if exists:
+                raise QueryAlreadyExistsException("QueryAlreadyExistsException", name)
+    finally:
+        db.close()
     return {"id": 0}
 
 
@@ -225,7 +239,20 @@ def post_workspace_query(workspace_id: str,
              response_model=dict, include_in_schema=False)
 def post_queries(body: dict = Body(...),
                  current_user: Account = Depends(get_current_user)):
-    # TODO: raise QueryAlreadyExistsException when query ID already exists
+    from app.core.exceptions import QueryAlreadyExistsException
+    from sqlalchemy import text
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        name = body.get("name") or body.get("id")
+        if name:
+            exists = db.execute(text(
+                "SELECT 1 FROM query WHERE name=:n"
+            ), {"n": name}).first()
+            if exists:
+                raise QueryAlreadyExistsException("QueryAlreadyExistsException", name)
+    finally:
+        db.close()
     return {"id": 0}
 
 

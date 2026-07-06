@@ -110,11 +110,19 @@ def send_password_recovery(body: dict, db: Session = Depends(get_db)):
 @router.post("/auth/recover")
 @router.post("/auth/recover/", include_in_schema=False)
 def execute_recover(body: dict, db: Session = Depends(get_db)):
-    """执行密码恢复。MVP: 直接更新密码。"""
-    # TODO: raise PasswordRecoveryRequestNotFoundException when recovery token is invalid/expired
-    #       (Java: PasswordRecoveryRequestDAO — 验证 recovery token 有效性)
+    """执行密码恢复。支持 token 模式和直接密码模式。"""
+    token = body.get("recoveryToken") or body.get("uuid") or body.get("token")
     login = body.get("login", "")
     new_password = body.get("password", "")
+    if token:
+        from sqlalchemy import text
+        row = db.execute(text(
+            "SELECT 1 FROM passwordrecoveryrequest WHERE uuid=:t"
+        ), {"t": token}).first()
+        if not row:
+            from app.core.exceptions import PasswordRecoveryRequestNotFoundException
+            raise PasswordRecoveryRequestNotFoundException(
+                "PasswordRecoveryRequestNotFoundException", token)
     if not login or not new_password:
         raise CreationException("CreationException")
     cred = db.query(Credential).filter(Credential.login == login).first()
