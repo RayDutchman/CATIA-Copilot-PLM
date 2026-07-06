@@ -66,8 +66,8 @@ class ComponentDTO(BaseModel):
     unit: Optional[str] = None
     partUsageLinkId: Optional[str] = None
     partUsageLinkReferenceDescription: Optional[str] = None
-    components: Optional[List[ComponentDTO]] = None
-    attributes: Optional[List[dict]] = None
+    components: List[ComponentDTO] = []
+    attributes: List[dict] = []
     checkOutUser: Optional[UserDTO] = None
     checkOutDate: Optional[datetime] = None
     released: bool = False

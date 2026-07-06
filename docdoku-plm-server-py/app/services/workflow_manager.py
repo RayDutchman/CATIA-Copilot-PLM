@@ -314,8 +314,8 @@ class WorkflowService:
                 worker = {"login": worker_login, "name": worker_login}
         return {
             "num": row[0],
-            "title": row[9] if len(row) > 9 else None,
-            "instructions": row[4] if len(row) > 4 else None,
+            "title": row[9] if len(row) > 9 and row[9] else "",
+            "instructions": row[4] if len(row) > 4 and row[4] else "",
             "status": STATUS_MAP.get(row[7]) if len(row) > 7 else None,
             "worker": worker,
             "closureComment": row[1] if len(row) > 1 else None,
@@ -404,7 +404,7 @@ class WorkflowService:
                 "title": t[9] if len(t) > 9 else None,
                 "instructions": t[4] if len(t) > 4 else None,
                 "status": STATUS_MAP.get(t[7], "NOT_STARTED"),
-                "worker": worker,
+            "worker": worker or {},
                 "closureComment": t[1] if len(t) > 1 else None,
                 "signature": t[5] if len(t) > 5 else None,
                 "closureDate": str(t[2]) if len(t) > 2 and t[2] else None,

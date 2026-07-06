@@ -34,7 +34,7 @@ def _build_notification_dict(n, db: Session) -> dict:
         ), {"l": n.ackauthor_login}).fetchone()
         result["ackAuthor"] = {"login": ack[0], "name": ack[1], "email": ack[2]} if ack else {"login": n.ackauthor_login}
     else:
-        result["ackAuthor"] = None
+        result["ackAuthor"] = {}
 
     # 查询 modified part 的 author/checkInDate/iterationNote/name
     if n.modified_workspace_id and n.modified_partmaster_partnumber:
@@ -62,16 +62,16 @@ def _build_notification_dict(n, db: Session) -> dict:
                 ), {"l": author_login}).fetchone()
                 result["author"] = {"login": au[0], "name": au[1], "email": au[2]} if au else {"login": author_login}
             else:
-                result["author"] = None
+                result["author"] = {}
             result["checkInDate"] = int(checkindate.timestamp() * 1000) if checkindate else None
             result["iterationNote"] = iteration_note or ""
         else:
-            result["author"] = None
+            result["author"] = {}
             result["checkInDate"] = None
             result["iterationNote"] = ""
     else:
         result["modifiedPartName"] = None
-        result["author"] = None
+        result["author"] = {}
         result["checkInDate"] = None
         result["iterationNote"] = ""
     return result

@@ -87,7 +87,7 @@ def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Acc
         writable = check_write_access(db, getattr(item, "acl_id", None), current_user.login, is_admin)
 
     data = dict(
-        acl=_get_acl_dict(db, getattr(item, "acl_id", None)),
+        acl=_get_acl_dict(db, getattr(item, "acl_id", None)) or {},
         affectedDocuments=[],
         affectedParts=[],
         assignee=None,

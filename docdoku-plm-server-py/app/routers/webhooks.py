@@ -47,7 +47,7 @@ def _webhook_to_dict(w, app=None) -> dict:
             "dtype": app.dtype if app else None,
             "uri": app.uri if app else None,
             "method": app.method if app else None,
-        } if app or w.webhookapp_id else None,
+        } if app or w.webhookapp_id else {},
     }
 
 

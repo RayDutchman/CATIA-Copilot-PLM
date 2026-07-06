@@ -187,7 +187,7 @@ def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[
         writable = check_write_access(db, getattr(ms, "acl_id", None), current_user.login, is_admin)
 
     data = dict(
-        acl=_get_acl_dict(db, getattr(ms, "acl_id", None)),
+        acl=_get_acl_dict(db, getattr(ms, "acl_id", None)) or {},
         description=getattr(ms, "description", "") or "",
         id=ms.id,
         numberOfOrders=numberOfOrders,
