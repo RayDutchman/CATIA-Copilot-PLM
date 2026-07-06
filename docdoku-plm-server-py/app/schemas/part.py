@@ -239,10 +239,10 @@ class PartTemplateDTO(BaseModel):
     idGenerated: Optional[bool] = False
     partType: Optional[str] = None
     attributesLocked: Optional[bool] = False
-    authorLogin: Optional[str] = None
-    authorWorkspaceId: Optional[str] = None
+    author: Optional[dict] = None
     creationDate: Optional[str] = None
     modificationDate: Optional[str] = None
     acl: Optional[dict] = None
-    aclId: Optional[int] = None
     workflowModelId: Optional[str] = None
+    attributeTemplates: list = []
+    attributeInstanceTemplates: list = []

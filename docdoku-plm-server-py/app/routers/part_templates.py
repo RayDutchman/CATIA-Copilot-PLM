@@ -29,6 +29,19 @@ def _build_acl(db: Session, acl_id: int) -> dict | None:
     }
 
 
+def _build_author(db: Session, login: str | None, workspace_id: str) -> dict:
+    if not login:
+        return {"login": "", "name": "", "email": None, "language": None, "workspaceId": workspace_id}
+    acc = db.query(Account).filter(Account.login == login).first()
+    return {
+        "login": login,
+        "name": acc.name if (acc and acc.name) else login,
+        "email": acc.email if acc else None,
+        "language": acc.language if acc else None,
+        "workspaceId": workspace_id,
+    }
+
+
 def _mask_to_sql_like(mask: str) -> str:
     """将 mask 转换为 SQL LIKE 模式，# → _（单数字），* → _（单字符），转义 _ 和 %。"""
     result = []
@@ -175,12 +188,13 @@ def list_part_templates(workspace_id: str,
             "idGenerated": t.id_generated,
             "partType": t.part_type,
             "attributesLocked": t.attributes_locked,
-            "authorLogin": t.author_login,
-            "authorWorkspaceId": t.author_workspace_id,
+            "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
             "creationDate": t.creation_date.isoformat() if t.creation_date else None,
             "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
             "acl": _build_acl(db, t.acl_id),
             "workflowModelId": t.workflowmodel_id,
+            "attributeTemplates": [],
+            "attributeInstanceTemplates": [],
         })
     return result
 
@@ -207,12 +221,13 @@ def get_part_template(workspace_id: str, template_id: str,
         "idGenerated": t.id_generated,
         "partType": t.part_type,
         "attributesLocked": t.attributes_locked,
-        "authorLogin": t.author_login,
-        "authorWorkspaceId": t.author_workspace_id,
+        "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
         "creationDate": t.creation_date.isoformat() if t.creation_date else None,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "aclId": t.acl_id,
+        "acl": _build_acl(db, t.acl_id),
         "workflowModelId": t.workflowmodel_id,
+        "attributeTemplates": [],
+        "attributeInstanceTemplates": [],
     }
 
 
@@ -247,12 +262,13 @@ def create_part_template(workspace_id: str,
         "idGenerated": t.id_generated,
         "partType": t.part_type,
         "attributesLocked": t.attributes_locked,
-        "authorLogin": t.author_login,
-        "authorWorkspaceId": t.author_workspace_id,
+        "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
         "creationDate": t.creation_date.isoformat() if t.creation_date else None,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "aclId": t.acl_id,
+        "acl": _build_acl(db, t.acl_id),
         "workflowModelId": t.workflowmodel_id,
+        "attributeTemplates": [],
+        "attributeInstanceTemplates": [],
     }
 
 
@@ -291,12 +307,13 @@ def update_part_template(workspace_id: str, template_id: str,
         "idGenerated": t.id_generated,
         "partType": t.part_type,
         "attributesLocked": t.attributes_locked,
-        "authorLogin": t.author_login,
-        "authorWorkspaceId": t.author_workspace_id,
+        "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
         "creationDate": t.creation_date.isoformat() if t.creation_date else None,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "aclId": t.acl_id,
+        "acl": _build_acl(db, t.acl_id),
         "workflowModelId": t.workflowmodel_id,
+        "attributeTemplates": [],
+        "attributeInstanceTemplates": [],
     }
 
 
