@@ -165,7 +165,7 @@ def delete_instance(ws: str, ci_id: str, sn: str,
 def update_instance_acl(ws: str, ci_id: str, sn: str, body: dict,
                         db: Session = Depends(get_db),
                         current_user: Account = Depends(get_current_user)):
-    from app.services.acl_helper import apply_acl
+    from app.services.factory.acl_factory import apply_acl
     from app.models.product import ProductInstanceMaster
     inst = db.query(ProductInstanceMaster).filter(
         ProductInstanceMaster.workspace_id == ws,

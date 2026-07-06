@@ -13,7 +13,7 @@ from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     EntityNotFoundException, PartUsageLinkNotFoundException,
 )
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 
 
 class ProductStructureService:
@@ -150,7 +150,7 @@ class ProductStructureService:
         # accessDeny: 检查零件 ACL 权限
         access_deny = False
         if user_login and rev.acl_id:
-            from app.services.acl_helper import check_read_access
+            from app.services.factory.acl_factory import check_read_access
             access_deny = not check_read_access(db, rev.acl_id, user_login, is_admin)
         # notifications: 查询影响该零件主记录的修改通知
         notif_rows = db.execute(text(

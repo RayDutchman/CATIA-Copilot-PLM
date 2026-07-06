@@ -9,7 +9,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.change import ChangeIssue
 from app.services.change_manager import ChangeService
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.routers.change_common import (
     _item_to_dict, _check_workspace_access,
     _set_affected_parts, _set_affected_documents,

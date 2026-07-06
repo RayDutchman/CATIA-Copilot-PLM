@@ -1,7 +1,7 @@
 """ES es_query_builder 集成测试——真实 DB 数据 + Mock ES 客户端。"""
 import pytest
 from unittest.mock import MagicMock
-from app.services.es_query_builder import es_query_builder
+from app.services.indexer.indexer_query_builder import es_query_builder
 from app.services.indexer_manager import indexer_manager as im
 
 WS = "Workspace_2"

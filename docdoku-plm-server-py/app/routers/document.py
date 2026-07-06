@@ -10,7 +10,7 @@ from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.core.exceptions import DocumentRevisionNotFoundException
 from app.services.document_manager import DocumentService
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.schemas.document import DocumentRevisionDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")

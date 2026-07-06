@@ -16,7 +16,7 @@ from app.schemas.workflow import WorkflowAbortedDTO
 from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision
 from app.services import converter
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.services.workflow_manager import workflow_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")

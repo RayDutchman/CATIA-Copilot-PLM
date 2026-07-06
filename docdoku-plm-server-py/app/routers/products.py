@@ -132,7 +132,7 @@ def filter_structure(ws: str, ci_id: str,
                      depth: int = Query(None),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    from app.services.acl_helper import check_read_access
+    from app.services.factory.acl_factory import check_read_access
     is_admin = db.execute(text(
         "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
     ), {"l": current_user.login}).first() is not None

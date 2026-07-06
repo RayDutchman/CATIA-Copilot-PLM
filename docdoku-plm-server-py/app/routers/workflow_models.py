@@ -6,7 +6,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.services.workflow_manager import workflow_service
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.schemas.workflow import WorkflowModelDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")

@@ -13,7 +13,7 @@ from app.core.exceptions import (
 )
 from app.models.part import PartMaster, PartMasterTemplate
 from app.models.security import AclUserEntry, AclUserGroupEntry
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.schemas.part import PartTemplateDTO, GeneratedIdDTO, AclIdDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")

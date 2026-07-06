@@ -93,7 +93,7 @@ def search_parts(
     db: Session = Depends(get_db),
 ):
     from datetime import datetime
-    from app.services.es_query_builder import es_query_builder
+    from app.services.indexer.indexer_query_builder import es_query_builder
 
     # ES 优先搜索
     try:

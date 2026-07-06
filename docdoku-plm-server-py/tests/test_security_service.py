@@ -1,6 +1,6 @@
 """SecurityService + ACL helper 单元测试。"""
 from app.services.security_service import security_service
-from app.services.acl_helper import apply_acl, check_write_access, FULL_ACCESS
+from app.services.factory.acl_factory import apply_acl, check_write_access, FULL_ACCESS
 from app.core.database import SessionLocal
 
 

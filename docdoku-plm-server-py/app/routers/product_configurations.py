@@ -8,7 +8,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.product import ProductConfiguration
 from app.services.product_structure import ProductStructureService
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.schemas.product import ProductConfigurationDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")

@@ -237,7 +237,7 @@ S-068,Service,hooks,P2B,待新建,hooks/SimpleWebhookRunner.java,hooks/simple_we
 S-069,Service,hooks,P2B,待新建,hooks/WebhookRunner.java,hooks/webhook_runner.py,,
 S-070,Service,indexer,P2A,待拆分,indexer/IndexManagerBean.java,indexer/index_manager.py,indexer_manager.py,
 S-071,Service,indexer,P2A,待拆分,indexer/IndexerManagerBean.java,indexer/indexer_manager.py,indexer_manager.py,从 services/indexer_manager.py 拆分 index_manager 逻辑
-S-072,Service,indexer,P2A,待拆分,indexer/IndexerQueryBuilder.java,indexer/indexer_query_builder.py,es_query_builder.py,从 services/es_query_builder.py 拆出（或重命名）
+S-072,Service,indexer,P2A,已完成,indexer/IndexerQueryBuilder.java,indexer/indexer_query_builder.py,es_query_builder.py,从 services/es_query_builder.py 拆出（或重命名）
 S-073,Service,indexer,P2B,待新建,indexer/IndexerResultsMapper.java,indexer/indexer_results_mapper.py,,
 S-074,Service,indexer,P2B,待新建,indexer/IndexerTextExtractor.java,indexer/indexer_text_extractor.py,,
 S-075,Service,indexer,P2B,待新建,indexer/client/IndexerClientProducer.java,indexer/indexer_client.py,,
@@ -248,7 +248,7 @@ S-079,Service,storage,P2B,待新建,storage/CryptoConverter.java,storage/crypto_
 S-080,Service,storage,P2B,待新建,storage/StorageProvider.java,storage/storage_provider.py,,
 S-081,Service,storage,P2B,待新建,storage/filesystem/FileStorageProvider.java,storage/file_storage_provider.py,,
 S-082,Service,validation,P2B,待新建,validation/AttributesConsistencyUtils.java,validation/attributes_consistency_utils.py,,
-S-083,Service,factory,P2A,待拆分,factory/ACLFactory.java,factory/acl_factory.py,acl_helper.py,重命名 acl_helper.py → factory/acl_factory.py
+S-083,Service,factory,P2A,已完成,factory/ACLFactory.java,factory/acl_factory.py,acl_helper.py,重命名 acl_helper.py → factory/acl_factory.py
 S-084,Service,gcm,P2B,待新建,gcm/GCMSenderBean.java,gcm/gcm_sender.py,,
 R-001,Router,,P3,已完成,AccountResource.java,accounts.py,,
 R-002,Router,,P3,已完成,AdminResource.java,admin.py,,

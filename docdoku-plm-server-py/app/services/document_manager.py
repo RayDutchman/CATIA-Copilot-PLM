@@ -652,7 +652,7 @@ class DocumentService:
             checkout_user_workspace_id=ws, checkout_user_login=user_login,
             check_out_date=now)
         if user_entries or user_group_entries:
-            from app.services.acl_helper import apply_acl
+            from app.services.factory.acl_factory import apply_acl
             new_acl_id = apply_acl(db, None, user_entries, user_group_entries)
             new_pr.acl_id = new_acl_id
         db.add(new_pr); db.flush()

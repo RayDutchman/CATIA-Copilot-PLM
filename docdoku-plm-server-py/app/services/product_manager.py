@@ -190,7 +190,7 @@ class ProductService:
     def create_part(self, db: Session, workspace_id: str,
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
         from app.core.exceptions import EntityAlreadyExistsException, PartRevisionAlreadyExistsException
-        from app.services.acl_helper import apply_acl
+        from app.services.factory.acl_factory import apply_acl
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)

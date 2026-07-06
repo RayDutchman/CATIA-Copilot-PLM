@@ -8,7 +8,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.document import DocumentMasterTemplate
 from app.services.document_manager import DocumentService
-from app.services.acl_helper import apply_acl
+from app.services.factory.acl_factory import apply_acl
 from app.schemas.document import DocumentTemplateDTO
 
 router = APIRouter()

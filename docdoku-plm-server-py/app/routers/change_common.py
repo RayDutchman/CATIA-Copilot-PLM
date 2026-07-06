@@ -6,7 +6,7 @@ from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder
 from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.core.exceptions import AccessRightException
-from app.services.acl_helper import check_write_access, check_read_access
+from app.services.factory.acl_factory import check_write_access, check_read_access
 
 _NAME_CACHE: dict = {}
 

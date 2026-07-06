@@ -9,7 +9,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
 from app.services.change_manager import ChangeService
-from app.services.acl_helper import apply_acl, check_write_access
+from app.services.factory.acl_factory import apply_acl, check_write_access
 from app.routers.change_common import (
     _item_to_dict, _get_acl_dict, _check_workspace_access,
 )

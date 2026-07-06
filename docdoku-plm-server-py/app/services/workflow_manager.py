@@ -45,7 +45,7 @@ class WorkflowService:
 
     def _check_write_access(self, db: Session, acl_id: int | None,
                             user_login: str) -> None:
-        from app.services.acl_helper import check_write_access
+        from app.services.factory.acl_factory import check_write_access
         if not check_write_access(db, acl_id, user_login, self._is_admin(db, user_login)):
             raise NotAllowedException("NotAllowedException34")
 
