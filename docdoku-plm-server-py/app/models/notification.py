@@ -1,3 +1,4 @@
+"""通知/订阅相关模型。ModificationNotification 已移至 models.change。"""
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Table
 from app.core.database import Base
 
@@ -19,20 +20,5 @@ state_change_subscription = Table(
     Column("subscriber_workspace_id", String, primary_key=True),
 )
 
-
-class ModificationNotification(Base):
-    __tablename__ = "modificationnotification"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    acknowledged = Column(Boolean)
-    acknowledgementcomment = Column(String)
-    acknowledgementdate = Column(DateTime)
-    ackauthor_workspace_id = Column(String)
-    ackauthor_login = Column(String)
-    impacted_partrevision_version = Column(String)
-    impacted_iteration = Column(Integer)
-    impacted_workspace_id = Column(String)
-    impacted_partmaster_partnumber = Column(String)
-    modified_workspace_id = Column(String)
-    modified_partmaster_partnumber = Column(String)
-    modified_iteration = Column(Integer)
-    modified_partrevision_version = Column(String)
+# 向后兼容：从新位置重新导出
+from app.models.change.modification_notification import ModificationNotification  # noqa: E402, F401

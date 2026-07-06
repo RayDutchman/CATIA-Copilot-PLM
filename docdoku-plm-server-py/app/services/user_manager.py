@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.models.auth import Account
-from app.models.user_mgmt import UserGroup, Credential
+from app.models.common.user_group import UserGroup
+from app.models.user_mgmt import Credential
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityNotFoundException,
     EntityConstraintException, UserAlreadyExistsException,

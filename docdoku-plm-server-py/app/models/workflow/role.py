@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, ForeignKeyConstraint, Table
+"""Role ORM 模型 + 关联表。"""
+from sqlalchemy import Column, String, ForeignKey, ForeignKeyConstraint, Table
 from app.core.database import Base
 
 role_user = Table(
@@ -26,29 +27,8 @@ role_usergroup = Table(
 )
 
 
-class ACL(Base):
-    __tablename__ = "acl"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    enabled = Column(Boolean)
-
-
-class AclUserEntry(Base):
-    __tablename__ = "acluserentry"
-    acl_id = Column(Integer, ForeignKey("acl.id"), primary_key=True)
-    principal_login = Column(String, primary_key=True)
-    principal_workspace_id = Column(String, primary_key=True)
-    permission = Column(Integer)  # 0=FORBIDDEN, 1=READ_ONLY, 2=FULL_ACCESS
-
-
-class AclUserGroupEntry(Base):
-    __tablename__ = "aclusergroupentry"
-    acl_id = Column(Integer, ForeignKey("acl.id"), primary_key=True)
-    principal_id = Column(String, primary_key=True)
-    principal_workspace_id = Column(String, primary_key=True)
-    permission = Column(Integer)
-
-
 class Role(Base):
     __tablename__ = "role"
+
     name = Column(String, primary_key=True)
-    workspace_id = Column(String, primary_key=True)
+    workspace_id = Column(String, ForeignKey("workspace.id"), primary_key=True)
