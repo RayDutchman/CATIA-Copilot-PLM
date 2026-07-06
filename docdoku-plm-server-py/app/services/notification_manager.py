@@ -23,13 +23,63 @@ class NotificationService:
         return n
 
     def list_for_user(self, db: Session, ws: str, login: str) -> list:
-        # modificationnotification 表不包含直接的用户所有权列；
-        # 此查询按 workspace 过滤未确认通知。调用方负责按 login 做用户级过滤。
         rows = db.execute(text(
             "SELECT * FROM modificationnotification "
             "WHERE impacted_workspace_id = :ws AND acknowledged = false"
         ), {"ws": ws}).fetchall()
         return [self._to_dict(r) for r in rows]
+
+    def list_all(self, db: Session, ws: str) -> list:
+        """返回工作区所有修改通知（按时间倒序）。"""
+        return db.query(ModificationNotification).filter(
+            ModificationNotification.impacted_workspace_id == ws,
+        ).order_by(ModificationNotification.id.desc()).all()
+
+    # ========== Tag 订阅管理（P1 stubs） ==========
+
+    def subscribe_to_tag_event(self, db: Session, ws: str, tag_label: str,
+                                user_login: str, event: str):
+        """订阅标签变更事件（stub）。"""
+        existing = db.execute(text(
+            "SELECT 1 FROM tagsubscription "
+            "WHERE tag_label = :t AND workspace_id = :ws "
+            "AND subscriber_login = :l AND event = :e"
+        ), {"t": tag_label, "ws": ws, "l": user_login, "e": event}).first()
+        if existing:
+            return
+        db.execute(text(
+            "INSERT INTO tagsubscription "
+            "(tag_label, workspace_id, subscriber_login, subscriber_workspace_id, event) "
+            "VALUES (:t, :ws, :l, :ws2, :e)"
+        ), {"t": tag_label, "ws": ws, "l": user_login, "ws2": ws, "e": event})
+        db.commit()
+
+    def unsubscribe_from_tag_event(self, db: Session, ws: str, tag_label: str,
+                                    user_login: str, event: str):
+        """取消标签变更事件订阅（stub）。"""
+        db.execute(text(
+            "DELETE FROM tagsubscription "
+            "WHERE tag_label = :t AND workspace_id = :ws "
+            "AND subscriber_login = :l AND event = :e"
+        ), {"t": tag_label, "ws": ws, "l": user_login, "e": event})
+        db.commit()
+
+    def list_tag_subscriptions(self, db: Session, ws: str, user_login: str) -> list:
+        """列出用户的标签订阅（stub）。"""
+        rows = db.execute(text(
+            "SELECT tag_label, event FROM tagsubscription "
+            "WHERE workspace_id = :ws AND subscriber_login = :l"
+        ), {"ws": ws, "l": user_login}).fetchall()
+        return [{"tag": r[0], "event": r[1], "workspaceId": ws} for r in rows]
+
+    def list_tag_subscriptions_for_tag(self, db: Session, ws: str,
+                                        tag_label: str) -> list:
+        """列出指定标签的所有订阅者（stub）。"""
+        rows = db.execute(text(
+            "SELECT subscriber_login, event FROM tagsubscription "
+            "WHERE workspace_id = :ws AND tag_label = :t"
+        ), {"ws": ws, "t": tag_label}).fetchall()
+        return [{"login": r[0], "event": r[1], "workspaceId": ws} for r in rows]
 
     def _to_dict(self, row) -> dict:
         cols = row._mapping.keys() if hasattr(row, "_mapping") else []

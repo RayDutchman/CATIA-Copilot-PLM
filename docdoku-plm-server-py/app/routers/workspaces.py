@@ -555,6 +555,32 @@ def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
     return _row_to_dict(r)
 
 
+@router.put("/workspaces/{ws}/admin", response_model=WorkspaceDTO)
+@router.put("/workspaces/{ws}/admin/", include_in_schema=False)
+def change_admin(ws: str, body: dict, db: Session = Depends(get_db),
+                 current_user: Account = Depends(get_current_user)):
+    """更换工作区管理员。仅全局管理员或当前工作区管理员可操作。"""
+    _check_workspace_admin(db, ws, current_user)
+    new_admin = body.get("login", "").strip()
+    if not new_admin:
+        raise HTTPException(status_code=400, detail="管理员 login 不能为空")
+    # 验证新管理员是工作区成员
+    member = db.execute(text(
+        "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :ws"
+    ), {"l": new_admin, "ws": ws}).first()
+    if not member:
+        raise HTTPException(status_code=400, detail="新管理员不是工作区成员")
+    db.execute(text(
+        "UPDATE workspace SET admin_login = :a WHERE id = :ws"
+    ), {"a": new_admin, "ws": ws})
+    db.commit()
+    r = db.execute(text(
+        "SELECT id, description, enabled, folderlocked, admin_login "
+        "FROM workspace WHERE id = :id"
+    ), {"id": ws}).fetchone()
+    return _row_to_dict(r)
+
+
 @router.delete("/workspaces/{ws}", status_code=204)
 def delete_workspace(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
