@@ -34,34 +34,36 @@ def _fmt_date(d) -> str | None:
     return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
 
 
+def _build_acl(db: Session, acl_id: int) -> dict | None:
+    if not acl_id or not db:
+        return None
+    from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+    acl = db.query(ACL).filter(ACL.id == acl_id).first()
+    if not acl:
+        return None
+    user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+    group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+    return {
+        "userEntries": {
+            f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+            for e in user_entries
+        },
+        "groupEntries": {
+            f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+            for e in group_entries
+        },
+    }
+
+
 def _config_to_dict(cfg, db) -> dict:
     ws = cfg.configurationitem_workspace_id
-    acl_data = None
-    if cfg.acl_id and db:
-        from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
-        acl = db.query(ACL).filter(ACL.id == cfg.acl_id).first()
-        if acl:
-            user_entries = db.query(AclUserEntry).filter(
-                AclUserEntry.acl_id == cfg.acl_id).all()
-            group_entries = db.query(AclUserGroupEntry).filter(
-                AclUserGroupEntry.acl_id == cfg.acl_id).all()
-            acl_data = {
-                "userEntries": {
-                    f"{e.principal_login}:{e.principal_workspace_id}": e.permission
-                    for e in user_entries
-                },
-                "groupEntries": {
-                    f"{e.principal_id}:{e.principal_workspace_id}": e.permission
-                    for e in group_entries
-                },
-            }
     return {
         "id": cfg.id,
         "name": cfg.name,
         "configurationItemId": cfg.configurationitem_id,
         "description": cfg.description or "",
         "author": _get_user_dto(db, cfg.author_login, ws),
-        "acl": acl_data,
+        "acl": _build_acl(db, cfg.acl_id),
         "creationDate": _fmt_date(cfg.creation_date),
         "substituteLinks": [],
         "optionalUsageLinks": [],
@@ -96,11 +98,12 @@ def list_ci_configs(ws: str, pid: str,
              "configurationItemId": c.configurationitem_id,
              "description": c.description or "",
              "author": _get_user_dto(db, c.author_login, ws),
-             "acl": c.acl_id,
+             "acl": _build_acl(db, c.acl_id),
              "creationDate": _fmt_date(c.creation_date),
              "substituteLinks": [],
              "optionalUsageLinks": []}
             for c in configs]
+
 
 
 @router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}")

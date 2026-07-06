@@ -21,8 +21,14 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
     for t in templates:
         author = None
         if t.author_login:
-            author = {"login": t.author_login, "name": t.author_login,
-                      "workspaceId": t.workspace_id}
+            acc = db.query(Account).filter(Account.login == t.author_login).first()
+            author = {
+                "login": t.author_login,
+                "name": acc.name if acc else t.author_login,
+                "email": acc.email if acc else None,
+                "language": acc.language if acc else None,
+                "workspaceId": t.workspace_id,
+            }
         acl = None
         if t.acl_id:
             from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
@@ -32,12 +38,13 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
                     AclUserEntry.acl_id == t.acl_id).all()
                 group_entries = db.query(AclUserGroupEntry).filter(
                     AclUserGroupEntry.acl_id == t.acl_id).all()
-                acl = {
-                    "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": e.permission
-                                    for e in user_entries},
-                    "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": e.permission
-                                     for e in group_entries},
-                }
+            perm_map = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+            acl = {
+                "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
+                                for e in user_entries},
+                "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
+                                 for e in group_entries},
+            }
         result.append({
             "id": t.id, "workspaceId": t.workspace_id,
             "documentType": t.document_type, "mask": t.mask,
@@ -60,8 +67,14 @@ def get_template(ws: str, template_id: str,
     t = svc.get_template(db, ws, template_id)
     author = None
     if t.author_login:
-        author = {"login": t.author_login, "name": t.author_login,
-                  "workspaceId": t.workspace_id}
+        acc = db.query(Account).filter(Account.login == t.author_login).first()
+        author = {
+            "login": t.author_login,
+            "name": acc.name if acc else t.author_login,
+            "email": acc.email if acc else None,
+            "language": acc.language if acc else None,
+            "workspaceId": t.workspace_id,
+        }
     acl = None
     if t.acl_id:
         from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
@@ -71,12 +84,13 @@ def get_template(ws: str, template_id: str,
                 AclUserEntry.acl_id == t.acl_id).all()
             group_entries = db.query(AclUserGroupEntry).filter(
                 AclUserGroupEntry.acl_id == t.acl_id).all()
-            acl = {
-                "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": e.permission
-                                for e in user_entries},
-                "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": e.permission
-                                 for e in group_entries},
-            }
+        perm_map = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+        acl = {
+            "userEntries": {f"{e.principal_login}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
+                            for e in user_entries},
+            "groupEntries": {f"{e.principal_id}:{e.principal_workspace_id}": perm_map.get(e.permission, "FORBIDDEN")
+                             for e in group_entries},
+        }
     return {
         "id": t.id, "workspaceId": t.workspace_id,
         "documentType": t.document_type, "mask": t.mask,

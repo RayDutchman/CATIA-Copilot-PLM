@@ -4,8 +4,30 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
+from app.models.auth import Account
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
+
+_STATUS_MAP = {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}
+
+
+def _fmt_date(d) -> str | None:
+    if d is None:
+        return None
+    return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
+
+
+def _get_author_dto(db: Session, login: str | None, ws: str) -> dict:
+    if not login:
+        return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws}
+    acc = db.query(Account).filter(Account.login == login).first()
+    return {
+        "login": login,
+        "name": acc.name if acc else login,
+        "email": acc.email if acc else None,
+        "language": acc.language if acc else None,
+        "workspaceId": ws,
+    }
 
 
 def _get_shared_entity(uuid: str, password: str | None, db: Session):
@@ -64,9 +86,9 @@ def get_shared_documents(uuid: str,
         "type": doc.type,
         "title": doc.title,
         "description": doc.description,
-        "status": doc.status,
-        "author": doc.author_login,
-        "creationDate": int(doc.creationdate.timestamp() * 1000) if doc.creationdate else None,
+        "status": _STATUS_MAP.get(doc.status, "WIP"),
+        "author": _get_author_dto(db, doc.author_login, doc.workspace_id),
+        "creationDate": _fmt_date(doc.creationdate),
     }
 
 
@@ -103,7 +125,7 @@ def get_shared_parts(uuid: str,
         "name": part.name,
         "type": part.type,
         "description": part.description,
-        "status": part.status,
-        "author": part.author_login,
-        "creationDate": int(part.creationdate.timestamp() * 1000) if part.creationdate else None,
+        "status": _STATUS_MAP.get(part.status, "WIP"),
+        "author": _get_author_dto(db, part.author_login, part.workspace_id),
+        "creationDate": _fmt_date(part.creationdate),
     }

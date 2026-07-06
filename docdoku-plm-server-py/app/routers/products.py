@@ -7,6 +7,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.product import ConfigurationItem, ProductInstanceMaster
 from app.models.part import PartMaster, PartRevision
+from app.models.notification import ModificationNotification
 from app.services.product_structure import ProductStructureService
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -58,7 +59,12 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
         "designItemLatestVersion": latest_version,
         "author": _get_user_dto(db, ci.author_login, ci.workspace_id),
         "creationDate": _fmt_date(ci.creation_date),
-        "hasModificationNotification": False,
+        "hasModificationNotification": (
+            db.query(ModificationNotification).filter(
+                ModificationNotification.impacted_workspace_id == ci.workspace_id,
+                ModificationNotification.impacted_partmaster_partnumber == ci.partmaster_partnumber,
+            ).count() > 0
+        ),
         "pathToPathLinks": [],
     }
 

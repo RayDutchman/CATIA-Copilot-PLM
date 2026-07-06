@@ -8,9 +8,27 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.part import PartMaster, PartMasterTemplate
+from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.services.acl_helper import apply_acl
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
+
+
+def _build_acl(db: Session, acl_id: int) -> dict | None:
+    if not acl_id:
+        return None
+    user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+    group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+    return {
+        "userEntries": {
+            f"{e.principal_login}:{e.principal_workspace_id}": e.permission
+            for e in user_entries
+        },
+        "groupEntries": {
+            f"{e.principal_id}:{e.principal_workspace_id}": e.permission
+            for e in group_entries
+        },
+    }
 
 
 def _mask_to_sql_like(mask: str) -> str:
@@ -161,7 +179,7 @@ def list_part_templates(workspace_id: str,
             "authorWorkspaceId": t.author_workspace_id,
             "creationDate": t.creation_date.isoformat() if t.creation_date else None,
             "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-            "aclId": t.acl_id,
+            "acl": _build_acl(db, t.acl_id),
             "workflowModelId": t.workflowmodel_id,
         })
     return result
