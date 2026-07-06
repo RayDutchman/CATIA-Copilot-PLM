@@ -110,6 +110,22 @@ class ChangeService:
                 raise EntityConstraintException("EntityConstraintException8")
             if requests > 0:
                 raise EntityConstraintException("EntityConstraintException9")
+        # Issue 删除前检查是否已被 ChangeRequest 引用
+        if cls is ChangeIssue:
+            linked = db.scalar(sql_text(
+                "SELECT COUNT(*) FROM changerequest_changeissue "
+                "WHERE changeissue_id=:iid"
+            ), {"iid": item_id}) or 0
+            if linked > 0:
+                raise EntityConstraintException("EntityConstraintException")
+        # Request 删除前检查是否已被 ChangeOrder 引用
+        if cls is ChangeRequest:
+            linked = db.scalar(sql_text(
+                "SELECT COUNT(*) FROM changeorder_changerequest "
+                "WHERE changerequest_id=:iid"
+            ), {"iid": item_id}) or 0
+            if linked > 0:
+                raise EntityConstraintException("EntityConstraintException")
         # 清理受影响关联（通过原始 SQL 写入的关联，ORM 不感知）
         prefix_map = {
             ChangeIssue: "changeissue",

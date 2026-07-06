@@ -5,6 +5,7 @@ from app.models.workflow import WorkflowModel, Workflow, ActivityModel, TaskMode
 from app.models.auth import Account
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityNotFoundException,
+    NotAllowedException,
 )
 
 # task status 整数到字符串映射（Java / 前端期望字符串）
@@ -419,6 +420,29 @@ class WorkflowService:
                      user_login: str = "", workflow_id: int = None,
                      activity_step: int = None, task_num: int = None):
         from sqlalchemy import text
+
+        # 权限检查：获取当前 task 状态和指派人
+        if workflow_id is not None and activity_step is not None and task_num is not None:
+            t_cur = db.execute(text(
+                "SELECT status, worker_login FROM task "
+                "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num LIMIT 1"
+            ), {"wf_id": workflow_id, "step": activity_step, "num": task_num}).first()
+        else:
+            t_cur = db.execute(text(
+                "SELECT status, worker_login FROM task WHERE num = :id LIMIT 1"
+            ), {"id": task_id}).first()
+        if not t_cur:
+            raise EntityNotFoundException("TaskNotFoundException", str(task_id or task_num))
+        cur_status, cur_worker = t_cur[0], t_cur[1]
+        if cur_status != 1:
+            raise NotAllowedException("NotAllowedException")
+        if cur_worker != user_login:
+            is_admin = db.scalar(text(
+                "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+            ), {"l": user_login}) or 0
+            if not is_admin:
+                raise NotAllowedException("NotAllowedException")
+
         status = 2 if action.upper() == "APPROVE" else 3
         if workflow_id is not None and activity_step is not None and task_num is not None:
             db.execute(text(
@@ -440,6 +464,21 @@ class WorkflowService:
             t_row = db.execute(text(
                 "SELECT workflow_id FROM task WHERE num = :id LIMIT 1"
             ), {"id": task_id}).first()
+
+        # 拒绝时：将当前活动之前的 task 状态重置为 NOT_STARTED（0），支持重新审批
+        if action.upper() == "REJECT" and t_row:
+            wf_id = t_row[0]
+            if workflow_id is not None and activity_step is not None:
+                db.execute(text(
+                    "UPDATE task SET status = 0 "
+                    "WHERE workflow_id = :wf_id AND activity_step < :step AND status = 1"
+                ), {"wf_id": wf_id, "step": activity_step})
+            else:
+                # 回退模式：按 status 全部重置
+                db.execute(text(
+                    "UPDATE task SET status = 0 "
+                    "WHERE workflow_id = :wf_id AND num < :num AND status = 1"
+                ), {"wf_id": wf_id, "num": task_id})
         holder_type = None
         holder_reference = None
         holder_version = None
