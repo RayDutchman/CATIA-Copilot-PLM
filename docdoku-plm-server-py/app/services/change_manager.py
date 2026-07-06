@@ -3,8 +3,10 @@ from fastapi import HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.exceptions import (
-    AccessRightException, EntityConstraintException,
+    AccessRightException, NotAllowedException, EntityConstraintException,
     MilestoneNotFoundException, MilestoneAlreadyExistsException,
+    ChangeIssueNotFoundException, ChangeRequestNotFoundException,
+    ChangeOrderNotFoundException,
 )
 from app.models.auth import Account
 from app.models.change import (
@@ -44,6 +46,12 @@ class ChangeService:
         if item is None:
             if cls is Milestone:
                 raise MilestoneNotFoundException("MilestoneNotFoundException", str(item_id))
+            if cls is ChangeIssue:
+                raise ChangeIssueNotFoundException("ChangeIssueNotFoundException", str(item_id))
+            if cls is ChangeRequest:
+                raise ChangeRequestNotFoundException("ChangeRequestNotFoundException", str(item_id))
+            if cls is ChangeOrder:
+                raise ChangeOrderNotFoundException("ChangeOrderNotFoundException", str(item_id))
             raise HTTPException(404, f"{cls.__name__} not found")
         return item
 
@@ -51,16 +59,16 @@ class ChangeService:
         if assignee_login:
             acc = db.query(Account).filter(Account.login == assignee_login).first()
             if not acc:
-                raise AccessRightException("NotAllowedException")
+                raise NotAllowedException("NotAllowedException71")
             if not acc.enabled:
-                raise AccessRightException("NotAllowedException")
+                raise NotAllowedException("NotAllowedException71")
             # 检查用户在 workspace 中是否已启用 (Java isUserEnabled)
             member = db.execute(sql_text(
                 "SELECT 1 FROM workspaceusermembership "
                 "WHERE workspace_id = :ws AND member_login = :login"
             ), {"ws": ws, "login": assignee_login}).first()
             if not member:
-                raise AccessRightException("NotAllowedException")
+                raise NotAllowedException("NotAllowedException71")
 
     def create_item(self, db: Session, ws: str, type_name: str,
                     body: dict, user_login: str):

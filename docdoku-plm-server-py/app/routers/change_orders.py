@@ -100,7 +100,12 @@ def add_order_tag(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    svc.add_tag(db, ChangeOrder, ws, item_id, body.get("tag", ""))
+    if "tags" in body and isinstance(body["tags"], list):
+        for t in body["tags"]:
+            label = t.get("label", "") if isinstance(t, dict) else str(t)
+            svc.add_tag(db, ChangeOrder, ws, item_id, label)
+    else:
+        svc.add_tag(db, ChangeOrder, ws, item_id, body.get("tag", ""))
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db, current_user)
 
 

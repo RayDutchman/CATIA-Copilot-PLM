@@ -8,6 +8,7 @@ from app.core.exceptions import (
     EntityNotFoundException, NotAllowedException,
     PartMasterNotFoundException, PartRevisionNotFoundException,
     PartIterationNotFoundException,
+    WorkspaceNotEnabledException,
 )
 from app.models.part import (
     PartMaster, PartRevision, PartIteration,
@@ -162,6 +163,13 @@ class ProductService:
     def _check_workspace_member(self, db: Session, workspace_id: str,
                                  login: str) -> None:
         from sqlalchemy import text
+        # 检查 workspace 是否启用
+        enabled = db.execute(text(
+            "SELECT enabled FROM workspace WHERE id = :ws"
+        ), {"ws": workspace_id}).scalar()
+        if enabled is None or not enabled:
+            raise WorkspaceNotEnabledException(
+                "WorkspaceNotEnabledException", workspace_id)
         row = db.execute(text(
             "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
         ), {"l": login, "w": workspace_id}).first()
