@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-07-06 — 3项关键修复：share密码绕过+document_files异常+doc迭代数据
+
+- fix(py): `share.py:_get_shared_entity` — 修复密码绕过漏洞。原逻辑 `password is not None and entity.password is not None and ...` 在密码不为空时不检查即放行，改为先判断 `entity.password is not None` 再验证
+- fix(py): `document_files.py:download` — 异常捕获 `FileNotFoundError`→`FileNotFoundException`（service 抛自定义异常，原捕获不到导致 500）；补全 `Content-Disposition`/`Cache-Control`/`ETag` 下载头
+- fix(py): `document.py:_doc_to_dict` + `update_iteration` — `instanceAttributes`/`linkedDocuments` 从硬编码 `[]` 改为查询 `documentiteration_attribute`+`instanceattribute` 和 `documentiteration_documentlink`+`documentlink`
+
 ## 2026-07-06 — 异常raise补齐：Workflow/Webhook/Role/Task/Tag/Group
 
 - fix(py): `workflow_manager.py` — `get_instance`/`get_aborted_workflow_instance`/`get_workspace_workflow` 工作流不存在时抛出 `WorkflowNotFoundException` 替代 `EntityNotFoundException`

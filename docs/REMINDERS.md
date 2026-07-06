@@ -48,6 +48,7 @@
 
 ## 已解决（近期）
 
+- [x] **3项关键修复** — share密码绕过+document_files异常捕获+doc迭代instanceAttributes/linkedDocuments (2026-07-06)
 - [x] **File/Doc/Folder/User异常类抛出对齐Payara** — binary_storage.py/document_manager.py/folders.py/user_manager.py 9处异常替换 (2026-07-06)
 - [x] **Layer/Marker/Template/Part/Milestone/Platform异常对齐** — 10处异常替换 (2026-07-06)
 - [x] **Products 6项关键修复** — decodePath -1前缀+替代件链接支持、_build_component 补充 substituteIds/notifications/attributes、6个stub端点基本实现、BOM端点新增、instance详情补充iteration、milestones语法修复 (2026-07-06)
