@@ -1,8 +1,9 @@
 """认证相关 Pydantic schemas。字段名与 DocdokuPLM AccountDTO 保持一致。"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 class LoginRequestDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     login: str
     password: str
 
@@ -15,5 +16,4 @@ class AccountDTO(BaseModel):
     enabled: Optional[bool] = None
     admin: Optional[bool] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, extra='forbid')

@@ -7,27 +7,24 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class UserDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
     login: str
     name: Optional[str] = None
     email: Optional[str] = None
     language: Optional[str] = None
     workspaceId: Optional[str] = None
 
-    class Config:
-        from_attributes = True
-
 
 class BinaryResourceDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
     fullName: str
     name: Optional[str] = None
     contentLength: Optional[int] = None
     lastModified: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
-
 
 class CADInstanceDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     rx: Optional[float] = None
     ry: Optional[float] = None
     rz: Optional[float] = None
@@ -42,6 +39,7 @@ class CADInstanceDTO(BaseModel):
 
 
 class PartUsageLinkDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: int = 0
     fullId: Optional[str] = None
     amount: float = 1.0
@@ -56,6 +54,7 @@ class PartUsageLinkDTO(BaseModel):
 
 class ComponentDTO(BaseModel):
     """递归 BOM 节点，与 Payara ComponentDTO 字段完全一致。"""
+    model_config = ConfigDict(extra='forbid')
     number: str
     name: str = ""
     version: Optional[str] = None
@@ -89,7 +88,7 @@ ComponentDTO.model_rebuild()
 
 
 class PartIterationDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True, exclude_none=True)
+    model_config = ConfigDict(from_attributes=True, exclude_none=True, extra='forbid')
 
     workspaceId: str
     number: str
@@ -111,7 +110,7 @@ class PartIterationDTO(BaseModel):
 
 
 class PartRevisionDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True, exclude_none=True)
+    model_config = ConfigDict(from_attributes=True, exclude_none=True, extra='forbid')
 
     workspaceId: str
     number: str
@@ -151,6 +150,7 @@ class PartRevisionDTO(BaseModel):
 
 class PartCreationDTO(BaseModel):
     """POST /workspaces/{ws}/parts 请求体。"""
+    model_config = ConfigDict(populate_by_name=True, extra='forbid')
     number: str
     name: str = ""
     description: str = ""
@@ -159,11 +159,9 @@ class PartCreationDTO(BaseModel):
     template_id: Optional[str] = None
     acl: Optional[dict] = None
 
-    class Config:
-        populate_by_name = True
-
 
 class PartIterationUpdateDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     iterationNote: Optional[str] = None
     instanceAttributes: Optional[List[dict]] = None
     components: Optional[List[PartUsageLinkDTO]] = None
@@ -171,6 +169,7 @@ class PartIterationUpdateDTO(BaseModel):
 
 
 class ConversionDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     pending: bool = False
     succeed: bool = False
     startDate: Optional[datetime] = None
@@ -179,11 +178,13 @@ class ConversionDTO(BaseModel):
 
 class PositionDTO(BaseModel):
     """CAD 装配体组件位置信息（3x3 旋转矩阵 + 平移向量）。"""
+    model_config = ConfigDict(extra='forbid')
     translation: Optional[list[float]] = None          # [x, y, z]
     rotationmatrix: Optional[list[list[float]]] = None  # 3x3 matrix
 
 
 class ConversionResultDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     tempDir: Optional[str] = None
     convertedFileLODs: Optional[dict] = None
     box: Optional[list[float]] = None
@@ -193,41 +194,45 @@ class ConversionResultDTO(BaseModel):
 
 
 class CountDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     count: int = 0
 
 
 class LightPartMasterDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
     partNumber: str
     partName: str = ""
-
-    class Config:
-        from_attributes = True
 
 
 class StatusDTO(BaseModel):
     """通用状态响应"""
+    model_config = ConfigDict(extra='forbid')
     status: str
     message: Optional[str] = None
 
 
 class SharedPartDTO(BaseModel):
     """share endpoint 响应"""
+    model_config = ConfigDict(extra='forbid')
     uuid: str
     workspaceId: str
 
 
 class AclIdDTO(BaseModel):
     """ACL 更新响应"""
+    model_config = ConfigDict(extra='forbid')
     aclId: Optional[int] = None
 
 
 class GeneratedIdDTO(BaseModel):
     """generate_id 响应"""
+    model_config = ConfigDict(extra='forbid')
     generatedId: str
 
 
 class PartTemplateDTO(BaseModel):
     """零件模板 CRUD 响应，字段与 DocdokuPLM PartMasterTemplateDTO 一致"""
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
     id: str = ""
     workspaceId: Optional[str] = None
     mask: Optional[str] = None
@@ -241,6 +246,3 @@ class PartTemplateDTO(BaseModel):
     acl: Optional[dict] = None
     aclId: Optional[int] = None
     workflowModelId: Optional[str] = None
-
-    class Config:
-        from_attributes = True

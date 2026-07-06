@@ -1,23 +1,26 @@
 """变更管理相关 Pydantic DTO，字段名与 DocdokuPLM JSON 响应完全一致（camelCase）。"""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 
 
 class AffectedPartDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     partKey: Optional[str] = None
     partNumber: Optional[str] = None
     version: Optional[str] = None
 
 
 class AffectedDocumentDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     documentKey: Optional[str] = None
     documentMasterId: Optional[str] = None
     version: Optional[str] = None
 
 
 class ChangeItemDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     name: Optional[str] = None
     workspaceId: Optional[str] = None
@@ -51,6 +54,7 @@ class ChangeOrderDTO(ChangeItemDTO):
 
 
 class MilestoneDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     title: Optional[str] = None
     description: Optional[str] = None

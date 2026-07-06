@@ -1,12 +1,13 @@
 """产品相关 Pydantic DTO，字段名与 DocdokuPLM JSON 响应完全一致（camelCase）。"""
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List
 from app.schemas.part import UserDTO
 
 
 class ConfigurationItemDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[str] = None
     workspaceId: Optional[str] = None
     description: Optional[str] = None
@@ -20,18 +21,21 @@ class ConfigurationItemDTO(BaseModel):
 
 
 class BaselinedPartDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     partNumber: Optional[str] = None
     version: Optional[str] = None
     iteration: Optional[int] = None
 
 
 class ConfigurationItemLatestRevisionDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     partNumber: Optional[str] = None
     version: Optional[str] = None
     status: Optional[int] = None
 
 
 class ProductBaselineSummaryDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     name: Optional[str] = None
     type: Optional[int] = None
@@ -41,6 +45,7 @@ class ProductBaselineSummaryDTO(BaseModel):
 
 
 class ProductBaselineDetailDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     name: Optional[str] = None
     type: Optional[int] = None
@@ -58,6 +63,7 @@ class ProductBaselineDetailDTO(BaseModel):
 
 
 class ProductConfigurationDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     name: Optional[str] = None
     configurationItemId: Optional[str] = None
@@ -70,6 +76,7 @@ class ProductConfigurationDTO(BaseModel):
 
 
 class ProductInstanceIterationDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     iteration: Optional[int] = None
     iterationNote: Optional[str] = None
     creationDate: Optional[str] = None
@@ -79,6 +86,7 @@ class ProductInstanceIterationDTO(BaseModel):
 
 
 class ProductInstanceDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     serialNumber: Optional[str] = None
     workspaceId: Optional[str] = None
     configurationItemId: Optional[str] = None
@@ -88,6 +96,7 @@ class ProductInstanceDTO(BaseModel):
 
 
 class LayerDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     name: Optional[str] = None
     color: Optional[str] = None
@@ -96,6 +105,7 @@ class LayerDTO(BaseModel):
 
 
 class MarkerDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     x: Optional[float] = None
     y: Optional[float] = None

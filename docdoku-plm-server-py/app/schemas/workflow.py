@@ -9,12 +9,13 @@ from app.schemas.part import UserDTO
 
 
 class ACLDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     userEntries: Optional[dict[str, str]] = None  # "login:workspaceId" -> permission
     groupEntries: Optional[dict[str, str]] = None
 
 
 class TaskModelDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     num: int
     title: Optional[str] = None
@@ -24,7 +25,7 @@ class TaskModelDTO(BaseModel):
 
 
 class ActivityModelDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     step: int
     type: Optional[str] = None
@@ -34,7 +35,7 @@ class ActivityModelDTO(BaseModel):
 
 
 class WorkflowModelDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: str
     workspaceId: Optional[str] = None
@@ -46,7 +47,7 @@ class WorkflowModelDTO(BaseModel):
 
 
 class TaskDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     num: int
     title: Optional[str] = None
@@ -63,7 +64,7 @@ class TaskDTO(BaseModel):
 
 
 class WorkflowActivityDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     step: int
     lifeCycleState: Optional[str] = None
@@ -78,7 +79,7 @@ class WorkflowActivityDTO(BaseModel):
 
 
 class WorkflowDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: int
     abortedDate: Optional[str] = None
@@ -89,7 +90,7 @@ class WorkflowDTO(BaseModel):
 
 class WorkflowAbortedDTO(BaseModel):
     """aborted workflow 实例列表响应"""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: int
     abortedDate: Optional[str] = None
@@ -98,6 +99,7 @@ class WorkflowAbortedDTO(BaseModel):
 
 class WorkspaceWorkflowMinimalDTO(BaseModel):
     """workspace-workflow 简要列表响应"""
+    model_config = ConfigDict(extra='forbid')
     id: Optional[str] = None
     abortedDate: Optional[str] = None
     finalLifecycleState: Optional[str] = None
@@ -105,6 +107,7 @@ class WorkspaceWorkflowMinimalDTO(BaseModel):
 
 class TaskWrapperDTO(BaseModel):
     """assigned tasks 包装响应"""
+    model_config = ConfigDict(extra='forbid')
     num: int
     title: Optional[str] = None
     instructions: Optional[str] = None
@@ -128,7 +131,7 @@ class TaskWrapperDTO(BaseModel):
 
 class TaskHolderDocDTO(BaseModel):
     """task 关联的文档简要信息"""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: str
     version: str
@@ -147,6 +150,7 @@ class TaskHolderDocDTO(BaseModel):
 
 class TaskHolderPartDTO(BaseModel):
     """task 关联的零件简要信息"""
+    model_config = ConfigDict(extra='forbid')
     partKey: str
     partNumber: Optional[str] = None
     version: str

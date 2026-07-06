@@ -10,7 +10,7 @@ from app.schemas.part import UserDTO
 # ============ Webhook ============
 
 class WebhookAppDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: Optional[int] = None
     dtype: Optional[str] = None  # SIMPLE_HTTP / AWS_SNS
@@ -20,7 +20,7 @@ class WebhookAppDTO(BaseModel):
 
 
 class WebhookDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: int
     name: Optional[str] = None
@@ -34,7 +34,7 @@ class WebhookDTO(BaseModel):
 # ============ Notification ============
 
 class ModificationNotificationDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: int
     acknowledged: Optional[bool] = None
@@ -55,7 +55,7 @@ class ModificationNotificationDTO(BaseModel):
 # ============ Role ============
 
 class RoleDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: Optional[str] = None
     name: str
@@ -67,7 +67,7 @@ class RoleDTO(BaseModel):
 # ============ Tag ============
 
 class TagDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: str
     label: Optional[str] = None
@@ -77,11 +77,13 @@ class TagDTO(BaseModel):
 # ============ LOV (List of Values) ============
 
 class LOVValueDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     name: Optional[str] = None
     value: Optional[str] = None
 
 
 class LOVDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     name: str
     id: Optional[str] = None
     workspaceId: Optional[str] = None
@@ -92,6 +94,7 @@ class LOVDTO(BaseModel):
 # ============ Attribute ============
 
 class AttributeDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     type: Optional[str] = None
     name: Optional[str] = None
     value: Optional[str] = None
@@ -101,6 +104,7 @@ class AttributeDTO(BaseModel):
 # ============ Health ============
 
 class HealthDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     executionTime: int = 0
     status: str = "ok"
 
@@ -120,28 +124,31 @@ class FolderDTO(BaseModel):
     path: Optional[str] = None
     home: bool = False
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
 
 class FolderStatusDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     status: str = "ok"
 
 
 # ============ Organization ============
 
 class OrganizationDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     name: str
     description: Optional[str] = None
 
 
 class OrganizationMemberResultDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     status: str = "ok"
 
 
 # ============ Share ============
 
 class SharedDocumentDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     id: Optional[str] = None
     workspaceId: Optional[str] = None
     version: Optional[str] = None
@@ -154,6 +161,7 @@ class SharedDocumentDTO(BaseModel):
 
 
 class SharedPartDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     partNumber: Optional[str] = None
     version: Optional[str] = None
     workspaceId: Optional[str] = None
@@ -169,12 +177,14 @@ class SharedPartDTO(BaseModel):
 
 class EffectivityDTO(BaseModel):
     """效应信息占位（当前实现返回 []）。"""
+    model_config = ConfigDict(extra='forbid')
     pass
 
 
 # ============ Platform Options ============
 
 class PlatformOptionsDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     workspaceCreationStrategy: str = "NONE"
     registrationStrategy: str = "NONE"
 
@@ -183,6 +193,7 @@ class PlatformOptionsDTO(BaseModel):
 
 class WorkspaceWorkflowDTO(BaseModel):
     """workspace_workflow 实例化响应（instantiate / get detail）。"""
+    model_config = ConfigDict(extra='forbid')
     id: Optional[str] = None
     workflowId: Optional[int] = None
     workspaceId: Optional[str] = None

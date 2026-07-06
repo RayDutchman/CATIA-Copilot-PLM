@@ -9,12 +9,13 @@ from app.schemas.part import UserDTO
 
 class UserDTOExtended(UserDTO):
     """扩展 UserDTO，增加 admin/timeZone 字段（accounts/me 等端点使用）"""
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
     admin: Optional[bool] = None
     timeZone: Optional[str] = None
 
 
 class UserGroupDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: str
     workspaceId: Optional[str] = None
@@ -22,6 +23,7 @@ class UserGroupDTO(BaseModel):
 
 class UserGroupMemberDTO(BaseModel):
     """工作组内用户信息"""
+    model_config = ConfigDict(extra='forbid')
     login: str
     name: Optional[str] = None
     email: Optional[str] = None
@@ -30,6 +32,7 @@ class UserGroupMemberDTO(BaseModel):
 
 class WorkspaceMembershipDTO(BaseModel):
     """用户成员关系（/memberships/users）"""
+    model_config = ConfigDict(extra='forbid')
     workspaceId: str
     member: UserDTO
     readOnly: bool = False
@@ -38,6 +41,7 @@ class WorkspaceMembershipDTO(BaseModel):
 
 class WorkspaceUserGroupMembershipDTO(BaseModel):
     """用户组成员关系（/memberships/usergroups）"""
+    model_config = ConfigDict(extra='forbid')
     workspaceId: str
     memberId: str
     readOnly: bool = False
@@ -46,6 +50,7 @@ class WorkspaceUserGroupMembershipDTO(BaseModel):
 
 class UserStatsDTO(BaseModel):
     """用户统计（/users-stats）"""
+    model_config = ConfigDict(extra='forbid')
     users: int = 0
     activeusers: int = 0
     inactiveusers: int = 0
@@ -56,6 +61,7 @@ class UserStatsDTO(BaseModel):
 
 class WorkspaceAdminDTO(BaseModel):
     """工作区管理员信息"""
+    model_config = ConfigDict(extra='forbid')
     login: str
     name: Optional[str] = None
     email: Optional[str] = None
@@ -65,6 +71,7 @@ class WorkspaceAdminDTO(BaseModel):
 
 class TagSubscriptionDTO(BaseModel):
     """Tag 订阅响应"""
+    model_config = ConfigDict(extra='forbid')
     tag: str
     onIterationChange: bool = False
     onStateChange: bool = False
@@ -72,16 +79,21 @@ class TagSubscriptionDTO(BaseModel):
 
 class WorkspaceInfoDTO(BaseModel):
     """用户工作区简要信息（/accounts/workspaces）"""
+    model_config = ConfigDict(extra='forbid')
     id: str
     description: Optional[str] = None
+    enabled: Optional[bool] = True
+    folderLocked: Optional[bool] = False
 
 
 class AccountStatsDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     totalAccounts: int = 0
     enabledAccounts: int = 0
     disabledAccounts: int = 0
 
 
 class WorkspaceStatsDTO(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     totalWorkspaces: int = 0
     enabledWorkspaces: int = 0
