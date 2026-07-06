@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-07-07 — P2B 服务全量迁移完成
+
+- feat(py): Configuration 域 (S-030~S-042) — PSFilterVisitor 产品结构遍历引擎（stop/深度控制/循环引用检测）、PSFilterVisitorCallbacks（7 个回调钩子）、5 个 PSFilter 实现（LatestCheckedIn/LatestReleased/Released/UpdatePartIteration/WIP）、6 个 ConfigSpec 实现（EffectivityConfigSpec 基类 + DateBased/LotBased/SerialNumber effectivity + ProductBaselineCreation/ResolvedCollection）
+- feat(py): 增强基础模型 — ProductStructureFilter 定义 filter_part_iterations/filter_links 抽象接口、ProductConfigSpec 添加 retained 集合 + template method 模式
+- feat(py): product_structure.py 集成 PSFilterVisitor — filter_product_structure 支持 config_spec 参数，通过 visitor 按配置规格过滤遍历
+- feat(py): psfilter_manager.py 升级 — 返回实际 ProductStructureFilter 实例而非 dict
+- feat(py): Listeners (S-058~S-061) — UserFolderManager/PartNotificationManager/SubscriptionManager/RoleManager（CDI 事件监听器的 Python 等价）
+- feat(py): Products (S-062~S-064) — PartWorkflowService/ProductBaselineService/ProductInstanceService（delegate 到现有 ProductStructureService + TaskService）
+- feat(py): Documents (S-065~S-066) — DocumentBaselineService/DocumentWorkflowService
+- feat(py): Indexer (S-073~S-078) — IndexerMapping 常量/IndicesUtils 索引名格式化/IndexerClient ES 客户端/EntityMapper 迭代→ES 文档序列化/IndexerResultsMapper 搜索结果映射/IndexerTextExtractor PDF+Office 文本提取
+- feat(py): Validation (S-082) — AttributesConsistencyUtils 属性一致性校验（locked/mandatory 规则）
+- feat(py): GCM (S-084) — GCMSender 推送通知（Firebase FCM HTTP API + 日志降级）
+- test: 176 passed, 1 skipped (+0/-0 from baseline)
+
 ## 2026-07-07 — es_query_builder 审计修复（C5-C7, W11）
 
 - fix(py): `es_query_builder.py` — q 参数从 `multi_match`+must(AND) 改为 `query_string`+bool should(OR)，对齐 Java SearchQueryParser（元数据匹配 OR 文件内容匹配）

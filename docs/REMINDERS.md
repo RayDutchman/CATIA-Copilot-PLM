@@ -81,3 +81,4 @@
 - [x] **products 域 5 项修复** — baselines 补字段、configs ACL 统一、searchCI 完整 DTO、cascade 真实实现、instance 字段名对齐 (2026-07-06)
 - [x] **es_query_builder 审计修复（C5-C7, W11）** — q→query_string bool should、folder→match+fuzziness、移除 standardPart（2026-07-07）
 - [x] **notifier/indexer_manager 审计修复** — notifier 重写对齐 Java INotifierLocal、indexer reindex_all 调用改为两个方法、bulk errors 提取修正 (2026-07-07)
+- [x] **P2B 服务全量迁移 (30 文件)** — Configuration 域 PSFilterVisitor+5 filter+6 spec、Listeners 4 个、Products 3 个、Documents 2 个、Indexer 6 个（mapping/utils/client/mapper/extractor）、Validation 1 个（attributes_consistency_utils）、GCM 1 个（gcm_sender）。176 测试全绿。(2026-07-07)
