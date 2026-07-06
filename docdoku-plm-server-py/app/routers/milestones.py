@@ -225,7 +225,9 @@ def get_milestone(ws: str, item_id: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db, current_user)@router.put("/workspaces/{ws}/changes/milestones/{item_id}")
+    return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db, current_user)
+
+@router.put("/workspaces/{ws}/changes/milestones/{item_id}")
 @router.put("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def update_milestone(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),

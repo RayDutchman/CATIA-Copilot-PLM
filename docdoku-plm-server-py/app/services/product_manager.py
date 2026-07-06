@@ -367,6 +367,11 @@ class ProductService:
             last_iter_num = last.iteration
             db.delete(last)
             db.flush()
+            # 删除 BinaryResource 行（属于已删除迭代）
+            db.query(BinaryResource).filter(
+                BinaryResource.full_name.like(
+                    f"{workspace_id}/parts/{number}/{version}/{last_iter_num}/%")
+            ).delete(synchronize_session=False)
             # 清理 vault 物理文件
             try:
                 import shutil
@@ -402,6 +407,12 @@ class ProductService:
         target.modification_date = now
         if body.iterationNote is not None:
             target.iteration_note = body.iterationNote
+        # 更新关联文档
+        if body.linkedDocuments is not None:
+            self._sync_linked_documents(db, target, body.linkedDocuments)
+        # 更新实例属性
+        if body.instanceAttributes is not None:
+            self._sync_instance_attributes(db, target, body.instanceAttributes)
         # 更新子件列表
         if body.components is not None:
             self._sync_components(db, target, body.components, workspace_id)
@@ -492,6 +503,96 @@ class ProductService:
                     component_order=order,
                 )
             )
+
+    def _sync_linked_documents(self, db: Session, iteration: PartIteration,
+                                linked_docs: list) -> None:
+        """同步关联文档（替换当前迭代的全部 documentlink）。"""
+        from sqlalchemy import text
+        ws = iteration.workspace_id
+        pn = iteration.partmaster_partnumber
+        ver = iteration.partrevision_version
+        it = iteration.iteration
+        # 清除旧关联
+        db.execute(text(
+            "DELETE FROM partiteration_documentlink "
+            "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+            "AND partrevision_version=:ver AND iteration=:it"
+        ), {"ws": ws, "pn": pn, "ver": ver, "it": it})
+        for ld in (linked_docs or []):
+            result = db.execute(text(
+                "INSERT INTO documentlink (commentdata, target_documentmaster_id, "
+                "target_docrevision_version, target_workspace_id) "
+                "VALUES (:comment, :dm, :drv, :tws) RETURNING id"
+            ), {
+                "comment": ld.get("commentLink", ""),
+                "dm": ld.get("documentMasterId", ""),
+                "drv": ld.get("version", "A"),
+                "tws": ws,
+            })
+            link_id = result.fetchone()[0]
+            db.execute(text(
+                "INSERT INTO partiteration_documentlink "
+                "(workspace_id, partmaster_partnumber, partrevision_version, "
+                "iteration, documentlink_id) "
+                "VALUES (:ws, :pn, :ver, :it, :lid)"
+            ), {"ws": ws, "pn": pn, "ver": ver, "it": it, "lid": link_id})
+
+    def _sync_instance_attributes(self, db: Session, iteration: PartIteration,
+                                   attrs: list) -> None:
+        """同步实例属性（替换当前迭代的全部 instanceattribute）。"""
+        from sqlalchemy import text
+        ws = iteration.workspace_id
+        pn = iteration.partmaster_partnumber
+        ver = iteration.partrevision_version
+        it = iteration.iteration
+        # 查旧属性 ID
+        old_ids = [
+            row[0] for row in db.execute(text(
+                "SELECT instanceattribute_id FROM partiteration_attribute "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws, "pn": pn, "ver": ver, "it": it}).fetchall()
+        ]
+        # 清除旧关联
+        db.execute(text(
+            "DELETE FROM partiteration_attribute "
+            "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+            "AND partrevision_version=:ver AND iteration=:it"
+        ), {"ws": ws, "pn": pn, "ver": ver, "it": it})
+        # 删除孤儿 InstanceAttribute
+        if old_ids:
+            for oid in old_ids:
+                db.execute(text(
+                    "DELETE FROM instanceattribute WHERE id=:id"
+                ), {"id": oid})
+        # 插入新属性
+        for order, attr in enumerate(attrs):
+            result = db.execute(text(
+                "INSERT INTO instanceattribute (name, mandatory, locked, "
+                "booleanvalue, datevalue, indexvalue, numbervalue, "
+                "textvalue, longtextvalue, urlvalue) "
+                "VALUES (:name, :mand, :locked, :bv, :dv, :iv, :nv, "
+                ":tv, :ltv, :uv) RETURNING id"
+            ), {
+                "name": attr.get("name", ""),
+                "mand": attr.get("mandatory", False),
+                "locked": attr.get("locked", False),
+                "bv": attr.get("booleanValue"),
+                "dv": attr.get("dateValue"),
+                "iv": attr.get("indexValue"),
+                "nv": attr.get("numberValue"),
+                "tv": attr.get("textValue"),
+                "ltv": attr.get("longTextValue"),
+                "uv": attr.get("urlValue"),
+            })
+            attr_id = result.fetchone()[0]
+            db.execute(text(
+                "INSERT INTO partiteration_attribute "
+                "(workspace_id, partmaster_partnumber, partrevision_version, "
+                "iteration, instanceattribute_id, attribute_order) "
+                "VALUES (:ws, :pn, :ver, :it, :aid, :order)"
+            ), {"ws": ws, "pn": pn, "ver": ver, "it": it,
+                "aid": attr_id, "order": order})
 
     def release(self, db: Session, ws: str, pn: str, ver: str,
                 user_login: str) -> PartRevision:
@@ -722,13 +823,57 @@ class ProductService:
 
     def _copy_iteration_files(self, db: Session, ws: str, pn: str, ver: str,
                                from_iter: int, to_iter: int) -> None:
-        """将旧迭代的全部分类数据复制到新迭代（7/7）。"""
+        """将旧迭代的全部分类数据复制到新迭代（含 BinaryResource 深拷贝）。"""
+        import shutil
+        from pathlib import Path
+        from app.core.config import settings
         from app.models.part import (
+            BinaryResource,
             part_iteration_binres, part_iteration_geometry,
             part_iteration_usagelink, part_iteration_documentlink,
             part_iteration_attribute, part_iteration_pathdata_attr,
         )
-        # 复制附件关联
+
+        vault_root = Path(settings.VAULT_PATH)
+
+        def _new_full(old_full: str) -> str:
+            """将 full_name 中的 old_iter 替换为 to_iter。"""
+            parts = old_full.split("/")
+            if len(parts) >= 5:
+                parts[4] = str(to_iter)
+            return "/".join(parts)
+
+        def _copy_br(old_full: str, dtype: str = "BinaryResource") -> str:
+            """深拷贝 BinaryResource 行 + vault 物理文件，返回新 full_name。"""
+            new_full = _new_full(old_full)
+            old_br = db.query(BinaryResource).filter(
+                BinaryResource.full_name == old_full).first()
+            if old_br:
+                existing = db.query(BinaryResource).filter(
+                    BinaryResource.full_name == new_full).first()
+                if existing is None:
+                    db.add(BinaryResource(
+                        full_name=new_full,
+                        dtype=dtype,
+                        content_length=old_br.content_length,
+                        last_modified=datetime.utcnow(),
+                        quality=old_br.quality,
+                        x_min=old_br.x_min, x_max=old_br.x_max,
+                        y_min=old_br.y_min, y_max=old_br.y_max,
+                        z_min=old_br.z_min, z_max=old_br.z_max,
+                    ))
+                    db.flush()
+                try:
+                    old_path = vault_root / old_full
+                    new_path = vault_root / new_full
+                    if old_path.exists() and not new_path.exists():
+                        new_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(old_path), str(new_path))
+                except Exception:
+                    pass
+            return new_full
+
+        # 复制附件：重建 BinaryResource，再建关联
         for row in db.execute(
             part_iteration_binres.select().where(
                 part_iteration_binres.c.workspace_id == ws,
@@ -737,12 +882,14 @@ class ProductService:
                 part_iteration_binres.c.iteration == from_iter,
             )
         ).fetchall():
+            new_full = _copy_br(row.attachedfile_fullname)
             db.execute(part_iteration_binres.insert().values(
                 workspace_id=ws, partmaster_partnumber=pn,
                 partrevision_version=ver, iteration=to_iter,
-                attachedfile_fullname=row.attachedfile_fullname,
+                attachedfile_fullname=new_full,
             ))
-        # 复制几何体关联
+
+        # 复制几何体：重建 BinaryResource，再建关联
         for row in db.execute(
             part_iteration_geometry.select().where(
                 part_iteration_geometry.c.workspace_id == ws,
@@ -751,12 +898,14 @@ class ProductService:
                 part_iteration_geometry.c.iteration == from_iter,
             )
         ).fetchall():
+            new_full = _copy_br(row.geometry_fullname, "Geometry")
             db.execute(part_iteration_geometry.insert().values(
                 workspace_id=ws, partmaster_partnumber=pn,
                 partrevision_version=ver, iteration=to_iter,
-                geometry_fullname=row.geometry_fullname,
+                geometry_fullname=new_full,
             ))
-        # 复制子件链接关联
+
+        # 复制子件链接关联（纯关系，不需 BinaryResource 复制）
         for row in db.execute(
             part_iteration_usagelink.select().where(
                 part_iteration_usagelink.c.workspace_id == ws,
@@ -771,7 +920,8 @@ class ProductService:
                 component_id=row.component_id,
                 component_order=row.component_order,
             ))
-        # 复制关联文档
+
+        # 复制关联文档（纯关系）
         for row in db.execute(
             part_iteration_documentlink.select().where(
                 part_iteration_documentlink.c.workspace_id == ws,
@@ -785,7 +935,8 @@ class ProductService:
                 partrevision_version=ver, iteration=to_iter,
                 documentlink_id=row.documentlink_id,
             ))
-        # 复制实例属性
+
+        # 复制实例属性（纯关系）
         for row in db.execute(
             part_iteration_attribute.select().where(
                 part_iteration_attribute.c.workspace_id == ws,
@@ -800,7 +951,8 @@ class ProductService:
                 instanceattribute_id=row.instanceattribute_id,
                 attribute_order=row.attribute_order,
             ))
-        # 复制实例属性模板
+
+        # 复制实例属性模板（纯关系）
         for row in db.execute(
             part_iteration_pathdata_attr.select().where(
                 part_iteration_pathdata_attr.c.workspace_id == ws,
@@ -815,7 +967,8 @@ class ProductService:
                 instanceattribute_template_id=row.instanceattribute_template_id,
                 attribute_order=row.attribute_order,
             ))
-        # 复制 nativeCADFile 引用
+
+        # 复制 nativeCADFile 引用（含 BinaryResource 深拷贝）
         old_iter = (
             db.query(PartIteration)
             .filter(
@@ -827,6 +980,7 @@ class ProductService:
             .first()
         )
         if old_iter and old_iter.native_cad_file_fullname:
+            new_full = _copy_br(old_iter.native_cad_file_fullname)
             new_iter = (
                 db.query(PartIteration)
                 .filter(
@@ -838,4 +992,4 @@ class ProductService:
                 .first()
             )
             if new_iter:
-                new_iter.native_cad_file_fullname = old_iter.native_cad_file_fullname
+                new_iter.native_cad_file_fullname = new_full

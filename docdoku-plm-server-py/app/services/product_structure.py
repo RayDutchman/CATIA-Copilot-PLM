@@ -9,6 +9,7 @@ from app.models.product import (
 )
 from app.models.part import PartMaster, PartRevision, PartUsageLink
 from app.models.auth import Account
+from app.models.notification import ModificationNotification
 from app.core.exceptions import EntityAlreadyExistsException, EntityConstraintException
 
 

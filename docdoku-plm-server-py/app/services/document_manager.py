@@ -247,19 +247,56 @@ class DocumentService:
         return pr
 
     def _copy_attached_files(self, db, ws, doc_id, ver, src_iter, dst_iter):
-        """将 src_iter 的 attached_files 复制到 dst_iter。"""
+        """将 src_iter 的 attached_files 深拷贝到 dst_iter（含 BinaryResource + vault）。"""
+        import shutil
+        from pathlib import Path
+        from app.core.config import settings
+        from app.models.part import BinaryResource
         from sqlalchemy import text
+
         rows = db.execute(text(
             "SELECT attachedfile_fullname FROM documentiteration_binres "
             "WHERE workspace_id=:ws AND documentmaster_id=:did "
             "AND documentrevision_version=:ver AND iteration=:iter"),
             {"ws": ws, "did": doc_id, "ver": ver, "iter": src_iter},
         ).fetchall()
+
+        vault_root = Path(settings.VAULT_PATH)
+
         for row in rows:
+            old_full = row[0]
+            parts = old_full.split("/")
+            if len(parts) >= 5:
+                parts[4] = str(dst_iter)
+            new_full = "/".join(parts)
+
+            old_br = db.query(BinaryResource).filter(
+                BinaryResource.full_name == old_full).first()
+            if old_br:
+                existing = db.query(BinaryResource).filter(
+                    BinaryResource.full_name == new_full).first()
+                if existing is None:
+                    db.add(BinaryResource(
+                        full_name=new_full,
+                        dtype="BinaryResource",
+                        content_length=old_br.content_length,
+                        last_modified=datetime.utcnow(),
+                        quality=old_br.quality,
+                    ))
+                    db.flush()
+                try:
+                    old_path = vault_root / old_full
+                    new_path = vault_root / new_full
+                    if old_path.exists() and not new_path.exists():
+                        new_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(old_path), str(new_path))
+                except Exception:
+                    pass
+
             db.execute(document_iteration_binres.insert().values(
                 workspace_id=ws, documentmaster_id=doc_id,
                 documentrevision_version=ver, iteration=dst_iter,
-                attachedfile_fullname=row[0]))
+                attachedfile_fullname=new_full))
 
     def checkin(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
@@ -283,7 +320,15 @@ class DocumentService:
             raise NotAllowedException("NotAllowedException27")
         last = pr.last_iteration
         if last and last.check_in_date is None:
+            last_iter_num = last.iteration
             db.delete(last)
+            db.flush()
+            # 删除 BinaryResource 行（属于已删除迭代）
+            from app.models.part import BinaryResource
+            db.query(BinaryResource).filter(
+                BinaryResource.full_name.like(
+                    f"{ws}/documents/{doc_id}/{ver}/{last_iter_num}/%")
+            ).delete(synchronize_session=False)
         pr.checkout_user_login = None
         pr.checkout_user_workspace_id = None
         pr.check_out_date = None

@@ -1,11 +1,12 @@
 """产品端点路由（ConfigurationItem CRUD + 产品实例）。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.product import ConfigurationItem, ProductInstanceMaster
+from app.models.product import ConfigurationItem, ProductInstanceMaster, ProductInstanceIteration
 from app.models.part import PartMaster, PartRevision, PartIteration
 from app.models.notification import ModificationNotification
 from app.services.product_structure import ProductStructureService
@@ -149,6 +150,53 @@ def decode_path(ws: str, ci_id: str, p: str,
     return svc.decode_path(db, ws, ci_id, p)
 
 
+@router.get("/workspaces/{ws}/products/{ci_id}/bom")
+@router.get("/workspaces/{ws}/products/{ci_id}/bom/", include_in_schema=False)
+def bom(ws: str, ci_id: str,
+        configSpec: str = Query("wip"), path: str = Query(None),
+        diverge: bool = Query(False),
+        current_user: Account = Depends(get_current_user),
+        db: Session = Depends(get_db)):
+    """BOM 端点，返回过滤后的 PartRevisionDTO 列表。"""
+    result = svc.filter_product_structure(db, ws, ci_id, configSpec, path)
+    if not result:
+        return []
+    # 平铺 ComponentDTO 树为 PartRevisionDTO 列表
+    parts = []
+
+    def flatten(comp, level=0):
+        ci = svc.get_ci(db, ws, ci_id)
+        rev = db.query(PartRevision).filter(
+            PartRevision.workspace_id == ws,
+            PartRevision.partmaster_partnumber == comp["number"],
+        ).order_by(PartRevision.version.desc()).first()
+        if rev is None:
+            return
+        last_it = rev.last_iteration
+        acct = db.query(Account).filter(Account.login == rev.part_master.author_login).first()
+        parts.append({
+            "number": comp["number"],
+            "version": comp["version"],
+            "iteration": comp["iteration"],
+            "name": comp["name"],
+            "description": comp["description"],
+            "checkOutUser": comp.get("checkOutUser"),
+            "status": "RELEASED" if comp["released"] else ("OBSOLETE" if comp["obsolete"] else "WIP"),
+            "author": comp["author"],
+            "authorLogin": comp["authorLogin"],
+            "checkOutDate": comp.get("checkOutDate"),
+            "standardPart": comp["standardPart"],
+            "assembly": comp["assembly"],
+            "workspaceId": ws,
+            "configurationItemId": ci_id,
+        })
+        for child in comp.get("components", []):
+            flatten(child, level + 1)
+    for comp in result:
+        flatten(comp)
+    return parts
+
+
 # ── Product Instances ──
 
 @router.get("/workspaces/{ws}/product-instances")
@@ -174,9 +222,27 @@ def get_product_instance(ws: str, sn: str,
     ).first()
     if not inst:
         raise HTTPException(404, "Product instance not found")
-    return {"serialNumber": inst.serialnumber,
-            "workspaceId": inst.workspace_id,
-            "configurationItemId": inst.configurationitem_id}
+    iterations = db.query(ProductInstanceIteration).filter(
+        ProductInstanceIteration.workspace_id == ws,
+        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+    ).order_by(ProductInstanceIteration.iteration).all()
+    return {
+        "serialNumber": inst.serialnumber,
+        "workspaceId": inst.workspace_id,
+        "configurationItemId": inst.configurationitem_id,
+        "identifier": f"{ws}/{inst.configurationitem_id}-{inst.serialnumber}",
+        "productInstanceIterations": [
+            {
+                "iteration": it.iteration,
+                "iterationNote": it.iteration_note,
+                "creationDate": _fmt_date(it.creation_date),
+                "modificationDate": _fmt_date(it.modification_date),
+                "author": _get_user_dto(db, it.author_login, ws),
+                "productBaselineId": it.productbaseline_id,
+            }
+            for it in iterations
+        ],
+    }
 
 
 @router.get("/workspaces/{ws}/product-instances/{pid}/instances")
@@ -196,44 +262,115 @@ def list_ci_instances(ws: str, pid: str,
 @router.get("/workspaces/{ws}/products/{ci_id}/releases/last")
 @router.get("/workspaces/{ws}/products/{ci_id}/releases/last/", include_in_schema=False)
 def last_release(ws: str, ci_id: str,
-                  current_user: Account = Depends(get_current_user)):
-    return []
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """返回 CI 根零件的最新已发布版本。"""
+    try:
+        ci = svc.get_ci(db, ws, ci_id)
+    except HTTPException:
+        return []
+    root_pn = ci.partmaster_partnumber
+    rev = db.query(PartRevision).filter(
+        PartRevision.workspace_id == ws,
+        PartRevision.partmaster_partnumber == root_pn,
+        PartRevision.status == 1,
+    ).order_by(PartRevision.version.desc()).first()
+    if rev is None:
+        return []
+    last_it = rev.last_iteration
+    return [{
+        "number": rev.partmaster_partnumber,
+        "version": rev.version,
+        "iteration": last_it.iteration if last_it else 1,
+        "description": rev.description or "",
+        "releaseDate": _fmt_date(rev.release_date),
+    }]
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/path-choices")
 @router.get("/workspaces/{ws}/products/{ci_id}/path-choices/", include_in_schema=False)
 def path_choices(ws: str, ci_id: str,
                  type: str = Query(""),
-                 current_user: Account = Depends(get_current_user)):
-    return []
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """返回 CI 下已存在的路径数据列表。CI 不存在则返回空列表。"""
+    try:
+        ci = svc.get_ci(db, ws, ci_id)
+    except HTTPException:
+        return []
+    try:
+        rows = db.execute(text(
+            "SELECT DISTINCT pdm.path, pdm.id FROM pathdatamaster pdm "
+            "JOIN prdinstiteration_pathdatamstr pipd ON pdm.id = pipd.pathdatamaster_id "
+            "JOIN productinstanceiteration pii ON pii.workspace_id = pipd.workspace_id "
+            "AND pii.configurationitem_id = pipd.configurationitem_id "
+            "AND pii.prdinstancemaster_serialnumber = pipd.prdinstancemaster_serialnumber "
+            "AND pii.iteration = pipd.iteration "
+            "JOIN productinstancemaster pim ON pim.workspace_id = pii.workspace_id "
+            "AND pim.configurationitem_id = pii.configurationitem_id "
+            "AND pim.serialnumber = pii.prdinstancemaster_serialnumber "
+            "WHERE pim.workspace_id = :ws AND pim.configurationitem_id = :ci"
+        ), {"ws": ws, "ci": ci_id}).fetchall()
+        return [{"id": r[1], "path": r[0]} for r in rows]
+    except Exception:
+        return []
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/versions-choices")
 @router.get("/workspaces/{ws}/products/{ci_id}/versions-choices/", include_in_schema=False)
 def versions_choices(ws: str, ci_id: str,
-                      current_user: Account = Depends(get_current_user)):
-    return []
+                      current_user: Account = Depends(get_current_user),
+                      db: Session = Depends(get_db)):
+    """返回 CI 根零件的所有版本列表。CI 不存在则返回空列表。"""
+    try:
+        ci = svc.get_ci(db, ws, ci_id)
+    except HTTPException:
+        return []
+    root_pn = ci.partmaster_partnumber
+    revs = db.query(PartRevision.version).filter(
+        PartRevision.workspace_id == ws,
+        PartRevision.partmaster_partnumber == root_pn,
+    ).order_by(PartRevision.version).all()
+    return [r[0] for r in revs]
 
 
 @router.get("/workspaces/{ws}/products/{pid}/export-files")
 @router.get("/workspaces/{ws}/products/{pid}/export-files/", include_in_schema=False)
 def export_files(ws: str, pid: str,
-                 current_user: Account = Depends(get_current_user)):
-    return []
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """返回 CI 的导出文件列表。暂未实现导出逻辑。"""
+    return {"files": []}
 
 
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links-types")
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links-types/", include_in_schema=False)
 def path_to_path_links_types(ws: str, pid: str,
-                              current_user: Account = Depends(get_current_user)):
-    return []
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    """返回 CI 的路径间链接类型列表。"""
+    rows = db.execute(text(
+        "SELECT id, type, name, sourcepath, targetpath, description "
+        "FROM pathtopathlink "
+        "WHERE workspace_id = :ws"
+    ), {"ws": ws}).fetchall()
+    return [{"id": r[0], "type": r[1], "name": r[2],
+             "sourcePath": r[3], "targetPath": r[4], "description": r[5]}
+            for r in rows]
 
 
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}")
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}/", include_in_schema=False)
 def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
-                               current_user: Account = Depends(get_current_user)):
-    return {}
+                               current_user: Account = Depends(get_current_user),
+                               db: Session = Depends(get_db)):
+    """返回指定源→目标的路径间链接详情。"""
+    rows = db.execute(text(
+        "SELECT id, type, name, description FROM pathtopathlink "
+        "WHERE workspace_id = :ws AND sourcepath = :src AND targetpath = :tgt"
+    ), {"ws": ws, "src": source, "tgt": target}).fetchall()
+    return [{"id": r[0], "type": r[1], "name": r[2], "description": r[3]}
+            for r in rows]
 
 
 # ── Cascade ──
