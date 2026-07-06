@@ -120,6 +120,7 @@ Audit the Java→Python migration exhaustively. Read both files completely. Thin
 - **Value fidelity**: For every response field, trace the value to its origin. What DB column or computation produced it? Is it being transformed correctly? Would a consumer of this API get the same semantic meaning from both backends?
 - **Non-null defaults**: Array/list fields must NEVER be None/null — use `[]`. Object/dict fields must NEVER be None/null — use `{}`. Backbone.js models call `.length` and `.name` without null checks. Check EVERY response key in EVERY code path (both detail endpoints AND inline list comprehensions — they often differ).
 - **List vs Detail parity**: When an inline list comprehension builds response dicts separately from a `_to_dict()` helper used by the detail endpoint, check that both return the same set of keys. Missing fields in the list path are a common blind spot.
+- **Cross-cutting security**: For every Java Bean method entry point that calls `checkWorkspaceReadAccess`/`checkWorkspaceWriteAccess`/`checkAdmin`, verify the Python equivalent has the same check. Payara's `checkWorkspaceReadAccess` verifies: workspace exists + workspace enabled + user is workspace member. All three must be checked in Python at equivalent call sites.
 
 Go deep. Flag everything. Think beyond what I listed.
 ```

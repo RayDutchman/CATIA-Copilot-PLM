@@ -33,15 +33,11 @@ def get_current_user(
     account = db.query(Account).filter(Account.login == payload["login"]).first()
     if account is None or not account.enabled:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不存在或已禁用")
-    # 检查 workspace 是否被管理员禁用（全局管理员可绕过）
+    # 对齐 Payara checkWorkspaceReadAccess：workspace 禁用时拒绝所有用户（含管理员）
     m = _WS_RE.match(request.url.path)
     if m:
         ws = m.group(1)
-        is_admin = db.execute(text(
-            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-        ), {"l": account.login}).first()
-        if not is_admin:
-            row = db.execute(text("SELECT enabled FROM workspace WHERE id = :w"), {"w": ws}).first()
-            if row and not bool(row[0]):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"工作区\"{ws}\"已禁用")
+        row = db.execute(text("SELECT enabled FROM workspace WHERE id = :w"), {"w": ws}).first()
+        if row and not bool(row[0]):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"工作区\"{ws}\"已禁用")
     return account
