@@ -1,10 +1,16 @@
 """文件服务：vault 写入/读取 + BinaryResource DB 记录。对齐 Payara saveNativeCAD/saveFile。"""
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy.orm import Session
 from app.services import vault
 from app.models.part import (
     BinaryResource, PartIteration, part_iteration_binres,
 )
+
+
+def _vault_root() -> Path:
+    from app.core.config import settings
+    return Path(settings.VAULT_PATH)
 
 
 def _upsert_binaryresource(db: Session, full_name: str, size: int,
@@ -70,14 +76,20 @@ def save_attached(db: Session, ws: str, pn: str, ver: str, iteration: int,
 
 def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
                    sub_type: str | None, filename: str) -> bytes:
-    """从 vault 读文件。sub_type=None 读 {iter}/{filename}（几何体 GLB）。"""
-    if sub_type is None:
-        from app.services.vault import _vault_root
-        path = (_vault_root() / ws / "parts" / pn / ver
-                / str(iteration) / filename)
-    elif sub_type == "nativecad":
-        path = vault.part_nativecad_path(ws, pn, ver, iteration, filename)
-    else:
-        path = vault.part_attached_path(ws, pn, ver, iteration, filename)
-    return vault.read_file(path)
+    """从 vault 读文件，若当前 iteration 不存在则回退到更早 iteration。"""
+    for iter_num in range(iteration, 0, -1):
+        try:
+            if sub_type is None:
+                path = (_vault_root() / ws / "parts" / pn / ver
+                        / str(iter_num) / filename)
+            elif sub_type == "nativecad":
+                path = vault.part_nativecad_path(ws, pn, ver, iter_num, filename)
+            else:
+                path = vault.part_attached_path(ws, pn, ver, iter_num, filename)
+            return vault.read_file(path)
+        except FileNotFoundError:
+            if iter_num == 1:
+                raise
+            continue
+    raise FileNotFoundError(f"文件未找到: {ws}/{pn}/{ver}/{iteration}/{filename}")
 

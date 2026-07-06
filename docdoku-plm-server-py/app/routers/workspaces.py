@@ -229,13 +229,30 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/back-options/", include_in_schema=False)
 def back_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    return {"sendEmails": False, "workspaceId": ws}
+    row = db.execute(text(
+        "SELECT sendemails FROM workspacebackoptions WHERE workspace_id = :ws"
+    ), {"ws": ws}).fetchone()
+    send_emails = bool(row[0]) if row else False
+    return {"sendEmails": send_emails, "workspaceId": ws}
 
 
 @router.put("/workspaces/{ws}/back-options")
 @router.put("/workspaces/{ws}/back-options/", include_in_schema=False)
 def save_back_options(ws: str, body: dict, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
+    send_emails = body.get("sendEmails", False)
+    existing = db.execute(text(
+        "SELECT workspace_id FROM workspacebackoptions WHERE workspace_id = :ws"
+    ), {"ws": ws}).fetchone()
+    if existing:
+        db.execute(text(
+            "UPDATE workspacebackoptions SET sendemails = :se WHERE workspace_id = :ws"
+        ), {"se": send_emails, "ws": ws})
+    else:
+        db.execute(text(
+            "INSERT INTO workspacebackoptions (workspace_id, sendemails) VALUES (:ws, :se)"
+        ), {"ws": ws, "se": send_emails})
+    db.commit()
     return Response(status_code=204)
 
 
@@ -254,6 +271,63 @@ def workspace_tags(ws: str, db: Session = Depends(get_db),
         "SELECT label, workspace_id FROM tag WHERE workspace_id = :ws ORDER BY label"
     ), {"ws": ws}).fetchall()
     return [{"id": r[0], "label": r[0], "workspaceId": r[1]} for r in rows]
+
+
+@router.post("/workspaces/{ws}/tags", status_code=201)
+@router.post("/workspaces/{ws}/tags/", status_code=201, include_in_schema=False)
+def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    label = body.get("label", "").strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="标签不能为空")
+    existing = db.execute(text(
+        "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
+    ), {"label": label, "ws": ws}).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="标签已存在")
+    db.execute(text(
+        "INSERT INTO tag (label, workspace_id) VALUES (:label, :ws)"
+    ), {"label": label, "ws": ws})
+    db.commit()
+    return {"id": label, "label": label, "workspaceId": ws}
+
+
+@router.post("/workspaces/{ws}/tags/multiple", status_code=201)
+@router.post("/workspaces/{ws}/tags/multiple/", status_code=201, include_in_schema=False)
+def create_tags_multiple(ws: str, body: dict, db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    labels = body.get("tags", [])
+    created = []
+    for label in labels:
+        label = str(label).strip()
+        if not label:
+            continue
+        existing = db.execute(text(
+            "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
+        ), {"label": label, "ws": ws}).fetchone()
+        if existing:
+            continue
+        db.execute(text(
+            "INSERT INTO tag (label, workspace_id) VALUES (:label, :ws)"
+        ), {"label": label, "ws": ws})
+        created.append({"id": label, "label": label, "workspaceId": ws})
+    db.commit()
+    return created
+
+
+@router.delete("/workspaces/{ws}/tags/{tag_id}", status_code=204)
+@router.delete("/workspaces/{ws}/tags/{tag_id}/", status_code=204, include_in_schema=False)
+def delete_tag(ws: str, tag_id: str, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    existing = db.execute(text(
+        "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
+    ), {"label": tag_id, "ws": ws}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="标签不存在")
+    db.execute(text(
+        "DELETE FROM tag WHERE label = :label AND workspace_id = :ws"
+    ), {"label": tag_id, "ws": ws})
+    db.commit()
 
 
 @router.get("/workspaces/{ws}/tags/{tag_id}/documents")
@@ -280,6 +354,73 @@ def list_of_values(ws: str, db: Session = Depends(get_db),
         ), {"name": name, "ws": ws}).fetchall()
         result[name] = [{"name": n[0], "value": n[1]} for n in nv_rows]
     return result
+
+
+@router.post("/workspaces/{ws}/lov", status_code=201)
+@router.post("/workspaces/{ws}/lov/", status_code=201, include_in_schema=False)
+def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="名称不能为空")
+    existing = db.execute(text(
+        "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
+    ), {"name": name, "ws": ws}).fetchone()
+    if existing:
+        raise HTTPException(status_code=409, detail="名称已存在")
+    db.execute(text(
+        "INSERT INTO lov (name, workspace_id) VALUES (:name, :ws)"
+    ), {"name": name, "ws": ws})
+    values = body.get("values", [])
+    for i, v in enumerate(values):
+        db.execute(text(
+            "INSERT INTO lov_namevalue (name, value, lov_name, lov_workspace_id, namevalue_order) "
+            "VALUES (:name, :value, :lov_name, :ws, :ord)"
+        ), {"name": v.get("name", ""), "value": v.get("value", ""),
+            "lov_name": name, "ws": ws, "ord": i})
+    db.commit()
+    return {"name": name, "workspaceId": ws, "values": values}
+
+
+@router.put("/workspaces/{ws}/lov/{name}")
+@router.put("/workspaces/{ws}/lov/{name}/", include_in_schema=False)
+def update_lov(ws: str, name: str, body: dict, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    existing = db.execute(text(
+        "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
+    ), {"name": name, "ws": ws}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="名称不存在")
+    db.execute(text(
+        "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
+    ), {"name": name, "ws": ws})
+    values = body.get("values", [])
+    for i, v in enumerate(values):
+        db.execute(text(
+            "INSERT INTO lov_namevalue (name, value, lov_name, lov_workspace_id, namevalue_order) "
+            "VALUES (:name, :value, :lov_name, :ws, :ord)"
+        ), {"name": v.get("name", ""), "value": v.get("value", ""),
+            "lov_name": name, "ws": ws, "ord": i})
+    db.commit()
+    return {"name": name, "workspaceId": ws, "values": values}
+
+
+@router.delete("/workspaces/{ws}/lov/{name}", status_code=204)
+@router.delete("/workspaces/{ws}/lov/{name}/", status_code=204, include_in_schema=False)
+def delete_lov(ws: str, name: str, db: Session = Depends(get_db),
+               current_user: Account = Depends(get_current_user)):
+    existing = db.execute(text(
+        "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
+    ), {"name": name, "ws": ws}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="名称不存在")
+    db.execute(text(
+        "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
+    ), {"name": name, "ws": ws})
+    db.execute(text(
+        "DELETE FROM lov WHERE name = :name AND workspace_id = :ws"
+    ), {"name": name, "ws": ws})
+    db.commit()
 
 
 @router.get("/workspaces/{ws}/attributes/part-iterations")

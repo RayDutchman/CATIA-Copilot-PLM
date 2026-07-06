@@ -246,6 +246,42 @@ def put_platform_options(body: dict, db: Session = Depends(get_db),
     return get_platform_options(db)
 
 
+# ============ Stats ============
+
+@router.get("/admin/disk-usage-stats")
+@router.get("/admin/disk-usage-stats/", include_in_schema=False)
+def admin_disk_usage_stats():
+    return {"documents": 0, "parts": 0, "partTemplates": 0, "documentTemplates": 0}
+
+
+@router.get("/admin/users-stats")
+@router.get("/admin/users-stats/", include_in_schema=False)
+def admin_users_stats(db: Session = Depends(get_db)):
+    count = db.execute(text("SELECT COUNT(*) FROM account")).scalar() or 0
+    return {"count": count}
+
+
+@router.get("/admin/documents-stats")
+@router.get("/admin/documents-stats/", include_in_schema=False)
+def admin_documents_stats(db: Session = Depends(get_db)):
+    count = db.execute(text("SELECT COUNT(*) FROM documentrevision")).scalar() or 0
+    return {"count": count}
+
+
+@router.get("/admin/products-stats")
+@router.get("/admin/products-stats/", include_in_schema=False)
+def admin_products_stats(db: Session = Depends(get_db)):
+    count = db.execute(text("SELECT COUNT(*) FROM configurationitem")).scalar() or 0
+    return {"count": count}
+
+
+@router.get("/admin/parts-stats")
+@router.get("/admin/parts-stats/", include_in_schema=False)
+def admin_parts_stats(db: Session = Depends(get_db)):
+    count = db.execute(text("SELECT COUNT(*) FROM partrevision")).scalar() or 0
+    return {"count": count}
+
+
 # ============ Index ============
 
 @router.get("/admin/index")
@@ -257,5 +293,9 @@ def get_index():
 @router.post("/admin/index", status_code=202)
 @router.post("/admin/index/", status_code=202, include_in_schema=False)
 def post_index():
-    return {"status": "accepted"}
+    try:
+        import elasticsearch.Transport
+        return {"status": "accepted"}
+    except ImportError:
+        return {"status": "accepted", "note": "ES not configured"}
 

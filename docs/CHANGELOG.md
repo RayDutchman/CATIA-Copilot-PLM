@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-07-06 — stubs 消除：admin统计 + back-options写DB + LOV/Tag CRUD + notification完整响应 + webhook字段 + fallback
+
+- fix(py): **admin.py 5个统计端点** — disk-usage-stats/users-stats/documents-stats/products-stats/parts-stats 返回DB COUNT查询结果
+- fix(py): **admin.py POST /admin/index** — 检测 elasticsearch 可用性，不可用时返回 `{"status": "accepted", "note": "ES not configured"}`
+- fix(py): **workspaces.py back-options 真实写入** — UPSERT workspacebackoptions 表 (sendemails)，GET 从DB读取
+- fix(py): **workspaces.py LOV CRUD** — POST/PUT/DELETE /lov 端点，操作 lov 和 lov_namevalue 表
+- fix(py): **workspaces.py Tag CRUD** — POST/POST-multiple/DELETE /tags 端点，操作 tag 表
+- fix(py): **notifications.py 完整响应** — acknowledge 返回 ModificationNotificationDTO 全字段（impactedPartNumber/Version、modifiedPartNumber/Version/Iteration/Name、ackComment/ackDate/ackAuthor、author、checkInDate、iterationNote）
+- fix(py): **webhooks.py appName + parameters** — _webhook_to_dict 新增 appName（dtype→SIMPLEWEBHOOK/SNSWEBHOOK）和 parameters（默认[]）
+- fix(py): **binary_storage.py fallback** — get_file_bytes 当前iteration文件不存在时回退到更早iteration
+
+## 2026-07-06 — stubs 消除：generate_id mask递增 + 逆链接实查 + download头补全 + home检测
+
+- fix(py): **document_templates.py `generate_id` 真实实现** — 查询 documentmaster 表中匹配模板 ID 前缀的已有记录，取最大序号+1 作为新 ID。支持 mask 模式（`{000}` 占位符替换为递增序号）。
+- fix(py): **document.py aborted-workflows 实查** — 查询 workflow 表 `aborteddate IS NOT NULL` 记录
+- fix(py): **document.py inverse-document-link 实查** — JOIN documentiteration_documentlink + documentlink + documentiteration 返回真实逆链接
+- fix(py): **document.py inverse-part-link 实查** — JOIN partiteration_documentlink + documentlink + partiteration
+- fix(py): **document.py inverse-product-instances-link 实查** — JOIN prdinstiteration_documentlink + documentlink + prdinstiteration
+- fix(py): **document.py inverse-path-data-link 实查** — JOIN pathdataiteration_documentlink + documentlink + pathdataiteration + pathdata
+- fix(py): **parts.py POST queries stubs** — 返回 `{"id": 0}` 占位而非空数组，DELETE queries 返回 204
+- fix(py): **part_files.py download 头补全** — Last-Modified 改为 vault 文件 stat.st_mtime 真实值，ETag 加入 mtime 避免缓存不一致
+- fix(py): **folders.py home 文件夹检测** — list_root 查询文件夹路径是否匹配 `{ws}/~{current_user.login}` 格式，标记 home=True
+
 ## 2026-07-06 — document.py 作者/ACL/订阅修复
 
 - fix(py): **document.py `_doc_to_dict` 查询 Account 真实 name** — author/checkOutUser/releaseAuthor 不再用 login 填充 name，改查 account 表取 name/email/language

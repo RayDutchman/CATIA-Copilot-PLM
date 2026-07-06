@@ -10,12 +10,21 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
+def _appname_from_dtype(dtype: str | None) -> str:
+    if dtype == "AWS_SNS":
+        return "SNSWEBHOOK"
+    return "SIMPLEWEBHOOK"
+
+
 def _webhook_to_dict(w, app=None) -> dict:
+    app_dtype = app.dtype if app else None
     return {
         "id": w.id,
         "name": w.name,
         "workspaceId": w.workspace_id,
         "active": w.active,
+        "appName": _appname_from_dtype(app_dtype),
+        "parameters": [],
         "webhookApp": {
             "id": app.id if app else w.webhookapp_id,
             "dtype": app.dtype if app else None,
