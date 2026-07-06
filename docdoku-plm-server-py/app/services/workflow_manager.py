@@ -317,7 +317,7 @@ class WorkflowService:
             "title": row[9] if len(row) > 9 and row[9] else "",
             "instructions": row[4] if len(row) > 4 and row[4] else "",
             "status": STATUS_MAP.get(row[7]) if len(row) > 7 else None,
-            "worker": worker,
+            "worker": worker or {},
             "closureComment": row[1] if len(row) > 1 else None,
             "closureDate": str(row[2]) if len(row) > 2 and row[2] else None,
             "closingDate": str(row[2]) if len(row) > 2 and row[2] else None,

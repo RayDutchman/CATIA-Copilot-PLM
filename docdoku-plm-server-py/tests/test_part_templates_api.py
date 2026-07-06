@@ -2,10 +2,26 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import SessionLocal
 from app.models.part import PartMaster
+from sqlalchemy import text
 
 PREFIX = "/docdoku-plm-server-rest/api"
 WS = "Workspace_2"
 client = TestClient(app)
+
+
+def _cleanup_part(number):
+    """删除测试创建的 PartMaster（含其 revisions/iterations）。"""
+    db = SessionLocal()
+    try:
+        db.execute(text("DELETE FROM partiteration WHERE workspace_id=:ws AND partmaster_partnumber=:pn"),
+                   {"ws": WS, "pn": number})
+        db.execute(text("DELETE FROM partrevision WHERE workspace_id=:ws AND partmaster_partnumber=:pn"),
+                   {"ws": WS, "pn": number})
+        db.execute(text("DELETE FROM partmaster WHERE workspace_id=:ws AND partnumber=:pn"),
+                   {"ws": WS, "pn": number})
+        db.commit()
+    finally:
+        db.close()
 
 
 def _token():
@@ -120,6 +136,7 @@ def test_generate_id_with_mask_no_existing_parts():
 
 def test_generate_id_with_mask_increment():
     """有 mask 且有已有零件，递增返回下一个。"""
+    _cleanup_part("CA_00042")  # 清理上次运行的残留数据
     h = _headers()
     tid = f"PTGM-{hash(_token() + 'incr') % 100000}"
     mask = "CA_#####"
