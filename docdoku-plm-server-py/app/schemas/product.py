@@ -41,8 +41,16 @@ class ProductBaselineSummaryDTO(BaseModel):
     type: Optional[int] = None
     configurationItemId: Optional[str] = None
     author: Optional[UserDTO] = None
+    creationDate: Optional[str] = None
+    description: Optional[str] = None
     hasObsoletePartRevisions: bool = False
     configurationItemLatestRevision: Optional[ConfigurationItemLatestRevisionDTO] = None
+    baselinedParts: List[BaselinedPartDTO] = []
+    substituteLinks: List[dict] = []
+    optionalUsageLinks: List[dict] = []
+    pathToPathLinks: List[dict] = []
+    substitutesParts: List[dict] = []
+    optionalsParts: List[dict] = []
 
 
 class ProductBaselineDetailDTO(BaseModel):

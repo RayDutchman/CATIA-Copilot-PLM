@@ -44,10 +44,18 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
         "type": b.type,
         "configurationItemId": b.configurationitem_id,
         "author": _get_user(db, b.author_login or "", b.configurationitem_workspace_id),
+        "creationDate": b.creation_date.isoformat() + "Z" if b.creation_date else None,
+        "description": b.description or "",
         "hasObsoletePartRevisions": False,
         "configurationItemLatestRevision": _ci_latest_revision(
             db, b.configurationitem_workspace_id, b.configurationitem_id
         ),
+        "baselinedParts": _query_baselined_parts(db, b.partcollection_id) if b.partcollection_id else [],
+        "substituteLinks": [],
+        "optionalUsageLinks": [],
+        "pathToPathLinks": [],
+        "substitutesParts": [],
+        "optionalsParts": [],
     }
 
 
