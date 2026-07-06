@@ -56,6 +56,40 @@ def _doc_to_dict(db, rev, current_user_login=None):
 
     iterations = []
     for it in (rev.iterations or []):
+        # 查询 instanceAttributes
+        instance_attrs = []
+        if db is not None:
+            attr_rows = db.execute(sql_text(
+                "SELECT ia.name, ia.mandatory, ia.locked, "
+                "ia.booleanvalue, ia.datevalue, ia.indexvalue, "
+                "ia.numbervalue, ia.textvalue, ia.longtextvalue, ia.urlvalue "
+                "FROM documentiteration_attribute dia "
+                "JOIN instanceattribute ia ON ia.id = dia.instanceattribute_id "
+                "WHERE dia.workspace_id=:ws AND dia.documentmaster_id=:did "
+                "AND dia.documentrevision_version=:ver AND dia.iteration=:it "
+                "ORDER BY dia.attribute_order"
+            ), {"ws": it.workspace_id, "did": it.documentmaster_id,
+                "ver": it.documentrevision_version, "it": it.iteration}).fetchall()
+            instance_attrs = [dict(row._mapping) for row in attr_rows]
+        # 查询 linkedDocuments
+        linked_docs = []
+        if db is not None:
+            doc_rows = db.execute(sql_text(
+                "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
+                "dl.target_docrevision_version, dl.commentdata "
+                "FROM documentiteration_documentlink didl "
+                "JOIN documentlink dl ON dl.id = didl.documentlink_id "
+                "WHERE didl.workspace_id=:ws AND didl.documentmaster_id=:did "
+                "AND didl.documentrevision_version=:ver AND didl.iteration=:it"
+            ), {"ws": it.workspace_id, "did": it.documentmaster_id,
+                "ver": it.documentrevision_version, "it": it.iteration}).fetchall()
+            linked_docs = [{
+                "id": row.id,
+                "workspaceId": row.target_workspace_id,
+                "documentMasterId": row.target_documentmaster_id,
+                "documentMasterVersion": row.target_docrevision_version,
+                "commentLink": row.commentdata,
+            } for row in doc_rows]
         it_dict = {
             "id": f"{rev.documentmaster_id}-{rev.version}-{it.iteration}",
             "iteration": it.iteration,
@@ -68,9 +102,9 @@ def _doc_to_dict(db, rev, current_user_login=None):
             "creationDate": str(it.creation_date) if it.creation_date else None,
             "modificationDate": str(it.modification_date) if it.modification_date else None,
             "checkInDate": str(it.check_in_date) if it.check_in_date else None,
-            "instanceAttributes": [],
+            "instanceAttributes": instance_attrs,
             "attachedFiles": [],
-            "linkedDocuments": [],
+            "linkedDocuments": linked_docs,
             "author": _get_user_info(db, it.author_login, it.workspace_id),
             "documentRevision": {
                 "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
@@ -446,6 +480,18 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
                 "workspaceId": lr[1], "documentMasterId": lr[2],
                 "version": lr[3], "commentLink": lr[4] or "",
             })
+    # 查询 instanceAttributes
+    attr_rows = db.execute(sql_text(
+        "SELECT ia.name, ia.mandatory, ia.locked, "
+        "ia.booleanvalue, ia.datevalue, ia.indexvalue, "
+        "ia.numbervalue, ia.textvalue, ia.longtextvalue, ia.urlvalue "
+        "FROM documentiteration_attribute dia "
+        "JOIN instanceattribute ia ON ia.id = dia.instanceattribute_id "
+        "WHERE dia.workspace_id=:ws AND dia.documentmaster_id=:did "
+        "AND dia.documentrevision_version=:ver AND dia.iteration=:it "
+        "ORDER BY dia.attribute_order"
+    ), {"ws": ws, "did": doc_id, "ver": ver, "it": doc_iter}).fetchall()
+    instance_attrs = [dict(row._mapping) for row in attr_rows]
     it_dict = {
         "id": f"{rev.documentmaster_id}-{rev.version}-{doc_iter}",
         "iteration": doc_iter,
@@ -458,7 +504,7 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
         "creationDate": str(target_it.creation_date) if target_it.creation_date else None,
         "modificationDate": str(target_it.modification_date) if target_it.modification_date else None,
         "checkInDate": str(target_it.check_in_date) if target_it.check_in_date else None,
-        "instanceAttributes": [],
+        "instanceAttributes": instance_attrs,
         "attachedFiles": attached_files,
         "linkedDocuments": linked_documents,
         "author": _get_user_info(db, target_it.author_login, target_it.workspace_id),

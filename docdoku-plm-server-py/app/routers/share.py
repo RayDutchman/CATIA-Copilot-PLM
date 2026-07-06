@@ -67,9 +67,9 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
     if not entity:
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
-    if password is not None and entity.password is not None and \
-            hashlib.md5(password.encode()).hexdigest() != entity.password:
-        raise AccessRightException("AccessRightException")
+    if entity.password is not None:
+        if password is None or hashlib.md5(password.encode()).hexdigest() != entity.password:
+            raise AccessRightException("AccessRightException")
 
     if entity.expire_date is not None:
         now = datetime.now(timezone.utc)

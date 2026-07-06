@@ -1,4 +1,6 @@
 """文档文件上传下载端点。"""
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import Response
@@ -6,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import NotAllowedException
+from app.core.exceptions import NotAllowedException, FileNotFoundException
 from app.models.auth import Account
 from app.models.document import DocumentRevision
 from app.services.document_manager import DocumentService
@@ -62,7 +64,17 @@ def download(ws: str, doc_id: str, version: str, iteration: int, file_name: str,
     _check_workspace_member(db, ws, current_user.login)
     try:
         data = svc.get_file_bytes(ws, doc_id, version, iteration, file_name)
-    except FileNotFoundError:
+    except FileNotFoundException:
         raise HTTPException(404, "File not found")
-    return Response(content=data, media_type="application/octet-stream")
+    from app.core.config import settings
+    file_path = Path(settings.VAULT_PATH) / ws / "documents" / doc_id / version / str(iteration) / file_name
+    stat = file_path.stat()
+    mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{file_name}"',
+        "Cache-Control": "max-age=86400",
+        "Last-Modified": mtime.strftime("%a, %d %b %Y %H:%M:%S GMT"),
+        "ETag": f'"{file_name}_{len(data)}_{int(stat.st_mtime)}"',
+    }
+    return Response(content=data, media_type="application/octet-stream", headers=headers)
 
