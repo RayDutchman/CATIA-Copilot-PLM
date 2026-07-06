@@ -248,6 +248,6 @@ def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO
         obsoleteAuthor=_user_dto(pr.obsolete_user_workspace, pr.obsolete_user_login, db),
         tags=[t.label for t in (pr.tags or [])],
         workflow=None,
-        acl=_build_acl(db, pr.acl_id) if db else None,
+        acl=_build_acl(db, pr.acl_id) or {},
         notifications=notification_list,
     )

@@ -7,6 +7,13 @@
 ---
 
 
+## 2026-07-06 — OPS: OpenCode 接入 Chrome DevTools MCP 替代 Playwright MCP
+
+- chore(ops): `opencode.json` 新增 `chrome-devtools` MCP server，配置 `--autoConnect` 模式连接 Windows Chrome 150+
+- chore(ops): `opencode.jsonc` 禁用 `playwright` MCP（`enabled: false`），Chrome DevTools MCP 为其功能超集
+- chore(ops): Windows Chrome 快捷方式（开始菜单 + 任务栏 + 公共桌面）追加 `--remote-debugging-port=9222`
+- note: autoConnect 需在 `chrome://inspect/#remote-debugging` 手动开启远程调试，连接时 Chrome 弹窗确认
+
 ## 2026-07-06 — response_model补满：workspaces/admin/auth/platform全端点
 
 - feat(py): workspaces.py — disk-usage 添加 `response_model=Dict[str, int]`
