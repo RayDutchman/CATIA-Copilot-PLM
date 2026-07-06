@@ -139,3 +139,27 @@ Focus on what would actually break at runtime. Cross-reference Java with Python 
 | 2026-07-05 | 35（15 Critical + 20 Partial） | 全修（10 批并行 agent） | 11 |
 | 2026-07-05 | 11 Partial | 全修（7 批并行 agent） | 0 |
 | 2026-07-05 | 文件重组：Router 22→32，Service 10 个改名 | — | — |
+
+| 54 | `IndexerManagerBean.java` | — | `indexer_manager.py` | — | ES 实时索引 + 搜索 | ⚠️ |
+
+### ES 搜索——Payara→Python 详细方法映射
+
+| Java 方法 | 行 | Python 方法 | 状态 |
+|---|---|---|---|
+| `ping()` | 112 | `platform.py` health_check（简化） | ⚠️ |
+| `createWorkspaceIndex(ws)` | 130 | `create_index(ws)` | ✅ |
+| `deleteWorkspaceIndex(ws)` | 149 | `delete_index(ws)` | ✅ |
+| `indexDocumentIteration(DocIter)` | 168 | `index_document_revision(DocRev)` | ⚠️ |
+| `indexDocumentIterations(List)` | 194 | `reindex_all()` 内 bulk_docs | ✅ |
+| `indexPartIteration(PartIter)` | 215 | `index_part_revision(PartRev)` | ⚠️ |
+| `indexPartIterations(List)` | 240 | `reindex_all()` 内 bulk_parts | ✅ |
+| `removeDocumentIterationFromIndex` | 262 | `delete_document_revision(key, ws)` | ✅ |
+| `removePartIterationFromIndex` | 279 | `delete_part_revision(key, ws)` | ✅ |
+| `searchDocumentRevisions(q,from,size)` | 301 | `es_query_builder.search_documents()` | ✅ |
+| `searchPartRevisions(q,from,size)` | 323 | `es_query_builder.search_parts()` | ✅ |
+| `indexAllWorkspacesData()` | 339 | admin 逐 workspace 调 | ⚠️ |
+| `indexWorkspaceData(ws)` | 355 | `reindex_all(db, ws)` | ✅ |
+| `doIndexWorkspaceData(ws)` | 359 | 内联在 reindex_all | ✅ |
+| `indexWorkspaceParts/Docs(ws)` | 409/435 | reindex_all 内循环 | ✅ |
+
+**主要差异**：Java `@Asynchronous` vs Python 同步 / Java Jest client vs elasticsearch-py / Java 邮件通知 vs Python log warning / Java 按 iteration 索引 vs Python 按 revision
