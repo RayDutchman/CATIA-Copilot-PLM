@@ -12,7 +12,7 @@ from app.services.product_manager import ProductService
 from app.services.kafka_producer import send_conversion_order
 from app.services.converter import find_pending_conversion
 from app.models.part import PartIteration
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 router = APIRouter()
 svc = ProductService()

@@ -33,16 +33,19 @@ class ProductService:
         )
 
     def get_revision(self, db: Session, workspace_id: str,
-                     number: str, version: str) -> PartRevision:
-        pr = (
+                     number: str, version: str,
+                     for_update: bool = False) -> PartRevision:
+        q = (
             db.query(PartRevision)
             .filter(
                 PartRevision.workspace_id == workspace_id,
                 PartRevision.partmaster_partnumber == number,
                 PartRevision.version == version,
             )
-            .first()
         )
+        if for_update:
+            q = q.with_for_update()
+        pr = q.first()
         if pr is None:
             raise HTTPException(status_code=404,
                                 detail=f"Part {number}-{version} not found")
@@ -300,7 +303,7 @@ class ProductService:
     def checkout(self, db: Session, workspace_id: str,
                  number: str, version: str, user_login: str) -> PartRevision:
         from app.core.exceptions import NotAllowedException
-        pr = self.get_revision(db, workspace_id, number, version)
+        pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if not pr.is_last_revision:
             raise NotAllowedException("NotAllowedException72")
         if pr.checkout_user_login:
@@ -334,7 +337,7 @@ class ProductService:
     def checkin(self, db: Session, workspace_id: str,
                 number: str, version: str, user_login: str) -> PartRevision:
         from app.core.exceptions import NotAllowedException
-        pr = self.get_revision(db, workspace_id, number, version)
+        pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException20")
         now = datetime.utcnow()
@@ -353,7 +356,7 @@ class ProductService:
     def undo_checkout(self, db: Session, workspace_id: str,
                       number: str, version: str, user_login: str) -> PartRevision:
         from app.core.exceptions import NotAllowedException
-        pr = self.get_revision(db, workspace_id, number, version)
+        pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException19")
         if len(pr.iterations) <= 1:
@@ -386,7 +389,7 @@ class ProductService:
                          user_login: str,
                          body: PartIterationUpdateDTO) -> PartRevision:
         from app.core.exceptions import NotAllowedException
-        pr = self.get_revision(db, workspace_id, number, version)
+        pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException25", number)
         # 找目标迭代
@@ -408,9 +411,14 @@ class ProductService:
 
     def _sync_components(self, db: Session, iteration: PartIteration,
                           components_dto: list, workspace_id: str) -> None:
-        # 注意：高并发下同一 iteration 同时更新可能导致孤儿记录，
-        # 未来多用户场景需加 SELECT ... FOR UPDATE 保护
-        # 收集旧 link id，清理关联后删除孤儿 PartUsageLink
+        # 并发保护：父级 update_iteration 已通过 SELECT FOR UPDATE 锁定 PartRevision 行，
+        # 同一 revision 的并发请求被串行化，DELETE→INSERT 不可交错，避免孤儿 PartUsageLink。
+        # savepoint：内部任一 flush 失败时只回滚本次同步，不污染外层 session。
+        with db.begin_nested():
+            self.__do_sync_components(db, iteration, components_dto, workspace_id)
+
+    def __do_sync_components(self, db: Session, iteration: PartIteration,
+                              components_dto: list, workspace_id: str) -> None:
         old_link_ids = [
             row[0] for row in db.execute(
                 part_iteration_usagelink.select().with_only_columns(

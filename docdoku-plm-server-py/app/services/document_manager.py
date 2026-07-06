@@ -1,6 +1,5 @@
 from datetime import datetime
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 from sqlalchemy import text as sql_text
 from app.models.document import (
     DocumentMaster, DocumentRevision, DocumentIteration,

@@ -2,7 +2,7 @@
 import json
 import hashlib
 import time
-from jose import jwt, JWTError
+from jose import jwt
 from app.core.config import settings
 
 

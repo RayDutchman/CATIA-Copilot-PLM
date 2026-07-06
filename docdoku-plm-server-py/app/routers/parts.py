@@ -1,6 +1,6 @@
 """零件集合路由（PartsResource）。"""
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, Query, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func

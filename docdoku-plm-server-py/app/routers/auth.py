@@ -1,12 +1,10 @@
 """认证相关路由：登录、登出、当前用户信息。"""
 import hashlib
-from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.security import verify_password, create_token
-from app.core.config import settings
 from app.core.exceptions import EntityNotFoundException, CreationException
 from app.models.auth import Account, UserGroupMapping
 from app.models.user_mgmt import Credential
@@ -16,6 +14,7 @@ router = APIRouter()
 
 
 @router.post("/auth/login", response_model=AccountDTO)
+@router.post("/auth/login/", response_model=AccountDTO, include_in_schema=False)
 def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_db)):
     """
     用户登录。
@@ -54,6 +53,7 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
 
 
 @router.get("/auth/logout", status_code=204)
+@router.get("/auth/logout/", status_code=204, include_in_schema=False)
 def logout():
     """登出。JWT 无状态，客户端删除本地 token 即可。返回 204。"""
     return None
@@ -94,6 +94,7 @@ def get_provider(provider_id: str):
 
 
 @router.post("/auth/recovery")
+@router.post("/auth/recovery/", include_in_schema=False)
 def send_password_recovery(body: dict, db: Session = Depends(get_db)):
     """发送密码恢复邮件。MVP: 不实际发邮件，只返回 204。"""
     login = body.get("login", "")
@@ -104,6 +105,7 @@ def send_password_recovery(body: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/recover")
+@router.post("/auth/recover/", include_in_schema=False)
 def execute_recover(body: dict, db: Session = Depends(get_db)):
     """执行密码恢复。MVP: 直接更新密码。"""
     login = body.get("login", "")
@@ -119,6 +121,7 @@ def execute_recover(body: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/oauth")
+@router.post("/auth/oauth/", include_in_schema=False)
 def oauth_login(body: dict):
     """OAuth 登录。当前无 OAuth 配置，返回 501。"""
     raise HTTPException(status_code=501, detail="OAuth not configured")

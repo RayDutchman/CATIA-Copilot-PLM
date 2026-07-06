@@ -104,6 +104,7 @@ def get_ci(ws: str, ci_id: str,
 
 
 @router.delete("/workspaces/{ws}/products/{ci_id}", status_code=204)
+@router.delete("/workspaces/{ws}/products/{ci_id}/", status_code=204, include_in_schema=False)
 def delete_ci(ws: str, ci_id: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):

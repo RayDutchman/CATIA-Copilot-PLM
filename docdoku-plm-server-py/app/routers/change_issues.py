@@ -206,6 +206,7 @@ def get_issue(ws: str, item_id: int,
 
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/", include_in_schema=False)
 def update_issue(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -214,6 +215,7 @@ def update_issue(ws: str, item_id: int, body: dict,
 
 
 @router.delete("/workspaces/{ws}/changes/issues/{item_id}", status_code=204)
+@router.delete("/workspaces/{ws}/changes/issues/{item_id}/", status_code=204, include_in_schema=False)
 def delete_issue(ws: str, item_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -222,6 +224,7 @@ def delete_issue(ws: str, item_id: int,
 
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/tags")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/tags/", include_in_schema=False)
 def set_issue_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
@@ -232,6 +235,7 @@ def set_issue_tags(ws: str, item_id: int, body: dict,
 
 
 @router.post("/workspaces/{ws}/changes/issues/{item_id}/tags")
+@router.post("/workspaces/{ws}/changes/issues/{item_id}/tags/", include_in_schema=False)
 def add_issue_tag(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -242,6 +246,7 @@ def add_issue_tag(ws: str, item_id: int, body: dict,
 
 
 @router.delete("/workspaces/{ws}/changes/issues/{item_id}/tags/{tag_label}")
+@router.delete("/workspaces/{ws}/changes/issues/{item_id}/tags/{tag_label}/", include_in_schema=False)
 def remove_issue_tag(ws: str, item_id: int, tag_label: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):

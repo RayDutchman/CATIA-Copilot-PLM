@@ -1,6 +1,5 @@
 """文件服务：vault 写入/读取 + BinaryResource DB 记录。对齐 Payara saveNativeCAD/saveFile。"""
 from datetime import datetime
-from pathlib import Path
 from sqlalchemy.orm import Session
 from app.services import vault
 from app.models.part import (

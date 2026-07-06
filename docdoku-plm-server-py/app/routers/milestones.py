@@ -187,6 +187,7 @@ def get_milestone(ws: str, item_id: int,
 
 
 @router.put("/workspaces/{ws}/changes/milestones/{item_id}")
+@router.put("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def update_milestone(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -195,6 +196,7 @@ def update_milestone(ws: str, item_id: int, body: dict,
 
 
 @router.delete("/workspaces/{ws}/changes/milestones/{item_id}", status_code=204)
+@router.delete("/workspaces/{ws}/changes/milestones/{item_id}/", status_code=204, include_in_schema=False)
 def delete_milestone(ws: str, item_id: int,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Table
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Table
 from app.core.database import Base
 
 iteration_change_subscription = Table(

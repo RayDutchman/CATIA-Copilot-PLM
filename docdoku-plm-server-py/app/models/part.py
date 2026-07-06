@@ -1,5 +1,4 @@
 """零件三层模型 ORM，映射现有 docdokuplm 数据库。不修改表结构。"""
-from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     Column, String, Boolean, Integer, Float, BigInteger,

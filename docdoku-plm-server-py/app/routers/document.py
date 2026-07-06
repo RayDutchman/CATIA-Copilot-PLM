@@ -122,6 +122,7 @@ def get_doc(ws: str, doc_key: str,
 
 
 @router.delete("/workspaces/{ws}/documents/{doc_key}", status_code=204)
+@router.delete("/workspaces/{ws}/documents/{doc_key}/", status_code=204, include_in_schema=False)
 def delete(ws: str, doc_key: str,
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
@@ -184,6 +185,7 @@ def checkout(ws: str, doc_key: str,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkin")
+@router.put("/workspaces/{ws}/documents/{doc_key}/checkin/", include_in_schema=False)
 def checkin(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
@@ -192,6 +194,7 @@ def checkin(ws: str, doc_key: str,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout")
+@router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout/", include_in_schema=False)
 def undo_checkout(ws: str, doc_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -200,6 +203,7 @@ def undo_checkout(ws: str, doc_key: str,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/release")
+@router.put("/workspaces/{ws}/documents/{doc_key}/release/", include_in_schema=False)
 def release(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
@@ -208,6 +212,7 @@ def release(ws: str, doc_key: str,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/obsolete")
+@router.put("/workspaces/{ws}/documents/{doc_key}/obsolete/", include_in_schema=False)
 def obsolete(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
@@ -216,6 +221,7 @@ def obsolete(ws: str, doc_key: str,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/newVersion")
+@router.put("/workspaces/{ws}/documents/{doc_key}/newVersion/", include_in_schema=False)
 def new_version(ws: str, doc_key: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -224,6 +230,7 @@ def new_version(ws: str, doc_key: str,
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/tags")
+@router.put("/workspaces/{ws}/documents/{doc_key}/tags/", include_in_schema=False)
 def set_tags(ws: str, doc_key: str, body: dict,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
@@ -232,6 +239,7 @@ def set_tags(ws: str, doc_key: str, body: dict,
 
 
 @router.post("/workspaces/{ws}/documents/{doc_key}/tags")
+@router.post("/workspaces/{ws}/documents/{doc_key}/tags/", include_in_schema=False)
 def add_tag(ws: str, doc_key: str, body: dict,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
@@ -240,6 +248,7 @@ def add_tag(ws: str, doc_key: str, body: dict,
 
 
 @router.delete("/workspaces/{ws}/documents/{doc_key}/tags/{tag_label}")
+@router.delete("/workspaces/{ws}/documents/{doc_key}/tags/{tag_label}/", include_in_schema=False)
 def remove_tag(ws: str, doc_key: str, tag_label: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):

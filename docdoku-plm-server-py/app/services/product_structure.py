@@ -7,7 +7,7 @@ from app.models.product import (
     ConfigurationItem, ProductBaseline, ProductConfiguration,
     ProductInstanceMaster, ProductInstanceIteration,
 )
-from app.models.part import PartMaster, PartRevision, PartIteration, PartUsageLink, CADInstance
+from app.models.part import PartMaster, PartRevision, PartUsageLink
 from app.models.auth import Account
 from app.core.exceptions import EntityAlreadyExistsException, EntityConstraintException
 

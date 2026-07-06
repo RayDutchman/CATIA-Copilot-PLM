@@ -1,7 +1,7 @@
 """ORM: configurationitem → productbaseline/productconfiguration/productinstance。"""
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy import (
-    Column, String, Boolean, Integer, Float, DateTime, Text, ForeignKey, Table
+    Column, String, Integer, Float, DateTime, Text, ForeignKey
 )
 from sqlalchemy.orm import relationship, Mapped
 from app.core.database import Base

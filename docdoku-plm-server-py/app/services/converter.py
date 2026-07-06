@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.core.config import settings
-from app.services import vault, binary_storage
+from app.services import vault
 from app.models.part import (
     Conversion, BinaryResource, PartUsageLink, CADInstance,
     part_iteration_geometry, usage_link_cadinstances,
@@ -181,6 +181,8 @@ def sync_assembly(db: Session, ws: str, pn: str, ver: str, iteration: int,
 
 def handle_callback(db: Session, ws: str, pn: str, ver: str,
                     result: ConversionResultDTO) -> None:
+    """处理转换回调，对齐 Java handleConversionResultCallback。
+    savepoint 保护：内部任一 flush 失败时回滚整个回调，不污染外层 session。"""
     conv = find_pending_conversion(db, ws, pn, ver)
     if conv is None:
         return
@@ -200,15 +202,20 @@ def handle_callback(db: Session, ws: str, pn: str, ver: str,
         end_conversion(db, conv, False)
         return
 
-    # Fix 1: 同步装配结构 (componentPositionMap)
+    with db.begin_nested():
+        _do_handle_callback(db, ws, pn, ver, iteration, conv,
+                            component_position_map, converted_file_lods, result)
+
+
+def _do_handle_callback(db: Session, ws: str, pn: str, ver: str, iteration: int,
+                         conv: Conversion, component_position_map, converted_file_lods,
+                         result: ConversionResultDTO) -> None:
     if component_position_map:
         if not sync_assembly(db, ws, pn, ver, iteration, component_position_map):
-            # 即使部分组件未匹配，仍然继续保存几何体
             logger.warning(
                 "Assembly sync partially failed for %s/%s-%s iter=%d",
                 ws, pn, ver, iteration)
 
-    # Fix 4: 保存材质文件为附件
     materials = result.materials or []
     if materials:
         logger.info("Saving materials: %d files", len(materials))
@@ -216,7 +223,6 @@ def handle_callback(db: Session, ws: str, pn: str, ver: str,
             _save_material_as_attached(
                 db, ws, pn, ver, iteration, material_name, result.tempDir)
 
-    # Fix 3: 多 LOD 支持（遍历所有 quality level）
     box = result.box or [0, 0, 0, 0, 0, 0]
     for quality_str, glb_name in converted_file_lods.items():
         try:

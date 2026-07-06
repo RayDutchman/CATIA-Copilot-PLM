@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.security import Role, role_user, role_usergroup
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
-    CreationException, EntityNotFoundException,
+    EntityNotFoundException,
 )
 from sqlalchemy import text
 

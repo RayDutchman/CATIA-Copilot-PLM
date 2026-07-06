@@ -149,6 +149,7 @@ def create_config(ws: str, ci_id: str, body: dict,
 
 
 @router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}")
+@router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/", include_in_schema=False)
 def delete_config(ws: str, ci_id: str, cfg_id: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):

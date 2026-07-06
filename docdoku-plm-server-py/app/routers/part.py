@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.part import PartRevision, Conversion, SharedEntity
+from app.models.part import SharedEntity
 from app.schemas.part import PartRevisionDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO
 from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision
@@ -42,6 +42,7 @@ def get_part_revision(
 
 
 @router.delete("/workspaces/{workspace_id}/parts/{part_key}", status_code=204)
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/", status_code=204, include_in_schema=False)
 def delete_part_revision(
     workspace_id: str,
     part_key: str,
@@ -54,6 +55,8 @@ def delete_part_revision(
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/checkout",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/checkout/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def checkout_part(
     workspace_id: str,
     part_key: str,
@@ -67,6 +70,8 @@ def checkout_part(
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/checkin",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/checkin/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def checkin_part(
     workspace_id: str,
     part_key: str,
@@ -80,6 +85,8 @@ def checkin_part(
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/undocheckout",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/undocheckout/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def undo_checkout_part(
     workspace_id: str,
     part_key: str,
@@ -93,6 +100,8 @@ def undo_checkout_part(
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def update_iteration(
     workspace_id: str,
     part_key: str,
@@ -131,6 +140,7 @@ def get_conversion_status(
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion")
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/conversion/", include_in_schema=False)
 def conversion_callback(
     workspace_id: str,
     part_key: str,
@@ -146,6 +156,8 @@ def conversion_callback(
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/release",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/release/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def release_part(workspace_id: str, part_key: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -156,6 +168,8 @@ def release_part(workspace_id: str, part_key: str,
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/obsolete",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/obsolete/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def obsolete_part(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -166,6 +180,8 @@ def obsolete_part(workspace_id: str, part_key: str,
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/newVersion",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/newVersion/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def new_version_part(workspace_id: str, part_key: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
@@ -176,6 +192,8 @@ def new_version_part(workspace_id: str, part_key: str,
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/tags",
             response_model=PartRevisionDTO)
+@router.put("/workspaces/{workspace_id}/parts/{part_key}/tags/",
+            response_model=PartRevisionDTO, include_in_schema=False)
 def set_tags(workspace_id: str, part_key: str,
              body: dict = Body(...),
              current_user: Account = Depends(get_current_user),
@@ -187,6 +205,8 @@ def set_tags(workspace_id: str, part_key: str,
 
 @router.post("/workspaces/{workspace_id}/parts/{part_key}/tags",
              response_model=PartRevisionDTO)
+@router.post("/workspaces/{workspace_id}/parts/{part_key}/tags/",
+             response_model=PartRevisionDTO, include_in_schema=False)
 def add_tag(workspace_id: str, part_key: str,
             body: dict = Body(...),
             current_user: Account = Depends(get_current_user),
@@ -198,6 +218,8 @@ def add_tag(workspace_id: str, part_key: str,
 
 @router.delete("/workspaces/{workspace_id}/parts/{part_key}/tags/{tag_label}",
                response_model=PartRevisionDTO)
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/tags/{tag_label}/",
+               response_model=PartRevisionDTO, include_in_schema=False)
 def remove_tag(workspace_id: str, part_key: str, tag_label: str,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):

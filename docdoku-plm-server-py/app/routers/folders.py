@@ -1,5 +1,5 @@
 """文件夹端点路由（FolderResource）。"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -45,6 +45,7 @@ def list_sub(ws: str, folder_path: str,
 
 
 @router.post("/workspaces/{ws}/folders", status_code=201)
+@router.post("/workspaces/{ws}/folders/", status_code=201, include_in_schema=False)
 def create_root(ws: str, body: dict,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -55,6 +56,7 @@ def create_root(ws: str, body: dict,
 
 
 @router.post("/workspaces/{ws}/folders/{parent_path:path}/folders", status_code=201)
+@router.post("/workspaces/{ws}/folders/{parent_path:path}/folders/", status_code=201, include_in_schema=False)
 def create_sub(ws: str, parent_path: str, body: dict,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
@@ -65,6 +67,7 @@ def create_sub(ws: str, parent_path: str, body: dict,
 
 
 @router.put("/workspaces/{ws}/folders/{folder_path:path}")
+@router.put("/workspaces/{ws}/folders/{folder_path:path}/", include_in_schema=False)
 def rename_put(ws: str, folder_path: str, body: dict,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
@@ -74,6 +77,7 @@ def rename_put(ws: str, folder_path: str, body: dict,
 
 
 @router.delete("/workspaces/{ws}/folders/{folder_path:path}")
+@router.delete("/workspaces/{ws}/folders/{folder_path:path}/", include_in_schema=False)
 def delete(ws: str, folder_path: str,
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
@@ -92,6 +96,7 @@ def list_folder_docs(ws: str, folder_id: str,
 
 
 @router.post("/workspaces/{ws}/folders/{folder_id:path}/documents", status_code=201)
+@router.post("/workspaces/{ws}/folders/{folder_id:path}/documents/", status_code=201, include_in_schema=False)
 def create_in_folder(ws: str, folder_id: str, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):

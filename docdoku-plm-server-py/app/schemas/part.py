@@ -1,5 +1,6 @@
 """零件相关 Pydantic DTO，字段名与 DocdokuPLM JSON 响应完全一致（camelCase）。"""
 from __future__ import annotations
+
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, model_validator

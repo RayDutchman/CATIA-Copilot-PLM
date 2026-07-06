@@ -1,5 +1,5 @@
 # app/models/document.py
-from typing import Optional, List
+from typing import List
 from sqlalchemy import (
     Column, String, Boolean, Integer, DateTime, Text,
     ForeignKey, ForeignKeyConstraint, Table

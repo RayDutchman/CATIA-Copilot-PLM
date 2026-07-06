@@ -33,6 +33,7 @@ def create_group(ws: str, body: dict, db: Session = Depends(get_db),
 
 
 @router.delete(f"{PREFIX}/groups/{{group_id}}", status_code=204)
+@router.delete(f"{PREFIX}/groups/{{group_id}}/", status_code=204, include_in_schema=False)
 def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
     user_mgmt_service.delete_group(db, ws, group_id)
