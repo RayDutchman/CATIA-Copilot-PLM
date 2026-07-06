@@ -40,6 +40,22 @@ class UserNotFoundException(EntityNotFoundException):
     pass
 
 
+class PartMasterNotFoundException(EntityNotFoundException):
+    pass
+
+
+class PartRevisionNotFoundException(EntityNotFoundException):
+    pass
+
+
+class PartIterationNotFoundException(EntityNotFoundException):
+    pass
+
+
+class ConfigurationItemNotFoundException(EntityNotFoundException):
+    pass
+
+
 class WorkspaceNotFoundException(EntityNotFoundException):
     pass
 

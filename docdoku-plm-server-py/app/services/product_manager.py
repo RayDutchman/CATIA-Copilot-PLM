@@ -50,8 +50,7 @@ class ProductService:
             q = q.with_for_update()
         pr = q.first()
         if pr is None:
-            raise HTTPException(status_code=404,
-                                detail=f"Part {number}-{version} not found")
+            raise EntityNotFoundException("PartRevisionNotFoundException", number, version)
         # 数据泄漏保护：签出状态对其他用户隐藏最新迭代
         if (not for_update and pr.checkout_user_login
                 and current_user_login
@@ -70,8 +69,7 @@ class ProductService:
             .first()
         )
         if master is None or not master.revisions:
-            raise HTTPException(status_code=404,
-                                detail=f"Part {number} not found")
+            raise PartMasterNotFoundException("PartMasterNotFoundException", number)
         return master.last_revision
 
     def search_numbers(self, db: Session, workspace_id: str,
@@ -162,7 +160,7 @@ class ProductService:
             "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
         ), {"l": login, "w": workspace_id}).first()
         if not row:
-            raise HTTPException(403, "Access denied")
+            raise AccessRightException("AccessRightException")
 
     def _next_version(self, current: str) -> str:
         if not current:
@@ -233,12 +231,12 @@ class ProductService:
 
     def delete_revision(self, db: Session, workspace_id: str,
                         number: str, version: str, user_login: str) -> None:
-        from app.core.exceptions import EntityConstraintException
+        from app.core.exceptions import EntityConstraintException, AccessRightException
         pr = self.get_revision(db, workspace_id, number, version)
         if pr.checkout_user_login and pr.checkout_user_login != user_login:
-            raise HTTPException(403, "Part is checked out by another user")
+            raise NotAllowedException("NotAllowedException47")
         if pr.status == 1:
-            raise HTTPException(403, "Cannot delete a released revision")
+            raise NotAllowedException("NotAllowedException36")
         # 被用作组件（对齐 Payara EntityConstraintException2）
         used_as_component = (
             db.query(PartUsageLink)
@@ -428,7 +426,7 @@ class ProductService:
             (it for it in pr.iterations if it.iteration == iteration_num), None
         )
         if target is None:
-            raise HTTPException(404, f"Iteration {iteration_num} not found")
+            raise PartIterationNotFoundException("PartIterationNotFoundException", number, version, str(iteration_num))
         now = datetime.utcnow()
         target.modification_date = now
         if body.iterationNote is not None:
