@@ -1,4 +1,5 @@
 """工作区 CRUD 端点。"""
+from typing import List
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -8,6 +9,11 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.schemas.admin import (
+    WorkspaceDTO, WorkspaceListDTO, StatsOverviewDTO, DiskUsageDTO,
+    FrontOptionsDTO, BackOptionsDTO, ReachableUserDTO,
+)
+from app.schemas.misc import TagDTO, LOVDTO, LOVValueDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -37,7 +43,7 @@ def _row_to_dict(r) -> dict:
     }
 
 
-@router.get("/workspaces")
+@router.get("/workspaces", response_model=WorkspaceListDTO)
 @router.get("/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
@@ -62,7 +68,7 @@ def list_workspaces(db: Session = Depends(get_db),
             "allWorkspaces": [w for w in all_ws if w["id"] in user_ws]}
 
 
-@router.get("/workspaces/more")
+@router.get("/workspaces/more", response_model=List[WorkspaceDTO])
 @router.get("/workspaces/more/", include_in_schema=False)
 def list_more_workspaces(db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
@@ -75,7 +81,7 @@ def list_more_workspaces(db: Session = Depends(get_db),
     return [{"id": r[0], "description": r[1] or ""} for r in rows]
 
 
-@router.get("/workspaces/reachable-users")
+@router.get("/workspaces/reachable-users", response_model=List[ReachableUserDTO])
 @router.get("/workspaces/reachable-users/", include_in_schema=False)
 def reachable_users(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
@@ -85,7 +91,7 @@ def reachable_users(db: Session = Depends(get_db),
     return [{"login": u.login, "name": u.name, "email": u.email} for u in users]
 
 
-@router.get("/workspaces/{ws}/stats-overview")
+@router.get("/workspaces/{ws}/stats-overview", response_model=StatsOverviewDTO)
 @router.get("/workspaces/{ws}/stats-overview/", include_in_schema=False)
 def stats_overview(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -119,7 +125,7 @@ def disk_usage(ws: str, db: Session = Depends(get_db),
     return {"total": 0}
 
 
-@router.get("/workspaces/{ws}/disk-usage-stats")
+@router.get("/workspaces/{ws}/disk-usage-stats", response_model=DiskUsageDTO)
 @router.get("/workspaces/{ws}/disk-usage-stats/", include_in_schema=False)
 def disk_usage_stats(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
@@ -182,7 +188,7 @@ def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
     return result
 
 
-@router.get("/workspaces/{ws}/front-options")
+@router.get("/workspaces/{ws}/front-options", response_model=FrontOptionsDTO)
 @router.get("/workspaces/{ws}/front-options/", include_in_schema=False)
 def front_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
@@ -239,7 +245,7 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
     return Response(status_code=204)
 
 
-@router.get("/workspaces/{ws}/back-options")
+@router.get("/workspaces/{ws}/back-options", response_model=BackOptionsDTO)
 @router.get("/workspaces/{ws}/back-options/", include_in_schema=False)
 def back_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
@@ -461,7 +467,7 @@ def attributes_path_data(ws: str, db: Session = Depends(get_db),
     return [r[0] for r in rows]
 
 
-@router.get("/workspaces/{ws}")
+@router.get("/workspaces/{ws}", response_model=WorkspaceDTO)
 @router.get("/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
@@ -474,7 +480,7 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
     return _row_to_dict(r)
 
 
-@router.post("/workspaces", status_code=201)
+@router.post("/workspaces", status_code=201, response_model=WorkspaceDTO)
 @router.post("/workspaces/", status_code=201, include_in_schema=False)
 def create_workspace(body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user),
@@ -519,7 +525,7 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
     }
 
 
-@router.put("/workspaces/{ws}")
+@router.put("/workspaces/{ws}", response_model=WorkspaceDTO)
 @router.put("/workspaces/{ws}/", include_in_schema=False)
 def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):

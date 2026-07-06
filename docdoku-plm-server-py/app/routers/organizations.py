@@ -1,10 +1,12 @@
 """组织管理端点。"""
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.schemas.misc import OrganizationDTO, OrganizationMemberResultDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -13,7 +15,7 @@ def _org_to_dict(r) -> dict:
     return {"name": r[0], "description": r[1] or ""}
 
 
-@router.get("/organizations")
+@router.get("/organizations", response_model=OrganizationDTO)
 @router.get("/organizations/", include_in_schema=False)
 def list_organizations(
     db: Session = Depends(get_db),
@@ -29,7 +31,7 @@ def list_organizations(
     return _org_to_dict(r)
 
 
-@router.post("/organizations", status_code=201)
+@router.post("/organizations", status_code=201, response_model=OrganizationDTO)
 @router.post("/organizations/", status_code=201, include_in_schema=False)
 def create_organization(
     body: dict,
@@ -54,7 +56,7 @@ def create_organization(
     return {"name": name, "description": description, "owner": owner}
 
 
-@router.get("/organizations/{org_name}")
+@router.get("/organizations/{org_name}", response_model=OrganizationDTO)
 @router.get("/organizations/{org_name}/", include_in_schema=False)
 def get_organization(
     org_name: str,
@@ -69,7 +71,7 @@ def get_organization(
     return _org_to_dict(r)
 
 
-@router.put("/organizations/{org_name}")
+@router.put("/organizations/{org_name}", response_model=OrganizationDTO)
 @router.put("/organizations/{org_name}/", include_in_schema=False)
 def update_organization(
     org_name: str,

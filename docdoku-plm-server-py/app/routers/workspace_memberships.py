@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -6,6 +7,10 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
+from app.schemas.user_mgmt import (
+    WorkspaceMembershipDTO, WorkspaceUserGroupMembershipDTO, UserGroupDTO,
+)
+from app.schemas.admin import WorkspaceDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -42,14 +47,14 @@ def _workspace_to_dict(r) -> dict:
 
 # ============ 成员关系 ============
 
-@router.get(f"{PREFIX}/memberships/users")
+@router.get(f"{PREFIX}/memberships/users", response_model=List[WorkspaceMembershipDTO])
 @router.get(f"{PREFIX}/memberships/users/", include_in_schema=False)
 def list_user_memberships(ws: str, db: Session = Depends(get_db),
                           current_user: Account = Depends(get_current_user)):
     return user_mgmt_service.list_memberships(db, ws)
 
 
-@router.get(f"{PREFIX}/memberships/users/me")
+@router.get(f"{PREFIX}/memberships/users/me", response_model=List[WorkspaceMembershipDTO])
 @router.get(f"{PREFIX}/memberships/users/me/", include_in_schema=False)
 def my_memberships(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -57,7 +62,7 @@ def my_memberships(ws: str, db: Session = Depends(get_db),
     return [m for m in all_m if m["member"]["login"] == current_user.login]
 
 
-@router.get(f"{PREFIX}/memberships/usergroups")
+@router.get(f"{PREFIX}/memberships/usergroups", response_model=List[WorkspaceUserGroupMembershipDTO])
 @router.get(f"{PREFIX}/memberships/usergroups/", include_in_schema=False)
 def list_group_memberships(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
@@ -101,7 +106,7 @@ def add_user(ws: str, body: dict, db: Session = Depends(get_db),
     return Response(status_code=204)
 
 
-@router.put(f"{PREFIX}/remove-from-workspace")
+@router.put(f"{PREFIX}/remove-from-workspace", response_model=WorkspaceDTO)
 @router.put(f"{PREFIX}/remove-from-workspace/", include_in_schema=False)
 def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
@@ -139,7 +144,7 @@ def remove_from_group(ws: str, gid: str, body: dict,
     return _group_to_dict(user_mgmt_service.list_groups(db, ws)[0])
 
 
-@router.put(f"{PREFIX}/admin")
+@router.put(f"{PREFIX}/admin", response_model=WorkspaceDTO)
 @router.put(f"{PREFIX}/admin/", include_in_schema=False)
 def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user)):

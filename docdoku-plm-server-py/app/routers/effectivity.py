@@ -1,4 +1,5 @@
 """效应端点（EffectivityResource + PartEffectivityResource）。"""
+from typing import List
 from fastapi import APIRouter, Depends, Body
 from fastapi.responses import Response
 from app.core.deps import get_current_user
@@ -7,7 +8,7 @@ from app.models.auth import Account
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-@router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities")
+@router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities", response_model=List[dict])
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/effectivities/", include_in_schema=False)
 def get_effectivities(workspace_id: str, part_key: str,
                       current_user: Account = Depends(get_current_user)):

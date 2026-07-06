@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -5,6 +6,9 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.workflow_manager import workflow_service, STATUS_MAP
+from app.schemas.workflow import (
+    TaskWrapperDTO, TaskHolderDocDTO, TaskHolderPartDTO,
+)
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -59,14 +63,14 @@ def _part_to_dict(rev):
     }
 
 
-@router.get(f"{PREFIX}/tasks/{{login}}/assigned")
+@router.get(f"{PREFIX}/tasks/{{login}}/assigned", response_model=List[TaskWrapperDTO])
 @router.get(f"{PREFIX}/tasks/{{login}}/assigned/", include_in_schema=False)
 def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     return workflow_service.get_assigned_tasks(db, ws, login)
 
 
-@router.get(f"{PREFIX}/tasks/{{task_id}}")
+@router.get(f"{PREFIX}/tasks/{{task_id}}", response_model=TaskWrapperDTO)
 @router.get(f"{PREFIX}/tasks/{{task_id}}/", include_in_schema=False)
 def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
@@ -145,7 +149,7 @@ def process_task(ws: str, task_id: str, body: dict, db: Session = Depends(get_db
     return holder
 
 
-@router.get(f"{PREFIX}/tasks/{{login}}/documents")
+@router.get(f"{PREFIX}/tasks/{{login}}/documents", response_model=List[TaskHolderDocDTO])
 @router.get(f"{PREFIX}/tasks/{{login}}/documents/", include_in_schema=False)
 def task_documents(ws: str, login: str,
                    filter: str = None,
@@ -169,7 +173,7 @@ def task_documents(ws: str, login: str,
     return [_doc_to_dict(d) for d in docs]
 
 
-@router.get(f"{PREFIX}/tasks/{{login}}/parts")
+@router.get(f"{PREFIX}/tasks/{{login}}/parts", response_model=List[TaskHolderPartDTO])
 @router.get(f"{PREFIX}/tasks/{{login}}/parts/", include_in_schema=False)
 def task_parts(ws: str, login: str,
                filter: str = None,

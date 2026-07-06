@@ -1,9 +1,10 @@
+from typing import List
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-@router.get("/timezones")
+@router.get("/timezones", response_model=List[str])
 @router.get("/timezones/", include_in_schema=False)
 def list_timezones():
     try:

@@ -12,6 +12,7 @@ from app.core.deps import bearer_scheme
 from app.models.auth import Account
 from app.models.document import DocumentRevision
 from app.models.part import PartRevision
+from app.schemas.misc import SharedDocumentDTO, SharedPartDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -78,7 +79,7 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
     return entity
 
 
-@router.get("/shared/{uuid}/documents")
+@router.get("/shared/{uuid}/documents", response_model=SharedDocumentDTO)
 @router.get("/shared/{uuid}/documents/", include_in_schema=False)
 def get_shared_documents(uuid: str,
                          response: Response,
@@ -119,7 +120,7 @@ def get_shared_documents(uuid: str,
     }
 
 
-@router.get("/shared/{uuid}/parts")
+@router.get("/shared/{uuid}/parts", response_model=SharedPartDTO)
 @router.get("/shared/{uuid}/parts/", include_in_schema=False)
 def get_shared_parts(uuid: str,
                      response: Response,
@@ -160,7 +161,7 @@ def get_shared_parts(uuid: str,
     }
 
 
-@router.get("/shared/{ws}/documents/{doc_id}-{ver}")
+@router.get("/shared/{ws}/documents/{doc_id}-{ver}", response_model=SharedDocumentDTO)
 @router.get("/shared/{ws}/documents/{doc_id}-{ver}/", include_in_schema=False)
 def get_public_shared_document(ws: str, doc_id: str, ver: str,
                                response: Response,
@@ -196,7 +197,7 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
     }
 
 
-@router.get("/shared/{ws}/parts/{pn}-{ver}")
+@router.get("/shared/{ws}/parts/{pn}-{ver}", response_model=SharedPartDTO)
 @router.get("/shared/{ws}/parts/{pn}-{ver}/", include_in_schema=False)
 def get_public_shared_part(ws: str, pn: str, ver: str,
                            response: Response,

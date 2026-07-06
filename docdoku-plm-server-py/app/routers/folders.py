@@ -1,4 +1,5 @@
 """文件夹端点路由（FolderResource）。"""
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
@@ -7,6 +8,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.services.document_manager import DocumentService
+from app.schemas.misc import FolderDTO, FolderStatusDTO
 
 router = APIRouter()
 svc = DocumentService()
@@ -21,7 +23,7 @@ def _check_workspace_write_access(db: Session, ws: str, login: str):
         raise AccessRightException("AccessRightException")
 
 
-@router.get("/workspaces/{ws}/folders")
+@router.get("/workspaces/{ws}/folders", response_model=List[FolderDTO])
 @router.get("/workspaces/{ws}/folders/", include_in_schema=False)
 def list_root(ws: str, current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
@@ -38,7 +40,7 @@ def list_root(ws: str, current_user: Account = Depends(get_current_user),
     return result
 
 
-@router.get("/workspaces/{ws}/folders/{folder_path:path}/folders")
+@router.get("/workspaces/{ws}/folders/{folder_path:path}/folders", response_model=List[FolderDTO])
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/", include_in_schema=False)
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/",
             include_in_schema=False)

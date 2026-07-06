@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.notification_manager import notification_service
+from app.schemas.misc import ModificationNotificationDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -76,7 +77,7 @@ def _build_notification_dict(n, db: Session) -> dict:
     return result
 
 
-@router.put(f"{PREFIX}/notifications/{{notification_id}}")
+@router.put(f"{PREFIX}/notifications/{{notification_id}}", response_model=ModificationNotificationDTO)
 @router.put(f"{PREFIX}/notifications/{{notification_id}}/", include_in_schema=False)
 def acknowledge_notification(ws: str, notification_id: int, body: dict = Body(...),
                              db: Session = Depends(get_db),

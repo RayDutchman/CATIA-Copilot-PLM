@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -6,6 +7,9 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
+from app.schemas.user_mgmt import (
+    UserGroupDTO, UserGroupMemberDTO, TagSubscriptionDTO,
+)
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -17,14 +21,14 @@ def _group_to_dict(g):
 
 # ============ 用户组 CRUD ============
 
-@router.get(f"{PREFIX}/groups")
+@router.get(f"{PREFIX}/groups", response_model=List[UserGroupDTO])
 @router.get(f"{PREFIX}/groups/", include_in_schema=False)
 def list_groups(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     return [_group_to_dict(g) for g in user_mgmt_service.list_groups(db, ws)]
 
 
-@router.post(f"{PREFIX}/groups", status_code=201)
+@router.post(f"{PREFIX}/groups", status_code=201, response_model=UserGroupDTO)
 @router.post(f"{PREFIX}/groups/", status_code=201, include_in_schema=False)
 def create_group(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
@@ -39,7 +43,7 @@ def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
     user_mgmt_service.delete_group(db, ws, group_id)
 
 
-@router.get(f"{PREFIX}/groups/{{group_id}}/users")
+@router.get(f"{PREFIX}/groups/{{group_id}}/users", response_model=List[UserGroupMemberDTO])
 @router.get(f"{PREFIX}/groups/{{group_id}}/users/", include_in_schema=False)
 def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):

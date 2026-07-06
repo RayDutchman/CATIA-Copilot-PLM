@@ -66,7 +66,7 @@ def list_providers():
     return []
 
 
-@router.get("/accounts/me")
+@router.get("/accounts/me", response_model=AccountDTO)
 @router.get("/accounts/me/", include_in_schema=False)
 def get_me(current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):

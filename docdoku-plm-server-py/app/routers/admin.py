@@ -1,10 +1,14 @@
 """管理员端点。"""
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.schemas.admin import (
+    AdminAccountDTO, WorkspaceDTO, PlatformOptionsDTO, IndexStatusDTO,
+)
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -43,7 +47,7 @@ def _workspace_to_dict(r) -> dict:
 
 # ============ Account CRUD ============
 
-@router.get("/admin/accounts")
+@router.get("/admin/accounts", response_model=List[AdminAccountDTO])
 @router.get("/admin/accounts/", include_in_schema=False)
 def list_accounts(db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
@@ -59,7 +63,7 @@ def list_accounts(db: Session = Depends(get_db),
     return [_account_to_dict(r) for r in rows]
 
 
-@router.get("/admin/accounts/{login}")
+@router.get("/admin/accounts/{login}", response_model=AdminAccountDTO)
 @router.get("/admin/accounts/{login}/", include_in_schema=False)
 def get_account(login: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
@@ -77,7 +81,7 @@ def get_account(login: str, db: Session = Depends(get_db),
     return _account_to_dict(r)
 
 
-@router.put("/admin/accounts/{login}")
+@router.put("/admin/accounts/{login}", response_model=AdminAccountDTO)
 @router.put("/admin/accounts/{login}/", include_in_schema=False)
 def update_account(login: str, body: dict, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -136,7 +140,7 @@ def delete_account(login: str, db: Session = Depends(get_db),
 
 # ============ Workspace CRUD ============
 
-@router.get("/admin/workspaces")
+@router.get("/admin/workspaces", response_model=List[WorkspaceDTO])
 @router.get("/admin/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
@@ -148,7 +152,7 @@ def list_workspaces(db: Session = Depends(get_db),
     return [_workspace_to_dict(r) for r in rows]
 
 
-@router.get("/admin/workspaces/{ws}")
+@router.get("/admin/workspaces/{ws}", response_model=WorkspaceDTO)
 @router.get("/admin/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
@@ -162,7 +166,7 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
     return _workspace_to_dict(r)
 
 
-@router.put("/admin/workspaces/{ws}")
+@router.put("/admin/workspaces/{ws}", response_model=WorkspaceDTO)
 @router.put("/admin/workspaces/{ws}/", include_in_schema=False)
 def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
@@ -223,7 +227,7 @@ def _from_strategy(val: str) -> int:
     return _STRATEGY_REVERSE.get(val, 0)
 
 
-@router.get("/admin/platform-options")
+@router.get("/admin/platform-options", response_model=PlatformOptionsDTO)
 @router.get("/admin/platform-options/", include_in_schema=False)
 def get_platform_options(db: Session = Depends(get_db)):
     row = db.execute(text(
@@ -238,7 +242,7 @@ def get_platform_options(db: Session = Depends(get_db)):
     return {"workspaceCreationStrategy": "NONE", "registrationStrategy": "NONE"}
 
 
-@router.put("/admin/platform-options")
+@router.put("/admin/platform-options", response_model=PlatformOptionsDTO)
 @router.put("/admin/platform-options/", include_in_schema=False)
 def put_platform_options(body: dict, db: Session = Depends(get_db),
                         current_user: Account = Depends(get_current_user)):

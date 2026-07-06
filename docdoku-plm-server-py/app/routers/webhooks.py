@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -6,6 +7,7 @@ from app.core.deps import get_current_user
 from app.core.exceptions import EntityNotFoundException
 from app.models.auth import Account
 from app.models.workflow import Webhook, WebhookApp
+from app.schemas.misc import WebhookDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -49,7 +51,7 @@ def _webhook_to_dict(w, app=None) -> dict:
     }
 
 
-@router.get(f"{PREFIX}/webhooks")
+@router.get(f"{PREFIX}/webhooks", response_model=List[WebhookDTO])
 @router.get(f"{PREFIX}/webhooks/", include_in_schema=False)
 def list_webhooks(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
@@ -57,7 +59,7 @@ def list_webhooks(ws: str, db: Session = Depends(get_db),
     return [_webhook_to_dict(h) for h in hooks]
 
 
-@router.get(f"{PREFIX}/webhooks/{{webhook_id}}")
+@router.get(f"{PREFIX}/webhooks/{{webhook_id}}", response_model=WebhookDTO)
 @router.get(f"{PREFIX}/webhooks/{{webhook_id}}/", include_in_schema=False)
 def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
@@ -68,7 +70,7 @@ def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
     return _webhook_to_dict(w)
 
 
-@router.post(f"{PREFIX}/webhooks", status_code=201)
+@router.post(f"{PREFIX}/webhooks", status_code=201, response_model=WebhookDTO)
 @router.post(f"{PREFIX}/webhooks/", status_code=201, include_in_schema=False)
 def create_webhook(ws: str, body: dict, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -106,7 +108,7 @@ def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
         db.commit()
 
 
-@router.put(f"{PREFIX}/webhooks/{{webhook_id}}")
+@router.put(f"{PREFIX}/webhooks/{{webhook_id}}", response_model=WebhookDTO)
 @router.put(f"{PREFIX}/webhooks/{{webhook_id}}/", include_in_schema=False)
 def update_webhook(ws: str, webhook_id: int, body: dict, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):

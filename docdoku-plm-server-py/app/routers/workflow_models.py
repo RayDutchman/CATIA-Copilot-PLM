@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -6,6 +7,7 @@ from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.services.workflow_manager import workflow_service
 from app.services.acl_helper import apply_acl
+from app.schemas.workflow import WorkflowModelDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -74,21 +76,21 @@ def _model_to_dict(m, db: Session = None) -> dict:
     return result
 
 
-@router.get(f"{PREFIX}/workflow-models")
+@router.get(f"{PREFIX}/workflow-models", response_model=List[WorkflowModelDTO])
 @router.get(f"{PREFIX}/workflow-models/", include_in_schema=False)
 def list_models(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
     return [_model_to_dict(m, db) for m in workflow_service.list_models(db, ws)]
 
 
-@router.get(f"{PREFIX}/workflow-models/{{model_id}}")
+@router.get(f"{PREFIX}/workflow-models/{{model_id}}", response_model=WorkflowModelDTO)
 @router.get(f"{PREFIX}/workflow-models/{{model_id}}/", include_in_schema=False)
 def get_model(ws: str, model_id: str, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user)):
     return _model_to_dict(workflow_service.get_model(db, ws, model_id), db)
 
 
-@router.post(f"{PREFIX}/workflow-models", status_code=201)
+@router.post(f"{PREFIX}/workflow-models", status_code=201, response_model=WorkflowModelDTO)
 @router.post(f"{PREFIX}/workflow-models/", status_code=201, include_in_schema=False)
 def create_model(ws: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
@@ -99,7 +101,7 @@ def create_model(ws: str, body: dict, db: Session = Depends(get_db),
     return _model_to_dict(m, db)
 
 
-@router.put(f"{PREFIX}/workflow-models/{{model_id}}")
+@router.put(f"{PREFIX}/workflow-models/{{model_id}}", response_model=WorkflowModelDTO)
 @router.put(f"{PREFIX}/workflow-models/{{model_id}}/", include_in_schema=False)
 def update_model(ws: str, model_id: str, body: dict, db: Session = Depends(get_db),
                  current_user: Account = Depends(get_current_user)):
@@ -120,7 +122,7 @@ def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
     workflow_service.delete_model(db, ws, model_id)
 
 
-@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl")
+@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl", response_model=WorkflowModelDTO)
 @router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl/", include_in_schema=False)
 def update_model_acl(ws: str, model_id: str, body: dict, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):

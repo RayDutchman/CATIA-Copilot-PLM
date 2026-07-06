@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -6,6 +7,9 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
+from app.schemas.user_mgmt import (
+    UserDTOExtended, WorkspaceInfoDTO, AccountStatsDTO, WorkspaceStatsDTO,
+)
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -26,7 +30,7 @@ def _account_to_dict(acc, db):
     return result
 
 
-@router.put("/accounts/me")
+@router.put("/accounts/me", response_model=UserDTOExtended)
 @router.put("/accounts/me/", include_in_schema=False)
 def update_account(body: dict, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -34,7 +38,7 @@ def update_account(body: dict, db: Session = Depends(get_db),
     return _account_to_dict(acc, db)
 
 
-@router.post("/accounts/create", status_code=201)
+@router.post("/accounts/create", status_code=201, response_model=UserDTOExtended)
 @router.post("/accounts/create/", status_code=201, include_in_schema=False)
 def create_account(body: dict, db: Session = Depends(get_db)):
     acc = user_mgmt_service.create_account(
@@ -43,14 +47,14 @@ def create_account(body: dict, db: Session = Depends(get_db)):
     return _account_to_dict(acc, db)
 
 
-@router.get("/accounts/workspaces")
+@router.get("/accounts/workspaces", response_model=List[WorkspaceInfoDTO])
 @router.get("/accounts/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     return user_mgmt_service.list_workspaces_for_user(db, current_user.login)
 
 
-@router.get("/admin/accounts-stats")
+@router.get("/admin/accounts-stats", response_model=AccountStatsDTO)
 @router.get("/admin/accounts-stats/", include_in_schema=False)
 def accounts_stats(db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -62,7 +66,7 @@ def accounts_stats(db: Session = Depends(get_db),
             "disabledAccounts": disabled}
 
 
-@router.get("/admin/workspace-stats")
+@router.get("/admin/workspace-stats", response_model=WorkspaceStatsDTO)
 @router.get("/admin/workspace-stats/", include_in_schema=False)
 def workspace_stats(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
