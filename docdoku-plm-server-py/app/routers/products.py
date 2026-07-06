@@ -1,4 +1,5 @@
 """产品端点路由（ConfigurationItem CRUD + 产品实例）。"""
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import text
@@ -11,6 +12,7 @@ from app.models.part import PartMaster, PartRevision, PartIteration
 from app.models.notification import ModificationNotification
 from app.services.product_structure import ProductStructureService
 from app.services.product_manager import ProductService
+from app.schemas.product import ConfigurationItemDTO, ProductInstanceDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
@@ -73,7 +75,7 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
 
 # ── Products（CI CRUD）──
 
-@router.get("/workspaces/{ws}/products")
+@router.get("/workspaces/{ws}/products", response_model=List[ConfigurationItemDTO])
 @router.get("/workspaces/{ws}/products/", include_in_schema=False)
 def list_cis(ws: str, current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
@@ -90,7 +92,7 @@ def search_ci_numbers(ws: str, q: str = Query(""),
     return [_ci_to_dict(db, c) for c in cis]
 
 
-@router.post("/workspaces/{ws}/products", status_code=201)
+@router.post("/workspaces/{ws}/products", status_code=201, response_model=ConfigurationItemDTO)
 @router.post("/workspaces/{ws}/products/", status_code=201, include_in_schema=False)
 def create_ci(ws: str, body: dict,
               current_user: Account = Depends(get_current_user),
@@ -102,7 +104,7 @@ def create_ci(ws: str, body: dict,
     return _ci_to_dict(ci, db)
 
 
-@router.get("/workspaces/{ws}/products/{ci_id}")
+@router.get("/workspaces/{ws}/products/{ci_id}", response_model=ConfigurationItemDTO)
 @router.get("/workspaces/{ws}/products/{ci_id}/", include_in_schema=False)
 def get_ci(ws: str, ci_id: str,
            current_user: Account = Depends(get_current_user),
@@ -120,7 +122,7 @@ def delete_ci(ws: str, ci_id: str,
     return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/products/{ci_id}")
+@router.put("/workspaces/{ws}/products/{ci_id}", response_model=ConfigurationItemDTO)
 @router.put("/workspaces/{ws}/products/{ci_id}/", include_in_schema=False)
 def update_ci(ws: str, ci_id: str, body: dict,
               current_user: Account = Depends(get_current_user),
@@ -199,7 +201,7 @@ def bom(ws: str, ci_id: str,
 
 # ── Product Instances ──
 
-@router.get("/workspaces/{ws}/product-instances")
+@router.get("/workspaces/{ws}/product-instances", response_model=List[ProductInstanceDTO])
 @router.get("/workspaces/{ws}/product-instances/", include_in_schema=False)
 def list_product_instances(ws: str,
                             current_user: Account = Depends(get_current_user),
@@ -211,7 +213,7 @@ def list_product_instances(ws: str,
             for i in instances]
 
 
-@router.get("/workspaces/{ws}/product-instances/{sn}")
+@router.get("/workspaces/{ws}/product-instances/{sn}", response_model=ProductInstanceDTO)
 @router.get("/workspaces/{ws}/product-instances/{sn}/", include_in_schema=False)
 def get_product_instance(ws: str, sn: str,
                           current_user: Account = Depends(get_current_user),
@@ -245,7 +247,7 @@ def get_product_instance(ws: str, sn: str,
     }
 
 
-@router.get("/workspaces/{ws}/product-instances/{pid}/instances")
+@router.get("/workspaces/{ws}/product-instances/{pid}/instances", response_model=List[ProductInstanceDTO])
 @router.get("/workspaces/{ws}/product-instances/{pid}/instances/", include_in_schema=False)
 def list_ci_instances(ws: str, pid: str,
                        current_user: Account = Depends(get_current_user),

@@ -1,16 +1,18 @@
 """文档基线端点（DocumentBaselinesResource）。"""
 from datetime import datetime
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.schemas.document import DocumentBaselineDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-@router.get("/workspaces/{ws}/document-baselines")
+@router.get("/workspaces/{ws}/document-baselines", response_model=List[DocumentBaselineDTO])
 @router.get("/workspaces/{ws}/document-baselines/", include_in_schema=False)
 def list_doc_baselines(ws: str,
                        current_user: Account = Depends(get_current_user),

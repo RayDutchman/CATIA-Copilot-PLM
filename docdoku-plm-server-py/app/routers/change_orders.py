@@ -1,6 +1,7 @@
 """变更命令（ChangeOrder）端点路由。"""
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends
+from app.schemas.change import ChangeOrderDTO
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -198,7 +199,7 @@ def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
 
 # ── Orders ──
 
-@router.get("/workspaces/{ws}/changes/orders")
+@router.get("/workspaces/{ws}/changes/orders", response_model=List[ChangeOrderDTO])
 @router.get("/workspaces/{ws}/changes/orders/", include_in_schema=False)
 def list_orders(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -206,7 +207,7 @@ def list_orders(ws: str, current_user: Account = Depends(get_current_user),
     return [_item_to_dict(o, db, current_user) for o in svc.list_items(db, ws, "orders")]
 
 
-@router.post("/workspaces/{ws}/changes/orders", status_code=201)
+@router.post("/workspaces/{ws}/changes/orders", status_code=201, response_model=ChangeOrderDTO)
 @router.post("/workspaces/{ws}/changes/orders/", status_code=201, include_in_schema=False)
 def create_order(ws: str, body: dict,
                  current_user: Account = Depends(get_current_user),
@@ -216,7 +217,7 @@ def create_order(ws: str, body: dict,
     return _item_to_dict(it, db, current_user)
 
 
-@router.get("/workspaces/{ws}/changes/orders/link")
+@router.get("/workspaces/{ws}/changes/orders/link", response_model=List[ChangeOrderDTO])
 @router.get("/workspaces/{ws}/changes/orders/link/", include_in_schema=False)
 def search_orders(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
@@ -229,7 +230,7 @@ def search_orders(ws: str, q: str = "",
     return [_item_to_dict(o, db, current_user) for o in items]
 
 
-@router.get("/workspaces/{ws}/changes/orders/{item_id}")
+@router.get("/workspaces/{ws}/changes/orders/{item_id}", response_model=ChangeOrderDTO)
 @router.get("/workspaces/{ws}/changes/orders/{item_id}/", include_in_schema=False)
 def get_order(ws: str, item_id: int,
               current_user: Account = Depends(get_current_user),
@@ -238,7 +239,7 @@ def get_order(ws: str, item_id: int,
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db, current_user)
 
 
-@router.put("/workspaces/{ws}/changes/orders/{item_id}")
+@router.put("/workspaces/{ws}/changes/orders/{item_id}", response_model=ChangeOrderDTO)
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/", include_in_schema=False)
 def update_order(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
@@ -256,7 +257,7 @@ def delete_order(ws: str, item_id: int,
     svc.delete_item(db, ChangeOrder, ws, item_id)
 
 
-@router.put("/workspaces/{ws}/changes/orders/{item_id}/tags")
+@router.put("/workspaces/{ws}/changes/orders/{item_id}/tags", response_model=ChangeOrderDTO)
 @router.put("/workspaces/{ws}/changes/orders/{item_id}/tags/", include_in_schema=False)
 def set_order_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
@@ -266,7 +267,7 @@ def set_order_tags(ws: str, item_id: int, body: dict,
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db, current_user)
 
 
-@router.post("/workspaces/{ws}/changes/orders/{item_id}/tags")
+@router.post("/workspaces/{ws}/changes/orders/{item_id}/tags", response_model=ChangeOrderDTO)
 @router.post("/workspaces/{ws}/changes/orders/{item_id}/tags/", include_in_schema=False)
 def add_order_tag(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
@@ -276,7 +277,7 @@ def add_order_tag(ws: str, item_id: int, body: dict,
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db, current_user)
 
 
-@router.delete("/workspaces/{ws}/changes/orders/{item_id}/tags/{tag_label}")
+@router.delete("/workspaces/{ws}/changes/orders/{item_id}/tags/{tag_label}", response_model=ChangeOrderDTO)
 @router.delete("/workspaces/{ws}/changes/orders/{item_id}/tags/{tag_label}/", include_in_schema=False)
 def remove_order_tag(ws: str, item_id: int, tag_label: str,
                      current_user: Account = Depends(get_current_user),

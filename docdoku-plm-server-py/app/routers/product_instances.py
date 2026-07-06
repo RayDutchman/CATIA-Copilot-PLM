@@ -1,4 +1,5 @@
 """产品实例端点（ProductInstancesResource）。"""
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.product_structure import ProductStructureService
+from app.schemas.product import ProductInstanceDTO, ProductInstanceIterationDTO
 
 router = APIRouter()
 svc = ProductStructureService()
@@ -23,7 +25,7 @@ def _get_user(db: Session, login: str, ws: str) -> dict:
     }
 
 
-@router.get("/workspaces/{ws}/products/{ci_id}/instances")
+@router.get("/workspaces/{ws}/products/{ci_id}/instances", response_model=List[ProductInstanceDTO])
 @router.get("/workspaces/{ws}/products/{ci_id}/instances/", include_in_schema=False)
 def list_instances(ws: str, ci_id: str,
                    current_user: Account = Depends(get_current_user),
@@ -85,7 +87,7 @@ def update_instance(ws: str, ci_id: str, sn: str, body: dict,
     return {"serialNumber": inst.serialnumber}
 
 
-@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations")
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations", response_model=List[ProductInstanceIterationDTO])
 @router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations/", include_in_schema=False)
 def list_instance_iterations(ws: str, ci_id: str, sn: str,
                               current_user: Account = Depends(get_current_user),

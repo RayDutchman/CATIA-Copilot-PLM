@@ -1,4 +1,5 @@
 """产品配置（ProductConfiguration）端点路由。"""
+from typing import List
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.models.auth import Account
 from app.models.product import ProductConfiguration
 from app.services.product_structure import ProductStructureService
 from app.services.acl_helper import apply_acl
+from app.schemas.product import ProductConfigurationDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
@@ -72,7 +74,7 @@ def _config_to_dict(cfg, db) -> dict:
 
 # ── product-configurations ──
 
-@router.get("/workspaces/{ws}/product-configurations")
+@router.get("/workspaces/{ws}/product-configurations", response_model=List[ProductConfigurationDTO])
 @router.get("/workspaces/{ws}/product-configurations/", include_in_schema=False)
 def list_configs(ws: str, current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
@@ -88,7 +90,7 @@ def list_configs(ws: str, current_user: Account = Depends(get_current_user),
             for c in configs]
 
 
-@router.get("/workspaces/{ws}/product-configurations/{pid}/configurations")
+@router.get("/workspaces/{ws}/product-configurations/{pid}/configurations", response_model=List[ProductConfigurationDTO])
 @router.get("/workspaces/{ws}/product-configurations/{pid}/configurations/", include_in_schema=False)
 def list_ci_configs(ws: str, pid: str,
                     current_user: Account = Depends(get_current_user),
@@ -106,7 +108,7 @@ def list_ci_configs(ws: str, pid: str,
 
 
 
-@router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}")
+@router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}", response_model=ProductConfigurationDTO)
 @router.get("/workspaces/{ws}/product-configurations/{ciId}/configurations/{cfg_id}/", include_in_schema=False)
 def get_config_by_ci(ws: str, ciId: str, cfg_id: int,
                      db: Session = Depends(get_db),

@@ -1,4 +1,5 @@
 """产品基线（ProductBaseline）端点路由。"""
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.models.auth import Account
 from app.models.product import ProductBaseline, ConfigurationItem
 from app.models.part import PartRevision
 from app.services.product_structure import ProductStructureService
+from app.schemas.product import ProductBaselineSummaryDTO, ProductBaselineDetailDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
@@ -70,7 +72,7 @@ def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
 
 # ── product-baselines（前端实际使用的路径）──
 
-@router.get("/workspaces/{ws}/product-baselines")
+@router.get("/workspaces/{ws}/product-baselines", response_model=List[ProductBaselineSummaryDTO])
 @router.get("/workspaces/{ws}/product-baselines/", include_in_schema=False)
 def ci_scoped_baselines_root(ws: str,
                              current_user: Account = Depends(get_current_user),
@@ -81,7 +83,7 @@ def ci_scoped_baselines_root(ws: str,
     return [_bl_summary_dict(b, db) for b in all_bl]
 
 
-@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines")
+@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines", response_model=List[ProductBaselineSummaryDTO])
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/", include_in_schema=False)
 def list_ci_baselines(ws: str, ci_id: str,
                       current_user: Account = Depends(get_current_user),
@@ -128,7 +130,7 @@ def _query_baselined_parts(db: Session, partcollection_id: int | None) -> list:
     ]
 
 
-@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}")
+@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
 def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
@@ -149,7 +151,7 @@ def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
     return {"status": "deleted"}
 
 
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}")
+@router.get("/workspaces/{ws}/product-baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
 def get_workspace_baseline(ws: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
@@ -163,7 +165,7 @@ def get_workspace_baseline(ws: str, bl_id: int,
 
 # ── products/{ci_id}/baselines ──
 
-@router.get("/workspaces/{ws}/products/{ci_id}/baselines")
+@router.get("/workspaces/{ws}/products/{ci_id}/baselines", response_model=List[ProductBaselineSummaryDTO])
 @router.get("/workspaces/{ws}/products/{ci_id}/baselines/", include_in_schema=False)
 def list_baselines(ws: str, ci_id: str,
                    current_user: Account = Depends(get_current_user),
@@ -171,7 +173,7 @@ def list_baselines(ws: str, ci_id: str,
     return [_bl_summary_dict(b, db) for b in svc.list_baselines(db, ws, ci_id)]
 
 
-@router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
+@router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
 @router.get("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
 def get_baseline(ws: str, ci_id: str, bl_id: int,
                  current_user: Account = Depends(get_current_user),

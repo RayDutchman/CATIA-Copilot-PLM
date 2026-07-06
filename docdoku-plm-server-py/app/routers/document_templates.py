@@ -1,4 +1,5 @@
 """文档模板端点路由（DocumentTemplateResource）。"""
+from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
@@ -8,12 +9,13 @@ from app.models.auth import Account
 from app.models.document import DocumentMasterTemplate
 from app.services.document_manager import DocumentService
 from app.services.acl_helper import apply_acl
+from app.schemas.document import DocumentTemplateDTO
 
 router = APIRouter()
 svc = DocumentService()
 
 
-@router.get("/workspaces/{ws}/document-templates")
+@router.get("/workspaces/{ws}/document-templates", response_model=List[DocumentTemplateDTO])
 @router.get("/workspaces/{ws}/document-templates/", include_in_schema=False)
 def list_templates(ws: str, current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
@@ -60,7 +62,7 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
     return result
 
 
-@router.get("/workspaces/{ws}/document-templates/{template_id}")
+@router.get("/workspaces/{ws}/document-templates/{template_id}", response_model=DocumentTemplateDTO)
 @router.get("/workspaces/{ws}/document-templates/{template_id}/", include_in_schema=False)
 def get_template(ws: str, template_id: str,
                  current_user: Account = Depends(get_current_user),

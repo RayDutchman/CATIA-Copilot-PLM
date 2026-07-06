@@ -1,4 +1,5 @@
 """文档集合路由（DocumentsResource）。"""
+from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, text as sql_text
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from app.models.auth import Account
 from app.models.document import DocumentRevision, DocumentMaster
 from app.services.document_manager import DocumentService
 from app.routers.document import _doc_to_dict
+from app.schemas.document import DocumentRevisionDTO
 
 router = APIRouter()
 svc = DocumentService()
@@ -20,7 +22,7 @@ def count(ws: str, current_user: Account = Depends(get_current_user),
     return {"count": svc.count_documents(db, ws)}
 
 
-@router.get("/workspaces/{ws}/documents/search")
+@router.get("/workspaces/{ws}/documents/search", response_model=List[DocumentRevisionDTO])
 @router.get("/workspaces/{ws}/documents/search/", include_in_schema=False)
 def search_documents(
     ws: str,
@@ -107,7 +109,7 @@ def search_documents(
     return [_doc_to_dict(db, d) for d in docs]
 
 
-@router.get("/workspaces/{ws}/documents")
+@router.get("/workspaces/{ws}/documents", response_model=List[DocumentRevisionDTO])
 @router.get("/workspaces/{ws}/documents/", include_in_schema=False)
 def list_docs(ws: str, start: int = Query(0, ge=0),
               max: int = Query(50, ge=1, le=500),
@@ -118,7 +120,7 @@ def list_docs(ws: str, start: int = Query(0, ge=0),
     return [_doc_to_dict(db, r) for r in svc.list_revisions(db, ws, start, limit)]
 
 
-@router.get("/workspaces/{ws}/documents/checkedout")
+@router.get("/workspaces/{ws}/documents/checkedout", response_model=List[DocumentRevisionDTO])
 @router.get("/workspaces/{ws}/documents/checkedout/", include_in_schema=False)
 def list_checked_out(ws: str,
                      current_user: Account = Depends(get_current_user),
@@ -134,7 +136,7 @@ def count_checked_out(ws: str,
     return {"count": svc.count_checked_out_documents(db, ws)}
 
 
-@router.get("/workspaces/{ws}/documents/doc_revs")
+@router.get("/workspaces/{ws}/documents/doc_revs", response_model=List[DocumentRevisionDTO])
 @router.get("/workspaces/{ws}/documents/doc_revs/", include_in_schema=False)
 def search_doc_revs(ws: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
@@ -142,7 +144,7 @@ def search_doc_revs(ws: str, q: str = Query(""),
     return [_doc_to_dict(db, r) for r in svc.search(db, ws, doc_id=q)]
 
 
-@router.post("/workspaces/{ws}/documents", status_code=201)
+@router.post("/workspaces/{ws}/documents", status_code=201, response_model=DocumentRevisionDTO)
 @router.post("/workspaces/{ws}/documents/", status_code=201, include_in_schema=False)
 def create(ws: str, body: dict,
            current_user: Account = Depends(get_current_user),

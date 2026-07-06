@@ -1,5 +1,6 @@
 """单个文档 CRUD（DocumentResource）。"""
 import re
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sql_text
@@ -9,6 +10,7 @@ from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.services.document_manager import DocumentService
 from app.services.acl_helper import apply_acl
+from app.schemas.document import DocumentRevisionDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = DocumentService()
@@ -149,7 +151,7 @@ def _doc_to_dict(db, rev):
     return dict_fields
 
 
-@router.get("/workspaces/{ws}/documents/{doc_key}")
+@router.get("/workspaces/{ws}/documents/{doc_key}", response_model=DocumentRevisionDTO)
 @router.get("/workspaces/{ws}/documents/{doc_key}/", include_in_schema=False)
 def get_doc(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
@@ -304,7 +306,7 @@ def inverse_path_link(ws: str, doc_key: str, iteration: int,
     return result
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}")
+@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/", include_in_schema=False)
 def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
                      current_user: Account = Depends(get_current_user),
@@ -313,7 +315,7 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
     return _doc_to_dict(db, svc.update_iteration(db, ws, doc_id, ver, doc_iter, body))
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/checkout")
+@router.put("/workspaces/{ws}/documents/{doc_key}/checkout", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkout/", include_in_schema=False)
 def checkout(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
@@ -323,7 +325,7 @@ def checkout(ws: str, doc_key: str,
     return _doc_to_dict(db, svc.checkout(db, ws, doc_id, ver, current_user.login))
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/checkin")
+@router.put("/workspaces/{ws}/documents/{doc_key}/checkin", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/checkin/", include_in_schema=False)
 def checkin(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
@@ -332,7 +334,7 @@ def checkin(ws: str, doc_key: str,
     return _doc_to_dict(db, svc.checkin(db, ws, doc_id, ver, current_user.login))
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout")
+@router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/undocheckout/", include_in_schema=False)
 def undo_checkout(ws: str, doc_key: str,
                   current_user: Account = Depends(get_current_user),
@@ -341,7 +343,7 @@ def undo_checkout(ws: str, doc_key: str,
     return _doc_to_dict(db, svc.undo_checkout(db, ws, doc_id, ver, current_user.login))
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/release")
+@router.put("/workspaces/{ws}/documents/{doc_key}/release", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/release/", include_in_schema=False)
 def release(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
@@ -350,7 +352,7 @@ def release(ws: str, doc_key: str,
     return _doc_to_dict(db, svc.release(db, ws, doc_id, ver, current_user.login))
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/obsolete")
+@router.put("/workspaces/{ws}/documents/{doc_key}/obsolete", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/obsolete/", include_in_schema=False)
 def obsolete(ws: str, doc_key: str,
              current_user: Account = Depends(get_current_user),
@@ -359,7 +361,7 @@ def obsolete(ws: str, doc_key: str,
     return _doc_to_dict(db, svc.mark_obsolete(db, ws, doc_id, ver, current_user.login))
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/newVersion")
+@router.put("/workspaces/{ws}/documents/{doc_key}/newVersion", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/newVersion/", include_in_schema=False)
 def new_version(ws: str, doc_key: str,
                 current_user: Account = Depends(get_current_user),
@@ -410,7 +412,7 @@ def update_doc_acl(ws: str, doc_key: str, body: dict,
     return {"aclId": new_acl_id}
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/move")
+@router.put("/workspaces/{ws}/documents/{doc_key}/move", response_model=DocumentRevisionDTO)
 @router.put("/workspaces/{ws}/documents/{doc_key}/move/", include_in_schema=False)
 def move_document(ws: str, doc_key: str, body: dict,
                   current_user: Account = Depends(get_current_user),

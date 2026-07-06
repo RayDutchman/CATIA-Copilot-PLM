@@ -1,6 +1,7 @@
 """变更问题（ChangeIssue）端点路由。"""
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends
+from app.schemas.change import ChangeIssueDTO
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -199,7 +200,7 @@ def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
 
 # ── Issues ──
 
-@router.get("/workspaces/{ws}/changes/issues")
+@router.get("/workspaces/{ws}/changes/issues", response_model=List[ChangeIssueDTO])
 @router.get("/workspaces/{ws}/changes/issues/", include_in_schema=False)
 def list_issues(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -207,7 +208,7 @@ def list_issues(ws: str, current_user: Account = Depends(get_current_user),
     return [_item_to_dict(i, db, current_user) for i in svc.list_items(db, ws, "issues")]
 
 
-@router.post("/workspaces/{ws}/changes/issues", status_code=201)
+@router.post("/workspaces/{ws}/changes/issues", status_code=201, response_model=ChangeIssueDTO)
 @router.post("/workspaces/{ws}/changes/issues/", status_code=201, include_in_schema=False)
 def create_issue(ws: str, body: dict,
                  current_user: Account = Depends(get_current_user),
@@ -217,7 +218,7 @@ def create_issue(ws: str, body: dict,
     return _item_to_dict(it, db, current_user)
 
 
-@router.get("/workspaces/{ws}/changes/issues/link")
+@router.get("/workspaces/{ws}/changes/issues/link", response_model=List[ChangeIssueDTO])
 @router.get("/workspaces/{ws}/changes/issues/link/", include_in_schema=False)
 def search_issues(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
@@ -230,7 +231,7 @@ def search_issues(ws: str, q: str = "",
     return [_item_to_dict(i, db, current_user) for i in items]
 
 
-@router.get("/workspaces/{ws}/changes/issues/{item_id}")
+@router.get("/workspaces/{ws}/changes/issues/{item_id}", response_model=ChangeIssueDTO)
 @router.get("/workspaces/{ws}/changes/issues/{item_id}/", include_in_schema=False)
 def get_issue(ws: str, item_id: int,
               current_user: Account = Depends(get_current_user),
@@ -239,7 +240,7 @@ def get_issue(ws: str, item_id: int,
     return _item_to_dict(svc.get_by_id(db, ChangeIssue, ws, item_id), db, current_user)
 
 
-@router.put("/workspaces/{ws}/changes/issues/{item_id}")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}", response_model=ChangeIssueDTO)
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/", include_in_schema=False)
 def update_issue(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
@@ -257,7 +258,7 @@ def delete_issue(ws: str, item_id: int,
     svc.delete_item(db, ChangeIssue, ws, item_id)
 
 
-@router.put("/workspaces/{ws}/changes/issues/{item_id}/tags")
+@router.put("/workspaces/{ws}/changes/issues/{item_id}/tags", response_model=ChangeIssueDTO)
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/tags/", include_in_schema=False)
 def set_issue_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
@@ -268,7 +269,7 @@ def set_issue_tags(ws: str, item_id: int, body: dict,
     return _item_to_dict(it, db, current_user)
 
 
-@router.post("/workspaces/{ws}/changes/issues/{item_id}/tags")
+@router.post("/workspaces/{ws}/changes/issues/{item_id}/tags", response_model=ChangeIssueDTO)
 @router.post("/workspaces/{ws}/changes/issues/{item_id}/tags/", include_in_schema=False)
 def add_issue_tag(ws: str, item_id: int, body: dict,
                   current_user: Account = Depends(get_current_user),
@@ -279,7 +280,7 @@ def add_issue_tag(ws: str, item_id: int, body: dict,
     return _item_to_dict(it, db, current_user)
 
 
-@router.delete("/workspaces/{ws}/changes/issues/{item_id}/tags/{tag_label}")
+@router.delete("/workspaces/{ws}/changes/issues/{item_id}/tags/{tag_label}", response_model=ChangeIssueDTO)
 @router.delete("/workspaces/{ws}/changes/issues/{item_id}/tags/{tag_label}/", include_in_schema=False)
 def remove_issue_tag(ws: str, item_id: int, tag_label: str,
                      current_user: Account = Depends(get_current_user),

@@ -1,6 +1,7 @@
 """里程碑（Milestone）端点路由。"""
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends
+from app.schemas.change import MilestoneDTO, ChangeRequestDTO, ChangeOrderDTO
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -203,7 +204,7 @@ def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[
 
 # ── Milestones ──
 
-@router.get("/workspaces/{ws}/changes/milestones")
+@router.get("/workspaces/{ws}/changes/milestones", response_model=List[MilestoneDTO])
 @router.get("/workspaces/{ws}/changes/milestones/", include_in_schema=False)
 def list_milestones(ws: str, current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -211,7 +212,7 @@ def list_milestones(ws: str, current_user: Account = Depends(get_current_user),
     return [_milestone_to_dict(m, db, current_user) for m in svc.list_items(db, ws, "milestones")]
 
 
-@router.post("/workspaces/{ws}/changes/milestones", status_code=201)
+@router.post("/workspaces/{ws}/changes/milestones", status_code=201, response_model=MilestoneDTO)
 @router.post("/workspaces/{ws}/changes/milestones/", status_code=201, include_in_schema=False)
 def create_milestone(ws: str, body: dict,
                      current_user: Account = Depends(get_current_user),
@@ -219,7 +220,7 @@ def create_milestone(ws: str, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     ms = svc.create_item(db, ws, "milestone", body, current_user.login)
     return _milestone_to_dict(ms, db, current_user)
-@router.get("/workspaces/{ws}/changes/milestones/{item_id}")
+@router.get("/workspaces/{ws}/changes/milestones/{item_id}", response_model=MilestoneDTO)
 @router.get("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def get_milestone(ws: str, item_id: int,
                   current_user: Account = Depends(get_current_user),
@@ -227,7 +228,7 @@ def get_milestone(ws: str, item_id: int,
     _check_workspace_access(db, ws, current_user.login)
     return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db, current_user)
 
-@router.put("/workspaces/{ws}/changes/milestones/{item_id}")
+@router.put("/workspaces/{ws}/changes/milestones/{item_id}", response_model=MilestoneDTO)
 @router.put("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def update_milestone(ws: str, item_id: int, body: dict,
                      current_user: Account = Depends(get_current_user),
@@ -245,7 +246,7 @@ def delete_milestone(ws: str, item_id: int,
     svc.delete_item(db, Milestone, ws, item_id)
 
 
-@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/requests")
+@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/requests", response_model=List[ChangeRequestDTO])
 @router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/requests/", include_in_schema=False)
 def get_milestone_requests(ws: str, milestone_id: int,
                            current_user: Account = Depends(get_current_user),
@@ -258,7 +259,7 @@ def get_milestone_requests(ws: str, milestone_id: int,
     return [_item_to_dict(r, db, current_user) for r in items]
 
 
-@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders")
+@router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders", response_model=List[ChangeOrderDTO])
 @router.get("/workspaces/{ws}/changes/milestones/{milestone_id}/orders/", include_in_schema=False)
 def get_milestone_orders(ws: str, milestone_id: int,
                          current_user: Account = Depends(get_current_user),
