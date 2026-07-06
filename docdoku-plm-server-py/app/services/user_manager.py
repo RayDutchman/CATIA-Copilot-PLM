@@ -144,6 +144,8 @@ class UserMgmtService:
             raise EntityAlreadyExistsException("AccountAlreadyExistsException", login)
         acc = Account(login=login, email=email, name=name, language=lang)
         db.add(acc)
+        # MD5 哈希必须保持不变：与 Payara credential 表格式一致，
+        # 更换算法会导致已存密码验证失败。
         cred = Credential(login=login, password=hashlib.md5(password.encode()).hexdigest())
         db.add(cred)
         db.commit()
@@ -165,6 +167,7 @@ class UserMgmtService:
         if "password" in fields:
             cred = db.query(Credential).filter(Credential.login == login).first()
             if cred:
+                # MD5 哈希必须保持不变：与 Payara credential 表格式一致
                 cred.password = hashlib.md5(fields["password"].encode()).hexdigest()
         db.commit()
         db.refresh(acc)

@@ -162,6 +162,18 @@ class DocumentService:
         if has_change is not None:
             raise EntityConstraintException("EntityConstraintException7")
 
+        # 清理 vault 物理文件（对齐 product_manager.delete_revision）
+        try:
+            import shutil
+            from pathlib import Path
+            from app.core.config import settings
+            for it in pr.iterations:
+                vault_dir = Path(settings.VAULT_PATH) / ws / "documents" / doc_id / ver / str(it.iteration)
+                if vault_dir.exists():
+                    shutil.rmtree(vault_dir)
+        except Exception:
+            pass
+
         # 清理关联表
         db.execute(text(
             "DELETE FROM documentrevision_tag "

@@ -23,6 +23,8 @@ class NotificationService:
         return n
 
     def list_for_user(self, db: Session, ws: str, login: str) -> list:
+        # modificationnotification 表不包含直接的用户所有权列；
+        # 此查询按 workspace 过滤未确认通知。调用方负责按 login 做用户级过滤。
         rows = db.execute(text(
             "SELECT * FROM modificationnotification "
             "WHERE impacted_workspace_id = :ws AND acknowledged = false"

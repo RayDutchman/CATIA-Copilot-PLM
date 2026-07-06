@@ -68,19 +68,32 @@ class WorkflowService:
         m = self.get_model(db, ws, model_id)
         m.finalLifecycleState = final_state
         if activity_models is not None:
+            # 删除旧 ActivityModel（级联删除旧 TaskModel）
             db.query(ActivityModel).filter(
                 ActivityModel.workflowmodel_id == model_id,
                 ActivityModel.workspace_id == ws,
             ).delete()
             for am in activity_models:
-                db.add(ActivityModel(
+                am_obj = ActivityModel(
                     step=am.get("step", 0),
                     dtype=am.get("type", ""),
                     lifecyclestate=am.get("lifeCycleState", ""),
                     workflowmodel_id=model_id,
                     workspace_id=ws,
                     taskstocomplete=am.get("tasksToComplete", 0),
-                ))
+                )
+                db.add(am_obj)
+                db.flush()
+                for task in am.get("tasks", []):
+                    db.add(TaskModel(
+                        num=task.get("num", 0),
+                        activitymodel_id=am_obj.id,
+                        title=task.get("title", ""),
+                        instructions=task.get("instructions", ""),
+                        duration=task.get("duration"),
+                        role_workspace_id=task.get("role", {}).get("workspaceId") if task.get("role") else None,
+                        role_name=task.get("role", {}).get("name") if task.get("role") else None,
+                    ))
         db.commit()
         db.refresh(m)
         return m
