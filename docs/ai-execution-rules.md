@@ -169,3 +169,38 @@ P0A 阶段完成: 47/47 拆分通过, pytest 全绿
 - ❌ 跳过验证步骤
 - ❌ 验证失败不修复直接往下走
 - ❌ 修改已有代码的业务逻辑（只改 import 路径）
+- ❌ 使用字符串形式 `secondaryjoin="and_(...)"` 代替 lambda — 字符串无法捕获模块级变量（如 Table 对象 `part_revision_tags`），SQLAlchemy 映射初始化时报 `failed to locate a name` 错误
+
+---
+
+## 拆分时的跨文件 relationship 规则（P0A regression 教训）
+
+### 问题
+
+拆分后各实体分散到不同文件，`relationship()` 中的 `secondaryjoin` 等参数若写成字符串形式：
+```python
+secondaryjoin="and_(foreign(Tag.workspace_id)==remote(part_revision_tags.c.tag_workspace_id), ...)"
+```
+SQLAlchemy 在评估该字符串时无法访问当前模块的变量（如 `part_revision_tags` Table 对象），导致 `InvalidRequestError: failed to locate a name`。
+
+### 正确做法
+
+1. **必须使用 lambda** 捕获当前模块内的 Table 对象和跨模块导入的类：
+   ```python
+   secondaryjoin=lambda: (Tag.workspace_id == part_revision_tags.c.tag_workspace_id)
+                          & (Tag.label == part_revision_tags.c.tag_label)
+   ```
+
+2. **lambda 引用的外部类必须在文件底部懒导入**，避免循环导入：
+   ```python
+   # 文件末尾
+   from app.models.part import Tag       # noqa: E402
+   from app.models.common.workspace import Workspace  # noqa: E402
+   ```
+
+3. **`primaryjoin` 同理**：如果引用当前模块的 Table 对象，也必须用 lambda：
+   ```python
+   primaryjoin=lambda: PartIteration.workspace_id == part_iteration_binres.c.workspace_id)
+   ```
+
+4. **`relationship()` 的第一个参数用字符串没问题**（如 `"PartMaster"`），这些类名由 SQLAlchemy mapper registry 解析，不依赖模块作用域。
