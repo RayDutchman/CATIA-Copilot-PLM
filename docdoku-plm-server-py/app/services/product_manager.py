@@ -17,6 +17,7 @@ from app.models.part import (
     part_iteration_usagelink, usage_link_cadinstances,
 )
 from app.schemas.part import PartCreationDTO, PartIterationUpdateDTO
+from app.services.indexer_manager import indexer_manager
 
 
 class ProductService:
@@ -363,6 +364,7 @@ class ProductService:
                     shutil.rmtree(vault_dir)
             except Exception:
                 pass
+        indexer_manager.delete_part_revision(pr)  # 对标 deletePartRevision:2154
         db.delete(pr)
         db.commit()
 
@@ -417,6 +419,7 @@ class ProductService:
         pr.check_out_date = None
         db.commit()
         db.refresh(pr)
+        indexer_manager.index_part_revision(pr)  # 对标 checkInPart:600
         return pr
 
     def undo_checkout(self, db: Session, workspace_id: str,
@@ -794,6 +797,7 @@ class ProductService:
             ))
         db.commit()
         db.refresh(pr)
+        indexer_manager.index_part_revision(pr)  # 对标 saveTags:1433
         return pr
 
     def add_tag(self, db: Session, ws: str, pn: str, ver: str,
@@ -828,6 +832,7 @@ class ProductService:
         ))
         db.commit()
         db.refresh(pr)
+        indexer_manager.index_part_revision(pr)  # 对标 removeTag:1460
         return pr
 
     def find_part_master_by_cad_filename(self, db: Session, workspace_id: str,

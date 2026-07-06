@@ -2,8 +2,8 @@
 import uuid
 from fastapi import APIRouter, Depends, Query, Body
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_, and_
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
@@ -93,6 +93,51 @@ def search_parts(
     db: Session = Depends(get_db),
 ):
     from datetime import datetime
+    from app.services.es_query_builder import es_query_builder
+
+    # ES 优先搜索
+    try:
+        es_params = {"from": start, "size": length}
+        if name: es_params["name"] = name
+        if number: es_params["number"] = number
+        if author: es_params["author"] = author
+        if createdAfter: es_params["createdFrom"] = createdAfter
+        if createdBefore: es_params["createdTo"] = createdBefore
+        if modifiedAfter: es_params["modifiedFrom"] = modifiedAfter
+        if modifiedBefore: es_params["modifiedTo"] = modifiedBefore
+        if tags: es_params["tags"] = tags
+        if content: es_params["content"] = content
+        keys = es_query_builder.search_parts(workspace_id, es_params)
+        if keys:
+            # 解析迭代级 key: '{number}-{version}-{iteration}' → 按 revision 去重
+            seen = set()
+            rev_keys = []
+            for k in keys:
+                parts = k.rsplit("-", 2)
+                if len(parts) >= 2:
+                    nv = (parts[0], parts[1])  # (number, version)
+                    if nv not in seen:
+                        seen.add(nv)
+                        rev_keys.append(nv)
+            if rev_keys:
+                conditions = [
+                    (PartRevision.workspace_id == workspace_id) &
+                    (PartRevision.partmaster_partnumber == nv[0]) &
+                    (PartRevision.version == nv[1])
+                    for nv in rev_keys
+                ]
+                revisions = db.query(PartRevision).options(
+                    joinedload(PartRevision.iterations),
+                    joinedload(PartRevision.part_master),
+                ).filter(or_(*conditions)).all()
+                # 按 ES 返回顺序排列
+                rev_map = {(pr.partmaster_partnumber, pr.version): pr for pr in revisions}
+                ordered = [rev_map[k] for k in rev_keys if k in rev_map]
+                return [map_revision(pr, db) for pr in ordered]
+    except Exception:
+        pass  # ES 失败 → fallback 到 DB 搜索
+
+    # DB LIKE fallback
     author_val = author if author else None
     ca = datetime.fromisoformat(createdAfter) if createdAfter else None
     cb = datetime.fromisoformat(createdBefore) if createdBefore else None

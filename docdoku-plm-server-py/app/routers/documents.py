@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, text as sql_text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
@@ -44,6 +44,53 @@ def search_documents(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
+    from app.services.es_query_builder import es_query_builder
+
+    # ES 优先搜索
+    try:
+        es_params = {"from": start, "size": size}
+        if q: es_params["q"] = q
+        if id: es_params["id"] = id
+        if title: es_params["title"] = title
+        if version: es_params["version"] = version
+        if author: es_params["author"] = author
+        if createdFrom: es_params["createdFrom"] = createdFrom
+        if createdTo: es_params["createdTo"] = createdTo
+        if modifiedFrom: es_params["modifiedFrom"] = modifiedFrom
+        if modifiedTo: es_params["modifiedTo"] = modifiedTo
+        if tags: es_params["tags"] = tags
+        if content: es_params["content"] = content
+        keys = es_query_builder.search_documents(ws, es_params)
+        if keys:
+            # 解析迭代级 key: '{docMId}-{version}-{iteration}' → 按 revision 去重
+            from sqlalchemy.orm import joinedload
+            seen = set()
+            rev_keys = []
+            for k in keys:
+                parts = k.rsplit("-", 2)
+                if len(parts) >= 2:
+                    dv = (parts[0], parts[1])  # (docMId, version)
+                    if dv not in seen:
+                        seen.add(dv)
+                        rev_keys.append(dv)
+            if rev_keys:
+                from sqlalchemy import and_
+                conditions = [
+                    (DocumentRevision.workspace_id == ws) &
+                    (DocumentRevision.documentmaster_id == dv[0]) &
+                    (DocumentRevision.version == dv[1])
+                    for dv in rev_keys
+                ]
+                revisions = db.query(DocumentRevision).options(
+                    joinedload(DocumentRevision.iterations),
+                ).filter(or_(*conditions)).all()
+                rev_map = {(dr.documentmaster_id, dr.version): dr for dr in revisions}
+                ordered = [rev_map[k] for k in rev_keys if k in rev_map]
+                return [_doc_to_dict(db, dr, current_user.login) for dr in ordered]
+    except Exception:
+        pass  # ES 失败 → fallback
+
+    # DB LIKE fallback ────────────────────────────────────────
     query = db.query(DocumentRevision).join(
         DocumentMaster,
         (DocumentRevision.workspace_id == DocumentMaster.workspace_id) &

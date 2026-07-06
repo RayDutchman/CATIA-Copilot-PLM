@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-07-07 — es_query_builder 审计修复（C5-C7, W11）
+
+- fix(py): `es_query_builder.py` — q 参数从 `multi_match`+must(AND) 改为 `query_string`+bool should(OR)，对齐 Java SearchQueryParser（元数据匹配 OR 文件内容匹配）
+- fix(py): `es_query_builder.py` — folder 从 `term` 改为 `match`+fuzziness=AUTO（C7），对齐 IndexerQueryBuilder
+- fix(py): `indexer_manager.py` — DOC_MAPPING 中 KEY_FOLDER 从 keyword 改为 text（match+fuzziness 需要 text 类型）
+- fix(py): `es_query_builder.py` — 移除 standardPart 过滤（W11），Java IndexerQueryBuilder 不使用此字段
+- test(py): `test_es_query_builder.py` — 更新 q 参数测试为 query_string bool should 断言；移除 standardPart 测试
+
+## 2026-07-07 — notifier/indexer_manager 审计修复
+
+- fix(py): `notifier.py` — 完全重写，对齐 Java INotifierLocal（HTML 格式、Subject 前缀 "DocDokuPLM: "、拆分为 send_bulk_indexation_success/failure 两个独立方法、成功邮件不含 workspace 信息）
+- fix(py): `indexer_manager.py` — reindex_all 调用方改为两个独立 notifier 方法；bulk() 错误提取修正（从 ES bulk errors 格式中提取 reason 字符串）
+
+## 2026-07-06 — ES 全文搜索迁移
+
+- feat(py): `indexer_manager.py` — 重写为迭代级索引（一个 iteration = 一个 ES doc，doc ID 含 iteration 号），索引命名 `docdoku-plm-{ws}-parts/documents`（对齐 IndexerMapping.java），BULK_SIZE=50 分页重建，集成 notifier 邮件通知
+- feat(py): `es_query_builder.py` — 重写搜索查询构建，对齐 IndexerQueryBuilder.java 的 Query DSL（number/name/title/version/author fuzzy/date range/tags/content/standardPart）
+- feat(py): `notifier.py` — 新建，reindex 邮件通知（smtplib→MailHog smtp:1025），中英双语 i18n
+- feat(py): `product_manager.py` — 4 处实时索引（checkin/set_tags/remove_tag/delete_revision）
+- feat(py): `document_manager.py` — 5 处实时索引（checkin/set_tags/remove_tag/move_document/delete_revision）
+- feat(py): `workspaces.py` — create/delete workspace → ES index 管理 + PUT /index/{ws} 实现
+- feat(py): `parts.py`/`documents.py` — 搜索端点 ES 优先 + DB LIKE fallback
+- chore(py): `conftest.py` + autouse ES mock fixture（防测试 hang）
+- chore(py): `requirements.txt` + elasticsearch==6.8.2
+- test(py): `test_indexer_manager.py` + `test_es_query_builder.py`（28 个 Mock 测试）
+- docs: `docs/superpowers/specs/2026-07-06-es-search-design.md`、`plans/...-mapping.md`、`plans/...-es-search.md` — 设计方案+方法级映射表+实施计划
+- 验证: pytest 172 passed
+
 ## 2026-07-06 — 3项关键修复：share密码绕过+document_files异常+doc迭代数据
 
 - fix(py): `share.py:_get_shared_entity` — 修复密码绕过漏洞。原逻辑 `password is not None and entity.password is not None and ...` 在密码不为空时不检查即放行，改为先判断 `entity.password is not None` 再验证

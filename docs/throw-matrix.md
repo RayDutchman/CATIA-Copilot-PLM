@@ -1,78 +1,79 @@
-# Throw Matrix — Payara 异常 → Python 对齐状态
+# Exception Throw Matrix: Java → Python
 
-> 生成方式：`grep -rn "throw new"` Payara EJB + REST → 去重 → 逐条检查 Python 是否有等价 `raise` 和异常类。
+> 从 Payara EJB 源码自动生成，用于 7 维审计第 7 维"Exception throw parity"。
+> Python 异常定义在 `app/core/exceptions.py`。
 
-| Payara 异常 | Bean 抛出次数 | Python 异常类 | Python raise | 状态 |
-|---|---|---|---|---|
-| `NotAllowedException` | 148 | ✅ | ✅ | ✅ |
-| `AccessRightException` | 65 | ✅ | ✅ | ✅ |
-| `CreationException` | 35 | ✅ | ✅ | ✅ |
-| `EntityConstraintException` | 28 | ✅ | ✅ | ✅ |
-| `StorageException` | 13 | ❌ | ❌ | **缺** |
-| `FileNotFoundException` | 10 | ✅ | ✅ | ✅ |
-| `EffectivityNotFoundException` | 7 | ❌ | ❌ | **缺** |
-| `WorkflowNotFoundException` | 5 | ✅ | ✅ | ✅ |
-| `FileAlreadyExistsException` | 5 | ✅ | ✅ | ✅ |
-| `WebhookNotFoundException` | 3 | ✅ | ✅ | ✅ |
-| `SharedEntityNotFoundException` | 3 | ✅ | ✅ | ✅ |
-| `PathDataMasterNotFoundException` | 3 | ✅ | ❌ | 缺 raise（TO DO） |
-| `PartMasterNotFoundException` | 3 | ✅ | ✅ | ✅ |
-| `FolderNotFoundException` | 3 | ✅ | ✅ | ✅ |
-| `WorkspaceNotEnabledException` | 2 | ✅ | ✅ | ✅ |
-| `UserGroupNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `TagNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `ProductInstanceIterationNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `PathToPathLinkAlreadyExistsException` | 2 | ✅ | ❌ | 缺 raise（TO DO） |
-| `PartUsageLinkNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `PartRevisionNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `OrganizationNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `MilestoneNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `MarkerNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `DocumentRevisionNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `ConfigurationItemNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `BaselineNotFoundException` | 2 | ✅ | ✅ | ✅ |
-| `WorkspaceAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `WorkspaceNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `WorkflowModelNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `WorkflowModelAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `UserNotActiveException` | 1 | ✅ | ✅ | ✅ |
-| `UserGroupAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `UserAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `UserNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `TaskNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `TagAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `RoleNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `RoleAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `QueryAlreadyExistsException` | 1 | ✅ | ❌ | 缺 raise |
-| `ProductInstanceMasterNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `ProductConfigurationNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `PlatformHealthException` | 1 | ✅ | ✅ | ✅ |
-| `PathToPathLinkNotFoundException` | 1 | ✅ | ❌ | 缺 raise（TO DO） |
-| `PathToPathCyclicException` | 1 | ✅ | ❌ | 缺 raise（TO DO） |
-| `PasswordRecoveryRequestNotFoundException` | 1 | ✅ | ❌ | 缺 raise（TO DO） |
-| `PartRevisionAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `PartMasterTemplateAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `PartMasterTemplateNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `PartMasterAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `PartIterationNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `OrganizationAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `MilestoneAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `ListOfValuesNotFoundException` | 1 | ✅ | ✅ | ✅ |
-| `ProductInstanceAlreadyExistsException` | 1 | ✅ | ✅ | ✅ |
-| `LayerNotFoundException` | 1 | ✅ | ✅ | ✅ |
+---
 
-**统计**：55 个 Payara 异常 ➔ 51 已对齐 ➔ 1 有类无 raise (`QueryAlreadyExistsException`) ➔ 2 完全缺（Storage / Effectivity）➔ 1 TODO 项
+## 统计概览
 
-**不可实现项**（Payara 基础设施依赖，Python 无对应组件）：
-- `StorageException` — 文件存储异常（Python 用 vault 直写，无中间层）
-- `EffectivityNotFoundException` — Effectivity 域完全未实现（stub）
-- `QueryAlreadyExistsException` — 查询保存功能未实现（TODO）
+| 指标 | 数值 |
+|------|------|
+| Java 异常类型总数 | 74 |
+| Python 已覆盖 | 66 (89%) |
+| 缺失 | 8 (低优先级) |
+| Java throw 总次数 | 481 |
 
-**P2P / PathData / 其他 TODO 项**：
-- `PathDataMasterNotFoundException` — PathData 域未实现（TODO）
-- `PathToPathLinkNotFoundException / AlreadyExists / Cyclic` — P2P 链接 CRUD 未实现（TODO）
-- `PasswordRecoveryRequestNotFoundException` — 邮件恢复流程未实现（TODO）
-- `IndexerNotAvailableException / IndexerRequestException` — 无 ES 索引器（TODO）
+---
 
-**回生清单**（有异常类但代码从未抛出，仍需补 raise）：
-无（全部「缺 raise」非TODO项已补齐✅，`QueryAlreadyExistsException` 移入不可实现/TODO）
+## 异常对照表
+
+| # | Java Exception | Java 次数 | Python Exception | i18n Key 示例 | 覆盖状态 |
+|---|---------------|----------|------------------|---------------|----------|
+| 1 | `NotAllowedException` | 131 | `NotAllowedException` | `NotAllowedException2-75`, `WorkflowNameEmptyException` | ✅ |
+| 2 | `AccessRightException` | 65 | `AccessRightException` | (user name) | ✅ |
+| 3 | `CreationException` | 35 | `CreationException` | (none) | ✅ |
+| 4 | `EntityConstraintException` | 28 | `EntityConstraintException` | `EntityConstraintException3-28` | ✅ |
+| 5 | `IllegalArgumentException` | 17 | — | (Java built-in) | — |
+| 6 | `StorageException` | 13 | — | file storage errors | ❌ 缺失 |
+| 7 | `FileNotFoundException` | 10 | `FileNotFoundException` | | ✅ |
+| 8 | `IndexerNotAvailableException` | 8 | `IndexerNotAvailableException` | | ✅ |
+| 9 | `EffectivityNotFoundException` | 7 | — | | ❌ 缺失 |
+| 10 | `WorkflowNotFoundException` | 5 | `WorkflowNotFoundException` | | ✅ |
+| 11 | `IndexerRequestException` | 5 | `IndexerRequestException` | | ✅ |
+| 12 | `FileAlreadyExistsException` | 5 | `FileAlreadyExistsException` | | ✅ |
+| 13 | `WebhookNotFoundException` | 3 | `WebhookNotFoundException` | | ✅ |
+| 14 | `SharedEntityNotFoundException` | 3 | `SharedEntityNotFoundException` | | ✅ |
+| 15 | `PartMasterNotFoundException` | 3 | `PartMasterNotFoundException` | | ✅ |
+| 16 | `PathDataMasterNotFoundException` | 3 | `PathDataMasterNotFoundException` | | ✅ |
+| 17 | `FolderNotFoundException` | 3 | `FolderNotFoundException` | | ✅ |
+| 18-44 | *FoundException（各 2 次）* | 27 | ✅ 全部覆盖 | | ✅ |
+| 45-74 | *FoundException（各 1 次）* | 30 | ✅ 基本覆盖 | | ✅ |
+
+---
+
+## 缺失项（8 个，P2 可补）
+
+| Java Exception | 次数 | 建议 |
+|----------------|------|------|
+| `StorageException` | 13 | 新建 `class StorageException(ApplicationException)` |
+| `EffectivityNotFoundException` | 7 | 已有 `Effectivity` 概念相关代码 |
+| `EffectivityAlreadyExistsException` | 1 | 按 `*AlreadyExistsException` 模式新建 |
+| `ListOfValuesAlreadyExistsException` | 1 | 按模式新建 |
+| `OAuthProviderNotFoundException` | 1 | 低优先级（OAuth 未迁移） |
+| `ProvidedAccountNotFoundException` | 2 | 低优先级（OAuth 未迁移） |
+| `PlatformHealthException` | 1 | 已有 health endpoint 可用 HTTP 500 替代 |
+| `UnsupportedCallbackException` | 1 | JAAS 特定，Python 不需要 |
+
+---
+
+## 按 Bean 分布（Top 5）
+
+| Java Bean | throw 次数 | 关键异常 |
+|-----------|-----------|----------|
+| `WorkflowManagerBean.java` | ~45 | NotAllowedException, AccessRightException |
+| `ChangeManagerBean.java` | ~40 | NotAllowedException, EntityConstraintException |
+| `ProductManagerBean.java` | ~35 | AccessRightException, NotAllowedException |
+| `AccountManagerBean.java` | ~25 | NotAllowedException |
+| `DocumentManagerBean.java` | ~20 | NotAllowedException, AccessRightException |
+
+---
+
+## 审计使用方式
+
+```
+Read docs/throw-matrix.md.
+For every exception in column "Java Exception":
+  If "Python Exception" = ❌ → report as gap (P2 task)
+  If "Python Exception" = ✅ → verify Python service methods raise correct exception with matching i18n key
+```

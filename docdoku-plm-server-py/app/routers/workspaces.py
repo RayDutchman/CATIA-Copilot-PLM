@@ -20,6 +20,7 @@ from app.schemas.admin import (
     FrontOptionsDTO, BackOptionsDTO, ReachableUserDTO,
 )
 from app.schemas.misc import TagDTO, LOVDTO, LOVValueDTO
+from app.services.indexer_manager import indexer_manager
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -299,7 +300,8 @@ def save_back_options(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put("/workspaces/{ws}/index/", status_code=202, include_in_schema=False)
 def reindex_workspace(ws: str, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    return {"status": "accepted"}
+    result = indexer_manager.reindex_all(db, ws, current_user, check_admin=True)
+    return result
 
 
 @router.get("/workspaces/{ws}/tags", response_model=List[TagDTO])
@@ -534,6 +536,8 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
     ), {"id": ws_id, "desc": desc, "folder_locked": folder_locked, "admin": admin})
     db.commit()
 
+    indexer_manager.create_index(ws_id)  # 对标 createWorkspace:157
+
     return {
         "id": ws_id,
         "description": desc,
@@ -609,6 +613,8 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
     ), {"id": ws}).fetchone()
     if not existing:
         raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
+
+    indexer_manager.delete_index(ws)  # 对标 deleteWorkspace:103
 
     # 级联删除：按依赖顺序从子到父
     # 1. 零件相关 join 表

@@ -13,6 +13,7 @@ from app.core.exceptions import (
     FileAlreadyExistsException, FileNotFoundException,
     DocumentRevisionAlreadyExistsException, FolderNotFoundException,
 )
+from app.services.indexer_manager import indexer_manager
 
 
 class DocumentService:
@@ -205,6 +206,8 @@ class DocumentService:
                     shutil.rmtree(vault_dir)
         except Exception:
             pass
+
+        indexer_manager.delete_document_revision(pr)  # 对标 deleteDocumentRevision:1231
 
         # 清理关联表
         db.execute(text(
@@ -502,6 +505,7 @@ class DocumentService:
         pr.checkout_user_workspace_id = None
         pr.check_out_date = None
         db.commit(); db.refresh(pr)
+        indexer_manager.index_document_revision(pr)  # 对标 checkInDocument:1094
         return pr
 
     def undo_checkout(self, db, ws, doc_id, ver, user_login):
@@ -692,6 +696,7 @@ class DocumentService:
                 documentrevision_version=ver, tag_workspace_id=ws,
                 tag_label=label))
         db.commit(); db.refresh(pr)
+        indexer_manager.index_document_revision(pr)  # 对标 saveTags:1007
         return pr
 
     def add_tag(self, db, ws, doc_id, ver, label):
@@ -720,6 +725,7 @@ class DocumentService:
             document_revision_tags.c.tag_label == label,
         ))
         db.commit(); db.refresh(pr)
+        indexer_manager.index_document_revision(pr)  # 对标 removeTag:1033
         return pr
 
     def search(self, db, ws, title=None, doc_id=None):
@@ -754,6 +760,7 @@ class DocumentService:
         pr.location_completepath = folder_path
         db.commit()
         db.refresh(pr)
+        indexer_manager.index_document_revision(pr)  # 对标 moveDocumentRevision:880
         return pr
 
     def list_documents_in_folder(self, db, ws, folder_path):

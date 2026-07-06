@@ -19,6 +19,8 @@
 ### 中优先级
 
 - [ ] **搜索为 DB 模糊匹配** — 无 Elasticsearch 全文搜索。不影响功能但性能随数据量下降。
+  → **已完成 (2026-07-06)**: ES 全文搜索已迁移，迭代级索引 + ES 优先搜索 + DB fallback，172 测试通过。
+- [ ] **reindex 邮件通知 i18n 中英双语** — notifier.py 已实现基础中英 i18n，后续需对齐 Java PropertiesLoader 完整多语言资源文件 + 账号语言字段填充。
 
 - [ ] **Decimation 减面优化一直失败** — conversion 容器脚本缺失。
 
@@ -77,3 +79,5 @@
 - [x] **test1 管理员权限修复** — workspace.admin_login = 'test1' (2026-07-06)
 - [x] **stubs 消除：gen_id mask递增 + 逆链接实查 + download头补全 + home检测** — generate_id 真实DB查询+mask支持、aborted-workflows+4个inverse links实查、part_files download Last-Modified真实文件时间、folders home检测 (2026-07-06)
 - [x] **products 域 5 项修复** — baselines 补字段、configs ACL 统一、searchCI 完整 DTO、cascade 真实实现、instance 字段名对齐 (2026-07-06)
+- [x] **es_query_builder 审计修复（C5-C7, W11）** — q→query_string bool should、folder→match+fuzziness、移除 standardPart（2026-07-07）
+- [x] **notifier/indexer_manager 审计修复** — notifier 重写对齐 Java INotifierLocal、indexer reindex_all 调用改为两个方法、bulk errors 提取修正 (2026-07-07)

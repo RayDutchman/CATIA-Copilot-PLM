@@ -45,3 +45,16 @@ def temp_vault():
     yield d
     _config.settings.VAULT_PATH = old
     shutil.rmtree(d, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_es():
+    """全局替换 ES 客户端为 MagicMock，防止测试中真实连接 ES 导致 timeout。
+    搜索端点走 try/except fallback → DB LIKE 路径，现有测试继续 pass。
+    """
+    from unittest.mock import MagicMock
+    from app.services.indexer_manager import indexer_manager
+    saved = indexer_manager._es
+    indexer_manager._es = MagicMock()
+    yield
+    indexer_manager._es = saved
