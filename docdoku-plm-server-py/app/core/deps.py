@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import verify_token, create_token, should_refresh_token
 from app.models.auth import Account
+from app.core.exceptions import WorkspaceNotEnabledException, EntityNotFoundException
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -33,16 +34,16 @@ def get_current_user(
     account = db.query(Account).filter(Account.login == payload["login"]).first()
     if account is None or not account.enabled:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="账号不存在或已禁用")
-    # 对齐 Payara checkWorkspaceReadAccess：验证 workspace 存在、启用、且用户是成员
+    # 对齐 Payara checkWorkspaceReadAccess / checkWorkspaceWriteAccess
     m = _WS_RE.match(request.url.path)
     if m:
         ws = m.group(1)
         row = db.execute(text("SELECT enabled FROM workspace WHERE id = :w"), {"w": ws}).first()
         if row and not bool(row[0]):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"工作区\"{ws}\"已禁用")
+            raise WorkspaceNotEnabledException("WorkspaceNotEnabledException", ws)
         member = db.execute(text(
             "SELECT 1 FROM userdata WHERE login=:l AND workspace_id=:w"
         ), {"l": account.login, "w": ws}).first()
         if not member:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"您不是工作区\"{ws}\"的成员")
+            raise EntityNotFoundException("UserNotFoundException", account.login)
     return account

@@ -4,14 +4,14 @@ from app.core.exceptions import (
     ApplicationException, AccessRightException, NotAllowedException,
     EntityConstraintException, EntityNotFoundException,
     EntityAlreadyExistsException, CreationException,
-    PlatformHealthException,
+    WorkspaceNotEnabledException,
 )
 
 
 def _status_for(exc: ApplicationException) -> int:
     if isinstance(exc, EntityConstraintException):
         return 403
-    if isinstance(exc, (AccessRightException, NotAllowedException)):
+    if isinstance(exc, (AccessRightException, NotAllowedException, WorkspaceNotEnabledException)):
         return 403
     if isinstance(exc, EntityNotFoundException):
         return 404

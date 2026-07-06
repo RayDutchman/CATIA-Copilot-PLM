@@ -48,5 +48,9 @@ class SharedEntityNotFoundException(EntityNotFoundException):
     pass
 
 
+class WorkspaceNotEnabledException(ApplicationException):
+    """Payara WorkspaceNotEnabledException(pWorkspaceId)"""
+
+
 class PlatformHealthException(ApplicationException):
     pass
