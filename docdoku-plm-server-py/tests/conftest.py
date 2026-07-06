@@ -1,8 +1,11 @@
 """pytest fixtures，供所有测试使用。"""
 import pytest
+import shutil
+import tempfile
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import get_db, SessionLocal, engine
+from app.core import config as _config
 from sqlalchemy.orm import Session
 
 
@@ -31,3 +34,14 @@ def db():
         session.close()
         connection.rollback()
         connection.close()
+
+
+@pytest.fixture(scope="session")
+def temp_vault():
+    """临时 vault 目录，替代真实 vault 路径，测试结束后自动清理。"""
+    d = tempfile.mkdtemp(prefix="test-vault-")
+    old = _config.settings.VAULT_PATH
+    _config.settings.VAULT_PATH = d
+    yield d
+    _config.settings.VAULT_PATH = old
+    shutil.rmtree(d, ignore_errors=True)

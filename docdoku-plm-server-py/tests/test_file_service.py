@@ -1,5 +1,4 @@
 """file_service 测试：vault 写读 + BinaryResource 记录。"""
-import os
 from app.services import binary_storage
 from app.services.product_manager import ProductService
 from app.models.part import BinaryResource
@@ -40,7 +39,7 @@ def _make_part(db, num):
                            PartCreationDTO(number=num, name="t"))
 
 
-def test_save_nativecad_writes_vault_and_binaryresource(db):
+def test_save_nativecad_writes_vault_and_binaryresource(db, temp_vault):
     num = "P1BFS-NATIVE-1"
     _make_part(db, num)
     br = binary_storage.save_nativecad(db, WS, num, "A", 1,
@@ -56,18 +55,14 @@ def test_save_nativecad_writes_vault_and_binaryresource(db):
     assert it.native_cad_file_fullname == br.full_name
     svc.checkin(db, WS, num, "A", "test1")
     svc.delete_revision(db, WS, num, "A", "test1")
-    os.remove(p)
 
 
-def test_get_file_bytes_reads_back(db):
+def test_get_file_bytes_reads_back(db, temp_vault):
     num = "P1BFS-READ-1"
     _make_part(db, num)
     binary_storage.save_nativecad(db, WS, num, "A", 1, "m.stp", b"HELLO")
     db.commit()
     data = binary_storage.get_file_bytes(WS, num, "A", 1, "nativecad", "m.stp")
     assert data == b"HELLO"
-    from app.services import vault
-    p = vault.part_nativecad_path(WS, num, "A", 1, "m.stp")
     svc.checkin(db, WS, num, "A", "test1")
     svc.delete_revision(db, WS, num, "A", "test1")
-    os.remove(p)
