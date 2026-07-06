@@ -1,6 +1,7 @@
 """单个零件 CRUD（PartResource）。"""
 import re
 import uuid
+import hashlib
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Body
 from fastapi.responses import Response
@@ -206,6 +207,22 @@ def set_tags(workspace_id: str, part_key: str,
     return map_revision(pr, db)
 
 
+def _extract_tag_labels(body: dict) -> list[str]:
+    """解析标签请求体：支持 TagListDTO {tags: [{label: "a"}]} 和简单格式 {tags: ["a"]}。"""
+    raw_tags = body.get("tags", [])
+    if not raw_tags:
+        return []
+    labels = []
+    for item in raw_tags:
+        if isinstance(item, dict):
+            label = item.get("label", "")
+            if label:
+                labels.append(label)
+        elif isinstance(item, str):
+            labels.append(item)
+    return labels
+
+
 @router.post("/workspaces/{workspace_id}/parts/{part_key}/tags",
              response_model=PartRevisionDTO)
 @router.post("/workspaces/{workspace_id}/parts/{part_key}/tags/",
@@ -215,7 +232,12 @@ def add_tag(workspace_id: str, part_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    pr = svc.add_tag(db, workspace_id, number, version, body.get("tag", ""))
+    labels = _extract_tag_labels(body)
+    pr = None
+    for label in labels:
+        pr = svc.add_tag(db, workspace_id, number, version, label)
+    if pr is None:
+        pr = svc.get_revision(db, workspace_id, number, version)
     return map_revision(pr, db)
 
 
@@ -248,15 +270,22 @@ def get_tags(workspace_id: str, part_key: str,
 @router.post("/workspaces/{workspace_id}/parts/{part_key}/share/",
              response_model=SharedPartDTO, include_in_schema=False)
 def share_part(workspace_id: str, part_key: str,
+               body: dict = Body({}),
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
     svc.get_revision(db, workspace_id, number, version)
     shared_uuid = str(uuid.uuid4())
+    password = body.get("password")
+    expire_date_str = body.get("expireDate")
+    password_hash = hashlib.md5(password.encode()).hexdigest() if password else None
+    expire_date = datetime.fromisoformat(expire_date_str) if expire_date_str else None
     entity = SharedEntity(
         uuid=shared_uuid,
         dtype="SharedPart",
         creation_date=datetime.utcnow(),
+        expire_date=expire_date,
+        password=password_hash,
         author_workspace_id=workspace_id,
         author_login=current_user.login,
         workspace_id=workspace_id,

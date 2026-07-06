@@ -869,7 +869,11 @@ class ProductService:
             )
 
     def search_parts(self, db: Session, ws: str, name=None,
-                     number=None, type_=None) -> list:
+                     number=None, type_=None,
+                     created_after=None, created_before=None,
+                     modified_after=None, modified_before=None,
+                     tags: list | None = None, content=None,
+                     start: int = 0, length: int = 100) -> list:
         q = db.query(PartMaster).filter(PartMaster.workspace_id == ws)
         if name:
             q = q.filter(PartMaster.name.ilike(f"%{name}%"))
@@ -877,7 +881,39 @@ class ProductService:
             q = q.filter(PartMaster.number.ilike(f"%{number}%"))
         if type_:
             q = q.filter(PartMaster.type.ilike(f"%{type_}%"))
-        masters = q.limit(100).all()
+        if created_after:
+            q = q.filter(PartMaster.creation_date >= created_after)
+        if created_before:
+            q = q.filter(PartMaster.creation_date <= created_before)
+        if modified_after or modified_before:
+            q = q.join(PartRevision,
+                       (PartMaster.workspace_id == PartRevision.workspace_id)
+                       & (PartMaster.number == PartRevision.partmaster_partnumber))
+            if modified_after:
+                q = q.filter(PartRevision.check_out_date >= modified_after)
+            if modified_before:
+                q = q.filter(PartRevision.check_out_date <= modified_before)
+            q = q.distinct()
+        if tags:
+            from app.models.part import part_revision_tags
+            tag_list = [t.strip() for t in tags if t.strip()]
+            if tag_list:
+                q = q.join(PartRevision,
+                           (PartMaster.workspace_id == PartRevision.workspace_id)
+                           & (PartMaster.number == PartRevision.partmaster_partnumber))
+                q = q.join(part_revision_tags,
+                           (PartRevision.workspace_id == part_revision_tags.c.partmaster_workspace_id)
+                           & (PartRevision.partmaster_partnumber == part_revision_tags.c.partmaster_partnumber)
+                           & (PartRevision.version == part_revision_tags.c.partrevision_version))
+                q = q.filter(part_revision_tags.c.tag_label.in_(tag_list))
+                q = q.distinct()
+        if content:
+            from sqlalchemy import or_
+            q = q.filter(or_(
+                PartMaster.name.ilike(f"%{content}%"),
+                PartMaster.number.ilike(f"%{content}%"),
+            ))
+        masters = q.offset(start).limit(length).all()
         result = []
         for m in masters:
             result.extend(m.revisions)

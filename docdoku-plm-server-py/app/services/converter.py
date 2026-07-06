@@ -2,8 +2,10 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.core.exceptions import WorkspaceNotEnabledException
 from app.services import vault
 from app.models.part import (
     Conversion, BinaryResource, PartUsageLink, CADInstance,
@@ -179,10 +181,20 @@ def sync_assembly(db: Session, ws: str, pn: str, ver: str, iteration: int,
     return succeed
 
 
+def _check_workspace_write_access(db: Session, ws: str) -> None:
+    """对齐 Java checkWorkspaceWriteAccess：验证 workspace 存在且已启用。"""
+    row = db.execute(text("SELECT enabled FROM workspace WHERE id = :w"), {"w": ws}).first()
+    if row is None:
+        raise WorkspaceNotEnabledException("WorkspaceNotEnabledException", ws)
+    if not bool(row[0]):
+        raise WorkspaceNotEnabledException("WorkspaceNotEnabledException", ws)
+
+
 def handle_callback(db: Session, ws: str, pn: str, ver: str,
                     result: ConversionResultDTO) -> None:
     """处理转换回调，对齐 Java handleConversionResultCallback。
     savepoint 保护：内部任一 flush 失败时回滚整个回调，不污染外层 session。"""
+    _check_workspace_write_access(db, ws)
     conv = find_pending_conversion(db, ws, pn, ver)
     if conv is None:
         return

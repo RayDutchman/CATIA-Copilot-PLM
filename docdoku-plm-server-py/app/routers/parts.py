@@ -47,8 +47,7 @@ def search_numbers(
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    masters = svc.search_numbers(db, workspace_id, q,
-                                   current_user_login=current_user.login)
+    masters = svc.search_numbers(db, workspace_id, q)
     return [LightPartMasterDTO(partNumber=m.number, partName=m.name or "") for m in masters]
 
 
@@ -80,11 +79,31 @@ def search_parts(
     name: str = Query(None),
     number: str = Query(None),
     type: str = Query(None),
+    createdAfter: str = Query(None),
+    createdBefore: str = Query(None),
+    modifiedAfter: str = Query(None),
+    modifiedBefore: str = Query(None),
+    tags: str = Query(None),
+    content: str = Query(None),
+    start: int = Query(0, ge=0, alias="from"),
+    length: int = Query(50, ge=1, le=500, alias="size"),
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    revisions = svc.search_parts(db, workspace_id, name=name,
-                                 number=number, type_=type)
+    from datetime import datetime
+    ca = datetime.fromisoformat(createdAfter) if createdAfter else None
+    cb = datetime.fromisoformat(createdBefore) if createdBefore else None
+    ma = datetime.fromisoformat(modifiedAfter) if modifiedAfter else None
+    mb = datetime.fromisoformat(modifiedBefore) if modifiedBefore else None
+    tag_list = tags.split(",") if tags else None
+    revisions = svc.search_parts(
+        db, workspace_id,
+        name=name, number=number, type_=type,
+        created_after=ca, created_before=cb,
+        modified_after=ma, modified_before=mb,
+        tags=tag_list, content=content,
+        start=start, length=length,
+    )
     return [map_revision(pr, db) for pr in revisions]
 
 
@@ -109,9 +128,9 @@ def get_parts_by_tag(workspace_id: str, tag_id: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/parts_last_iter",
-            response_model=list[PartRevisionDTO])
+            response_model=list[dict])
 @router.get("/workspaces/{workspace_id}/parts/parts_last_iter/",
-            response_model=list[PartRevisionDTO], include_in_schema=False)
+            response_model=list[dict], include_in_schema=False)
 def parts_last_iter(workspace_id: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
@@ -149,8 +168,13 @@ def parts_last_iter(workspace_id: str, q: str = Query(""),
         )
     result = []
     for pr, max_iter in rows.all():
-        dto = map_revision(pr, db)
-        result.append(dto)
+        result.append({
+            "workspaceId": pr.workspace_id,
+            "partName": pr.part_master.name or "" if pr.part_master else "",
+            "partNumber": pr.partmaster_partnumber,
+            "partVersion": pr.version,
+            "iteration": max_iter,
+        })
     return result
 
 

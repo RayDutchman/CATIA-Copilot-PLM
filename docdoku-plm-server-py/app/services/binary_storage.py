@@ -29,9 +29,37 @@ def _upsert_binaryresource(db: Session, full_name: str, size: int,
     return br
 
 
+def _delete_old_geometries(db: Session, ws: str, pn: str, ver: str, iteration: int) -> None:
+    """删除该 iteration 的所有旧几何体记录（对齐 Java saveNativeCADInPartIteration
+    先删 geometry 再删 nativecad 再建新的）。"""
+    from app.models.part import part_iteration_geometry
+    old_geo_rows = db.execute(
+        part_iteration_geometry.select().where(
+            part_iteration_geometry.c.workspace_id == ws,
+            part_iteration_geometry.c.partmaster_partnumber == pn,
+            part_iteration_geometry.c.partrevision_version == ver,
+            part_iteration_geometry.c.iteration == iteration,
+        )
+    ).fetchall()
+    for row in old_geo_rows:
+        db.query(BinaryResource).filter(
+            BinaryResource.full_name == row.geometry_fullname,
+        ).delete(synchronize_session=False)
+    db.execute(
+        part_iteration_geometry.delete().where(
+            part_iteration_geometry.c.workspace_id == ws,
+            part_iteration_geometry.c.partmaster_partnumber == pn,
+            part_iteration_geometry.c.partrevision_version == ver,
+            part_iteration_geometry.c.iteration == iteration,
+        )
+    )
+
+
 def save_nativecad(db: Session, ws: str, pn: str, ver: str, iteration: int,
                    filename: str, data: bytes) -> BinaryResource:
-    """写 nativecad 到 vault + upsert BinaryResource + 设 PartIteration.native_cad_file_fullname。"""
+    """写 nativecad 到 vault + upsert BinaryResource + 设 PartIteration.native_cad_file_fullname。
+    对齐 Java saveNativeCADInPartIteration：先删除旧几何体再保存新 CAD。"""
+    _delete_old_geometries(db, ws, pn, ver, iteration)
     path = vault.part_nativecad_path(ws, pn, ver, iteration, filename)
     vault.write_file(path, data)
     full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
