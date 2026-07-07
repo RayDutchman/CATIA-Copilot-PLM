@@ -56,7 +56,8 @@ class DocumentService:
                    DocumentRevision.version).offset(start).limit(length).all()
 
     def create_document(self, db, ws, doc_id, title, user_login,
-                        folder_path=None, template_id=None, workflow_model_id=None):
+                         folder_path=None, template_id=None, workflow_model_id=None,
+                         role_mapping=None):
         existing = db.query(DocumentMaster).filter(
             DocumentMaster.workspace_id == ws,
             DocumentMaster.id == doc_id,
@@ -103,7 +104,11 @@ class DocumentService:
             checkout_user_workspace_id=ws, checkout_user_login=user_login,
             check_out_date=now)
         if workflow_model_id:
-            rev.workflow_id = workflow_model_id
+            from app.services.workflow_manager import workflow_service
+            workflow = workflow_service.instantiate_workflow(
+                db, ws, workflow_model_id, role_mapping=role_mapping or {}
+            )
+            rev.workflow_id = workflow["workflowId"]
         db.add(rev); db.flush()
         it = DocumentIteration(
             workspace_id=ws, documentmaster_id=doc_id,

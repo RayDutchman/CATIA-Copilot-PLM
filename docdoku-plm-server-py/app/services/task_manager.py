@@ -340,133 +340,126 @@ class TaskService:
 
     def _relaunch_workflow(self, db: Session, ws: str,
                             wf_id: int, step: int, num: int) -> dict | None:
-        """拒绝时 relaunch：abort 当前工作流 + 基于原 model 创建新工作流。"""
+        """拒绝时 relaunch：深拷贝原 workflow + abort 旧的。"""
         from sqlalchemy import text
-        from app.services.workflow_manager import workflow_service
 
-        # 查找当前工作流对应的 workflow model（通过活动匹配）
-        model_row = db.execute(text(
-            "SELECT DISTINCT wm.id, wm.workspace_id FROM workflowmodel wm "
-            "JOIN activitymodel am ON wm.id = am.workflowmodel_id AND wm.workspace_id = am.workspace_id "
-            "JOIN activity a ON am.step = a.step "
-            "WHERE a.workflow_id = :wf_id LIMIT 1"
-        ), {"wf_id": wf_id}).first()
-        if not model_row:
-            return None
-        model_id = model_row[0]
-        model_ws = model_row[1] or ws
+        # 1. 查找 holder 类型（文档/零件/workspace_workflow）
+        holder_type = None
+        holder_ref = None
+        holder_ver = None
+        holder_ww_id = None
 
-        # 查找 holder（文档/零件/工作区工作流）
-        holder_part = db.execute(text(
+        part = db.execute(text(
             "SELECT partmaster_partnumber, version FROM partrevision "
             "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
         ), {"wf_id": wf_id, "ws": ws}).first()
-        relinked = None
-        if holder_part:
-            pm, ver = holder_part[0], holder_part[1]
-            # 记录 aborted workflow 关联
-            db.execute(text(
-                "INSERT INTO part_aborted_workflow "
-                "(partmaster_partnumber, partmaster_workspace_id, "
-                "partrevision_version, workflow_id) "
-                "VALUES (:pn, :ws, :v, :wf_id)"
-            ), {"pn": pm, "ws": ws, "v": ver, "wf_id": wf_id})
-            # abort 当前工作流
-            db.execute(text(
-                "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
-            ), {"id": wf_id})
-            # 实例化新工作流
-            role_mapping = {}
-            old_workers = db.execute(text(
-                "SELECT DISTINCT worker_login, worker_workspace_id "
-                "FROM task WHERE workflow_id = :wf_id AND worker_login IS NOT NULL"
-            ), {"wf_id": wf_id}).fetchall()
-            for ow in old_workers:
-                if ow[0]:
-                    task_roles = db.execute(text(
-                        "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
-                        "JOIN activitymodel am ON tm.activitymodel_id = am.id "
-                        "WHERE am.workflowmodel_id = :mid AND am.workspace_id = :mws "
-                        "AND tm.role_name IS NOT NULL"
-                    ), {"mid": model_id, "mws": model_ws}).fetchall()
-                    for tr in task_roles:
-                        role_key = f"{tr[1]}:{tr[0]}"
-                        role_mapping[role_key] = ow[0]
-            new_inst = workflow_service.instantiate_workflow(db, ws, model_id, role_mapping)
-            new_wf_id = new_inst["workflowId"]
-            # 重关联零件
-            db.execute(text(
-                "UPDATE partrevision SET workflow_id = :new_id "
-                "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :v"
-            ), {"new_id": new_wf_id, "ws": ws, "pn": pm, "v": ver})
-            relinked = {"holderType": "part", "holderReference": pm, "holderVersion": ver}
+        if part:
+            holder_type = "part"
+            holder_ref, holder_ver = part[0], part[1]
         else:
-            holder_doc = db.execute(text(
+            doc = db.execute(text(
                 "SELECT documentmaster_id, version FROM documentrevision "
                 "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
             ), {"wf_id": wf_id, "ws": ws}).first()
-            if holder_doc:
-                dm, ver = holder_doc[0], holder_doc[1]
-                db.execute(text(
-                    "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
-                ), {"id": wf_id})
-                role_mapping = {}
-                old_workers = db.execute(text(
-                    "SELECT DISTINCT worker_login, worker_workspace_id "
-                    "FROM task WHERE workflow_id = :wf_id AND worker_login IS NOT NULL"
-                ), {"wf_id": wf_id}).fetchall()
-                for ow in old_workers:
-                    if ow[0]:
-                        task_roles = db.execute(text(
-                            "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
-                            "JOIN activitymodel am ON tm.activitymodel_id = am.id "
-                            "WHERE am.workflowmodel_id = :mid AND am.workspace_id = :mws "
-                            "AND tm.role_name IS NOT NULL"
-                        ), {"mid": model_id, "mws": model_ws}).fetchall()
-                        for tr in task_roles:
-                            role_key = f"{tr[1]}:{tr[0]}"
-                            role_mapping[role_key] = ow[0]
-                new_inst = workflow_service.instantiate_workflow(db, ws, model_id, role_mapping)
-                new_wf_id = new_inst["workflowId"]
-                db.execute(text(
-                    "UPDATE documentrevision SET workflow_id = :new_id "
-                    "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
-                ), {"new_id": new_wf_id, "ws": ws, "dm": dm, "v": ver})
-                relinked = {"holderType": "documents", "holderReference": dm,
-                            "holderVersion": ver}
+            if doc:
+                holder_type = "documents"
+                holder_ref, holder_ver = doc[0], doc[1]
             else:
                 ww = db.execute(text(
                     "SELECT id FROM workspace_workflow "
                     "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
                 ), {"wf_id": wf_id, "ws": ws}).first()
                 if ww:
-                    db.execute(text(
-                        "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
-                    ), {"id": wf_id})
-                    role_mapping = {}
-                    old_workers = db.execute(text(
-                        "SELECT DISTINCT worker_login, worker_workspace_id "
-                        "FROM task WHERE workflow_id = :wf_id AND worker_login IS NOT NULL"
-                    ), {"wf_id": wf_id}).fetchall()
-                    for ow in old_workers:
-                        if ow[0]:
-                            task_roles = db.execute(text(
-                                "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
-                                "JOIN activitymodel am ON tm.activitymodel_id = am.id "
-                                "WHERE am.workflowmodel_id = :mid AND am.workspace_id = :mws "
-                                "AND tm.role_name IS NOT NULL"
-                            ), {"mid": model_id, "mws": model_ws}).fetchall()
-                            for tr in task_roles:
-                                role_key = f"{tr[1]}:{tr[0]}"
-                                role_mapping[role_key] = ow[0]
-                    new_inst = workflow_service.instantiate_workflow(db, ws, model_id, role_mapping)
-                    new_wf_id = new_inst["workflowId"]
-                    db.execute(text(
-                        "UPDATE workspace_workflow SET workflow_id = :new_id WHERE id = :wwid"
-                    ), {"new_id": new_wf_id, "wwid": ww[0]})
-                    relinked = {"holderType": "workspace-workflow",
-                                "holderReference": ww[0]}
-        return relinked
+                    holder_type = "workspace-workflow"
+                    holder_ref = ww[0]
+                    holder_ww_id = ww[0]
+                else:
+                    return None
+
+        # 2. 深拷贝原 workflow（先拷贝再 abort，保留原始状态快照）
+        new_wf = db.execute(text(
+            "INSERT INTO workflow (aborteddate, finallifecyclestate) "
+            "SELECT NULL, finallifecyclestate FROM workflow WHERE id = :old_id "
+            "RETURNING id"
+        ), {"old_id": wf_id}).first()
+        new_wf_id = new_wf[0]
+
+        db.execute(text(
+            "INSERT INTO activity (step, dtype, lifecyclestate, workflow_id, taskstocomplete) "
+            "SELECT step, dtype, lifecyclestate, :new_id, taskstocomplete "
+            "FROM activity WHERE workflow_id = :old_id"
+        ), {"new_id": new_wf_id, "old_id": wf_id})
+
+        db.execute(text(
+            "INSERT INTO task (num, title, instructions, duration, status, "
+            "worker_login, worker_workspace_id, activity_step, workflow_id, targetiteration) "
+            "SELECT num, title, instructions, duration, status, "
+            "worker_login, worker_workspace_id, activity_step, :new_id, targetiteration "
+            "FROM task WHERE workflow_id = :old_id"
+        ), {"new_id": new_wf_id, "old_id": wf_id})
+
+        # 3. kill 旧 workflow 上的 running tasks + abort 旧 workflow
+        db.execute(text(
+            "UPDATE task SET status = 3 WHERE workflow_id = :wf_id AND status = 1"
+        ), {"wf_id": wf_id})
+        db.execute(text(
+            "UPDATE workflow SET aborteddate = NOW() WHERE id = :id"
+        ), {"id": wf_id})
+
+        # 4. 清理旧 workflow 的 relaunch 关联
+        db.execute(text(
+            "DELETE FROM activity_relaunch WHERE activity_workflow_id = :wf_id"
+        ), {"wf_id": wf_id})
+
+        # 5. 归档旧 workflow
+        if holder_type == "part":
+            db.execute(text(
+                "INSERT INTO part_aborted_workflow "
+                "(partmaster_partnumber, partmaster_workspace_id, "
+                "partrevision_version, workflow_id) "
+                "VALUES (:pn, :ws, :v, :wf_id)"
+            ), {"pn": holder_ref, "ws": ws, "v": holder_ver, "wf_id": wf_id})
+        elif holder_type == "documents":
+            db.execute(text(
+                "INSERT INTO document_aborted_workflow "
+                "(documentmaster_id, documentmaster_workspace_id, "
+                "documentrevision_version, workflow_id) "
+                "VALUES (:dm, :ws, :v, :wf_id)"
+            ), {"dm": holder_ref, "ws": ws, "v": holder_ver, "wf_id": wf_id})
+        elif holder_type == "workspace-workflow":
+            db.execute(text(
+                "INSERT INTO workspace_aborted_workflow "
+                "(workspace_workflow_id, workspace_workflow_workspace_id, workflow_id) "
+                "VALUES (:wwid, :ws, :wf_id)"
+            ), {"wwid": holder_ww_id, "ws": ws, "wf_id": wf_id})
+
+        # 6. 重关联 holder 到新 workflow
+        if holder_type == "part":
+            db.execute(text(
+                "UPDATE partrevision SET workflow_id = :new_id "
+                "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :v"
+            ), {"new_id": new_wf_id, "ws": ws, "pn": holder_ref, "v": holder_ver})
+        elif holder_type == "documents":
+            db.execute(text(
+                "UPDATE documentrevision SET workflow_id = :new_id "
+                "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
+            ), {"new_id": new_wf_id, "ws": ws, "dm": holder_ref, "v": holder_ver})
+        elif holder_type == "workspace-workflow":
+            db.execute(text(
+                "UPDATE workspace_workflow SET workflow_id = :new_id WHERE id = :wwid"
+            ), {"new_id": new_wf_id, "wwid": holder_ww_id})
+
+        # 7. relaunch：重置从指定 step 开始的 tasks，然后启动第一批
+        db.execute(text(
+            "UPDATE task SET status = 0, startdate = NULL, closuredate = NULL, "
+            "closurecomment = NULL, signature = NULL "
+            "WHERE workflow_id = :wf_id AND activity_step >= :step"
+        ), {"wf_id": new_wf_id, "step": step})
+        self._start_activity(db, ws, new_wf_id, step)
+
+        return {"holderType": holder_type,
+                "holderReference": holder_ref,
+                "holderVersion": holder_ver}
 
     def approve_task_on_workspace_workflow(self, db: Session, ws: str,
                                             task_id: int, comment: str,
