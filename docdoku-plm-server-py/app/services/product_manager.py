@@ -191,6 +191,7 @@ class ProductService:
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
         from app.core.exceptions import EntityAlreadyExistsException, PartRevisionAlreadyExistsException
         from app.services.factory.acl_factory import apply_acl
+        from sqlalchemy import text as sql_text
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)
@@ -212,6 +213,21 @@ class ProductService:
             author_workspace_id=workspace_id,
             author_login=creator_login,
         )
+        # 模板处理：设置 type 和 attributes_locked
+        if body.template_id:
+            from app.models.product.part_master_template import PartMasterTemplate
+            tpl = (
+                db.query(PartMasterTemplate)
+                .filter(PartMasterTemplate.workspace_id == workspace_id,
+                        PartMasterTemplate.id == body.template_id)
+                .first()
+            )
+            if tpl is None:
+                from app.core.exceptions import PartMasterTemplateNotFoundException
+                raise PartMasterTemplateNotFoundException(
+                    "PartMasterTemplateNotFoundException", body.template_id)
+            master.type = tpl.part_type or ""
+            master.attributes_locked = tpl.attributes_locked or False
         db.add(master)
         db.flush()
         # 创建首个 PartRevision（版本 A）
@@ -237,15 +253,14 @@ class ProductService:
             if user_entries or group_entries:
                 new_acl_id = apply_acl(db, None, user_entries, group_entries)
                 revision.acl_id = new_acl_id
-        # 处理 workflowModelId + roleMapping
+        # 创建工作流：用 instantiate_workflow 创建完整 Workflow/Activity/Task 对象图
         if body.workflow_model_id:
-            from sqlalchemy import text as sql_text
-            wf_result = db.execute(sql_text(
-                "INSERT INTO workflow (id, workspace_id, startdate, finallifecyclestate) "
-                "VALUES (nextval('seq_workflow_id'), :ws, :now, 'IN_PROGRESS') RETURNING id"
-            ), {"ws": workspace_id, "now": now}).fetchone()
-            wf_id = wf_result[0]
+            from app.services.workflow_manager import workflow_service
+            result = workflow_service.instantiate_workflow(
+                db, workspace_id, body.workflow_model_id, role_mapping={})
+            wf_id = result["workflowId"]
             revision.workflow_id = wf_id
+            # 写入 role mapping（workflow_usergroup 记录）
             if body.role_mapping:
                 for rm in body.role_mapping:
                     role_name = rm.get("roleName", "")
@@ -270,6 +285,12 @@ class ProductService:
             author_login=creator_login,
         )
         db.add(iteration)
+        # 模板处理：复制 instance attributes 和 nativecad 文件
+        if body.template_id:
+            self._copy_template_instance_attrs_to_part(
+                db, workspace_id, body.template_id, body.number)
+            self._copy_template_nativecad_to_part(
+                db, workspace_id, body.template_id, body.number, iteration)
         db.commit()
         db.refresh(revision)
         return revision
@@ -1182,3 +1203,92 @@ class ProductService:
             )
             if new_iter:
                 new_iter.native_cad_file_fullname = new_full
+
+    _ATTR_TYPE_MAP = {
+        0: "InstanceTextAttribute",
+        1: "InstanceNumberAttribute",
+        2: "InstanceDateAttribute",
+        3: "InstanceBooleanAttribute",
+        4: "InstanceURLAttribute",
+        5: "InstanceLongTextAttribute",
+    }
+
+    def _copy_template_instance_attrs_to_part(self, db: Session,
+                                                workspace_id: str,
+                                                template_id: str,
+                                                part_number: str) -> None:
+        """从 PartMasterTemplate 复制 instanceAttributes 到首版首次迭代。"""
+        from sqlalchemy import text as sql_text
+        rows = db.execute(sql_text(
+            "SELECT iat.id, iat.name, iat.mandatory, iat.locked, iat.attributetype "
+            "FROM instanceattributetemplate iat "
+            "JOIN partmastertemplate_attr pta "
+            "  ON pta.instanceattributetemplate_id = iat.id "
+            "WHERE pta.workspace_id = :ws AND pta.partmastertemplate_id = :tid "
+            "ORDER BY pta.attr_order"
+        ), {"ws": workspace_id, "tid": template_id}).fetchall()
+        for order, row in enumerate(rows):
+            attr_type = row[4] if row[4] is not None else 0
+            dtype = self._ATTR_TYPE_MAP.get(attr_type, "InstanceTextAttribute")
+            result = db.execute(sql_text(
+                "INSERT INTO instanceattribute (dtype, name, mandatory, locked) "
+                "VALUES (:dtype, :name, :mand, :locked) RETURNING id"
+            ), {"dtype": dtype, "name": row[1],
+                "mand": row[2] or False, "locked": row[3] or False})
+            attr_id = result.fetchone()[0]
+            db.execute(sql_text(
+                "INSERT INTO partiteration_attribute "
+                "(workspace_id, partmaster_partnumber, partrevision_version, "
+                "iteration, instanceattribute_id, attribute_order) "
+                "VALUES (:ws, :pn, :ver, :iter, :aid, :order)"
+            ), {"ws": workspace_id, "pn": part_number, "ver": "A",
+                "iter": 1, "aid": attr_id, "order": order})
+
+    def _copy_template_nativecad_to_part(self, db: Session,
+                                           workspace_id: str,
+                                           template_id: str,
+                                           part_number: str,
+                                           iteration: PartIteration) -> None:
+        """从 PartMasterTemplate 复制 nativecad 文件到新零件的 vault。
+        对齐 Java createPartMaster 第352-367行。"""
+        import shutil
+        from pathlib import Path
+        from app.core.config import settings
+        from sqlalchemy import text as sql_text
+
+        file_rows = db.execute(sql_text(
+            "SELECT attachedfile_fullname FROM partmastertemplate_binres "
+            "WHERE workspace_id=:ws AND partmastertemplate_id=:tid"
+        ), {"ws": workspace_id, "tid": template_id}).fetchall()
+        if not file_rows:
+            return
+        vault_root = Path(settings.VAULT_PATH)
+        for frow in file_rows:
+            old_full = frow[0]
+            filename = old_full.rsplit("/", 1)[-1] if "/" in old_full else old_full
+            new_full = f"{workspace_id}/parts/{part_number}/A/1/nativecad/{filename}"
+            old_br = db.query(BinaryResource).filter(
+                BinaryResource.full_name == old_full).first()
+            if old_br:
+                existing = db.query(BinaryResource).filter(
+                    BinaryResource.full_name == new_full).first()
+                if existing is None:
+                    db.add(BinaryResource(
+                        full_name=new_full, dtype="BinaryResource",
+                        content_length=old_br.content_length,
+                        last_modified=datetime.utcnow(),
+                        quality=old_br.quality,
+                        x_min=old_br.x_min, x_max=old_br.x_max,
+                        y_min=old_br.y_min, y_max=old_br.y_max,
+                        z_min=old_br.z_min, z_max=old_br.z_max,
+                    ))
+                    db.flush()
+                try:
+                    old_path = vault_root / old_full
+                    new_path = vault_root / new_full
+                    if old_path.exists() and not new_path.exists():
+                        new_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(old_path), str(new_path))
+                except Exception:
+                    pass
+            iteration.native_cad_file_fullname = new_full

@@ -209,6 +209,64 @@ class DocumentService:
 
         indexer_manager.delete_document_revision(pr)  # 对标 deleteDocumentRevision:1231
 
+        # 获取需清理的 ID（在删除 revision 前获取）
+        _workflow_id = pr.workflow_id
+        _acl_id = pr.acl_id
+
+        # 清理共享实体（对齐 Java removeRevision → sharedEntityDAO.deleteSharesForDocument）
+        db.execute(text(
+            "DELETE FROM sharedentity "
+            "WHERE entity_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+
+        # 清理订阅（对齐 Java removeRevision → subscriptionDAO.removeAllSubscriptions）
+        db.execute(text(
+            "DELETE FROM statechangesubscription "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+        db.execute(text(
+            "DELETE FROM iterationchangesubscription "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+
+        # 清理终止工作流关联（对齐 Java removeRevision → workflowDAO.removeWorkflowConstraints）
+        db.execute(text(
+            "DELETE FROM document_aborted_workflow "
+            "WHERE documentmaster_workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+
+        # 清理文档迭代的文档链接（对齐 Java removeRevision → documentDAO.removeDoc 级联）
+        db.execute(text(
+            "DELETE FROM documentiteration_documentlink "
+            "WHERE workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+        db.execute(text(
+            "DELETE FROM documentlink WHERE id NOT IN "
+            "(SELECT documentlink_id FROM documentiteration_documentlink)"))
+
+        # 清理文档迭代的属性（对齐 Java removeRevision → documentDAO.removeDoc 级联）
+        db.execute(text(
+            "DELETE FROM documentiteration_attribute "
+            "WHERE workspace_id=:ws "
+            "AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver})
+        db.execute(text(
+            "DELETE FROM instanceattribute WHERE id NOT IN "
+            "(SELECT instanceattribute_id FROM documentiteration_attribute) "
+            "AND id NOT IN "
+            "(SELECT instanceattribute_id FROM partiteration_attribute)"))
+
         # 清理关联表
         db.execute(text(
             "DELETE FROM documentrevision_tag "
@@ -242,6 +300,29 @@ class DocumentService:
                 "DELETE FROM documentmaster "
                 "WHERE workspace_id=:ws AND id=:did"),
                 {"ws": ws, "did": doc_id})
+
+        # 删除 ACL（在 revision 已删除后，对齐 Java deleteDocumentRevision → JPA cascade）
+        if _acl_id is not None:
+            db.execute(text(
+                "DELETE FROM acluserentry WHERE acl_id=:aid"), {"aid": _acl_id})
+            db.execute(text(
+                "DELETE FROM aclusergroupentry WHERE acl_id=:aid"), {"aid": _acl_id})
+            ref_count = db.execute(text("""
+                SELECT COUNT(*) FROM (
+                    SELECT 1 FROM partrevision       WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM workflowmodel        WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM changeissue          WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM changeorder          WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM changerequest         WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM milestone            WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM productconfiguration  WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM productinstancemaster WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM documentmastertemplate WHERE acl_id=:aid
+                    UNION ALL SELECT 1 FROM partmastertemplate    WHERE acl_id=:aid
+                ) t
+            """), {"aid": _acl_id}).scalar()
+            if not ref_count:
+                db.execute(text("DELETE FROM acl WHERE id=:aid"), {"aid": _acl_id})
         db.commit()
 
     def _is_in_another_user_home(self, user_login, ws, location_path):
