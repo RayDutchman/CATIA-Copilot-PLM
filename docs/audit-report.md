@@ -215,3 +215,23 @@ B1 ✅  B2 ✅  B3 ✅  B4 ✅  B5 ✅  B6 ✅  B7 ✅
 **唯一遗留**: Workflow role_mapping 需要 TASK_USER/TASK_USERGROUP 表的结构性修改（新增表 + 多对多关系），属于架构级变更，列入 REMINDERS 高优先级。
 
 176 passed, 1 skipped — 全绿。
+
+---
+
+## 审计历史（来自原 file-mapping.md 第五章）
+
+> 迁入 2026-07-07。记录迁移过程中各轮审计的发现与修复。
+
+| 日期 | 发现 | 修复 | 剩余 |
+|------|------|------|------|
+| 2026-07-07 | audit-report 5步审计 (47 MISMATCH + 27 code diff + 25 TODO) | 7批修复 (B1-B7, 12/13 完成) | 1 (Workflow role_mapping) |
+| 2026-07-06 | 35 (15 Critical + 20 Partial) | 全修 (10 批并行 agent) | 11 |
+| 2026-07-05 | 11 Partial | 全修 (7 批并行 agent) | 0 |
+| 2026-07-05 | 文件重组：Router 22→32，Service 10 个改名 | — | — |
+
+### 经验教训
+
+1. **先读 Java 再写 Python** — 不要先写 stub 后审计。正确顺序: 读Java→写Python→对齐→审计确认。
+2. **7 维审计 > HTTP 对拍** — HTTP 对拍只能验证 ~50% 的问题。SQL 逻辑/值语义/stub 必须靠代码级审计。
+3. **文件映射表 + throw-matrix** — 系统性清单远比随机发现高效。60 对 → 3 轮审计 → 0 残留。
+4. **AI agent 编排模式** — 主 agent 不写代码，只做任务分解 + 并行派发 → 收集结果 → pytest → commit。

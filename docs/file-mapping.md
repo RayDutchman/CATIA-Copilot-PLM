@@ -1,71 +1,12 @@
-# Java → Python 文件映射表
+# Java → Python 审计维度参考
 
-> 用于 AI 逐文件对比检查：方法覆盖 / SQL 查询逻辑 / 异常对齐 / 响应字段 / Stub 检测。  
-> 首次审计 60 对 → 35 问题 → 2 轮修复 → 最后审计：2026-07-05。
+> **用于 AI 逐文件对比检查时参考**。7 维审计 Prompt 已迁至 `docs/ai-execution-rules.md`。
+> 业务映射表已被 `docs/migration-tracker.csv` 完全覆盖，不在此重复。
+> 审计历史已迁至 `docs/audit-report.md`。
 
-## 一、业务映射（Router + Service ↔ Java Resource + Bean）
+---
 
-| # | Java Bean | Java REST Resource | Python Service | Python Router | 功能域 | 状态 |
-|---|-----------|-------------------|----------------|---------------|--------|------|
-| 1 | `ProductManagerBean.java` | — | `product_manager.py` | — | 零件 CRUD + 签出签入 | ✅ |
-| 2 | — | — | `part_mapper.py` | — | DTO 映射 | ✅ |
-| 3 | — | `PartsResource.java` | — | `parts.py` | 零件列表/搜索/统计/导入 | ✅ |
-| 4 | — | `PartResource.java` | — | `part.py` | 单个零件 CRUD | ✅ |
-| 5 | — | `PartTemplateResource.java` | — | `part_templates.py` | 零件模板 | ✅ |
-| 6 | — | `PartBinaryResource.java` | — | `part_files.py` | 文件上传下载 | ✅ |
-| 7 | — | `EffectivityResource.java`, `PartEffectivityResource.java` | — | `effectivity.py` | 有效性 | ⚠️ stub |
-| 8 | `ConverterBean.java` | — | `converter.py` | — | CAD 转换 | ✅ |
-| 9 | `DocumentManagerBean.java` | — | `document_manager.py` | — | 文档 CRUD | ✅ |
-| 10 | — | `DocumentsResource.java` | — | `documents.py` | 文档列表/搜索 | ✅ |
-| 11 | — | `DocumentResource.java` | — | `document.py` | 单个文档 CRUD | ✅ |
-| 12 | — | `DocumentBaselinesResource.java` | — | `document_baselines.py` | 文档基线 | ✅ |
-| 13 | — | `FolderResource.java` | — | `folders.py` | 文件夹 CRUD | ✅ |
-| 14 | — | `DocumentTemplateResource.java` | — | `document_templates.py` | 文档模板 | ✅ |
-| 15 | — | `DocumentBinaryResource.java` | — | `document_files.py` | 文件上传下载 | ✅ |
-| 16 | `ProductManagerBean.java` (CI) | — | `product_structure.py` | — | 产品结构树 | ✅ |
-| 17 | — | `ProductResource.java` | — | `products.py` | 产品/CI REST | ✅ |
-| 18 | — | `ProductBaselinesResource.java` | — | `product_baselines.py` | 产品基线 | ✅ |
-| 19 | — | `ProductConfigurationsResource.java` | — | `product_configurations.py` | 产品配置 | ✅ |
-| 20 | — | `ProductInstancesResource.java`, `ProductInstanceBinaryResource.java` | — | `product_instances.py`, `product_files.py` | 产品实例 + 文件 | ✅ |
-| 21 | — | `LayerResource.java` | — | `layers.py` | 图层/Marker | ✅ |
-| 22 | `ChangeManagerBean.java` | — | `change_manager.py` | — | 变更 CRUD | ✅ |
-| 23 | — | `ChangeIssuesResource.java` | — | `change_issues.py` | Issue 端点 | ✅ |
-| 24 | — | `ChangeRequestsResource.java` | — | `change_requests.py` | Request 端点 | ✅ |
-| 25 | — | `ChangeOrdersResource.java` | — | `change_orders.py` | Order 端点 | ✅ |
-| 26 | — | `MilestonesResource.java` | — | `milestones.py` | 里程碑端点 | ✅ |
-| 27 | `WorkflowManagerBean.java`, `TaskManagerBean.java` | — | `workflow_manager.py` | — | 工作流业务 | ✅ |
-| 28 | — | `WorkflowModelResource.java` | — | `workflow_models.py` | 工作流模板 REST | ✅ |
-| 29 | — | `WorkflowResource.java`, `WorkspaceWorkflowResource.java` | — | `workflow.py` | 工作流实例 + 模板 | ✅ |
-| 30 | — | `TaskResource.java` | — | `tasks.py` | 任务 REST | ✅ |
-| 31 | `UserManagerBean.java`, `AccountManagerBean.java` | — | `user_manager.py` | — | 用户/账号管理 | ✅ |
-| 32 | — | `UserResource.java` | — | `users.py` | 用户 REST | ✅ |
-| 33 | — | `UserGroupResource.java` | — | `user_groups.py` | 用户组 REST | ✅ |
-| 34 | — | `WorkspaceMembershipResource.java` | — | `workspace_memberships.py` | 成员资格 REST | ✅ |
-| 35 | — | `AccountResource.java`, `AuthResource.java` | — | `accounts.py`, `auth.py` | 账号 + 认证 | ✅ |
-| 36 | — | `RoleResource.java` | — | `roles.py` | 角色 REST | ✅ |
-| 37 | `NotificationManagerBean.java` | — | `notification_manager.py` | — | 通知业务 | ✅ |
-| 38 | — | `ModificationNotificationResource.java` | — | `notifications.py` | 通知 REST | ✅ |
-| 39 | `WebhookManagerBean.java` | — | — | — | Webhook 业务 | ✅ |
-| 40 | — | `WebhookResource.java` | — | `webhooks.py` | Webhook REST | ✅ |
-| 41 | `WorkspaceManagerBean.java` | — | — | — | 工作区管理 | ✅ |
-| 42 | — | `WorkspaceResource.java` | — | `workspaces.py` | 工作区 REST + stats | ✅ |
-| 43 | — | `TagResource.java`, `LOVResource.java`, `AttributesResource.java` | — | `workspaces.py` | 标签/LOV/属性 | ✅ |
-| 44 | `BinaryStorageManagerBean.java` | — | `binary_storage.py`, `vault.py` | — | 文件存储 | ✅ |
-| 45 | `ShareManagerBean.java` | — | — | `share.py` | 共享 | ✅ |
-| 46 | — | `SharedResource.java` | — | `share.py` | 共享端点 | ✅ |
-| 47 | — | `AdminResource.java` | — | `admin.py` | 管理员面板 | ✅ |
-| 48 | — | `OrganizationResource.java` | — | `organizations.py` | 组织管理 | ✅ |
-| 49 | — | `PlatformResource.java` | — | `platform.py` | 平台/health | ✅ |
-| 50 | — | `LanguagesResource.java` | — | `languages.py` | 语言列表 | ✅ |
-| 51 | — | `TimeZoneResource.java` | — | `timezones.py` | 时区列表 | ✅ |
-| 52 | `ImporterBean.java` | — | — | `parts.py` | 属性/BOM 导入 | ⚠️ |
-| 53 | `IndexerManagerBean.java` | — | `indexer_manager.py` | — | ES 索引管理 | ✅ |
-| 54 | `IndexerQueryBuilder.java` | — | `es_query_builder.py` | — | ES 搜索查询构建 | ✅ |
-| 55 | `INotifierLocal.java` | — | `notifier.py` | — | reindex 邮件通知 | ✅ |
-
-> ✅ = 已对齐 | ⚠️ = stub/低频功能
-
-## 二、基础设施映射（无直接 Java 对应文件，但有关联 Java 组件）
+## 一、基础设施映射（无直接 Java 对应文件，但有关联 Java 组件）
 
 | # | Python 文件 | 相关联的 Java 组件 |
 |---|-----------|-------------------|
@@ -92,7 +33,7 @@
 | C21 | `app/services/security_service.py` | `RoleManagerBean.java` (间接) |
 | C22 | `app/services/kafka_producer.py` | `ConverterBean.java` (Kafka 部分) |
 
-## 三、文件夹结构
+## 二、文件夹结构
 
 ```
 app/
@@ -102,43 +43,3 @@ app/
 ├── services/       # 业务逻辑 — 对应 Java EJB
 └── routers/        # REST 端点 — 对应 Java Resource
 ```
-
-结构合理：`core(models)→models→services→routers`，依赖方向清晰（router→service→model→core）。无循环依赖，无跨层引用。
-
-## 四、检查 Prompt 模板
-
-```markdown
-You are auditing a Java→Python migration file pair.
-
-Java file: {JAVA_FILE_PATH}
-Python file: {PYTHON_FILE_PATH}
-
-Read both completely. Java is the ground truth — any divergence is a finding. Think independently. Do not limit yourself to a checklist. Common blind spots from past audits include:
-
-- **Coverage**: Does Python implement everything Java provides? Method by method. Logic equivalence matters more than name matching. Flag any missing functionality.
-- **Data integrity**: Compare every SQL query, every DB operation. Same tables? Same conditions? Same ordering? Java is the ground truth — any difference is a finding.
-- **Error handling**: For every failure path in Java, does Python have equivalent protection? Same i18n key? Same exception type? Also check: silent swallowing, new error conditions.
-- **API contract**: Every Java DTO field must have a Python response equivalent with matching camelCase name, nested structure, and type. Missing OR extra fields both count.
-- **Write verification**: Any Python code path that returns success without persisting data (db.commit()) is a critical finding. Check both explicit stubs (return []/{}) and implicit stubs (return 204 with no DB op).
-- **Value fidelity**: For every response field, trace the value to its origin. What DB column or computation produced it? Is it being transformed correctly? Would a consumer of this API get the same semantic meaning from both backends?
-- **Non-null defaults**: Array/list fields must NEVER be None/null — use `[]`. Object/dict fields must NEVER be None/null — use `{}`. Backbone.js models call `.length` and `.name` without null checks. Check EVERY response key in EVERY code path (both detail endpoints AND inline list comprehensions — they often differ).
-- **List vs Detail parity**: When an inline list comprehension builds response dicts separately from a `_to_dict()` helper used by the detail endpoint, check that both return the same set of keys. Missing fields in the list path are a common blind spot.
-- **Cross-cutting security**: For every Java Bean method entry point that calls `checkWorkspaceReadAccess`/`checkWorkspaceWriteAccess`/`checkAdmin`, verify the Python equivalent has the same check. Payara's `checkWorkspaceReadAccess` verifies: workspace exists + workspace enabled + user is workspace member. All three must be checked in Python at equivalent call sites.
-- **Exception throw parity**: 🆕 Read `docs/throw-matrix.md`. For every row marked "缺 raise", check the Python file-mapping peer and verify or add the corresponding `raise` statement. This is a systematic checklist — not a random search. Every Payara `throw new XxxException` must have a Python `raise XxxException(...)` equivalent.
-- **Incomplete list responses**: Inline dict comprehensions in list endpoints often have fewer fields than the detail `_to_dict()` helper.
-- **Null leaking into frontend**: Backbone.js (2008-era framework) calls `.length` and `.name` without null guards. Arrays must be `[]`, objects `{}`, never `None`.
-- **Security gaps**: Payara's `checkWorkspaceReadAccess`/`checkWorkspaceWriteAccess` verifies membership + enabled state. Often missing or simplified in Python.
-- **i18n bypass**: Hardcoded Chinese strings instead of `ApplicationException` subclasses with i18n keys like `NotAllowedException37` or `WorkspaceNotEnabledException`. The exception handler translates these automatically.
-- **Wrong column names**: Subagents sometimes guess DB column names. The real schema is in production — if a query uses columns that don't exist, that's a critical finding.
-- **Dead imports**: `from sqlalchemy import text` missing when `text()` is used.
-
-Focus on what would actually break at runtime. Cross-reference Java with Python relentlessly.
-```
-
-## 五、审计历史
-
-| 日期 | 发现 | 修复 | 剩余 |
-|------|------|------|------|
-| 2026-07-05 | 35（15 Critical + 20 Partial） | 全修（10 批并行 agent） | 11 |
-| 2026-07-05 | 11 Partial | 全修（7 批并行 agent） | 0 |
-| 2026-07-05 | 文件重组：Router 22→32，Service 10 个改名 | — | — |

@@ -22,7 +22,8 @@
 | `docs/ai-execution-rules.md` | **AI 自驱动行为规则** | 定义了执行循环、分批评审、并行策略、验证步骤 |
 | `docs/batch-protocol.md` | 产线设计概览（给人看） | 配合 ai-execution-rules.md 使用 |
 | `docs/migration-tracker.csv` | **唯一任务队列+进度** | AI 每次启动从 CSV 读待办、完成后写回 |
-| `docs/file-mapping.md` L108-136 | **7 维审计 Prompt 模板** | 审计阶段的标准化检查 prompt |
+| `docs/file-mapping.md` | 基础设施映射参考（22 项）+ 文件夹结构 | 按需 |
+| `docs/ai-execution-rules.md` | **AI 自驱动行为规则 + 7 维审计 Prompt + 全量审计结果** | 任务时必读 |
 | `docs/throw-matrix.md` | 异常抛出对照表 | 第 7 维审计（Exception throw parity）依据 |
 
 > ✅ **成功经验**：`ai-execution-rules.md` + `migration-tracker.csv` 组合已证明可让 AI 无人干预下自驱执行 523 行迁移。

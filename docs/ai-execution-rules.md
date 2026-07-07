@@ -284,3 +284,90 @@ ParentDTO.model_rebuild()
 # StringListDTO → JSON 序列化为纯字符串数组
 StringListDTO = RootModel[List[str]]
 ```
+
+---
+
+## 审计阶段 Prompt 模板（来自原 file-mapping.md 第四章）
+
+> 用于审计修复阶段。对每个 Java→Python 文件对套用此 Prompt。
+
+```markdown
+You are auditing a Java→Python migration file pair.
+
+Java file: {JAVA_FILE_PATH}
+Python file: {PYTHON_FILE_PATH}
+
+Read both completely. Java is the ground truth — any divergence is a finding.
+Think independently. Do not limit yourself to a checklist.
+Common blind spots from past audits include:
+
+- **Coverage**: Does Python implement everything Java provides? Method by method.
+  Logic equivalence matters more than name matching. Flag any missing functionality.
+- **Data integrity**: Compare every SQL query, every DB operation. Same tables?
+  Same conditions? Same ordering? Java is the ground truth — any difference is a finding.
+- **Error handling**: For every failure path in Java, does Python have equivalent protection?
+  Same i18n key? Same exception type? Also check: silent swallowing, new error conditions.
+- **API contract**: Every Java DTO field must have a Python response equivalent with matching
+  camelCase name, nested structure, and type. Missing OR extra fields both count.
+- **Write verification**: Any Python code path that returns success without persisting data
+  (db.commit()) is a critical finding. Check both explicit stubs (return []/{}) and
+  implicit stubs (return 204 with no DB op).
+- **Value fidelity**: For every response field, trace the value to its origin.
+  What DB column or computation produced it? Is it being transformed correctly?
+- **Non-null defaults**: Array/list fields must NEVER be None — use `[]`.
+  Object/dict fields must NEVER be None — use `{}`. Backbone.js models call `.length`
+  and `.name` without null checks.
+- **List vs Detail parity**: Inline list comprehensions often have fewer fields than
+  `_to_dict()` helpers used by detail endpoints.
+- **Cross-cutting security**: For every Java method entry point that calls
+  checkWorkspaceReadAccess/checkWorkspaceWriteAccess/checkAdmin, verify Python has
+  equivalent check.
+- **Exception throw parity**: Read `docs/throw-matrix.md`. For every row marked "缺 raise",
+  verify or add the corresponding `raise` statement.
+- **i18n bypass**: Hardcoded strings instead of ApplicationException subclasses with
+  i18n keys like `NotAllowedException37`.
+- **Wrong column names**: If a query uses columns that don't exist, that's critical.
+- **Dead imports**: `from sqlalchemy import text` missing when `text()` is used.
+
+Focus on what would actually break at runtime. Cross-reference Java with Python relentlessly.
+```
+
+---
+
+## 全量审计 + 修复执行结果
+
+> 记录于 2026-07-07。524/524 tracker 清零后，执行 5 步审计 + 7 批修复。
+
+### 审计阶段 (5 步)
+
+| Step | 内容 | 结果 |
+|------|------|------|
+| 1 | NotImplementedError 残留 | ✅ 0 |
+| 2 | 空函数 (pass) | ✅ 0 |
+| 3 | TODO/FIXME 残留 | ⚠️ 25 → 已全量清理 (0) |
+| 4 | HTTP 对拍 V2 | 162 端点: 73 MATCH / 42 PARTIAL / 47 MISMATCH |
+| 4b | full_compare V3 字段 diff | 138 端点: 81 MATCH / 11 PARTIAL / 44 MISMATCH |
+| 5 | 代码质量抽查 | 12 方法: 🔴17 + 🟡10 |
+
+### 修复阶段 (7 批, 全绿零回归)
+
+| 批 | 优先级 | 修复内容 | 提交 |
+|----|--------|----------|------|
+| B1 | 🔴 | document 级联删除 8 表 + product 模板 + Workflow Tasks | 93b0695 |
+| B2 | 🔴 | ACL写权限 + 组成员校验 + 签出保护 + InstanceAttributeTemplates | 294fb15 |
+| B3 | 🟡 | 39 NotFound→404 + 补全 2 路由 | b90f0e2 |
+| B4 | 🟡 | 文档/零件/变更 DTO 字段补全 | 7c3373b |
+| B5 | 🟡 | Workflow admin绕过 + SequentialActivity + status移除 | 043adbe |
+| B6 | 🟡 | 7 个 raise 补齐 (NotAllowed42 + AccessRight × 5) | 043adbe |
+| B7 | 🟢 | 6实现 + 12 STUB标注 + 6 清理 → TODO 残留 0 | 93cf836 |
+
+### 最终状态
+
+| 指标 | 值 |
+|------|-----|
+| tracker 完成 | **524/524 (100%)** |
+| 测试 | 176 passed, 1 skipped |
+| TODO 残留 | **0** |
+| 审计 MISMATCH | 13 项: 12 已修复, 1 遗留 (Workflow role_mapping) |
+| 执行模式 | AI agent 编排 → 并行 agent 修复 → pytest → commit |
+```
