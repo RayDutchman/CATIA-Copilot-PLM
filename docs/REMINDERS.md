@@ -6,43 +6,19 @@
 
 ## 待办
 
-### 高优先级 (审计发现)
+### 高优先级
 
-- [x] ~~throw matrix 补齐~~ — 51/55 ✅，throw-matrix.md 已对齐完成
+- [ ] **Workflow role_mapping 断裂** — `instantiate_workflow` 跳过 TASK_USER/TASK_USERGROUP 表，仅写 worker_login 到 task 表。需要新增多对多关系表（`task_user` / `task_usergroup`），涉及 schema/database/service 三层变更。**唯一未修复的审计 🔴 发现。**
 
-- [ ] **审计🔴 Workflow role_mapping 断裂** — instantiate_workflow 完全跳过 TASK_USER/TASK_USERGROUP 表，仅写 worker_login 到 task 表，与 Java 架构不符
+- [ ] **PathData 域未实现** — PathDataMasterNotFoundException 等异常 stub，pathdata CRUD 和 path-to-path link CRUD 都是占位代码。实现后补 raise。
 
-- [ ] **审计🔴 Document delete 级联清理缺失** — delete_revision 遗漏 documentlink/acl/workflow/subscription/sharedentity 7 张关联表删除
-
-- [ ] **审计🔴 Product create 模板不支持** — create_part 缺失 PartMasterTemplate 的 type/attributes/nativecad 复制
-
-- [ ] **审计🔴 Product create Workflow Tasks 未创建** — 仅保存 workflow_id，不实例化 Task 对象图
-
-- [ ] **PathData 域未实现** — PathDataMasterNotFoundException 等，pathdata CRUD 和 path-to-path link CRUD 都是 stub。实现后补 raise。
-
-- [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但全 FA 不加载。需 tcpdump 抓包或升级 Three.js。
+- [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但 FA 侧不加载。需 tcpdump 抓包或升级 Three.js。
 
 - [ ] **装配同步（_sync_components）未完整迁移** — assembly BOM 同步部分仍在 Payara 处理。
 
-### 中优先级 (审计发现)
+### 中优先级
 
-- [ ] **搜索为 DB 模糊匹配** — 无 Elasticsearch 全文搜索。不影响功能但性能随数据量下降。
-  → **已完成 (2026-07-06)**: ES 全文搜索已迁移，迭代级索引 + ES 优先搜索 + DB fallback，172 测试通过。
 - [ ] **reindex 邮件通知 i18n 中英双语** — notifier.py 已实现基础中英 i18n，后续需对齐 Java PropertiesLoader 完整多语言资源文件 + 账号语言字段填充。
-
-- [ ] **审计🟡 异常处理: 404 变 500** — /auth/providers/{id}, /changes/issues/{id} 等 5 个端点未找到资源时抛 500 而非 404
-
-- [ ] **审计🟡 缺失路由 9 个** — folders/子文件夹、部分 effectivities、path-to-path-links、releases/last、milestones 子资源等端点未实现
-
-- [ ] **审计🟡 Product checkout 缺 InstanceAttributeTemplates 复制**
-
-- [ ] **审计🟡 Change assignee 遗漏组成员资格校验**
-
-- [ ] **审计🟡 Change delete 缺 ACL 写权限检查**
-
-- [ ] **审计🟡 Product set_tags/delete 缺签出用户保护**
-
-- [ ] **审计🟡 Workflow admin 可绕过审批权限** — Python 允许 admin 审批任何人的 task
 
 - [ ] **Decimation 减面优化一直失败** — conversion 容器脚本缺失。
 
@@ -50,24 +26,13 @@
 
 - [ ] **portproxy 规则与 Docker 端口冲突** — iphlpsvc 占用 8000/8001。
 
-### 低优先级 (审计发现 / TODO 残留)
+### 低优先级（STUB 跟踪）
 
-- [ ] **lov_manager.is_lov_deletable** — 未检查模板引用
-- [ ] **product_structure.hasPathData** — 始终返回 False
-- [ ] **cascade_action_manager** — 级联 checkout 未实现
-- [ ] **effectivity_manager** — create/update TODO（已有 raw SQL 绕过）
-- [ ] **public_entity_manager** — fullName 解析未实现
-- [ ] **importer** — 5 项导入器 stub (Excel/preview/PathData/BOM)
-- [ ] **ondemand_converter** — 转换引擎集成 stub
-- [ ] **workspace_manager** — 5 项磁盘计算/选项表 stub
+以下 12 项已在代码中标注 `STUB (tracked in REMINDERS)`，不再使用 TODO 关键字：
 
-- [x] ~~QueryAlreadyExistsException~~ — query stub 已补重复名称校验 (2026-07-06)
-- [x] ~~PasswordRecoveryRequestNotFoundException~~ — /auth/recover token 模式已补校验 + raise (2026-07-06)
-- [x] ~~IndexerNotAvailableException / IndexerRequestException~~ — 不适用
-- [x] ~~GCMAccountNotFoundException / GCMAccountAlreadyExistsException~~ — 不适用
-- [x] ~~EffectivityNotFoundException / StorageException~~ — 全stub，throw-matrix标注不可实现
-
-- [x] ~~ProductManagerBean.isCheckoutByAnotherUser NPE~~ — Payara 遗Bug
+- [ ] **importer** — 5 项 Excel/preview/PathData/BOM 导入器 stub
+- [ ] **ondemand_converter** — 2 项转换引擎集成 stub
+- [ ] **workspace_manager** — 5 项磁盘计算/选项表查询 stub
 
 ---
 
@@ -76,43 +41,32 @@
 - **CATIA 原生格式不支持转换** — `.CATPart`/`.CATProduct`/`.3dxml` 需预先导出为 STEP/STL
 - **back 容器 JVM 参数需两次重启才生效**
 - **Conversion service Decimation 持续失败** — 不影响 GLB 生成
+- **REST API BasicAuth 401** — `admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）
 
 ---
 
 ## 已解决（近期）
 
-- [x] **3项关键修复** — share密码绕过+document_files异常捕获+doc迭代instanceAttributes/linkedDocuments (2026-07-06)
-- [x] **File/Doc/Folder/User异常类抛出对齐Payara** — binary_storage.py/document_manager.py/folders.py/user_manager.py 9处异常替换 (2026-07-06)
-- [x] **Layer/Marker/Template/Part/Milestone/Platform异常对齐** — 10处异常替换 (2026-07-06)
-- [x] **Products 6项关键修复** — decodePath -1前缀+替代件链接支持、_build_component 补充 substituteIds/notifications/attributes、6个stub端点基本实现、BOM端点新增、instance详情补充iteration、milestones语法修复 (2026-07-06)
-- [x] **Share/安全关键修复** — entity-token 头 + 过期删除 + 公开共享逻辑 + password header + security entity token + exception 类 (2026-07-06)
-- [x] **乐观锁 SELECT FOR UPDATE** — checkout/checkin/undo/update_iteration 添加行级锁，消除并发竞态窗口 (2026-07-06)
-- [x] **文件映射+代码级对比方法论** — `docs/file-mapping.md` 52业务对+22基础设施对，5维度检查 (2026-07-06)
-- [x] **迁移方法论确立** — 文件映射+6维代码级审计为唯一验收标准，路线图原始工作流顺序错误已修正 (2026-07-06)
-- [x] **4轮全量审计清零 + 76项修复** — 60对→76问题→全修→0残留 (2026-07-06)
-- [x] **144 passed, 0 failed** — 首次全绿（trace_file_service vault fixtures修复） (2026-07-06)
-- [x] **3 轮全量审计清零** — 60对→35→11→14→0 问题 (2026-07-06)
-- [x] **Router 22→32 拆分** — 每个 Python 文件 1:1 对应 Java Resource (2026-07-06)
-- [x] **Service 10 个改名** — 对齐 Java Bean 命名 (2026-07-06)
-- [x] **Stats 对齐 Payara** — COUNT PartRevision/DocumentRevision (2026-07-06)
-- [x] **Stub 写操作修复** — enable/disable-user、front-options、publish/unpublish 等 15+ 端点从 stub 改为真实 DB 写入 (2026-07-06)
-- [x] **全量尾斜杠补全** — 137 条 GET 路由 (2026-07-06)
-- [x] **P5 工作流与权限** — 66 端点/6 功能域/完整迁移 (2026-07-05)
-- [x] **系统化 Payara 对拍** — 133 端点 (2026-07-05)
-- [x] **P4 变更管理** — Issue/Request/Order/Milestone (2026-07-05)
-- [x] **P3 产品结构** — CI/Baseline/Configuration/Instance (2026-07-05)
-- [x] **P2 文档与文件夹** — 80 测试通过 (2026-07-05)
-- [x] **P1b 零件文件+转换回调** — 73 测试通过 (2026-07-05)
-- [x] **P1a 零件核心 CRUD** — 57 测试通过 (2026-07-04)
-- [x] **P0 FastAPI 基础设施** — JWT/Kafka/vault/DB (2026-07-04)
-- [x] **转换服务 Python-only** — 2.7.0-py 镜像 (2026-07-04)
-- [x] **deletePartRevision 4 项 EntityConstraint 补齐** (2026-07-06)
-- [x] **test1 管理员权限修复** — workspace.admin_login = 'test1' (2026-07-06)
-- [x] **stubs 消除：gen_id mask递增 + 逆链接实查 + download头补全 + home检测** — generate_id 真实DB查询+mask支持、aborted-workflows+4个inverse links实查、part_files download Last-Modified真实文件时间、folders home检测 (2026-07-06)
-- [x] **products 域 5 项修复** — baselines 补字段、configs ACL 统一、searchCI 完整 DTO、cascade 真实实现、instance 字段名对齐 (2026-07-06)
-- [x] **es_query_builder 审计修复（C5-C7, W11）** — q→query_string bool should、folder→match+fuzziness、移除 standardPart（2026-07-07）
-- [x] **notifier/indexer_manager 审计修复** — notifier 重写对齐 Java INotifierLocal、indexer reindex_all 调用改为两个方法、bulk errors 提取修正 (2026-07-07)
-- [x] **P2B 服务全量迁移 (30 文件)** — Configuration 域 PSFilterVisitor+5 filter+6 spec、Listeners 4 个、Products 3 个、Documents 2 个、Indexer 6 个（mapping/utils/client/mapper/extractor）、Validation 1 个（attributes_consistency_utils）、GCM 1 个（gcm_sender）。176 测试全绿。(2026-07-07)
-- [x] **P3B-A Router 迁移 (8 端点文件)** — R-003 attributes.py（属性去重聚合）、R-016 lov.py（LOV CRUD）、R-022 effectivity.py 升级（真实 DB 写入+三种有效性类型）、R-033 tags.py（标签 CRUD+文档查询+创建文档打标签）、R-043 workspace_workflow（已在 workflow.py 集成）、R-045 document_template_files.py（multipart 上传+Range 下载）、R-047 part_template_files.py（multipart 上传+Range 下载）、R-014 FileResource（各子资源直接实现无需门面）。176 测试全绿。(2026-07-07)
-- [x] **P3B-B File Utils + Export (15 文件)** — file/util 提取 Range/MIME/ETag 工具、file_export DTOs+工具（Matrix4/zip/query parser/instance writer）、3 个导出端点（基线 ZIP/实例 JSON/虚拟实例 JSON）、2 个 stub 升级（products export-files/parts query-export/product_baselines export-files）。176 测试全绿。(2026-07-07)
-- [x] **P4B WebSocket + Extension (29 条目)** — WS: FastAPI /ws 端点 + WSMessage + WSSessionsManager + 4 个模块（Chat/Collaborative/Status/WebRTC信令）+ Room。EXT: 5 个 converter DTO/工具 + 3 个 importer 抽象基类 + 6 个 import DTO + 属性类型推断/校验工具。176 测试全绿。(2026-07-07)
+- [x] **审计修复 B1-B7 全量完成 (2026-07-07)** — 12/13 发现已修复（见 audit-report.md）:
+  B1: 级联删除 8 表 + 模板 + Workflow Tasks
+  B2: ACL 写权限 + 组成员校验 + 签出保护 + InstanceAttributeTemplates
+  B3: 39 NotFound→404 + 补全 2 路由
+  B4: 文档/零件/变更 DTO 字段补全
+  B5: Workflow admin绕过 + SequentialActivity + status移除
+  B6: 7 个 raise 补齐（NotAllowed42 + AccessRight × 5 + mask）
+  B7: 6 实现 + 12 STUB 标注 + 6 TODO 清理 → 0 TODO 残留
+  176 passed, 1 skipped — 全程零回归
+
+- [x] **P4B WebSocket + Extension 全量迁移 (2026-07-07)** — WS /ws 端点 + Chat/Collaborative/Status/WebRTC 模块 + EXT converters/importers DTO
+
+- [x] **P3B Router + Export 迁移 (2026-07-07)** — P3B-A (8 端点) + P3B-B (15 文件 utility/导出)
+
+- [x] **P2B 服务全量迁移 (2026-07-07)** — Configuration 域 + Listeners + Products + Documents + Indexer + Validation + GCM
+
+- [x] **CSV tracker 524/524 清零 (2026-07-07)**
+
+- [x] **Elasticsearch 全文搜索 (2026-07-06)** — 9 个 service 文件（索引管理/查询/映射/提取），ES 优先搜索 + DB fallback
+
+- [x] **文档审计体系搭建 (2026-07-07)** — DOCS_INDEX.md + 归档 17 个过时 superpowers 文件
+
+- [x] **throw-matrix 补齐 + i18n by pass 审计** — 51/55 throw matrix 对齐
