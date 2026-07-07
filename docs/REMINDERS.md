@@ -8,7 +8,7 @@
 
 ### 高优先级
 
-- [ ] **Workflow role_mapping 断裂** — `instantiate_workflow` 跳过 TASK_USER/TASK_USERGROUP 表，仅写 worker_login 到 task 表。需要新增多对多关系表（`task_user` / `task_usergroup`），涉及 schema/database/service 三层变更。**唯一未修复的审计 🔴 发现。**
+- [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — TASK_USER/TASK_USERGROUP 多对多表已接入: instantiate_workflow INSERT 分配, _is_potential_worker 查双表, get_assigned_tasks JOIN 双表。对齐 Java Task.assignedUsers/assignedGroups。
 
 - [ ] **PathData 域未实现** — PathDataMasterNotFoundException 等异常 stub，pathdata CRUD 和 path-to-path link CRUD 都是占位代码。实现后补 raise。
 
