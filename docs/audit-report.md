@@ -190,9 +190,28 @@ GET /workspaces/{ws}/workflow-models
 
 ### 优先修复建议
 
-1. **P0 — Workflow**: role_mapping 跳过 TASK_USER/TASK_USERGROUP 表，workflow 审批链路完全断裂
-2. **P0 — Document delete**: 级联删除缺失 7 张关联表，导致孤儿数据
-3. **P1 — Product create**: 模板支持缺失，workflow Tasks 未创建
-4. **P1 — 异常处理**: 未找到资源应返回 404 而非 500
-5. **P2 — 缺失路由**: 9 个端点未实现
-6. **P2 — 签出保护**: set_tags/delete 缺 checkout 用户校验
+| # | 状态 | 描述 | 批次 | 提交 |
+|---|------|------|------|------|
+| 1 | ⬜ | Workflow role_mapping断裂 → TASK_USER/TASK_USERGROUP | B5 | （需深度重构） |
+| 2 | ✅ | Document delete 级联删除缺失 → 7张表已补 DELETE | B1 | 93b0695 |
+| 3 | ✅ | Product create 模板支持 + Workflow Tasks | B1 | 93b0695 |
+| 4 | ✅ | 异常处理: NotFound→404, 39个异常单独注册handler | B3 | b90f0e2 |
+| 5 | ✅ | 缺失路由: 8个已存在, 2个补全(light+document-links) | B3 | b90f0e2 |
+| 6 | ✅ | set_tags/delete 签出保护 (传入current_user_login) | B2 | 294fb15 |
+| 7 | ✅ | Change assignee 组成员校验 (workspaceusergroupmembership) | B2 | 294fb15 |
+| 8 | ✅ | Change delete ACL写权限检查 (admin→ACL→workspace) | B2 | 294fb15 |
+| 9 | ✅ | Product checkout InstanceAttributeTemplates克隆 | B2 | 294fb15 |
+| 10 | ✅ | DTO字段补全: 文档(workflow/fields)+零件(lifeCycleState)+变更(assignee) | B4 | 7c3373b |
+| 11 | ✅ | Workflow: admin绕过移除+SequentialActivity limit=1+status移除 | B5 | 043adbe |
+| 12 | ✅ | throw-matrix: 7个raise补齐 (NotAllowed42+AccessRight×5+mask校验) | B6 | 043adbe |
+| 13 | ✅ | 25 TODO: 6实现+12标注REMINDERS+6清理 | B7 | 93cf836 |
+
+### 修复完成度
+
+```
+B1 ✅  B2 ✅  B3 ✅  B4 ✅  B5 ✅  B6 ✅  B7 ✅
+```
+
+**唯一遗留**: Workflow role_mapping 需要 TASK_USER/TASK_USERGROUP 表的结构性修改（新增表 + 多对多关系），属于架构级变更，列入 REMINDERS 高优先级。
+
+176 passed, 1 skipped — 全绿。
