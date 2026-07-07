@@ -70,9 +70,17 @@ class TaskService:
     def get_assigned_tasks(self, db: Session, ws: str, login: str) -> list:
         from sqlalchemy import text
         rows = db.execute(text(
-            "SELECT t.* FROM task t "
-            "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
-            "AND t.status < 2"
+            "SELECT DISTINCT t.* FROM task t "
+            "LEFT JOIN task_user tu ON t.workflow_id=tu.workflow_id "
+            "AND t.activity_step=tu.activity_step "
+            "AND t.num=tu.task_num "
+            "LEFT JOIN task_usergroup tug ON t.workflow_id=tug.workflow_id "
+            "AND t.activity_step=tug.activity_step "
+            "AND t.num=tug.task_num "
+            "LEFT JOIN usergroupmapping ugm ON tug.usergroup_id=ugm.groupname "
+            "WHERE t.status < 2 "
+            "AND (tu.user_login=:l AND tu.user_workspace_id=:w "
+            "     OR (ugm.login=:l AND tug.usergroup_workspace_id=:w))"
         ), {"l": login, "w": ws}).fetchall()
         result = []
         for t in rows:
@@ -139,34 +147,27 @@ class TaskService:
         return result
 
     def _is_potential_worker(self, db: Session, ws: str, user_login: str,
-                              workflow_id: int, activity_step: int, task_num: int) -> bool:
-        """检查用户是否是该 task 的 potential worker（通过角色分配）。"""
-        task_role = db.execute(text(
-            "SELECT tm.role_name, tm.role_workspace_id FROM taskmodel tm "
-            "JOIN activitymodel am ON tm.activitymodel_id = am.id "
-            "JOIN activity a ON am.step = a.step AND a.workflow_id = :wf_id "
-            "WHERE a.workflow_id = :wf_id AND a.step = :step AND tm.num = :num "
-            "LIMIT 1"
-        ), {"wf_id": workflow_id, "step": activity_step, "num": task_num}).first()
-        if not task_role or not task_role[0]:
-            return True  # 无角色限制 = 任何人是 potential worker
-        role_name = task_role[0]
-        role_ws = task_role[1] or ws
-        # 检查用户是否在该角色中
-        in_role = db.execute(text(
-            "SELECT 1 FROM role_user WHERE role_name = :rn AND role_workspace_id = :rw "
-            "AND user_login = :l AND user_workspace_id = :ws LIMIT 1"
-        ), {"rn": role_name, "rw": role_ws, "l": user_login, "ws": ws}).first()
-        if in_role:
+                               workflow_id: int, activity_step: int, task_num: int) -> bool:
+        """检查用户是否在 task_user 或 task_usergroup 中（对齐 Java Task.isPotentialWorker）。"""
+        # 先检查 TASK_USER（直接分配的用户）
+        user = db.execute(text(
+            "SELECT 1 FROM task_user "
+            "WHERE workflow_id=:wf AND activity_step=:step AND task_num=:num "
+            "AND user_login=:login AND user_workspace_id=:ws LIMIT 1"
+        ), {"wf": workflow_id, "step": activity_step, "num": task_num,
+            "login": user_login, "ws": ws}).first()
+        if user:
             return True
-        # 检查用户所在组是否在该角色中
-        group_in_role = db.execute(text(
-            "SELECT 1 FROM role_usergroup rug "
-            "JOIN usergroupmapping m ON rug.usergroup_id = m.groupname "
-            "WHERE rug.role_name = :rn AND rug.role_workspace_id = :rw "
-            "AND m.login = :l LIMIT 1"
-        ), {"rn": role_name, "rw": role_ws, "l": user_login}).first()
-        return group_in_role is not None
+        # 通过 TASK_USERGROUP + usergroupmapping（检查组中用户）
+        group = db.execute(text(
+            "SELECT 1 FROM task_usergroup tug "
+            "JOIN usergroupmapping ugm ON tug.usergroup_id = ugm.groupname "
+            "WHERE tug.workflow_id=:wf AND tug.activity_step=:step "
+            "AND tug.task_num=:num "
+            "AND ugm.login=:login AND tug.usergroup_workspace_id=:ws LIMIT 1"
+        ), {"wf": workflow_id, "step": activity_step, "num": task_num,
+            "login": user_login, "ws": ws}).first()
+        return group is not None
 
     def process_task(self, db: Session, ws: str, task_id: int = None,
                      action: str = "", comment: str = "", signature: str = "",
@@ -204,20 +205,20 @@ class TaskService:
         cur_status, cur_worker = t_cur[0], t_cur[1]
         if cur_status != 1:
             raise NotAllowedException("NotAllowedException40")
-        if cur_worker != user_login:
+        if cur_worker is not None and cur_worker != user_login:
             raise NotAllowedException("NotAllowedException40")
 
-        # isPotentialWorker 检查：用户必须是指定角色的成员
+        # isPotentialWorker 检查：用户必须是 TASK_USER/TASK_USERGROUP 中分配的角色成员
         if not skip_potential_worker_check:
             if not self._is_potential_worker(db, ws, user_login, wf_id, step, num):
                 raise NotAllowedException("NotAllowedException41")
 
         status = 2 if action.upper() == "APPROVE" else 3
         db.execute(text(
-            "UPDATE task SET status = :s, closurecomment = :c, "
-            "signature = :sig, closuredate = NOW() "
+            "UPDATE task SET status = :s, worker_login = :wl, worker_workspace_id = :wws, "
+            "closurecomment = :c, signature = :sig, closuredate = NOW() "
             "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
-        ), {"s": status, "c": comment, "sig": signature,
+        ), {"s": status, "wl": user_login, "wws": ws, "c": comment, "sig": signature,
             "wf_id": wf_id, "step": step, "num": num})
 
         # 审批通过时：推进活动（start next tasks）
@@ -398,6 +399,18 @@ class TaskService:
             "FROM task WHERE workflow_id = :old_id"
         ), {"new_id": new_wf_id, "old_id": wf_id})
 
+        # 复制 TASK_USER / TASK_USERGROUP（关联到新 workflow）
+        db.execute(text(
+            "INSERT INTO task_user (task_num, activity_step, workflow_id, user_login, user_workspace_id) "
+            "SELECT task_num, activity_step, :new_id, user_login, user_workspace_id "
+            "FROM task_user WHERE workflow_id = :old_id"
+        ), {"new_id": new_wf_id, "old_id": wf_id})
+        db.execute(text(
+            "INSERT INTO task_usergroup (task_num, activity_step, workflow_id, usergroup_id, usergroup_workspace_id) "
+            "SELECT task_num, activity_step, :new_id, usergroup_id, usergroup_workspace_id "
+            "FROM task_usergroup WHERE workflow_id = :old_id"
+        ), {"new_id": new_wf_id, "old_id": wf_id})
+
         # 3. kill 旧 workflow 上的 running tasks + abort 旧 workflow
         db.execute(text(
             "UPDATE task SET status = 3 WHERE workflow_id = :wf_id AND status = 1"
@@ -451,7 +464,8 @@ class TaskService:
 
         # 7. relaunch：重置从指定 step 开始的 tasks，然后启动第一批
         db.execute(text(
-            "UPDATE task SET status = 0, startdate = NULL, closuredate = NULL, "
+            "UPDATE task SET status = 0, worker_login = NULL, worker_workspace_id = NULL, "
+            "startdate = NULL, closuredate = NULL, "
             "closurecomment = NULL, signature = NULL "
             "WHERE workflow_id = :wf_id AND activity_step >= :step"
         ), {"wf_id": new_wf_id, "step": step})

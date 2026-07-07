@@ -239,12 +239,30 @@ class WorkflowService:
 
     # ========== workspace_workflow 实例化与管理 ==========
 
+    def _normalize_role_mapping(self, role_mapping: dict) -> dict:
+        """规范化 role_mapping，兼容旧格式 {role_key: user_login} 和新格式 {role_key: {"users": [...], "groups": [...]}}"""
+        if not role_mapping:
+            return {}
+        normalized = {}
+        for role_key, value in role_mapping.items():
+            if isinstance(value, dict):
+                normalized[role_key] = {
+                    "users": value.get("users", []) or [],
+                    "groups": value.get("groups", []) or [],
+                }
+            elif isinstance(value, str):
+                normalized[role_key] = {"users": [value], "groups": []}
+            elif isinstance(value, list):
+                normalized[role_key] = {"users": value, "groups": []}
+        return normalized
+
     def instantiate_workflow(self, db: Session, ws: str, model_id: str,
                               role_mapping: dict = None) -> dict:
         """从 workflow_model 实例化 workspace_workflow"""
         from sqlalchemy import text
         if role_mapping is None:
             role_mapping = {}
+        normalized_mapping = self._normalize_role_mapping(role_mapping)
         wm = self.get_model(db, ws, model_id)
         ams = db.query(ActivityModel).filter(
             ActivityModel.workflowmodel_id == model_id,
@@ -258,7 +276,8 @@ class WorkflowService:
         ), {"fls": wm.finalLifecycleState or ""})
         wf_row = db.execute(text("SELECT currval('workflow_id_seq')")).first()
         wf_id = wf_row[0]
-        # 创建 activities 和 tasks
+        # 创建 activities 和 tasks，worker 创建时为 NULL（审批时才写入）
+        created_tasks = []  # 记录创建了哪些 task，用于后续 TASK_USER/TASK_USERGROUP 写入
         for am in ams:
             db.execute(text(
                 "INSERT INTO activity (step, dtype, lifecyclestate, workflow_id, taskstocomplete) "
@@ -270,44 +289,52 @@ class WorkflowService:
                 TaskModel.activitymodel_id == am.id,
             ).order_by(TaskModel.num).all()
             for tm in tms:
-                worker_login = None
-                worker_ws = None
-                if tm.role_name and tm.role_workspace_id:
-                    role_key = f"{tm.role_workspace_id}:{tm.role_name}"
-                    if role_key in role_mapping:
-                        worker_login = role_mapping[role_key]
-                        worker_ws = tm.role_workspace_id
                 db.execute(text(
                     "INSERT INTO task (num, activity_step, workflow_id, title, instructions, "
                     "status, worker_login, worker_workspace_id, duration) "
                     "VALUES (:num, :step, :wf_id, :title, :instructions, "
-                    "0, :wl, :wws, :dur)"
+                    "0, NULL, NULL, :dur)"
                 ), {"num": tm.num, "step": am.step, "wf_id": wf_id,
                     "title": tm.title or "", "instructions": tm.instructions or "",
-                    "wl": worker_login, "wws": worker_ws,
                      "dur": tm.duration})
-        # 检查每个 task 至少有一个 potential worker
-        role_tasks = db.execute(text(
-            "SELECT t.worker_login, t.worker_workspace_id, "
-            "tm.role_name, tm.role_workspace_id "
-            "FROM task t "
-            "JOIN activity a ON t.workflow_id = a.workflow_id AND t.activity_step = a.step "
-            "JOIN activitymodel am ON am.step = a.step AND am.workflowmodel_id = :mid "
-            "    AND am.workspace_id = :ws "
-            "JOIN taskmodel tm ON tm.activitymodel_id = am.id AND tm.num = t.num "
-            "WHERE t.workflow_id = :wf_id AND tm.role_name IS NOT NULL AND t.worker_login IS NULL"
-        ), {"wf_id": wf_id, "mid": model_id, "ws": ws}).fetchall()
-        for rt in role_tasks:
-            role_name, role_ws = rt[2], rt[3] or ws
-            has_user = db.execute(text(
-                "SELECT 1 FROM role_user WHERE role_name = :rn "
-                "AND role_workspace_id = :rw LIMIT 1"
-            ), {"rn": role_name, "rw": role_ws}).first()
-            has_group = db.execute(text(
-                "SELECT 1 FROM role_usergroup WHERE role_name = :rn "
-                "AND role_workspace_id = :rw LIMIT 1"
-            ), {"rn": role_name, "rw": role_ws}).first()
-            if not has_user and not has_group:
+                created_tasks.append((tm.num, am.step, wf_id,
+                                       tm.role_name, tm.role_workspace_id))
+        # INSERT TASK_USER / TASK_USERGROUP（对齐 Java Task.assignedUsers + assignedGroups）
+        for task_num, task_step, wf, role_name, role_ws in created_tasks:
+            if not role_name:
+                continue
+            role_key = f"{role_ws or ws}:{role_name}"
+            mapping = normalized_mapping.get(role_key, {})
+            if not mapping:
+                # fallback: 直接匹配 role_name（兼容只传 role_name 作为 key 的情况）
+                mapping = normalized_mapping.get(role_name, {})
+            for user_login in mapping.get("users", []):
+                db.execute(text(
+                    "INSERT INTO task_user (task_num, activity_step, workflow_id, "
+                    "user_login, user_workspace_id) "
+                    "VALUES (:num, :step, :wf, :login, :uws)"
+                ), {"num": task_num, "step": task_step, "wf": wf,
+                    "login": user_login, "uws": ws})
+            for group_id in mapping.get("groups", []):
+                db.execute(text(
+                    "INSERT INTO task_usergroup (task_num, activity_step, workflow_id, "
+                    "usergroup_id, usergroup_workspace_id) "
+                    "VALUES (:num, :step, :wf, :gid, :gws)"
+                ), {"num": task_num, "step": task_step, "wf": wf,
+                    "gid": group_id, "gws": ws})
+        # 检查每个有角色定义的 task 至少有一个 potential worker（对齐 Java task.hasPotentialWorker()）
+        for task_num, task_step, wf, role_name, role_ws in created_tasks:
+            if not role_name:
+                continue
+            has = db.execute(text(
+                "SELECT 1 FROM task_user "
+                "WHERE workflow_id=:wf AND activity_step=:step AND task_num=:num "
+                "UNION ALL "
+                "SELECT 1 FROM task_usergroup "
+                "WHERE workflow_id=:wf AND activity_step=:step AND task_num=:num "
+                "LIMIT 1"
+            ), {"wf": wf, "step": task_step, "num": task_num}).first()
+            if not has:
                 raise NotAllowedException("NotAllowedException56")
         # 获取 step-0 activity 的 dtype，Sequential 只启动第 1 个 task
         dtype_row = db.execute(text(
@@ -388,6 +415,8 @@ class WorkflowService:
             raise EntityNotFoundException("WorkspaceWorkflowNotFoundException", ww_id)
         wf_id = ww[2]
         db.execute(text("DELETE FROM workspace_workflow WHERE id = :id"), {"id": ww_id})
+        db.execute(text("DELETE FROM task_user WHERE workflow_id = :id"), {"id": wf_id})
+        db.execute(text("DELETE FROM task_usergroup WHERE workflow_id = :id"), {"id": wf_id})
         db.execute(text("DELETE FROM task WHERE workflow_id = :id"), {"id": wf_id})
         db.execute(text("DELETE FROM activity WHERE workflow_id = :id"), {"id": wf_id})
         db.execute(text("DELETE FROM workflow WHERE id = :id"), {"id": wf_id})
