@@ -1,6 +1,7 @@
-"""ES 索引管理——对标 Payara IndexerManagerBean + EntityMapper + IndexerMapping。
+"""ES 索引管理（业务层）——对标 Payara IndexerManagerBean + EntityMapper + IndexerMapping。
 
-索引粒度：按 PartIteration/DocumentIteration（一个 iteration = 一个 ES doc）。
+从 indexer_manager.py 重组：低层 ES 操作已移至 indexer/index_manager.py。
+本文件保留业务级序列化、实时索引、全量重建等逻辑。
 """
 import logging
 from elasticsearch import Elasticsearch
@@ -9,13 +10,11 @@ from elasticsearch.helpers import bulk
 from sqlalchemy import text
 from app.core.config import settings
 from app.core.exceptions import AccessRightException, WorkspaceAlreadyExistsException
+from app.services.indexer.index_manager import index_manager as _im
 
 logger = logging.getLogger(__name__)
 
 # ── ES 常量（来源: IndexerMapping.java）───────────────────────
-_INDEX_PREFIX = "docdoku-plm"
-_INDEX_PARTS = "parts"
-_INDEX_DOCUMENTS = "documents"
 _BULK_SIZE = 50
 
 # ES 字段 key（= IndexerMapping 常量值）────────────────────────
@@ -110,54 +109,44 @@ DOC_MAPPING = {
 
 
 class IndexerManager:
-    def __init__(self):
-        self._es = None
+    """业务级索引管理，使用 IndexManager 处理低层 ES 操作。"""
 
     @property
     def es(self):
-        if self._es is None:
-            self._es = Elasticsearch([settings.ES_URL])
-        return self._es
+        return _im.es
+
+    @es.setter
+    def es(self, value):
+        _im._es = value
+
+    @property
+    def _es(self):
+        return _im._es
+
+    @_es.setter
+    def _es(self, value):
+        _im._es = value
 
     def ping(self) -> bool:
-        try:
-            return self.es.ping()
-        except Exception:
-            return False
+        return _im.ping()
 
-    # ── 索引命名（来源: IndexerMapping.java:24-41）─────────────────
+    # ── 索引命名（委托给 IndexManager）─────────────────────────
 
     @staticmethod
     def _part_index(ws: str) -> str:
-        return f"{_INDEX_PREFIX}-{ws.lower()}-{_INDEX_PARTS}"
+        return _im.part_index(ws)
 
     @staticmethod
     def _doc_index(ws: str) -> str:
-        return f"{_INDEX_PREFIX}-{ws.lower()}-{_INDEX_DOCUMENTS}"
+        return _im.doc_index(ws)
 
-    # ── 索引生命周期 ──────────────────────────────────────────────
+    # ── 索引生命周期（委托给 IndexManager）─────────────────────
 
     def create_index(self, ws: str):
-        try:
-            for idx, mapping in [
-                (self._part_index(ws), PART_MAPPING),
-                (self._doc_index(ws), DOC_MAPPING),
-            ]:
-                if self.es.indices.exists(index=idx):
-                    raise WorkspaceAlreadyExistsException(ws)
-                self.es.indices.create(index=idx, body={"mappings": {"_doc": {"properties": mapping}}})
-        except WorkspaceAlreadyExistsException:
-            logger.warning("ES index already exists for workspace %s", ws)
-        except Exception:
-            logger.warning("Cannot create ES index for workspace %s", ws, exc_info=True)
+        _im.create_indices(ws, PART_MAPPING, DOC_MAPPING)
 
     def delete_index(self, ws: str):
-        try:
-            for idx in [self._part_index(ws), self._doc_index(ws)]:
-                if self.es.indices.exists(index=idx):
-                    self.es.indices.delete(index=idx)
-        except Exception:
-            logger.warning("Cannot delete ES index for workspace %s", ws, exc_info=True)
+        _im.delete_indices(ws)
 
     # ── 序列化：PartIteration/DocumentIteration → ES doc ─────────
     # 字段来源对照 EntityMapper.java:71-93 (part) + 48-68 (document)
@@ -200,7 +189,7 @@ class IndexerManager:
 
     @staticmethod
     def _doc_iteration_to_doc(di, author_name=None, attributes=None,
-                              attached_file_names=None, workflow_state=None) -> dict:
+                               attached_file_names=None, workflow_state=None) -> dict:
         """DocumentIteration → ES doc（EntityMapper.documentIterationToJSON）。"""
         dr = di.revision
         dm = dr.document_master if dr else None
@@ -245,41 +234,29 @@ class IndexerManager:
 
     def index_part_iteration(self, pi, author_name=None,
                              attributes=None, attached_file_names=None, workflow_state=None):
-        try:
-            doc = self._part_iteration_to_doc(
-                pi, author_name=author_name,
-                attributes=attributes, attached_file_names=attached_file_names,
-                workflow_state=workflow_state,
-            )
-            self.es.index(index=self._part_index(pi.workspace_id), doc_type="_doc",
-                          id=self._part_iteration_id(pi), body=doc)
-        except (ESConnectionError, ESConnectionTimeout):
-            logger.error("ES index failed for part %s-%s-%s",
-                         pi.partmaster_partnumber, pi.partrevision_version, pi.iteration,
-                         exc_info=True)
-        except Exception:
-            logger.warning("ES index failed for part %s-%s-%s",
-                           pi.partmaster_partnumber, pi.partrevision_version, pi.iteration,
-                           exc_info=True)
+        doc = self._part_iteration_to_doc(
+            pi, author_name=author_name,
+            attributes=attributes, attached_file_names=attached_file_names,
+            workflow_state=workflow_state,
+        )
+        _im.index_document(
+            index=_im.part_index(pi.workspace_id),
+            doc_id=self._part_iteration_id(pi),
+            body=doc,
+        )
 
     def index_document_iteration(self, di, author_name=None,
                                  attributes=None, attached_file_names=None, workflow_state=None):
-        try:
-            doc = self._doc_iteration_to_doc(
-                di, author_name=author_name,
-                attributes=attributes, attached_file_names=attached_file_names,
-                workflow_state=workflow_state,
-            )
-            self.es.index(index=self._doc_index(di.workspace_id), doc_type="_doc",
-                          id=self._doc_iteration_id(di), body=doc)
-        except (ESConnectionError, ESConnectionTimeout):
-            logger.error("ES index failed for document %s-%s-%s",
-                         di.documentmaster_id, di.documentrevision_version, di.iteration,
-                         exc_info=True)
-        except Exception:
-            logger.warning("ES index failed for document %s-%s-%s",
-                           di.documentmaster_id, di.documentrevision_version, di.iteration,
-                           exc_info=True)
+        doc = self._doc_iteration_to_doc(
+            di, author_name=author_name,
+            attributes=attributes, attached_file_names=attached_file_names,
+            workflow_state=workflow_state,
+        )
+        _im.index_document(
+            index=_im.doc_index(di.workspace_id),
+            doc_id=self._doc_iteration_id(di),
+            body=doc,
+        )
 
     def index_part_iterations(self, iterations: list, author_name=None):
         """便捷方法：批量索引 PartIteration 列表。"""
@@ -304,24 +281,14 @@ class IndexerManager:
     # ── 删除 ─────────────────────────────────────────────────────
 
     def delete_part_revision(self, pr):
-        idx = self._part_index(pr.workspace_id)
-        try:
-            for pi in pr.iterations:
-                self.es.delete(index=idx, doc_type="_doc",
-                               id=self._part_iteration_id(pi), ignore=[404])
-        except Exception:
-            logger.warning("ES delete failed for part %s-%s",
-                           pr.partmaster_partnumber, pr.version, exc_info=True)
+        idx = _im.part_index(pr.workspace_id)
+        for pi in pr.iterations:
+            _im.delete_document(index=idx, doc_id=self._part_iteration_id(pi))
 
     def delete_document_revision(self, dr):
-        idx = self._doc_index(dr.workspace_id)
-        try:
-            for di in dr.iterations:
-                self.es.delete(index=idx, doc_type="_doc",
-                               id=self._doc_iteration_id(di), ignore=[404])
-        except Exception:
-            logger.warning("ES delete failed for document %s-%s",
-                           dr.documentmaster_id, dr.version, exc_info=True)
+        idx = _im.doc_index(dr.workspace_id)
+        for di in dr.iterations:
+            _im.delete_document(index=idx, doc_id=self._doc_iteration_id(di))
 
     # ── 管理员检查 ──────────────────────────────────────────────────
 
@@ -355,8 +322,8 @@ class IndexerManager:
         if check_admin:
             self._check_admin(db, ws, current_user)
 
-        self.delete_index(ws)
-        self.create_index(ws)
+        _im.delete_indices(ws)
+        _im.create_indices(ws, PART_MAPPING, DOC_MAPPING)
 
         errors = []
         parts_count = self._bulk_index_parts(db, ws, errors)
@@ -422,18 +389,14 @@ class IndexerManager:
                         continue
                     doc = self._part_iteration_to_doc(pi, author_name=author_name)
                     actions.append({
-                        "_index": self._part_index(ws),
+                        "_index": _im.part_index(ws),
                         "_type": "_doc",
                         "_id": self._part_iteration_id(pi),
                         "_source": doc,
                     })
             if actions:
-                try:
-                    success, batch_errors = bulk(self.es, actions, raise_on_error=False)
-                    errors.extend(batch_errors)
-                except Exception:
-                    logger.warning("ES bulk index failed for parts offset=%s", offset, exc_info=True)
-                    errors.append(f"ES bulk index failed for parts offset={offset}")
+                success, batch_errors = _im.bulk_actions(actions)
+                errors.extend(batch_errors)
             total += len(actions)
             offset += _BULK_SIZE
         return total
@@ -472,18 +435,14 @@ class IndexerManager:
                         continue
                     doc = self._doc_iteration_to_doc(di, author_name=author_name)
                     actions.append({
-                        "_index": self._doc_index(ws),
+                        "_index": _im.doc_index(ws),
                         "_type": "_doc",
                         "_id": self._doc_iteration_id(di),
                         "_source": doc,
                     })
             if actions:
-                try:
-                    success, batch_errors = bulk(self.es, actions, raise_on_error=False)
-                    errors.extend(batch_errors)
-                except Exception:
-                    logger.warning("ES bulk index failed for documents offset=%s", offset, exc_info=True)
-                    errors.append(f"ES bulk index failed for documents offset={offset}")
+                success, batch_errors = _im.bulk_actions(actions)
+                errors.extend(batch_errors)
             total += len(actions)
             offset += _BULK_SIZE
         return total

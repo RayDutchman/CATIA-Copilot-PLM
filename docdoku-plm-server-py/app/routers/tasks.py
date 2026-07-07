@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import NotAllowedException
 from app.models.auth import Account
-from app.services.workflow_manager import workflow_service, STATUS_MAP
+from app.services.task_manager import task_service, STATUS_MAP
 from app.schemas.workflow import (
     TaskWrapperDTO, TaskHolderDocDTO, TaskHolderPartDTO,
 )
@@ -68,7 +68,7 @@ def _part_to_dict(rev):
 @router.get(f"{PREFIX}/tasks/{{login}}/assigned/", include_in_schema=False)
 def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    return workflow_service.get_assigned_tasks(db, ws, login)
+    return task_service.get_assigned_tasks(db, ws, login)
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/in-progress", response_model=List[TaskWrapperDTO])
@@ -150,10 +150,10 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     wf_id, step, num = _parse_task_id(task_id)
     if wf_id is not None and step is not None:
-        t = workflow_service.get_task(db, ws, workflow_id=wf_id,
+        t = task_service.get_task(db, ws, workflow_id=wf_id,
                                        activity_step=step, task_num=num)
     else:
-        t = workflow_service.get_task(db, ws, task_id=int(num) if isinstance(num, int) else num)
+        t = task_service.get_task(db, ws, task_id=int(num) if isinstance(num, int) else num)
     # 查找 holder 信息
     _wf_id = t[11] if len(t) > 11 else None
     holder_type = None
@@ -243,14 +243,14 @@ def check_task(ws: str, task_id: str, db: Session = Depends(get_db),
     """checkTask：验证当前用户对关联文档/零件有下载权限。"""
     wf_id, step, num = _parse_task_id(task_id)
     if wf_id is not None and step is not None:
-        if not workflow_service._is_potential_worker(
+        if not task_service._is_potential_worker(
                 db, ws, current_user.login, wf_id, step, num):
             raise NotAllowedException("NotAllowedException41")
     else:
         t_info = db.execute(text(
             "SELECT workflow_id, activity_step, num FROM task WHERE num = :id LIMIT 1"
         ), {"id": num}).first()
-        if t_info and not workflow_service._is_potential_worker(
+        if t_info and not task_service._is_potential_worker(
                 db, ws, current_user.login, t_info[0], t_info[1], t_info[2]):
             raise NotAllowedException("NotAllowedException41")
     _verify_downloaded(db, ws, task_id, current_user.login)
@@ -263,14 +263,14 @@ def process_task(ws: str, task_id: str, body: dict, db: Session = Depends(get_db
                  current_user: Account = Depends(get_current_user)):
     wf_id, step, num = _parse_task_id(task_id)
     if wf_id is not None and step is not None:
-        holder = workflow_service.process_task(
+        holder = task_service.process_task(
             db, ws, action=body.get("action", ""),
             comment=body.get("comment", ""),
             signature=body.get("signature", ""),
             user_login=current_user.login,
             workflow_id=wf_id, activity_step=step, task_num=num)
     else:
-        holder = workflow_service.process_task(
+        holder = task_service.process_task(
             db, ws, task_id=int(num) if isinstance(num, int) else num,
             action=body.get("action", ""),
             comment=body.get("comment", ""),
