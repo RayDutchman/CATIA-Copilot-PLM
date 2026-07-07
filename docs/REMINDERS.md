@@ -6,21 +6,43 @@
 
 ## 待办
 
-### 高优先级
+### 高优先级 (审计发现)
 
 - [x] ~~throw matrix 补齐~~ — 51/55 ✅，throw-matrix.md 已对齐完成
 
-- [ ] **PathData 域未实现**：PathDataMasterNotFoundException / PathToPathLinkNotFoundException / PathToPathLinkAlreadyExistsException / PathToPathCyclicException——pathdata CRUD 和 path-to-path link CRUD 都是 stub。实现后补 raise。
+- [ ] **审计🔴 Workflow role_mapping 断裂** — instantiate_workflow 完全跳过 TASK_USER/TASK_USERGROUP 表，仅写 worker_login 到 task 表，与 Java 架构不符
+
+- [ ] **审计🔴 Document delete 级联清理缺失** — delete_revision 遗漏 documentlink/acl/workflow/subscription/sharedentity 7 张关联表删除
+
+- [ ] **审计🔴 Product create 模板不支持** — create_part 缺失 PartMasterTemplate 的 type/attributes/nativecad 复制
+
+- [ ] **审计🔴 Product create Workflow Tasks 未创建** — 仅保存 workflow_id，不实例化 Task 对象图
+
+- [ ] **PathData 域未实现** — PathDataMasterNotFoundException 等，pathdata CRUD 和 path-to-path link CRUD 都是 stub。实现后补 raise。
 
 - [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但全 FA 不加载。需 tcpdump 抓包或升级 Three.js。
 
 - [ ] **装配同步（_sync_components）未完整迁移** — assembly BOM 同步部分仍在 Payara 处理。
 
-### 中优先级
+### 中优先级 (审计发现)
 
 - [ ] **搜索为 DB 模糊匹配** — 无 Elasticsearch 全文搜索。不影响功能但性能随数据量下降。
   → **已完成 (2026-07-06)**: ES 全文搜索已迁移，迭代级索引 + ES 优先搜索 + DB fallback，172 测试通过。
 - [ ] **reindex 邮件通知 i18n 中英双语** — notifier.py 已实现基础中英 i18n，后续需对齐 Java PropertiesLoader 完整多语言资源文件 + 账号语言字段填充。
+
+- [ ] **审计🟡 异常处理: 404 变 500** — /auth/providers/{id}, /changes/issues/{id} 等 5 个端点未找到资源时抛 500 而非 404
+
+- [ ] **审计🟡 缺失路由 9 个** — folders/子文件夹、部分 effectivities、path-to-path-links、releases/last、milestones 子资源等端点未实现
+
+- [ ] **审计🟡 Product checkout 缺 InstanceAttributeTemplates 复制**
+
+- [ ] **审计🟡 Change assignee 遗漏组成员资格校验**
+
+- [ ] **审计🟡 Change delete 缺 ACL 写权限检查**
+
+- [ ] **审计🟡 Product set_tags/delete 缺签出用户保护**
+
+- [ ] **审计🟡 Workflow admin 可绕过审批权限** — Python 允许 admin 审批任何人的 task
 
 - [ ] **Decimation 减面优化一直失败** — conversion 容器脚本缺失。
 
@@ -28,7 +50,16 @@
 
 - [ ] **portproxy 规则与 Docker 端口冲突** — iphlpsvc 占用 8000/8001。
 
-### 低优先级
+### 低优先级 (审计发现 / TODO 残留)
+
+- [ ] **lov_manager.is_lov_deletable** — 未检查模板引用
+- [ ] **product_structure.hasPathData** — 始终返回 False
+- [ ] **cascade_action_manager** — 级联 checkout 未实现
+- [ ] **effectivity_manager** — create/update TODO（已有 raw SQL 绕过）
+- [ ] **public_entity_manager** — fullName 解析未实现
+- [ ] **importer** — 5 项导入器 stub (Excel/preview/PathData/BOM)
+- [ ] **ondemand_converter** — 转换引擎集成 stub
+- [ ] **workspace_manager** — 5 项磁盘计算/选项表 stub
 
 - [x] ~~QueryAlreadyExistsException~~ — query stub 已补重复名称校验 (2026-07-06)
 - [x] ~~PasswordRecoveryRequestNotFoundException~~ — /auth/recover token 模式已补校验 + raise (2026-07-06)
