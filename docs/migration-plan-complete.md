@@ -1,13 +1,62 @@
 # Payara → FastAPI 完整迁移计划
 
-> **最后更新**：2026-07-07
-> **追踪表**：`docs/migration-tracker.csv`（523 行，含 Python 特有文件）
+> **最后更新**：2026-07-07（迁移阶段全部完成，进入审计修复阶段）
+> **追踪表**：`docs/migration-tracker.csv`（523 已完成 + 1 不适用 = **524/524 ✅**）
 > **方法论**：`docs/migration-methodology.md`
-> **历史路线图**：`docs/superpowers/fastapi-migration-roadmap.md`
+> **文档索引**：`docs/DOCS_INDEX.md`
 
 ---
 
-## 一、当前完成度评估
+## 一、当前完成度评估（2026-07-07 最新）
+
+### 追踪表状态
+
+| 指标 | 值 |
+|------|-----|
+| 总条目 | 524 |
+| 已完成 | 523 |
+| 不适用 | 1 |
+| 待新建 | **0** |
+| 待拆分 | **0** |
+
+### 里程碑
+
+| 日期 | 批次 | 内容 | 提交 |
+|------|------|------|------|
+| 07-07 | P2B | 30 服务文件（Configuration+Listeners+Products+Documents+Indexer+Validation+GCM） | 39476fb, bd571da |
+| 07-07 | P3B-A | 8 路由端点（attributes/lov/effectivity/tags/template_files） | 42a1820 |
+| 07-07 | P3B-B | 15 文件（file/util + file_export + 3 导出端点） | 8c24d97 |
+| 07-07 | P4B | 29 文件（WebSocket 全栈 + Extension converters/importers） | 4796f96 |
+| 07-07 | 收尾 | CSV tracker 16 条状态修正 → 全量清零 | 58c3fbb |
+| 07-07 | 审计 | 5 步验收审计（NotImplementedError/空函数/TODO/HTTP对拍/代码质量） | e7024ea |
+| 07-07 | 审计 | HTTP 对拍 V2 升级 (144→162 端点) | e0dbb3b |
+| 07-07 | 审计 | full_compare_v2.py V3 统一版 (种子数据+全方法+字段diff) | e7b4725 |
+| 07-07 | 文档 | DOCS_INDEX.md + 归档过时 superpowers 文件 | 本次 |
+
+### 测试状态
+
+```
+176 passed, 1 skipped — 全绿
+```
+
+### 当前阶段：审计修复
+
+迁移全部完成，进入**审计修复**阶段。主要发现（来自 `docs/audit-report.md`）：
+
+| 维度 | 发现 |
+|------|------|
+| HTTP 对拍 V2 | 162 端点: 73 MATCH / 42 PARTIAL / 47 MISMATCH |
+| full_compare V3 | 138 端点: 81 MATCH / 11 PARTIAL / 44 MISMATCH |
+| 代码质量 | 12 方法中发现 🔴17 严重 + 🟡10 中等差异 |
+| TODO 残留 | 25 项（已记录 REMINDERS） |
+
+修复计划：`docs/audit-report.md` → 分批执行（B1~B7），每批 pytest → commit。
+
+---
+
+## 二、历史评估（迁移前，2026-07-07 初版，保留供参考）
+
+> 以下数据为迁移**开始前**的快照，当前实际完成度见上方。
 
 ### 按功能性 vs 按文件映射
 
