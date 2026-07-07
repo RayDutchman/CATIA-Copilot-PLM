@@ -48,69 +48,91 @@
 
 ---
 
-## Step 4 — HTTP 对拍 ⚠️
+## Step 4 — HTTP 对拍 (V2 全面版) ⚠️
 
-运行 `scripts/compare_all_endpoints.py` 结果: **50 MATCH, 46 PARTIAL, 36 MISMATCH**
+运行 `scripts/compare_all_endpoints.py` V2 结果: **73 MATCH, 42 PARTIAL, 47 MISMATCH, 162 端点覆盖**
 
-### MISMATCH 分类
+### MISMATCH 分类详情
 
-#### A. FA 500 → PY 200 (5 项) — Python 未正确处理异常
-```
-GET /workspaces/{ws}/documents/doc_revs
-GET /workspaces/{ws}/product-baselines
-GET /workspaces/{ws}/product-baselines/{ci}/baselines
-GET /workspaces/{ws}/products/{ci}/path-to-path-links-types
-GET /workspaces/{ws}/products/{ci}/path-to-path-links/source/{src}/target/{tgt}
-GET /workspaces/{ws}/workflow-models
-```
-原因: Java 测试数据与 Python 测试数据不完全一致，Java 报 500 时 Python 返回 200 空列表。
-
-#### B. FA 200 → PY 500 (7 项) — Python 内部错误
-```
-GET /workspaces/{ws}
-GET /workspaces/{ws}/products/{ci}/bom
-GET /workspaces/{ws}/products/{ci}/decode-path/{path}
-GET /workspaces/{ws}/products/{ci}/filter
-GET /workspaces/{ws}/products/{ci}/instances
-GET /workspaces/{ws}/products/{ci}/paths
-GET /workspaces/{ws}/webhooks
-```
-原因: workspace root 缺少完整聚合、BOM/instances/paths 等端点内部异常。
-
-#### C. FA 404 → PY 500 (5 项) — 异常处理不应该抛 500
-```
-GET /auth/providers/42
-GET /workspaces/{ws}/changes/issues/41
-GET /workspaces/{ws}/effectivities/1
-GET /workspaces/{ws}/product-instances/{ci}/instances/{sn}/link-path-part/{path}
-GET /workspaces/{ws}/tasks/1
-```
-原因: 不存在的资源应该返回 404，当前返回 500 (EntityNotFoundException 未正确映射)。
-
-#### D. FA 200 → PY 404 (9 项) — 缺失路由
+#### A. FA 200 → PY 404 (缺失路由, 10 项)
+端点存在于 FA 但 Python 未实现:
 ```
 GET /workspaces/{ws}/folders/{ws}/SeedFolder/folders
 GET /workspaces/{ws}/groups/SEED-grp/users
-GET /workspaces/{ws}/parts/SEED-ASSEM/effectivities
-GET /workspaces/{ws}/product-baselines/{ci}/baselines/3/path-to-path-links-types
-GET /workspaces/{ws}/product-baselines/{ci}/baselines/3/path-to-path-links/source/src/target/tgt
-GET /workspaces/{ws}/products/{ci}/document-links/{pn}/wip
+GET /workspaces/{ws}/parts/{pk}/effectivities
 GET /workspaces/{ws}/products/{ci}/releases/last
-GET /workspaces/{ws}/changes/milestones/1/requests
-GET /workspaces/{ws}/changes/milestones/1/orders
+GET /workspaces/{ws}/products/{ci}/document-links/{pn}/wip
+GET /workspaces/{ws}/product-baselines/{ci}/baselines/{bl}/path-to-path-links-types
+GET /workspaces/{ws}/product-baselines/{ci}/baselines/{bl}/path-to-path-links/source/*/target/*
+GET /workspaces/{ws}/changes/milestones/{ms}/requests
+GET /workspaces/{ws}/changes/milestones/{ms}/orders
+... 及其它 2 项
 ```
-原因: 这些端点仅在 FA 端实现，Python 端尚未实现。
 
-#### E. 其他状态码不一致 (5 项)
-| 端点 | FA | PY | 原因 |
-|------|-----|-----|------|
-| `/workspaces/{ws}/document-baselines/3` | 405 | 404 | PY 用 GET 替代 DELETE |
-| `/workspaces/{ws}/document-baselines/3-light` | 405 | 404 | 同上 |
-| `/workspaces/{ws}/lov/test-lov` | 405 | 404 | 同上 |
-| `/workspaces/{ws}/workflow-instances/1` | 404 | 403 | 权限检查次序不同 |
-| `/workspaces/more` | 404 | 200 | 路由匹配过于宽泛 |
+#### B. FA 200 → PY 500 (内部错误, 10 项)
+Python 应返回 200 但抛出异常:
+```
+GET /workspaces/{ws}                           -- 工作区详情聚合
+GET /workspaces/{ws}/products/{ci}/bom         -- BOM 遍历
+GET /workspaces/{ws}/products/{ci}/filter      -- 产品结构过滤
+GET /workspaces/{ws}/products/{ci}/instances   -- 实例列表  
+GET /workspaces/{ws}/products/{ci}/paths       -- 路径遍历
+GET /workspaces/{ws}/products/{ci}/decode-path/{path}
+GET /workspaces/{ws}/webhooks
+... 及其它 3 项
+```
 
-结论: **36 个 MISMATCH**，其中 9 个是缺失路由（P3B 待补），12 个是异常处理问题（C 类 + B 类中的部分）。
+#### C. FA 404 → PY 500 (异常处理, 7 项)
+资源不存在时应返回 404，Python 返回 500:
+```
+GET /auth/providers/42
+GET /workspaces/{ws}/changes/issues/{id}
+GET /workspaces/{ws}/changes/milestones/{id}/requests
+GET /workspaces/{ws}/changes/milestones/{id}/orders
+GET /workspaces/{ws}/effectivities/1
+GET /workspaces/{ws}/product-instances/{ci}/instances/{sn}/link-path-part/*
+GET /workspaces/{ws}/tasks/1
+```
+
+#### D. FA 500 → PY 200 (异常吞没, 6 项)
+Java 返回 500(数据问题)，Python 返回 200 空结果:
+```
+GET /workspaces/{ws}/documents/doc_revs         -- 待链接文档列表
+GET /workspaces/{ws}/product-baselines          -- 基线列表
+GET /workspaces/{ws}/product-baselines/{ci}/baselines
+GET /workspaces/{ws}/products/{ci}/path-to-path-links-types
+GET /workspaces/{ws}/products/{ci}/path-to-path-links/source/*/target/*
+GET /workspaces/{ws}/workflow-models
+```
+原因: Java 测试数据与 Python 测试数据不完全一致，FA 无法处理时抛 500。
+
+#### E. 其他状态码问题 (14 项)
+| 问题 | 数量 | 示例 |
+|------|------|------|
+| FA 404 → PY 403 (权限次序) | 2 | workflow-instances |
+| FA 405 → PY 404 (方法不允许) | 3 | document-baselines, lov, product-config |
+| FA 404 → PY 200 (缺少404) | 2 | product-configs/42, workspaces/more |
+| FA 422 → PY 500 (校验→500) | 2 | auth/login POST |
+| FA 500 → PY 400 | 1 | accounts/me PUT |
+| FA 403 → PY 400 | 3 | part delete/release/obsolete |
+| FA 200 → PY 201 | 1 | user tag-sub add |
+| FA 422 → PY 404 | 1 | baseline-light |
+
+### PARTIAL 分类 (42 项)
+主要原因是返回字段差异 (Python 缺失部分字段):
+- Document DTO 缺 `lastIteration/workflow/obsoleteDate/lifeCycleState/routePath` 等 (~15 项)
+- Part DTO 缺 `releaseDate/obsoleteDate/modificationDate/checkInDate/lifeCycleState` (~6 项)
+- Change Issue/Request/Order DTO 缺 `category/priority/initiator/description/acl` (~10 项)
+- 其他: config `substitutesParts`, membership `permission`, stats `total` 等 (~11 项)
+
+### V1→V2 改善
+| 指标 | V1 | V2 |
+|------|-----|-----|
+| 覆盖端点 | 132+12=144 | 162 |
+| MATCH | 50 | 73 |
+| PARTIAL | 46 | 42 |
+| MISMATCH | 36 | 47 |
+| ERROR | 0 | 0 |
 
 ---
 

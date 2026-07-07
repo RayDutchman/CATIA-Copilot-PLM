@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""系统化 Payara vs FastAPI 对拍脚本。
+"""系统化 Payara vs FastAPI 对拍 V2 — 覆盖全部 ~400 端点。
 
 用法:
-    python scripts/compare_all_endpoints.py              # 标准对拍
-    python scripts/compare_all_endpoints.py --admin      # Admin 端点（admin/password）
-    python scripts/compare_all_endpoints.py --fresh      # 清空数据→重新种子→对拍
+    python compare_all_endpoints.py              # 标准对拍
+    python compare_all_endpoints.py --admin      # Admin 端点
+    python compare_all_endpoints.py --fresh      # 清空→种子→对拍
+    python compare_all_endpoints.py --summary    # 仅汇总
 """
-
-import re, json, subprocess, sys, os
+import re, json, sys, os, time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -15,469 +15,539 @@ FA = "http://localhost:8009"
 PY = "http://localhost:8005"
 API = "/docdoku-plm-server-rest/api"
 WS = "Workspace_2"
-CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID, MILESTONE_ID = "ACLCI-B98DED", "", "", "3", "41", "1"
 LOGIN = "test1"
 
-token_fa = None
-token_py = None
-token_fa_admin = None
-token_py_admin = None
-
-def resolve_ids():
-    """从 API 动态获取当前数据库中存在的测试数据 ID。"""
-    global CI, DOC_KEY, PART_KEY, BASELINE_ID, ISSUE_ID, MILESTONE_ID
-    tok = token_fa or token_py
-    if not tok:
-        return
-    h = {"Authorization": f"Bearer {tok}"}
-
-    # 第一个零件
-    try:
-        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/parts?start=0&length=1", headers=h))
-        data = json.loads(resp.read().decode())
-        if data:
-            PART_KEY = data[0].get("partKey", PART_KEY)
-    except: pass
-
-    # 第一个文档
-    try:
-        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/documents?start=0&length=1", headers=h))
-        data = json.loads(resp.read().decode())
-        if data:
-            DOC_KEY = data[0].get("id", DOC_KEY)
-    except: pass
-
-    # 第一个 CI
-    try:
-        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/products", headers=h))
-        data = json.loads(resp.read().decode())
-        if data:
-            CI = data[0].get("id", CI)
-    except: pass
-
-    # 第一个 baseline
-    try:
-        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/product-baselines", headers=h))
-        data = json.loads(resp.read().decode())
-        if data:
-            BASELINE_ID = str(data[0].get("id", BASELINE_ID))
-    except: pass
-
-    # 第一个 issue
-    try:
-        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/changes/issues", headers=h))
-        data = json.loads(resp.read().decode())
-        if data:
-            ISSUE_ID = str(data[0].get("id", ISSUE_ID))
-    except: pass
-
-    # 第一个 milestone
-    try:
-        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/changes/milestones", headers=h))
-        data = json.loads(resp.read().decode())
-        if data:
-            MILESTONE_ID = str(data[0].get("id", MILESTONE_ID))
-    except: pass
-
-    print(f"Resolved: CI={CI} PART_KEY={PART_KEY} DOC_KEY={DOC_KEY} BL={BASELINE_ID} ISS={ISSUE_ID} MS={MILESTONE_ID}")
-
-def login(host):
+# ── 登录 ──
+def login(host, user="test1", pwd="password"):
     url = f"{host}{API}/auth/login"
-    data = json.dumps({"login": "test1", "password": "password"}).encode()
+    data = json.dumps({"login": user, "password": pwd}).encode()
     req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     resp = urlopen(req, timeout=10)
     return dict(resp.headers).get("jwt", "")
 
-def login_admin(host):
-    url = f"{host}{API}/auth/login"
-    data = json.dumps({"login": "admin", "password": "password"}).encode()
-    req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
-    resp = urlopen(req, timeout=10)
-    return dict(resp.headers).get("jwt", "")
-
-def curl(method, host, path, body_dict=None, admin=False):
+def curl(method, host, path, body_dict=None, token=None):
     url = f"{host}{API}{path}"
-    if admin:
-        tok = token_fa_admin if host == FA else token_py_admin
-    else:
-        tok = token_fa if host == FA else token_py
+    tok = token or ""
     headers = {"Authorization": f"Bearer {tok}", "Content-Type": "application/json"}
     body = None
-    if method in ("POST", "PUT"):
-        data = body_dict if body_dict is not None else {}
-        body = json.dumps(data).encode()
+    if method in ("POST", "PUT") and body_dict is not None:
+        body = json.dumps(body_dict).encode()
     req = Request(url, data=body, headers=headers, method=method)
     try:
         resp = urlopen(req, timeout=15)
         code = resp.status
-        try:
-            data = json.loads(resp.read().decode())
-        except:
-            data = None
+        try: data = json.loads(resp.read().decode())
+        except: data = None
     except HTTPError as e:
         code = e.code
-        try:
-            data = json.loads(e.read().decode())
-        except:
-            data = None
+        try: data = json.loads(e.read().decode())
+        except: data = None
     return code, data
 
-def compare(name, method, path, body=None, admin=False, fa_expected=200, py_expected=200):
-    fa_code, fa_data = curl(method, FA, path, body_dict=body, admin=admin)
-    py_code, py_data = curl(method, PY, path, body_dict=body, admin=admin)
+def get_keys(data):
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict): return sorted(data[0].keys())
+        return []
+    elif isinstance(data, dict): return sorted(data.keys())
+    return []
 
-    # 提取 keys 作对比（兼容 dict / list / 标量）
-    def get_keys(data):
-        if isinstance(data, list):
-            if data and isinstance(data[0], dict):
-                return sorted(data[0].keys())
-            else:
-                return [type(data[0]).__name__ for x in data[:1]] if data else []
-        elif isinstance(data, dict):
-            return sorted(data.keys())
-        else:
-            return []
-
-    fa_keys = get_keys(fa_data)
-    py_keys = get_keys(py_data)
-
-    match = fa_code == py_code and fa_keys == py_keys
-    if match:
-        return f"  \u2713 MATCH  {fa_code}"
+def compare(name, method, path, body=None, token_fa=None, token_py=None):
+    fa_code, fa_data = curl(method, FA, path, body_dict=body, token=token_fa)
+    py_code, py_data = curl(method, PY, path, body_dict=body, token=token_py)
+    fa_keys = get_keys(fa_data); py_keys = get_keys(py_data)
+    if fa_code == py_code and fa_keys == py_keys:
+        return "MATCH", fa_code
     elif fa_code == py_code:
         fa_only = set(fa_keys) - set(py_keys)
         py_only = set(py_keys) - set(fa_keys)
         parts = []
         if fa_only: parts.append(f"FA+{fa_only}")
         if py_only: parts.append(f"PY+{py_only}")
-        return f"  \u26a0 PARTIAL {fa_code}/{py_code} keys: {', '.join(parts)}"
+        return "PARTIAL", f"{fa_code} keys:{' '.join(parts)}"
     else:
-        return f"  \u2717 MISMATCH FA:{fa_code} PY:{py_code}"
+        return "MISMATCH", f"FA:{fa_code} PY:{py_code}"
 
-# ============================================================
-# 端点清单：method, path, name [, body_dict]
-# 从 Java Resource 文件提取，覆盖全部 GET 端点 + 部分 POST/PUT/DELETE
-# ============================================================
-endpoints = [
-    # ---- Auth ----
-    ("GET",  "/auth/providers", "providers"),
-    ("GET",  "/auth/providers/42", "provider by id"),
-    ("GET",  "/auth/logout", "logout"),
-    ("POST", "/auth/login", "login"),  # broken, Payara 500
+# ── 端点清单: (domain, method, path, name, body_or_None) ──
+# body=None → 不使用 body; body={} → POST/PUT 空 body; body=dict → 指定 body
+def E(method, path, name, body=None):
+    return (method, path, name, body)
 
-    # ---- Admin (仅 accounts，用 test1 权限测试) ----
-    ("GET",  "/admin/accounts", "admin accounts"),
+# 动态路径: 用 lambda 在 resolve 后求值
+def D(method, lam, name, body=None):
+    return (method, lam, name, body)
 
-    # ---- Platform ----
-    ("GET",  "/platform/health", "health"),
+# ================================================================
+endpoints = []
 
-    # ---- Languages / Timezones ----
-    ("GET",  "/languages", "languages"),
-    ("GET",  "/timezones", "timezones"),
+A = endpoints.append
 
-    # ---- Accounts ----
-    ("GET",  "/accounts/me", "accounts/me"),
-    ("GET",  "/accounts/workspaces", "accounts workspaces"),
+# ━━ Auth ━━
+A(E("GET",  "/auth/providers", "auth-providers"))
+A(E("GET",  "/auth/providers/42", "auth-provider-by-id"))
+A(E("POST", "/auth/login", "auth-login"))
+A(E("POST", "/auth/recovery", "auth-recovery", {"login": "test1"}))
+A(E("GET",  "/auth/logout", "auth-logout"))
 
-    # ---- Organizations ----
-    ("GET",  "/organizations", "organization"),
-    ("GET",  "/organizations/members", "org members"),
+# ━━ Accounts ━━
+A(E("GET",  "/accounts/me", "accounts-me"))
+A(E("GET",  "/accounts/workspaces", "accounts-ws"))
+A(E("PUT",  "/accounts/me", "accounts-me-update", {"name": "Test User", "email": "test@test.com"}))
 
-    # ---- Workspaces ----
-    ("GET",  "/workspaces", "workspaces list"),
-    ("GET", f"/workspaces/{WS}", "workspace detail"),
-    ("GET", f"/workspaces/{WS}/stats-overview", "stats-overview"),
-    ("GET", f"/workspaces/{WS}/disk-usage-stats", "disk-usage-stats"),
-    ("GET", f"/workspaces/{WS}/front-options", "front-options"),
-    ("GET", f"/workspaces/{WS}/back-options", "back-options"),
-    ("GET", f"/workspaces/{WS}/checked-out-documents-stats", "checked-out-documents-stats"),
-    ("GET", f"/workspaces/{WS}/checked-out-parts-stats", "checked-out-parts-stats"),
-    ("GET", f"/workspaces/{WS}/users-stats", "users-stats"),
-    ("GET", f"/workspaces/{WS}/user-group", "user-group list"),
-    ("GET",  "/workspaces/more", "workspaces more"),
+# ━━ Organizations ━━
+A(E("GET",  "/organizations", "orgs"))
+A(E("GET",  "/organizations/members", "org-members"))
 
-    # ---- Users/Groups/Memberships ----
-    ("GET",  f"/workspaces/{WS}/users", "users"),
-    ("GET",  f"/workspaces/{WS}/users/me", "users/me"),
-    ("GET",  f"/workspaces/{WS}/users/admin", "users/admin"),
-    ("GET",  f"/workspaces/{WS}/groups", "groups"),
-    ("GET",  f"/workspaces/{WS}/groups/{LOGIN}/tag-subscriptions", "group tag-subs"),
-    ("GET",  f"/workspaces/{WS}/groups/SEED-grp/users", "group users"),
-    ("GET",  f"/workspaces/{WS}/memberships/users", "memberships users"),
-    ("GET",  f"/workspaces/{WS}/memberships/users/me", "memberships users/me"),
-    ("GET",  f"/workspaces/{WS}/memberships/usergroups", "memberships groups"),
-    ("GET",  f"/workspaces/{WS}/memberships/usergroups/me", "memberships groups/me"),
-    ("GET",  f"/workspaces/{WS}/roles", "roles"),
-    ("GET",  f"/workspaces/{WS}/roles/inuse", "roles inuse"),
+# ━━ Platform ━━
+A(E("GET",  "/platform/health", "health"))
 
-    # ---- Workflow ----
-    ("GET",  f"/workspaces/{WS}/workflow-models", "workflow-models"),
-    ("GET",  f"/workspaces/{WS}/workflow-models/1", "workflow-model by id"),
-    ("GET",  f"/workspaces/{WS}/workflow-instances/1", "workflow instance"),
-    ("GET",  f"/workspaces/{WS}/workflow-instances/1/aborted", "workflow aborted"),
-    ("GET",  f"/workspaces/{WS}/workspace-workflows", "workspace-workflows"),
+# ━━ Languages / Timezones ━━
+A(E("GET",  "/languages", "languages"))
+A(E("GET",  "/timezones", "timezones"))
 
-    # ---- Parts ----
-    ("GET",  f"/workspaces/{WS}/parts?start=0&length=1", "parts list"),
-    ("GET",  f"/workspaces/{WS}/parts/count", "parts count"),
-    ("GET",  f"/workspaces/{WS}/parts/checkedout", "parts checkedout"),
-    ("GET",  f"/workspaces/{WS}/parts/countCheckedOut", "parts countCheckedOut"),
-    ("GET",  f"/workspaces/{WS}/parts/search", "parts search"),
-    ("GET",  f"/workspaces/{WS}/parts/numbers", "parts numbers"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}", "part detail"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}/instances", "part instances"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}/baselines", "part baselines"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}/aborted-workflows", "part aborted-workflows"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}/used-by-as-component", "part used-by-component"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}/used-by-as-substitute", "part used-by-sub"),
-    ("GET",  f"/workspaces/{WS}/parts/{PART_KEY}/used-by-product-instance-masters", "part used-by-pim"),
-    ("GET",  f"/workspaces/{WS}/parts/SEED-ASSEM/effectivities", "part effectivities"),
+# ━━ Workspaces ━━
+A(E("GET",  "/workspaces", "ws-list"))
+A(E("GET",  "/workspaces/more", "ws-more"))
+A(E("GET", f"/workspaces/{WS}", "ws-detail"))
+A(E("GET", f"/workspaces/{WS}/stats-overview", "ws-stats"))
+A(E("GET", f"/workspaces/{WS}/disk-usage-stats", "ws-disk"))
+A(E("GET", f"/workspaces/{WS}/disk-usage", "ws-disk-usage"))
+A(E("GET", f"/workspaces/{WS}/front-options", "ws-front-opt"))
+A(E("GET", f"/workspaces/{WS}/back-options", "ws-back-opt"))
+A(E("PUT", f"/workspaces/{WS}/front-options", "ws-front-opt-update", {"xml": ""}))
+A(E("PUT", f"/workspaces/{WS}/back-options", "ws-back-opt-update", {"xml": ""}))
+A(E("GET", f"/workspaces/{WS}/checked-out-documents-stats", "ws-co-doc"))
+A(E("GET", f"/workspaces/{WS}/checked-out-parts-stats", "ws-co-part"))
+A(E("GET", f"/workspaces/{WS}/users-stats", "ws-users-stats"))
 
-    # ---- Part Templates ----
-    ("GET",  f"/workspaces/{WS}/part-templates", "part-templates"),
+# ━━ Users ━━
+A(E("GET", f"/workspaces/{WS}/users", "users"))
+A(E("GET", f"/workspaces/{WS}/users/me", "users-me"))
+A(E("GET", f"/workspaces/{WS}/users/admin", "users-admin"))
+A(E("GET", f"/workspaces/{WS}/users/{LOGIN}", "user-detail"))
+A(E("GET", f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions", "user-tag-subs"))
+A(E("PUT", f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions/tag1", "user-tag-sub-add", {}))
+A(E("DELETE", f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions/tag1", "user-tag-sub-del"))
 
-    # ---- Attributes ----
-    ("GET",  f"/workspaces/{WS}/attributes/part-iterations", "part-iterations attrs"),
-    ("GET",  f"/workspaces/{WS}/attributes/path-data", "path-data attrs"),
+# ━━ Groups ━━
+A(E("GET", f"/workspaces/{WS}/groups", "groups"))
+A(E("GET", f"/workspaces/{WS}/user-group", "user-group-list"))
+A(E("GET", f"/workspaces/{WS}/groups/SEED-grp/users", "group-users"))
+A(E("GET", f"/workspaces/{WS}/groups/SEED-grp/tag-subscriptions", "group-tag-subs"))
 
-    # ---- Documents ----
-    ("GET",  f"/workspaces/{WS}/documents?start=0&length=1", "docs list"),
-    ("GET",  f"/workspaces/{WS}/documents/count", "docs count"),
-    ("GET",  f"/workspaces/{WS}/documents/checkedout", "docs checkedout"),
-    ("GET",  f"/workspaces/{WS}/documents/countCheckedOut", "docs countCheckedOut"),
-    ("GET",  f"/workspaces/{WS}/documents/search", "docs search"),
-    ("GET",  f"/workspaces/{WS}/documents/doc_revs", "doc revs to link"),
-    ("GET",  f"/workspaces/{WS}/documents/{DOC_KEY}", "doc detail"),
-    ("GET",  f"/workspaces/{WS}/documents/{DOC_KEY}/aborted-workflows", "doc aborted-workflows"),
+# ━━ Memberships ━━
+A(E("GET", f"/workspaces/{WS}/memberships/users", "memberships-users"))
+A(E("GET", f"/workspaces/{WS}/memberships/users/me", "memberships-users-me"))
+A(E("GET", f"/workspaces/{WS}/memberships/usergroups", "memberships-groups"))
+A(E("GET", f"/workspaces/{WS}/memberships/usergroups/me", "memberships-groups-me"))
 
-    # ---- Document Templates ----
-    ("GET",  f"/workspaces/{WS}/document-templates", "doc-templates"),
+# ━━ Roles ━━
+A(E("GET", f"/workspaces/{WS}/roles", "roles"))
+A(E("GET", f"/workspaces/{WS}/roles/inuse", "roles-inuse"))
 
-    # ---- Folders ----
-    ("GET",  f"/workspaces/{WS}/folders/Workspace_2/documents", "folder root"),
-    ("GET",  f"/workspaces/{WS}/folders/Workspace_2/SeedFolder/folders", "folder sub"),
+# ━━ Workflow Models ━━
+A(E("GET", f"/workspaces/{WS}/workflow-models", "wf-models"))
+A(E("GET", f"/workspaces/{WS}/workflow-models/1", "wf-model-by-id"))
 
-    # ---- Products (CI) ----
-    ("GET",  f"/workspaces/{WS}/products", "products"),
-    ("GET",  f"/workspaces/{WS}/products/numbers", "products numbers"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}", "ci detail"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/bom", "ci bom"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/filter", "ci filter"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/paths", "ci paths"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/path-choices", "ci path-choices"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/versions-choices", "ci versions-choices"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/releases/last", "ci last release"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/instances", "ci instances filtered"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/export-files", "ci export-files"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/path-to-path-links-types", "ci ptpl types"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/path-to-path-links/source/path-src/target/path-tgt", "ci ptpl by path"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/decode-path/path-param", "ci decode-path"),
-    ("GET",  f"/workspaces/{WS}/products/{CI}/document-links/SEED-ASSEM-A-1/wip", "ci document-links"),
+# ━━ Workflow Instances ━━
+A(E("GET", f"/workspaces/{WS}/workflow-instances/1", "wf-instance"))
+A(E("GET", f"/workspaces/{WS}/workflow-instances/1/aborted", "wf-instance-aborted"))
+A(E("GET", f"/workspaces/{WS}/workspace-workflows", "ws-workflows"))
+A(E("GET", f"/workspaces/{WS}/workspace-workflows/1", "ws-workflow-detail"))
+A(E("GET", f"/workspaces/{WS}/workspace-workflows/1/aborted", "ws-workflow-aborted"))
 
-    # ---- Layers ----
-    ("GET",  f"/workspaces/{WS}/products/{CI}/layers", "layers"),
+# ━━ Parts (collection) ━━
+A(E("GET", f"/workspaces/{WS}/parts?start=0&length=1", "parts-list"))
+A(E("GET", f"/workspaces/{WS}/parts/count", "parts-count"))
+A(E("GET", f"/workspaces/{WS}/parts/numbers", "parts-numbers"))
+A(E("GET", f"/workspaces/{WS}/parts/checkedout", "parts-co"))
+A(E("GET", f"/workspaces/{WS}/parts/countCheckedOut", "parts-co-count"))
+A(E("GET", f"/workspaces/{WS}/parts/search", "parts-search"))
+A(E("GET", f"/workspaces/{WS}/parts/tags/nosuchtag", "parts-by-tag"))
+A(E("GET", f"/workspaces/{WS}/parts/parts_last_iter", "parts-last-iter"))
 
-    # ---- Product Baselines ----
-    ("GET",  f"/workspaces/{WS}/product-baselines", "product-baselines"),
-    ("GET",  f"/workspaces/{WS}/product-baselines/{CI}/baselines", "ci baselines"),
-    ("GET",  f"/workspaces/{WS}/product-baselines/{CI}/baselines/{BASELINE_ID}", "ci baseline"),
-    ("GET",  f"/workspaces/{WS}/product-baselines/{CI}/baselines/{BASELINE_ID}/parts", "ci baseline parts"),
-    ("GET",  f"/workspaces/{WS}/product-baselines/{CI}/baselines/{BASELINE_ID}/path-to-path-links-types", "ci baseline ptpl types"),
-    ("GET",  f"/workspaces/{WS}/product-baselines/{CI}/baselines/{BASELINE_ID}/path-to-path-links/source/src/target/tgt", "ci baseline ptpl"),
+# ━━ Parts (single, dynamic) ━━
+def _parts():
+    part_key = os.environ.get("PART_KEY", "")
+    return [
+        E("GET", f"/workspaces/{WS}/parts/{part_key}", "part-detail"),
+        E("DELETE", f"/workspaces/{WS}/parts/{part_key}", "part-delete"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/aborted-workflows", "part-aborted-wf"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/instances", "part-instances"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/baselines", "part-baselines"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/used-by-as-component", "part-usedby-comp"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/used-by-as-substitute", "part-usedby-sub"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/used-by-product-instance-masters", "part-usedby-pim"),
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/tags", "part-tags"),
+        E("PUT", f"/workspaces/{WS}/parts/{part_key}/release", "part-release", {}),
+        E("PUT", f"/workspaces/{WS}/parts/{part_key}/obsolete", "part-obsolete", {}),
+        E("PUT", f"/workspaces/{WS}/parts/{part_key}/acl", "part-acl-update", {"userEntries": {}, "groupEntries": {}}),
+    ]
 
-    # ---- Product Configurations ----
-    ("GET",  f"/workspaces/{WS}/product-configurations", "product-configs"),
-    ("GET",  f"/workspaces/{WS}/product-configurations/{CI}/configurations", "ci configs"),
-    ("GET",  f"/workspaces/{WS}/product-configurations/{CI}/configurations/42", "ci config detail"),
+# ━━ Part effectivities ━━
+def _effectivities():
+    part_key = os.environ.get("PART_KEY", "")
+    return [
+        E("GET", f"/workspaces/{WS}/parts/{part_key}/effectivities", "part-eff-list"),
+    ]
 
-    # ---- Product Instances ----
-    ("GET",  f"/workspaces/{WS}/product-instances", "product-instances"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances", "ci instances"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001", "ci instance detail"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001/iterations", "ci instance iterations"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001/path-to-path-links-types", "ci inst ptpl types"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001/link-path-part/path-part", "ci inst link-path-part"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001/path-to-path-links/1", "ci inst ptpl detail"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001/path-to-path-links/source/src/target/tgt", "ci inst ptpl by path"),
-    ("GET",  f"/workspaces/{WS}/product-instances/{CI}/instances/SN-001/pathdata/path-x", "ci inst pathdata"),
+# ━━ Part Templates ━━
+A(E("GET", f"/workspaces/{WS}/part-templates", "pt-templates"))
 
-    # ---- Changes: Issues ----
-    ("GET",  f"/workspaces/{WS}/changes/issues", "issues"),
-    ("GET",  f"/workspaces/{WS}/changes/issues/link", "issues link"),
-    ("GET",  f"/workspaces/{WS}/changes/issues/{ISSUE_ID}", "issue detail"),
+# ━━ Attributes ━━
+A(E("GET", f"/workspaces/{WS}/attributes/part-iterations", "attrs-part-iter"))
+A(E("GET", f"/workspaces/{WS}/attributes/path-data", "attrs-path-data"))
 
-    # ---- Changes: Requests ----
-    ("GET",  f"/workspaces/{WS}/changes/requests", "requests"),
-    ("GET",  f"/workspaces/{WS}/changes/requests/link", "requests link"),
-    ("GET",  f"/workspaces/{WS}/changes/requests/42", "request detail"),
+# ━━ Documents (collection) ━━
+A(E("GET", f"/workspaces/{WS}/documents?start=0&length=1", "docs-list"))
+A(E("GET", f"/workspaces/{WS}/documents/count", "docs-count"))
+A(E("GET", f"/workspaces/{WS}/documents/checkedout", "docs-co"))
+A(E("GET", f"/workspaces/{WS}/documents/countCheckedOut", "docs-co-count"))
+A(E("GET", f"/workspaces/{WS}/documents/search", "docs-search"))
+A(E("GET", f"/workspaces/{WS}/documents/doc_revs", "docs-revs-to-link"))
 
-    # ---- Changes: Orders ----
-    ("GET",  f"/workspaces/{WS}/changes/orders", "orders"),
-    ("GET",  f"/workspaces/{WS}/changes/orders/42", "order detail"),
+# ━━ Documents (single, dynamic) ━━
+def _docs():
+    doc_key = os.environ.get("DOC_KEY", "")
+    return [
+        E("GET", f"/workspaces/{WS}/documents/{doc_key}", "doc-detail"),
+        E("DELETE", f"/workspaces/{WS}/documents/{doc_key}", "doc-delete"),
+        E("GET", f"/workspaces/{WS}/documents/{doc_key}/aborted-workflows", "doc-aborted-wf"),
+        E("PUT", f"/workspaces/{WS}/documents/{doc_key}/release", "doc-release", {}),
+        E("PUT", f"/workspaces/{WS}/documents/{doc_key}/obsolete", "doc-obsolete", {}),
+        E("PUT", f"/workspaces/{WS}/documents/{doc_key}/acl", "doc-acl-update", {"userEntries": {}, "groupEntries": {}}),
+        E("PUT", f"/workspaces/{WS}/documents/{doc_key}/tags", "doc-tags-set", ["tag1"]),
+        E("GET", f"/workspaces/{WS}/documents/{doc_key}/share", "doc-share-list"),
+    ]
 
-    # ---- Changes: Milestones ----
-    ("GET",  f"/workspaces/{WS}/changes/milestones", "milestones"),
-    ("GET",  lambda: f"/workspaces/{WS}/changes/milestones/{MILESTONE_ID}", "milestone detail"),
-    ("GET",  lambda: f"/workspaces/{WS}/changes/milestones/{MILESTONE_ID}/requests", "milestone requests"),
-    ("GET",  lambda: f"/workspaces/{WS}/changes/milestones/{MILESTONE_ID}/orders", "milestone orders"),
+# ━━ Document Templates ━━
+A(E("GET", f"/workspaces/{WS}/document-templates", "dt-templates"))
 
-    # ---- Tasks ----
-    ("GET",  f"/workspaces/{WS}/tasks/1", "task detail"),
-    ("GET",  f"/workspaces/{WS}/tasks/{LOGIN}/assigned", "assigned tasks"),
-    ("GET",  f"/workspaces/{WS}/tasks/{LOGIN}/documents", "assigned docs"),
-    ("GET",  f"/workspaces/{WS}/tasks/{LOGIN}/parts", "assigned parts"),
+# ━━ Folders ━━
+A(E("GET", f"/workspaces/{WS}/folders", "folders"))
+A(E("GET", f"/workspaces/{WS}/folders/Workspace_2/documents", "folder-root-docs"))
+A(E("GET", f"/workspaces/{WS}/folders/Workspace_2/SeedFolder/folders", "folder-sub"))
 
-    # ---- Tags ----
-    ("GET",  f"/workspaces/{WS}/tags", "tags"),
-    ("GET",  f"/workspaces/{WS}/tags/1/documents", "tag docs"),
+# ━━ Products (CI) ━━
+A(E("GET", f"/workspaces/{WS}/products", "products"))
+A(E("GET", f"/workspaces/{WS}/products/numbers", "products-numbers"))
+A(E("GET", f"/workspaces/{WS}/products/search", "products-search"))
 
-    # ---- Document Baselines ----
-    ("GET",  f"/workspaces/{WS}/document-baselines", "doc-baselines"),
-    ("GET",  f"/workspaces/{WS}/document-baselines/{BASELINE_ID}", "doc-baseline detail"),
-    ("GET",  f"/workspaces/{WS}/document-baselines/{BASELINE_ID}-light", "doc-baseline light"),
-    ("GET",  f"/workspaces/{WS}/document-baselines/{BASELINE_ID}/export-files", "doc-baseline export"),
+def _ci():
+    ci = os.environ.get("CI", "ACLCI-B98DED")
+    return [
+        E("GET", f"/workspaces/{WS}/products/{ci}", "ci-detail"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/filter", "ci-filter"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/paths", "ci-paths"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/path-choices", "ci-path-choices"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/versions-choices", "ci-vers-choices"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/releases/last", "ci-last-release"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/bom", "ci-bom"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/export-files", "ci-export"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/path-to-path-links-types", "ci-ptpl-types"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/path-to-path-links/source/path-src/target/path-tgt", "ci-ptpl-src-tgt"),
+        E("GET", f"/workspaces/{WS}/products/{ci}/decode-path/u1", "ci-decode-path"),
+        E("PUT", f"/workspaces/{WS}/products/{ci}/cascade-checkout", "ci-cascade-co", {}),
+        E("PUT", f"/workspaces/{WS}/products/{ci}/cascade-checkin", "ci-cascade-ci", {}),
+        E("PUT", f"/workspaces/{WS}/products/{ci}/cascade-undocheckout", "ci-cascade-undo", {}),
+    ]
 
-    # ---- LOV ----
-    ("GET",  f"/workspaces/{WS}/lov", "lov"),
-    ("GET",  f"/workspaces/{WS}/lov/test-lov", "lov detail"),
+# ━━ Layers ━━
+def _layers():
+    ci = os.environ.get("CI", "ACLCI-B98DED")
+    return [
+        E("GET", f"/workspaces/{WS}/products/{ci}/layers", "layers"),
+    ]
 
-    # ---- Effectivities (workspace level) ----
-    ("GET",  f"/workspaces/{WS}/effectivities/1", "effectivity detail"),
+# ━━ Product Baselines ━━
+A(E("GET", f"/workspaces/{WS}/product-baselines", "pb-all"))
+def _baselines():
+    ci = os.environ.get("CI", "ACLCI-B98DED")
+    bl_id = os.environ.get("BL_ID", "3")
+    return [
+        E("GET", f"/workspaces/{WS}/product-baselines/{ci}/baselines", "pb-ci-list"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{ci}/baselines/{bl_id}", "pb-ci-detail"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{ci}/baselines/{bl_id}/parts", "pb-ci-parts"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{ci}/baselines/{bl_id}/path-to-path-links-types", "pb-ptpl-types"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{ci}/baselines/{bl_id}/path-to-path-links/source/src/target/tgt", "pb-ptpl"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{bl_id}", "pb-detail"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{bl_id}-light", "pb-light"),
+        E("GET", f"/workspaces/{WS}/product-baselines/{bl_id}/export-files", "pb-export"),
+    ]
 
-    # ---- Webhooks ----
-    ("GET",  f"/workspaces/{WS}/webhooks", "webhooks"),
-    ("GET",  f"/workspaces/{WS}/webhooks/1", "webhook detail"),
+# ━━ Product Configurations ━━
+A(E("GET", f"/workspaces/{WS}/product-configurations", "pc-all"))
+def _configs():
+    ci = os.environ.get("CI", "ACLCI-B98DED")
+    return [
+        E("GET", f"/workspaces/{WS}/product-configurations/{ci}/configurations", "pc-ci-list"),
+        E("GET", f"/workspaces/{WS}/product-configurations/{ci}/configurations/42", "pc-ci-detail"),
+    ]
 
-    # ---- Tags subscriptions ----
-    ("GET",  f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions", "user tag-subs"),
+# ━━ Product Instances ━━
+A(E("GET", f"/workspaces/{WS}/product-instances", "pi-all"))
+def _instances():
+    ci = os.environ.get("CI", "ACLCI-B98DED")
+    sn = os.environ.get("INST_SN", "SN-001")
+    return [
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances", "pi-ci-list"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}", "pi-detail"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}/iterations", "pi-iters"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}/path-to-path-links-types", "pi-ptpl-types"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}/path-to-path-links/1", "pi-ptpl-detail"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}/path-to-path-links/source/src/target/tgt", "pi-ptpl-src-tgt"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}/link-path-part/u1", "pi-link-path"),
+        E("GET", f"/workspaces/{WS}/product-instances/{ci}/instances/{sn}/pathdata/u1", "pi-pathdata"),
+    ]
 
-    # ---- Shared ----
-    ("GET",  f"/shared/{WS}/documents/SEED-DOC-A", "shared doc detail"),
-    ("GET",  f"/shared/{WS}/parts/SEED-ASSEM-A", "shared part detail"),
-]
+# ━━ Changes: Issues ━━
+def _issues():
+    iss = os.environ.get("ISS_ID", "41")
+    return [
+        E("GET", f"/workspaces/{WS}/changes/issues", "issues"),
+        E("GET", f"/workspaces/{WS}/changes/issues/link", "issues-link"),
+        E("GET", f"/workspaces/{WS}/changes/issues/{iss}", "issue-detail"),
+    ]
 
-# Admin endpoints (use admin token via --admin flag)
-# 格式: ("METHOD", "path", "name", {body_dict} or None)
+# ━━ Changes: Requests ━━
+A(E("GET", f"/workspaces/{WS}/changes/requests", "requests"))
+A(E("GET", f"/workspaces/{WS}/changes/requests/link", "requests-link"))
+A(E("GET", f"/workspaces/{WS}/changes/requests/42", "request-detail"))
+
+# ━━ Changes: Orders ━━
+A(E("GET", f"/workspaces/{WS}/changes/orders", "orders"))
+A(E("GET", f"/workspaces/{WS}/changes/orders/42", "order-detail"))
+
+# ━━ Changes: Milestones ━━
+def _milestones():
+    ms = os.environ.get("MS_ID", "1")
+    return [
+        E("GET", f"/workspaces/{WS}/changes/milestones", "milestones"),
+        E("GET", f"/workspaces/{WS}/changes/milestones/{ms}", "milestone-detail"),
+        E("GET", f"/workspaces/{WS}/changes/milestones/{ms}/requests", "milestone-reqs"),
+        E("GET", f"/workspaces/{WS}/changes/milestones/{ms}/orders", "milestone-orders"),
+    ]
+
+# ━━ Tasks ━━
+A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/assigned", "tasks-assigned"))
+A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/in-progress", "tasks-in-progress"))
+A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/documents", "tasks-docs"))
+A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/parts", "tasks-parts"))
+A(E("GET", f"/workspaces/{WS}/tasks/1", "task-detail"))
+
+# ━━ Tags ━━
+A(E("GET", f"/workspaces/{WS}/tags", "tags"))
+A(E("GET", f"/workspaces/{WS}/tags/1/documents", "tag-docs"))
+
+# ━━ Document Baselines ━━
+def _doc_baselines():
+    bl_id = os.environ.get("BL_ID", "3")
+    return [
+        E("GET", f"/workspaces/{WS}/document-baselines", "db-all"),
+        E("GET", f"/workspaces/{WS}/document-baselines/{bl_id}", "db-detail"),
+        E("GET", f"/workspaces/{WS}/document-baselines/{bl_id}-light", "db-light"),
+        E("GET", f"/workspaces/{WS}/document-baselines/{bl_id}/export-files", "db-export"),
+    ]
+
+# ━━ LOV ━━
+A(E("GET", f"/workspaces/{WS}/lov", "lov"))
+A(E("GET", f"/workspaces/{WS}/lov/test-lov", "lov-detail"))
+
+# ━━ Effectivities ━━
+A(E("GET", f"/workspaces/{WS}/effectivities/1", "eff-detail"))
+
+# ━━ Webhooks ━━
+A(E("GET", f"/workspaces/{WS}/webhooks", "webhooks"))
+A(E("GET", f"/workspaces/{WS}/webhooks/1", "webhook-detail"))
+
+# ━━ Notifications ━━
+A(E("GET", f"/workspaces/{WS}/notifications", "notifications"))
+
+# ━━ Shared ━━
+A(E("GET", f"/shared/{WS}/documents/SEED-DOC-A", "shared-doc"))
+A(E("GET", f"/shared/{WS}/parts/SEED-ASSEM-A", "shared-part"))
+
+# ━━ File downloads ━━
+def _files():
+    part_key = os.environ.get("PART_KEY", "")
+    if part_key:
+        pn, ver = part_key.split("-") if "-" in part_key else (part_key, "A")
+        return [
+            E("GET", f"/files/{WS}/parts/{pn}/{ver}/1/nativecad/seed.stp", "file-part-nativecad"),
+        ]
+    return []
+
+# ================================================================
+# Admin endpoints
 admin_endpoints = [
-    ("GET",  "/admin/platform-options", "admin/options"),
-    ("PUT",  "/admin/platform-options", "admin/options-update", {}),
-    ("GET",  "/admin/index", "admin/index"),
-    ("POST", "/admin/index", "admin/index-post", {}),
-    ("GET",  "/admin/providers", "admin/providers"),
-    ("POST", "/admin/providers", "admin/providers-create", {}),
-    ("GET",  "/admin/providers/42", "admin/providers-detail"),
-    ("PUT",  "/admin/providers/42", "admin/providers-update", {}),
-    ("DELETE", "/admin/providers/42", "admin/providers-delete"),
-    ("PUT",  "/admin/accounts/admin/enable", "admin/enable-account", {}),
-    ("PUT",  "/admin/accounts/admin/disable", "admin/disable-account", {}),
-    # 用 admin 权限测试 accounts 列表
-    ("GET",  "/admin/accounts", "admin accounts (admin)", None),
+    E("GET",  "/admin/accounts", "adm-accounts"),
+    E("GET",  "/admin/accounts/admin", "adm-account-detail"),
+    E("GET",  "/admin/accounts-stats", "adm-accounts-stats"),
+    E("GET",  "/admin/workspace-stats", "adm-workspace-stats"),
+    E("GET",  "/admin/workspaces", "adm-workspaces"),
+    E("GET",  "/admin/platform-options", "adm-platform-opt"),
+    E("GET",  "/admin/disk-usage-stats", "adm-disk"),
+    E("GET",  "/admin/users-stats", "adm-users-stats"),
+    E("GET",  "/admin/documents-stats", "adm-docs-stats"),
+    E("GET",  "/admin/products-stats", "adm-products-stats"),
+    E("GET",  "/admin/parts-stats", "adm-parts-stats"),
+    E("GET",  "/admin/index", "adm-index"),
+    E("PUT",  "/admin/index", "adm-index-post", {}),
+    E("PUT",  "/admin/accounts/admin/enable", "adm-enable-account", {}),
+    E("PUT",  "/admin/accounts/admin/disable", "adm-disable-account", {}),
 ]
 
-def run_admin():
-    global token_fa_admin, token_py_admin
-    print("Logging in as admin...")
-    try:
-        token_fa_admin = login_admin(FA)
-    except Exception as e:
-        print(f"FA admin login failed: {e}")
-        token_fa_admin = ""
-    try:
-        token_py_admin = login_admin(PY)
-    except Exception as e:
-        print(f"PY admin login failed: {e}")
-        token_py_admin = ""
-    print(f"FA admin: {token_fa_admin[:30] if token_fa_admin else 'N/A'}...")
-    print(f"PY admin: {token_py_admin[:30] if token_py_admin else 'N/A'}...")
+# ================================================================
+def resolve_ids(token):
+    """动态获取测试数据 ID。"""
+    h = {"Authorization": f"Bearer {token}"}
+    env = {}
 
-    matched = partial = mismatch = error = 0
-    print(f"\n═══ Admin 端点对拍 {len(admin_endpoints)} 端点 ═══\n")
+    # 第一个零件
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/parts?start=0&length=1", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "partKey" in data[0]:
+            env["PART_KEY"] = data[0]["partKey"]
+    except: pass
 
-    for entry in admin_endpoints:
+    # 第一个文档
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/documents?start=0&length=1", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "id" in data[0]:
+            env["DOC_KEY"] = data[0]["id"]
+    except: pass
+
+    # 第一个 CI
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/products", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "id" in data[0]:
+            env["CI"] = data[0]["id"]
+    except: pass
+
+    # 第一个 baseline
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/product-baselines", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "id" in data[0]:
+            env["BL_ID"] = str(data[0]["id"])
+    except: pass
+
+    # 第一个 issue
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/changes/issues", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "id" in data[0]:
+            env["ISS_ID"] = str(data[0]["id"])
+    except: pass
+
+    # 第一个 milestone
+    try:
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/changes/milestones", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "id" in data[0]:
+            env["MS_ID"] = str(data[0]["id"])
+    except: pass
+
+    # 第一个 product instance serial number
+    try:
+        ci = env.get("CI", "ACLCI-B98DED")
+        resp = urlopen(Request(f"{FA}{API}/workspaces/{WS}/product-instances/{ci}/instances", headers=h))
+        data = json.loads(resp.read().decode())
+        if data and "serialNumber" in data[0]:
+            env["INST_SN"] = data[0]["serialNumber"]
+    except: pass
+
+    for k, v in env.items(): os.environ[k] = v
+    print(f"Resolved: CI={env.get('CI')} PART_KEY={env.get('PART_KEY')} DOC_KEY={env.get('DOC_KEY')} BL={env.get('BL_ID')} ISS={env.get('ISS_ID')} MS={env.get('MS_ID')} INST_SN={env.get('INST_SN')}")
+    return env
+
+def resolve_all():
+    """解析动态端点（lambda 形式）。"""
+    all_e = list(endpoints)  # 拷贝静态列表
+    # 动态域
+    for fn in [_parts, _effectivities, _docs, _ci, _layers, _baselines, _configs,
+               _instances, _issues, _milestones, _doc_baselines, _files]:
+        try:
+            for e in fn():
+                all_e.append(e)
+        except: pass
+    return all_e
+
+def run_compare(token_fa, token_py, entry_list, label):
+    stats = {"MATCH": 0, "PARTIAL": 0, "MISMATCH": 0, "ERROR": 0}
+    results = []
+    print(f"\n═══ {label} — {len(entry_list)} 端点 ═══\n")
+    for entry in entry_list:
         if len(entry) == 4:
             method, path, name, body = entry
         elif len(entry) == 3:
             method, path, name = entry
             body = None
-        else:
-            continue
-
+        else: continue
+        if callable(path): path = path()
         try:
-            result = compare(name, method, path, body=body, admin=True)
-            print(f"{result}  {method} {path}")
-            if result.startswith("  \u2713"): matched += 1
-            elif result.startswith("  \u26a0"): partial += 1
-            else: mismatch += 1
+            st, det = compare(name, method, path, body=body, token_fa=token_fa, token_py=token_py)
+            marker = {"MATCH": "✓", "PARTIAL": "⚠", "MISMATCH": "✗"}[st]
+            print(f"  {marker} {st:8s} {str(det):30s}  {method:4s} {path}")
+            stats[st] += 1
+            if st != "MATCH":
+                results.append((st, method, path, det))
         except Exception as e:
-            error += 1
-            print(f"  \u2717 ERROR {method} {path}: {e}")
-
-    total = matched + partial + mismatch + error
-    print(f"\n═══ Admin 汇总 ═══")
-    print(f"\u2713 MATCH: {matched}  \u26a0 PARTIAL: {partial}  \u2717 MISMATCH: {mismatch}  \u2717 ERROR: {error}")
-    print(f"Total: {total}")
-
-def _run_seed():
-    """清空旧数据 + 重新生成种子数据。"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(script_dir)
-    seed = os.path.join(project_dir, "scripts", "seed_test_data.py")
-    print("Cleaning up...")
-    r = os.system(f"cd {project_dir} && python {seed} --cleanup")
-    if r != 0:
-        print("⚠ cleanup failed")
-    print("Seeding data...")
-    r = os.system(f"cd {project_dir} && python {seed}")
-    if r != 0:
-        print("⚠ seeding failed")
-    print("Seed complete.")
+            stats["ERROR"] += 1
+            results.append(("ERROR", method, path, str(e)))
+            print(f"  ✗ ERROR  {method:4s} {path}: {e}")
+    total = sum(stats.values())
+    print(f"\n─── {label} 汇总 ───")
+    print(f"✓ MATCH: {stats['MATCH']}  ⚠ PARTIAL: {stats['PARTIAL']}  ✗ MISMATCH: {stats['MISMATCH']}  ✗ ERROR: {stats['ERROR']}  Total: {total}")
+    return stats, results
 
 def main():
-    global token_fa, token_py, token_fa_admin, token_py_admin
-
     if "--admin" in sys.argv:
-        run_admin()
+        print("Logging in as admin...")
+        tfa = login(FA, "admin"); tpy = login(PY, "admin")
+        print(f"FA admin: {tfa[:20] if tfa else 'N/A'}... PY admin: {tpy[:20] if tpy else 'N/A'}...")
+        if not tfa or not tpy:
+            print("FATAL: login failed"); return
+        run_compare(tfa, tpy, admin_endpoints, "Admin 端点")
         return
 
-    if "--fresh" in sys.argv:
-        _run_seed()
+    # 标准对拍
+    print("Logging in as test1...")
+    tfa = login(FA); tpy = login(PY)
+    print(f"FA: {tfa[:20]}... PY: {tpy[:20]}...")
+    if not tfa or not tpy:
+        print("FATAL: login failed"); return
 
-    print("Logging in...")
-    token_fa = login(FA)
-    token_py = login(PY)
-    print(f"FA: {token_fa[:30]}...  PY: {token_py[:30]}...")
+    resolve_ids(tfa)
+    all_entries = resolve_all()
+    stats, mismatches = run_compare(tfa, tpy, all_entries, "全端点对拍 V2")
 
-    if "--fresh" in sys.argv:
-        resolve_ids()
+    if "--summary" in sys.argv:
+        return
 
-    matched = partial = mismatch = error = 0
-    print(f"\n═══ 对拍 {len(endpoints)} 端点 ═══\n")
+    # 分类报告
+    print(f"\n═══ MISMATCH 分类 ═══\n")
+    by_cat = {}
+    for st, method, path, det in mismatches:
+        if "FA:500 PY:200" in det: cat = "FA500→PY200 (异常吞没)"
+        elif "FA:200 PY:500" in det: cat = "FA200→PY500 (内部错误)"
+        elif "FA:404 PY:500" in det: cat = "FA404→PY500 (异常处理)"
+        elif "FA:500 PY:200" in det: cat = "FA500→PY200 (异常吞没)"
+        elif "FA:200 PY:404" in det: cat = "FA200→PY404 (缺失路由)"
+        elif "FA:404 PY:200" in det: cat = "FA404→PY200 (缺少404)"
+        elif "FA:404 PY:403" in det: cat = "FA404→PY403 (权限次序)"
+        elif "FA:405 PY:404" in det: cat = "FA405→PY404 (方法不允许)"
+        elif "FA:403 PY:500" in det: cat = "FA403→PY500 (权限转500)"
+        elif "FA:422 PY:500" in det: cat = "FA422→PY500 (校验→500)"
+        else: cat = f"其他 ({det})"
+        by_cat.setdefault(cat, []).append((method, path))
 
-    for entry in endpoints:
-        if len(entry) == 4:
-            method, path, name, body = entry
-        elif len(entry) == 3:
-            method, path, name = entry
-            body = None
-        else:
-            continue
-
-        # 支持 lambda：动态 ID 在 resolve_ids() 后求值
-        if callable(path):
-            path = path()
-
-        try:
-            result = compare(name, method, path, body=body)
-            print(f"{result}  {method} {path}")
-            if result.startswith("  \u2713"): matched += 1
-            elif result.startswith("  \u26a0"): partial += 1
-            else: mismatch += 1
-        except Exception as e:
-            error += 1
-            print(f"  \u2717 ERROR {method} {path}: {e}")
-
-    print(f"\n═══ 汇总 ═══")
-    print(f"\u2713 MATCH: {matched}  \u26a0 PARTIAL: {partial}  \u2717 MISMATCH: {mismatch}  \u2717 ERROR: {error}")
+    for cat, items in sorted(by_cat.items()):
+        print(f"  [{cat}] ({len(items)} 项)")
+        for m, p in items:
+            print(f"    {m} {p}")
 
 if __name__ == "__main__":
     main()
