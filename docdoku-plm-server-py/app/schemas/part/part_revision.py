@@ -6,7 +6,7 @@ from typing import Optional, List
 
 
 class PartRevisionDTO(BaseModel):
-    model_config = ConfigDict(from_attributes=True, exclude_none=True, extra='forbid')
+    model_config = ConfigDict(from_attributes=True, exclude_none=False, extra='forbid')
 
     workspaceId: str
     number: str

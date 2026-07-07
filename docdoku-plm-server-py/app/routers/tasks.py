@@ -28,22 +28,9 @@ def _parse_task_id(task_id: str):
     return None, None, task_id
 
 
-def _doc_to_dict(rev):
-    return {
-        "id": f"{rev.documentmaster_id}-{rev.version}",
-        "version": rev.version,
-        "workspaceId": rev.workspace_id,
-        "documentMasterId": rev.documentmaster_id,
-        "title": rev.title or rev.documentmaster_id,
-        "description": rev.description or "",
-        "type": rev.document_master.type if rev.document_master else "",
-        "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
-        "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else {},
-        "checkOutDate": int(rev.check_out_date.timestamp() * 1000) if rev.check_out_date else None,
-        "path": rev.location_completepath or "",
-        "author": {"login": rev.author_login, "name": rev.author_login},
-        "creationDate": int(rev.creation_date.timestamp() * 1000) if rev.creation_date else None,
-    }
+def _doc_to_dict(db, rev, current_user_login=None):
+    from app.routers.document import _doc_to_dict as _doc_full
+    return _doc_full(db, rev, current_user_login)
 
 
 def _part_to_dict(rev):
@@ -300,7 +287,7 @@ def task_documents(ws: str, login: str,
         DocumentRevision.workspace_id == ws,
         DocumentRevision.workflow_id.in_(wf_ids)
     ).all()
-    return [_doc_to_dict(d) for d in docs]
+    return [_doc_to_dict(db, d) for d in docs]
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/parts", response_model=List[TaskHolderPartDTO])

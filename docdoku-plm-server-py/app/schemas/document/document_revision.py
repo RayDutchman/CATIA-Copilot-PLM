@@ -35,5 +35,6 @@ class DocumentRevisionDTO(BaseModel):
     stateSubscription: bool = False
     commentLink: Optional[str] = None
     workflow: Optional[dict] = None
+    workflowId: Optional[int] = None
     lifeCycleState: Optional[str] = None
     type: Optional[str] = None

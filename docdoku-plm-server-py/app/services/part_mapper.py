@@ -256,6 +256,7 @@ def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO
         checkOutUser=_user_dto(pr.checkout_user_workspace_id, pr.checkout_user_login, db),
         checkOutDate=_to_utc(pr.check_out_date),
         status=STATUS_MAP.get(pr.status, "WIP"),
+        lifeCycleState=STATUS_MAP.get(pr.status, "WIP"),
         publicShared=pr.public_shared or False,
         releaseDate=_to_utc(pr.release_date),
         releaseAuthor=_user_dto(pr.release_user_workspace, pr.release_user_login, db),

@@ -21,34 +21,10 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 doc_svc = DocumentService()
 
 
-def _build_doc_dto(dr, db: Session) -> dict:
-    """组装轻量文档修订版 DTO，对齐 Java createLightDocumentRevisionDTO。"""
-    author = None
-    if dr.author_login:
-        acc = db.query(Account).filter(Account.login == dr.author_login).first()
-        author = {
-            "login": dr.author_login,
-            "name": acc.name if acc else dr.author_login,
-            "workspaceId": dr.workspace_id,
-        }
-    tags_rows = db.execute(text(
-        "SELECT tag_label FROM documentrevision_tag "
-        "WHERE documentmaster_workspace_id=:ws "
-        "AND documentmaster_id=:did "
-        "AND documentrevision_version=:ver"
-    ), {"ws": dr.workspace_id, "did": dr.documentmaster_id, "ver": dr.version}).fetchall()
-    return {
-        "workspaceId": dr.workspace_id,
-        "id": dr.documentmaster_id,
-        "version": dr.version,
-        "title": dr.title or "",
-        "status": dr.status,
-        "author": author or {},
-        "tags": [r[0] for r in tags_rows],
-        "path": dr.location_completepath or "",
-        "creationDate": dr.creation_date.isoformat() if dr.creation_date else None,
-        "checkOutDate": dr.check_out_date.isoformat() if dr.check_out_date else None,
-    }
+def _build_doc_dto(dr, db: Session, current_user_login=None) -> dict:
+    """组装文档修订版 DTO，使用统一的 _doc_to_dict 确保字段完整。"""
+    from app.routers.document import _doc_to_dict
+    return _doc_to_dict(db, dr, current_user_login)
 
 
 @router.get("/workspaces/{workspace_id}/tags")
@@ -141,7 +117,7 @@ def get_documents_by_tag(
         DocumentRevision.workspace_id == workspace_id,
         document_revision_tags.c.tag_label == tag_id,
     ).all()
-    return [_build_doc_dto(dr, db) for dr in revisions]
+    return [_build_doc_dto(dr, db, current_user.login) for dr in revisions]
 
 
 @router.post("/workspaces/{workspace_id}/tags/{tag_id}/documents", status_code=201)
@@ -169,7 +145,7 @@ def create_document_in_root_with_tag(
     _ensure_tag(db, workspace_id, tag_id)
     doc_svc.add_tag(db, workspace_id, dr.documentmaster_id, dr.version, tag_id)
 
-    return _build_doc_dto(dr, db)
+    return _build_doc_dto(dr, db, current_user.login)
 
 
 def _ensure_tag(db: Session, ws: str, label: str) -> None:

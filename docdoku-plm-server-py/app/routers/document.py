@@ -176,6 +176,7 @@ def _doc_to_dict(db, rev, current_user_login=None):
         "releaseDate": str(rev.release_date) if rev.release_date else None,
         "obsoleteDate": str(rev.obsolete_date) if rev.obsolete_date else None,
         "lastIteration": rev.last_iteration_number,
+        "lastIterationNumber": rev.last_iteration_number,
         "documentIterations": iterations,
         "tags": [],
         "path": rev.location_completepath,
@@ -204,11 +205,12 @@ def _doc_to_dict(db, rev, current_user_login=None):
         )
     for k in ("description",):
         dict_fields.setdefault(k, "")
-    # 计算 lifeCycleState（来自关联的 workflow）
+    # 计算 lifeCycleState + workflow（来自关联的 workflow）
     wf_id = getattr(rev, "workflow_id", None)
+    dict_fields["workflowId"] = wf_id
     if wf_id and db:
         wf_row = db.execute(sql_text(
-            "SELECT id, finallifecyclestate FROM workflow WHERE id=:wid"
+            "SELECT id, finallifecyclestate, aborteddate FROM workflow WHERE id=:wid"
         ), {"wid": wf_id}).first()
         if wf_row:
             act = db.execute(sql_text(
@@ -218,7 +220,54 @@ def _doc_to_dict(db, rev, current_user_login=None):
             ), {"wid": wf_id}).first()
             lcs = act[0] if act else wf_row[1]
             dict_fields["lifeCycleState"] = lcs
+            # 构建 workflow dict
+            wf_dict = {
+                "id": wf_id,
+                "finalLifeCycleState": wf_row[1],
+                "abortedDate": str(wf_row[2]) if wf_row[2] else None,
+                "activities": [],
+                "currentStep": 0,
+            }
+            act_rows = db.execute(sql_text(
+                "SELECT step, dtype, lifecyclestate, taskstocomplete FROM activity "
+                "WHERE workflow_id=:wid ORDER BY step ASC"
+            ), {"wid": wf_id}).fetchall()
+            current_step = 0
+            for a in act_rows:
+                tasks = db.execute(sql_text(
+                    "SELECT num, title, instructions, status, worker_login, "
+                    "worker_workspace_id, duration, signature, closuredate, "
+                    "closurecomment, startdate, targetiteration "
+                    "FROM task WHERE workflow_id=:wid AND activity_step=:step "
+                    "ORDER BY num ASC"
+                ), {"wid": wf_id, "step": a[0]}).fetchall()
+                task_list = []
+                all_completed = True
+                for t in tasks:
+                    worker = None
+                    if t[4]:
+                        worker = _get_user_info(db, t[4], t[5] or rev.workspace_id)
+                    task_list.append({
+                        "num": t[0], "title": t[1], "instructions": t[2],
+                        "status": t[3], "worker": worker, "duration": t[6],
+                        "signature": t[7],
+                        "closureDate": str(t[8]) if t[8] else None,
+                        "closureComment": t[9],
+                        "startDate": str(t[10]) if t[10] else None,
+                        "targetIteration": t[11],
+                    })
+                    if t[3] not in ("APPROVED", "CLOSED"):
+                        all_completed = False
+                wf_dict["activities"].append({
+                    "step": a[0], "type": a[1], "lifeCycleState": a[2],
+                    "tasksToComplete": a[3], "tasks": task_list,
+                })
+                if all_completed and current_step < len(act_rows):
+                    current_step += 1
+            wf_dict["currentStep"] = current_step
+            dict_fields["workflow"] = wf_dict
     dict_fields.setdefault("lifeCycleState", None)
+    dict_fields.setdefault("workflow", None)
     # 查询标签
     if db:
         tag_rows = db.execute(sql_text(
