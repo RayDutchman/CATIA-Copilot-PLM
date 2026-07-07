@@ -14,7 +14,11 @@
 
 - [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但 FA 侧不加载。需 tcpdump 抓包或升级 Three.js。
 
-- [ ] **装配同步（_sync_components）未完整迁移** — assembly BOM 同步部分仍在 Payara 处理。
+- [ ] **update_iteration 3 项辅助功能缺失** (2026-07-07 核实):
+  - `_sync_instance_attribute_templates` — Java 同步 InstanceAttributeTemplate 列表，Python 只同步 InstanceAttribute
+  - `hasValidChange` 校验 — Java 调用 AttributesConsistencyUtils 验证属性变更合法性
+  - ES reindex — Java 在 updatePartIteration 结束后调 indexPartIteration
+  **装配 BOM 同步组件（_sync_components）本身已完整实现**（DELETE old + INSERT PartUsageLink + CADInstance + BFS 循环检测）
 
 ### 中优先级
 
