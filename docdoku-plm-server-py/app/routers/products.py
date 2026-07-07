@@ -377,8 +377,22 @@ def versions_choices(ws: str, ci_id: str,
 def export_files(ws: str, pid: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    """返回 CI 的导出文件列表。暂未实现导出逻辑。"""
-    return {"files": []}
+    """以 ZIP 格式下载 CI 下所有零件的 CAD 文件（nativeCAD + 附件）。
+
+    对齐 Java ProductFileExportMessageBodyWriter。
+    """
+    from app.routers.export.product_file_export import build_product_export_zip
+    from fastapi.responses import StreamingResponse
+
+    zip_data = build_product_export_zip(db, ws, pid)
+    return StreamingResponse(
+        iter([zip_data]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{pid}-export.zip"',
+            "Content-Length": str(len(zip_data)),
+        },
+    )
 
 
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links-types")

@@ -340,4 +340,28 @@ def get_baseline_light(ws: str, bl_id: int,
 def baseline_export_files(ws: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
-    return []
+    """返回基线中所有零件的文件列表（nativeCAD + 附件）。
+
+    对齐 Java ProductBaselineManagerBean.getBinaryResourceFromBaseline()。
+    """
+    from sqlalchemy import text
+    rows = db.execute(text(
+        """
+        SELECT DISTINCT br.full_name
+        FROM baselinedpart bp
+        JOIN partiteration pi ON (
+            pi.workspace_id = bp.target_workspace_id
+            AND pi.partmaster_partnumber = bp.target_partmaster_partnumber
+            AND pi.partrevision_version = bp.target_partrevision_version
+            AND pi.iteration = bp.target_iteration
+        )
+        JOIN binaryresource br ON (
+            br.full_name = pi.nativecad_file_fullname
+        )
+        WHERE bp.partcollection_id = (
+            SELECT partcollection_id FROM productbaseline WHERE id = :bl_id
+        )
+        AND pi.nativecad_file_fullname IS NOT NULL
+        """
+    ), {"bl_id": bl_id}).fetchall()
+    return [{"fullName": r[0]} for r in rows]

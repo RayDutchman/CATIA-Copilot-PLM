@@ -1,6 +1,6 @@
 """零件集合路由（PartsResource）。"""
 import uuid
-from fastapi import APIRouter, Depends, Query, Body
+from fastapi import APIRouter, Depends, Query, Body, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
@@ -312,8 +312,33 @@ def delete_query(query_id: str,
             response_model=dict)
 @router.get("/parts/query-export/",
             response_model=dict, include_in_schema=False)
-def query_export(current_user: Account = Depends(get_current_user)):
-    return {}
+def query_export(request: Request,
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """导出零件查询结果为 JSON 或 CSV（exportType=json|xls）。
+
+    对齐 Java QueryResultMessageBodyWriter。
+    """
+    from app.routers.export.query_result import export_query_as_json, export_query_as_csv
+    from fastapi.responses import Response
+
+    params = dict(request.query_params)
+    export_type = params.get("exportType", "json")
+
+    if export_type == "xls":
+        csv_data = export_query_as_csv(db, "", params)
+        return Response(
+            content=csv_data,
+            media_type="application/csv",
+            headers={"Content-Disposition": 'attachment; filename="TSR.csv"'},
+        )
+    else:
+        json_data = export_query_as_json(db, "", params)
+        return Response(
+            content=json_data,
+            media_type="application/json",
+            headers={"Content-Disposition": "inline"},
+        )
 
 
 # ── imports ────────────────────────────────────────────────────

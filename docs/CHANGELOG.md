@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-07-07 — P3B-B File Utils + Export 层迁移
+
+- feat(file): R-049~052 — file/util 工具包 (binary_resource_streaming/download_meta/download_response/upload)，Range 解析/MIME 类型/ETag/Content-Disposition 等提取为独立模块
+- feat(export): R-053 — 文档基线 ZIP 导出端点 (document_baseline_export)，遍历基线文档附件打包为 ZIP 流
+- feat(export): R-054 — 产品实例 JSON 流端点 (instance_collection)，使用 StreamingResponse + generator 输出 JSON 数组
+- feat(export): R-055 — 产品文件 ZIP 导出（product_file_export 工具模块），集成到 products.py export-files 端点
+- feat(export): R-056 — 查询结果 JSON/CSV 导出（query_result 工具模块），集成到 parts.py query-export 端点
+- feat(export): R-057 — 虚拟实例 JSON 流端点 (virtual_instance_collection)，创建虚拟根 PartLink 遍历装配树
+- feat(util): R-058~063 — file_export 工具包 (DTOs: document_baseline_file_export/product_file_export；工具: file_download_tools/file_export_tools+ZipStream/instance_body_writer_tools+Matrix4/search_query_parser)
+- fix(router): product_baselines.py baseline_export_files stub → 真实 DB 查询基线零件 nativeCAD 文件列表
+- chore(main): 注册 3 个新导出路由（document_baseline_export/instance_collection/virtual_instance_collection）
+
 ## 2026-07-07 — P3B-A Router 层迁移
 
 - feat(router): R-003 attributes.py — GET /workspaces/{ws}/attributes/part-iterations + path-data，按属性名/类型去重
