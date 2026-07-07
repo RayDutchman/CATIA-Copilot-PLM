@@ -1,227 +1,6 @@
 [
   {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/parts",
-    "desc": "创建零件",
-    "fa_code": 400,
-    "py_code": 409,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✗MISMATCH FA=400 PY=409"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/folders/Workspace_2/documents",
-    "desc": "创建文档",
-    "fa_code": 201,
-    "py_code": 409,
-    "missing_keys": [
-      "acl",
-      "attributesLocked",
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "checkOutDate",
-      "checkOutUser",
-      "checkOutUser.email",
-      "checkOutUser.language",
-      "checkOutUser.login",
-      "checkOutUser.name",
-      "checkOutUser.workspaceId",
-      "commentLink",
-      "creationDate",
-      "documentIterations",
-      "documentIterations.attachedFiles",
-      "documentIterations.author",
-      "documentIterations.author.email",
-      "documentIterations.author.language",
-      "documentIterations.author.login",
-      "documentIterations.author.name",
-      "documentIterations.author.workspaceId",
-      "documentIterations.creationDate",
-      "documentIterations.documentMasterId",
-      "documentIterations.documentRevision",
-      "documentIterations.documentRevision.acl",
-      "documentIterations.documentRevision.attributesLocked",
-      "documentIterations.documentRevision.checkOutDate",
-      "documentIterations.documentRevision.checkOutUser",
-      "documentIterations.documentRevision.commentLink",
-      "documentIterations.documentRevision.documentMasterId",
-      "documentIterations.documentRevision.id",
-      "documentIterations.documentRevision.iterationSubscription",
-      "documentIterations.documentRevision.publicShared",
-      "documentIterations.documentRevision.releaseAuthor",
-      "documentIterations.documentRevision.releaseDate",
-      "documentIterations.documentRevision.stateSubscription",
-      "documentIterations.documentRevision.status",
-      "documentIterations.documentRevision.version",
-      "documentIterations.documentRevision.workspaceId",
-      "documentIterations.id",
-      "documentIterations.instanceAttributes",
-      "documentIterations.iteration",
-      "documentIterations.linkedDocuments",
-      "documentIterations.revisionNote",
-      "documentIterations.title",
-      "documentIterations.version",
-      "documentIterations.workspaceId",
-      "documentMasterId",
-      "id",
-      "iterationSubscription",
-      "path",
-      "publicShared",
-      "releaseAuthor",
-      "releaseDate",
-      "stateSubscription",
-      "status",
-      "tags",
-      "title",
-      "type",
-      "version",
-      "workspaceId"
-    ],
-    "extra_keys": [],
-    "status": "✗MISMATCH FA=201 PY=409 miss=['documentIterations.documentRevision.workspaceId', 'documentIterations.documentRevision.checkOutDate', 'documentIterations.documentMasterId']"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/changes/issues",
-    "desc": "创建Issue",
-    "fa_code": 200,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "category",
-      "description",
-      "priority"
-    ],
-    "status": "✗MISMATCH FA=200 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/changes/requests",
-    "desc": "创建Request",
-    "fa_code": 200,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "category",
-      "description",
-      "priority"
-    ],
-    "status": "✗MISMATCH FA=200 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/changes/orders",
-    "desc": "创建Order",
-    "fa_code": 200,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "category",
-      "description",
-      "priority"
-    ],
-    "status": "✗MISMATCH FA=200 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/changes/milestones",
-    "desc": "创建Milestone",
-    "fa_code": 409,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "description",
-      "id",
-      "numberOfOrders",
-      "numberOfRequests",
-      "title",
-      "workspaceId",
-      "writable"
-    ],
-    "status": "✗MISMATCH FA=409 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/workflow-models",
-    "desc": "创建WorkflowModel",
-    "fa_code": 400,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "activityModels",
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "creationDate",
-      "finalLifeCycleState",
-      "id"
-    ],
-    "status": "✗MISMATCH FA=400 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/products",
-    "desc": "创建CI",
-    "fa_code": 403,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "creationDate",
-      "description",
-      "designItemLatestVersion",
-      "designItemName",
-      "designItemNumber",
-      "hasModificationNotification",
-      "id",
-      "pathToPathLinks",
-      "workspaceId"
-    ],
-    "status": "✗MISMATCH FA=403 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/roles",
-    "desc": "创建Role",
-    "fa_code": 403,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "defaultAssignedGroups",
-      "defaultAssignedUsers",
-      "id",
-      "name",
-      "workspaceId"
-    ],
-    "status": "✗MISMATCH FA=403 PY=201"
-  },
-  {
-    "method": "POST",
-    "path": "/workspaces/Workspace_2/groups",
-    "desc": "创建UserGroup",
-    "fa_code": 500,
-    "py_code": 201,
-    "missing_keys": [],
-    "extra_keys": [
-      "id",
-      "workspaceId"
-    ],
-    "status": "✗MISMATCH FA=500 PY=201"
-  },
-  {
+    "stage": "Auth",
     "method": "GET",
     "path": "/auth/providers",
     "desc": "OAuth providers",
@@ -229,58 +8,217 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Auth",
+    "method": "GET",
+    "path": "/auth/providers/42",
+    "desc": "provider by id",
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Auth",
     "method": "POST",
     "path": "/auth/logout",
     "desc": "登出",
     "fa_code": 500,
     "py_code": 405,
     "missing_keys": [],
-    "extra_keys": [
-      "detail"
-    ],
-    "status": "✗MISMATCH FA=500 PY=405"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Auth",
     "method": "POST",
-    "path": "/auth/recover",
-    "desc": "密码恢复",
-    "fa_code": 500,
+    "path": "/auth/recovery",
+    "desc": "密码恢复请求",
+    "fa_code": 204,
     "py_code": 204,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=500 PY=204"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Auth",
+    "method": "POST",
+    "path": "/auth/recover",
+    "desc": "重置密码",
+    "fa_code": 500,
+    "py_code": 500,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "BOTH500"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "GET",
+    "path": "/accounts/me",
+    "desc": "我的账号",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [
+      [
+        "email",
+        "example1@example.com",
+        "test@test.com",
+        "value-diff"
+      ],
+      [
+        "name",
+        "测试账号",
+        "Test User",
+        "value-diff"
+      ]
+    ],
+    "field_diff_count": 2,
+    "category": "PARTIAL"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "GET",
+    "path": "/accounts/workspaces",
+    "desc": "我的工作区",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "PUT",
+    "path": "/accounts/me",
+    "desc": "更新账号",
+    "fa_code": 400,
+    "py_code": 500,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "GET",
+    "path": "/platform/health",
+    "desc": "健康检查",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [
+      [
+        "executionTime",
+        "4",
+        "0",
+        "num-diff"
+      ]
+    ],
+    "field_diff_count": 1,
+    "category": "PARTIAL"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "GET",
+    "path": "/languages",
+    "desc": "语言",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "GET",
+    "path": "/timezones",
+    "desc": "时区",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Accounts/Platform",
+    "method": "GET",
+    "path": "/organizations",
+    "desc": "组织",
+    "fa_code": 204,
+    "py_code": 204,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Workspace管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2",
     "desc": "工作区详情",
     "fa_code": 500,
     "py_code": 200,
     "missing_keys": [],
-    "extra_keys": [
-      "admin",
-      "creationDate",
-      "description",
-      "enabled",
-      "folderLocked",
-      "id"
-    ],
-    "status": "✗MISMATCH FA=500 PY=200"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Workspace管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/stats-overview",
-    "desc": "统计总览",
+    "desc": "统计",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
+    "extra_keys": [
+      "checkedOutDocuments",
+      "checkedOutParts"
+    ],
+    "field_diffs": [
+      [
+        "checkedOutDocuments",
+        "✗MISSING",
+        "381",
+        "missing-in-fa"
+      ],
+      [
+        "checkedOutParts",
+        "✗MISSING",
+        "660",
+        "missing-in-fa"
+      ]
+    ],
+    "field_diff_count": 2,
+    "category": "PARTIAL"
   },
   {
+    "stage": "Workspace管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/disk-usage-stats",
     "desc": "磁盘用量",
@@ -290,9 +228,38 @@
     "extra_keys": [
       "total"
     ],
-    "status": "✓MATCH"
+    "field_diffs": [
+      [
+        "parts",
+        "98897419",
+        "67977927",
+        "num-diff"
+      ],
+      [
+        "total",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ]
+    ],
+    "field_diff_count": 2,
+    "category": "PARTIAL"
   },
   {
+    "stage": "Workspace管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/disk-usage",
+    "desc": "磁盘(stub)",
+    "fa_code": 404,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Workspace管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/users-stats",
     "desc": "用户统计",
@@ -300,9 +267,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workspace管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/front-options",
     "desc": "前端选项",
@@ -310,9 +280,19 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [
+      [
+        "partTableColumns.length",
+        "0",
+        "6",
+        "array-length"
+      ]
+    ],
+    "field_diff_count": 1,
+    "category": "PARTIAL"
   },
   {
+    "stage": "Workspace管理",
     "method": "PUT",
     "path": "/workspaces/Workspace_2/front-options",
     "desc": "保存前端选项",
@@ -320,29 +300,182 @@
     "py_code": 204,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workspace管理",
     "method": "GET",
-    "path": "/workspaces/more",
-    "desc": "更多工作区",
+    "path": "/workspaces/Workspace_2/back-options",
+    "desc": "后端选项",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workspace管理",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts",
+    "path": "/workspaces/Workspace_2/checked-out-documents-stats",
+    "desc": "签出文档",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [
+      [
+        "test1[0].date",
+        "1783274824829",
+        "1783249944147",
+        "num-diff"
+      ],
+      [
+        "test1[1].date",
+        "1783269774796",
+        "1783250072737",
+        "num-diff"
+      ],
+      [
+        "test1[2].date",
+        "1783363657564",
+        "1783250215156",
+        "num-diff"
+      ],
+      [
+        "test1[3].date",
+        "1783311142591",
+        "1783264878519",
+        "num-diff"
+      ],
+      [
+        "test1[4].date",
+        "1783307505954",
+        "1783256362544",
+        "num-diff"
+      ]
+    ],
+    "field_diff_count": 5,
+    "category": "PARTIAL"
+  },
+  {
+    "stage": "Workspace管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/checked-out-parts-stats",
+    "desc": "签出零件",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [
+      [
+        "test1[0].date",
+        "1783305901140",
+        "1783194009832",
+        "num-diff"
+      ],
+      [
+        "test1[1].date",
+        "1783312449861",
+        "1783194009891",
+        "num-diff"
+      ],
+      [
+        "test1[2].date",
+        "1783271259877",
+        "1783194009925",
+        "num-diff"
+      ],
+      [
+        "test1[3].date",
+        "1783312283262",
+        "1783194009955",
+        "num-diff"
+      ],
+      [
+        "test1[4].date",
+        "1783364277870",
+        "1783241902470",
+        "num-diff"
+      ]
+    ],
+    "field_diff_count": 5,
+    "category": "PARTIAL"
+  },
+  {
+    "stage": "Workspace管理",
+    "method": "GET",
+    "path": "/workspaces/more",
+    "desc": "更多工作区",
+    "fa_code": 200,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Workspace管理",
+    "method": "GET",
+    "path": "/workspaces",
+    "desc": "工作区列表",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [
+      "administratedWorkspaces.admin",
+      "administratedWorkspaces.creationDate",
+      "allWorkspaces.admin",
+      "allWorkspaces.creationDate"
+    ],
+    "field_diffs": [
+      [
+        "administratedWorkspaces[0].admin",
+        "✗MISSING",
+        "test1",
+        "missing-in-fa"
+      ],
+      [
+        "administratedWorkspaces[0].creationDate",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ],
+      [
+        "allWorkspaces[0].admin",
+        "✗MISSING",
+        "test1",
+        "missing-in-fa"
+      ],
+      [
+        "allWorkspaces[0].creationDate",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ]
+    ],
+    "field_diff_count": 4,
+    "category": "PARTIAL"
+  },
+  {
+    "stage": "Parts零件",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts?start=0&length=1",
     "desc": "零件列表",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
     "path": "/workspaces/Workspace_2/parts/count",
     "desc": "零件计数",
@@ -350,9 +483,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts/numbers",
+    "desc": "零件编号",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Parts零件",
     "method": "GET",
     "path": "/workspaces/Workspace_2/parts/checkedout",
     "desc": "已签出",
@@ -360,9 +509,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts/countCheckedOut",
+    "desc": "签出计数",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Parts零件",
     "method": "GET",
     "path": "/workspaces/Workspace_2/parts/search?q=CompareTestPart",
     "desc": "搜索",
@@ -370,265 +535,207 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A",
     "desc": "零件详情",
-    "fa_code": 200,
-    "py_code": 200,
+    "fa_code": 404,
+    "py_code": 404,
     "missing_keys": [],
-    "extra_keys": [
-      "checkInDate",
-      "description",
-      "lifeCycleState",
-      "modificationDate",
-      "obsoleteDate",
-      "partIterations.geometryFileURI",
-      "partIterations.iterationNote",
-      "partIterations.modificationDate",
-      "partIterations.nativeCADFile",
-      "releaseDate",
-      "type"
-    ],
-    "status": "✓MATCH"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "PUT",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/checkout",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/checkout",
     "desc": "签出",
-    "fa_code": 200,
-    "py_code": 403,
-    "missing_keys": [
-      "acl",
-      "attributesLocked",
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "checkOutDate",
-      "checkOutUser",
-      "checkOutUser.email",
-      "checkOutUser.language",
-      "checkOutUser.login",
-      "checkOutUser.name",
-      "checkOutUser.workspaceId",
-      "creationDate",
-      "lastIterationNumber",
-      "name",
-      "number",
-      "obsoleteAuthor",
-      "partIterations",
-      "partIterations.attachedFiles",
-      "partIterations.author",
-      "partIterations.author.email",
-      "partIterations.author.language",
-      "partIterations.author.login",
-      "partIterations.author.name",
-      "partIterations.author.workspaceId",
-      "partIterations.checkInDate",
-      "partIterations.components",
-      "partIterations.creationDate",
-      "partIterations.instanceAttributeTemplates",
-      "partIterations.instanceAttributes",
-      "partIterations.iteration",
-      "partIterations.linkedDocuments",
-      "partIterations.name",
-      "partIterations.number",
-      "partIterations.version",
-      "partIterations.workspaceId",
-      "partKey",
-      "publicShared",
-      "releaseAuthor",
-      "standardPart",
-      "status",
-      "tags",
-      "version",
-      "workflow",
-      "workspaceId"
-    ],
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=403 miss=['partIterations.author.workspaceId', 'partIterations.name', 'partIterations.attachedFiles']"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "PUT",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/checkin",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/checkin",
     "desc": "签入",
-    "fa_code": 200,
-    "py_code": 403,
-    "missing_keys": [
-      "acl",
-      "attributesLocked",
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "checkOutDate",
-      "checkOutUser",
-      "creationDate",
-      "lastIterationNumber",
-      "name",
-      "number",
-      "obsoleteAuthor",
-      "partIterations",
-      "partIterations.attachedFiles",
-      "partIterations.author",
-      "partIterations.author.email",
-      "partIterations.author.language",
-      "partIterations.author.login",
-      "partIterations.author.name",
-      "partIterations.author.workspaceId",
-      "partIterations.checkInDate",
-      "partIterations.components",
-      "partIterations.creationDate",
-      "partIterations.instanceAttributeTemplates",
-      "partIterations.instanceAttributes",
-      "partIterations.iteration",
-      "partIterations.linkedDocuments",
-      "partIterations.name",
-      "partIterations.number",
-      "partIterations.version",
-      "partIterations.workspaceId",
-      "partKey",
-      "publicShared",
-      "releaseAuthor",
-      "standardPart",
-      "status",
-      "tags",
-      "version",
-      "workflow",
-      "workspaceId"
-    ],
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=403 miss=['partIterations.author.workspaceId', 'partIterations.name', 'partIterations.attachedFiles']"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "PUT",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/tags",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/tags",
     "desc": "打标签",
-    "fa_code": 200,
-    "py_code": 500,
-    "missing_keys": [
-      "acl",
-      "attributesLocked",
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "checkOutDate",
-      "checkOutUser",
-      "creationDate",
-      "lastIterationNumber",
-      "obsoleteAuthor",
-      "partIterations",
-      "partIterations.attachedFiles",
-      "partIterations.author",
-      "partIterations.author.email",
-      "partIterations.author.language",
-      "partIterations.author.login",
-      "partIterations.author.name",
-      "partIterations.author.workspaceId",
-      "partIterations.checkInDate",
-      "partIterations.components",
-      "partIterations.creationDate",
-      "partIterations.instanceAttributeTemplates",
-      "partIterations.instanceAttributes",
-      "partIterations.iteration",
-      "partIterations.linkedDocuments",
-      "partIterations.name",
-      "partIterations.number",
-      "partIterations.version",
-      "partIterations.workspaceId",
-      "publicShared",
-      "releaseAuthor",
-      "standardPart",
-      "status",
-      "tags",
-      "version",
-      "workflow",
-      "workspaceId"
-    ],
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=500 miss=['partIterations.author.workspaceId', 'partIterations.name', 'partIterations.attachedFiles']"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/aborted-workflows",
-    "desc": "终止工作流",
-    "fa_code": 200,
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/aborted-workflows",
+    "desc": "终止WF",
+    "fa_code": 404,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/instances",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/instances",
     "desc": "装配实例",
-    "fa_code": 200,
+    "fa_code": 404,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/baselines",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/baselines",
     "desc": "基线",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/used-by-as-component",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/used-by-as-component",
     "desc": "被用作组件",
-    "fa_code": 200,
+    "fa_code": 500,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A/used-by-as-substitute",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/used-by-as-substitute",
     "desc": "被用作替代品",
-    "fa_code": 200,
+    "fa_code": 500,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Parts零件",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/used-by-product-instance-masters",
+    "desc": "PIM引用",
+    "fa_code": 404,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Parts零件",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/tags",
+    "desc": "零件标签",
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Parts零件",
     "method": "GET",
     "path": "/workspaces/Workspace_2/part-templates",
     "desc": "零件模板",
     "fa_code": 200,
-    "py_code": 502,
+    "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=502"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Parts零件",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/documents",
+    "path": "/workspaces/Workspace_2/part-templates",
+    "desc": "模板(跳过)",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Parts零件",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts/parts_last_iter",
+    "desc": "最后迭代",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/documents?start=0&length=1",
     "desc": "文档列表",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/documents/count",
     "desc": "文档计数",
@@ -636,9 +743,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/documents/checkedout",
     "desc": "已签出",
@@ -646,9 +756,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/documents/countCheckedOut",
+    "desc": "签出计数",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/documents/search?q=CompareTestDoc",
     "desc": "搜索",
@@ -656,119 +782,116 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A",
     "desc": "文档详情",
-    "fa_code": 200,
-    "py_code": 200,
+    "fa_code": 404,
+    "py_code": 404,
     "missing_keys": [],
-    "extra_keys": [
-      "description",
-      "documentIterations.checkInDate",
-      "documentIterations.documentRevisionVersion",
-      "documentIterations.modificationDate",
-      "lastIteration",
-      "obsoleteAuthor",
-      "obsoleteDate"
-    ],
-    "status": "✓MATCH"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
     "method": "PUT",
     "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/checkout",
     "desc": "签出",
-    "fa_code": 400,
+    "fa_code": 404,
     "py_code": 403,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=400 PY=403"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Documents文档",
     "method": "PUT",
     "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/checkin",
     "desc": "签入",
-    "fa_code": 200,
-    "py_code": 403,
-    "missing_keys": [
-      "acl",
-      "attributesLocked",
-      "author",
-      "author.email",
-      "author.language",
-      "author.login",
-      "author.name",
-      "author.workspaceId",
-      "checkOutDate",
-      "checkOutUser",
-      "commentLink",
-      "creationDate",
-      "documentIterations",
-      "documentIterations.attachedFiles",
-      "documentIterations.author",
-      "documentIterations.author.email",
-      "documentIterations.author.language",
-      "documentIterations.author.login",
-      "documentIterations.author.name",
-      "documentIterations.author.workspaceId",
-      "documentIterations.checkInDate",
-      "documentIterations.creationDate",
-      "documentIterations.documentMasterId",
-      "documentIterations.documentRevision",
-      "documentIterations.documentRevision.acl",
-      "documentIterations.documentRevision.attributesLocked",
-      "documentIterations.documentRevision.checkOutDate",
-      "documentIterations.documentRevision.checkOutUser",
-      "documentIterations.documentRevision.commentLink",
-      "documentIterations.documentRevision.documentMasterId",
-      "documentIterations.documentRevision.id",
-      "documentIterations.documentRevision.iterationSubscription",
-      "documentIterations.documentRevision.publicShared",
-      "documentIterations.documentRevision.releaseAuthor",
-      "documentIterations.documentRevision.releaseDate",
-      "documentIterations.documentRevision.stateSubscription",
-      "documentIterations.documentRevision.status",
-      "documentIterations.documentRevision.version",
-      "documentIterations.documentRevision.workspaceId",
-      "documentIterations.id",
-      "documentIterations.instanceAttributes",
-      "documentIterations.iteration",
-      "documentIterations.linkedDocuments",
-      "documentIterations.revisionNote",
-      "documentIterations.title",
-      "documentIterations.version",
-      "documentIterations.workspaceId",
-      "documentMasterId",
-      "id",
-      "iterationSubscription",
-      "path",
-      "publicShared",
-      "releaseAuthor",
-      "releaseDate",
-      "stateSubscription",
-      "status",
-      "tags",
-      "title",
-      "type",
-      "version",
-      "workspaceId"
-    ],
-    "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=403 miss=['documentIterations.documentRevision.workspaceId', 'documentIterations.id', 'documentIterations.documentRevision.checkOutDate']"
-  },
-  {
-    "method": "GET",
-    "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/aborted-workflows",
-    "desc": "终止工作流",
-    "fa_code": 200,
-    "py_code": 200,
+    "fa_code": 404,
+    "py_code": 404,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/aborted-workflows",
+    "desc": "终止WF",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "PUT",
+    "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/tags",
+    "desc": "打标签",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "PUT",
+    "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/release",
+    "desc": "发布",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "PUT",
+    "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A/obsolete",
+    "desc": "废弃",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/documents/doc_revs",
+    "desc": "链接用修订",
+    "fa_code": 200,
+    "py_code": 500,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/document-templates",
     "desc": "文档模板",
@@ -776,9 +899,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/folders",
     "desc": "文件夹列表",
@@ -786,19 +912,77 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/folders/Workspace_2/documents",
+    "desc": "根文档",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Documents文档",
     "method": "GET",
     "path": "/workspaces/Workspace_2/document-baselines",
     "desc": "基线列表",
     "fa_code": 200,
-    "py_code": 502,
+    "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=502"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/document-baselines/3",
+    "desc": "基线详情",
+    "fa_code": 404,
+    "py_code": 405,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/document-baselines/3-light",
+    "desc": "基线轻量",
+    "fa_code": 404,
+    "py_code": 405,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Documents文档",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/document-baselines/3/export-files",
+    "desc": "基线导出",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Changes变更",
     "method": "GET",
     "path": "/workspaces/Workspace_2/changes/issues",
     "desc": "Issue列表",
@@ -806,9 +990,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Changes变更",
     "method": "GET",
     "path": "/workspaces/Workspace_2/changes/requests",
     "desc": "Request列表",
@@ -816,9 +1003,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Changes变更",
     "method": "GET",
     "path": "/workspaces/Workspace_2/changes/orders",
     "desc": "Order列表",
@@ -826,9 +1016,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Changes变更",
     "method": "GET",
     "path": "/workspaces/Workspace_2/changes/milestones",
     "desc": "里程碑",
@@ -836,100 +1029,252 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Changes变更",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/changes/issues/link?q=SEED-CMP-ISSUE",
+    "path": "/workspaces/Workspace_2/changes/issues/link",
     "desc": "Issue搜索",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Changes变更",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/changes/requests/link?q=SEED-CMP-REQ",
+    "path": "/workspaces/Workspace_2/changes/requests/link",
     "desc": "Request搜索",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Changes变更",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/changes/orders/link?q=SEED-CMP-ORDER",
-    "desc": "Order搜索",
-    "fa_code": 500,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✗MISMATCH FA=500 PY=200"
-  },
-  {
-    "method": "GET",
-    "path": "/workspaces/Workspace_2/products",
-    "desc": "CI列表",
-    "fa_code": 500,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✗MISMATCH FA=500 PY=200"
-  },
-  {
-    "method": "GET",
-    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI",
-    "desc": "CI详情",
+    "path": "/workspaces/Workspace_2/changes/requests/42",
+    "desc": "Request详情",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [
-      "creationDate"
+      "category",
+      "description",
+      "priority"
     ],
-    "status": "✓MATCH"
+    "field_diffs": [
+      [
+        "acl",
+        "{'_type': 'NoneType', '_val': None}",
+        "{'_type': 'dict', '_val': {}}",
+        "type-mismatch"
+      ],
+      [
+        "category",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ],
+      [
+        "description",
+        "✗MISSING",
+        "",
+        "missing-in-fa"
+      ],
+      [
+        "priority",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ]
+    ],
+    "field_diff_count": 4,
+    "category": "PARTIAL"
   },
   {
+    "stage": "Changes变更",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/changes/orders/42",
+    "desc": "Order详情",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [
+      "category",
+      "description",
+      "priority"
+    ],
+    "field_diffs": [
+      [
+        "acl",
+        "{'_type': 'NoneType', '_val': None}",
+        "{'_type': 'dict', '_val': {}}",
+        "type-mismatch"
+      ],
+      [
+        "category",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ],
+      [
+        "description",
+        "✗MISSING",
+        "",
+        "missing-in-fa"
+      ],
+      [
+        "priority",
+        "✗MISSING",
+        "None",
+        "missing-in-fa"
+      ]
+    ],
+    "field_diff_count": 4,
+    "category": "PARTIAL"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products",
+    "desc": "CI列表",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/numbers",
+    "desc": "CI编号",
+    "fa_code": 500,
+    "py_code": 500,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "BOTH500"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/search",
+    "desc": "CI搜索",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI",
+    "desc": "CI详情",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
     "method": "GET",
     "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/filter",
     "desc": "产品结构",
     "fa_code": 500,
-    "py_code": 200,
+    "py_code": 404,
     "missing_keys": [],
-    "extra_keys": [
-      "accessDeny",
-      "amount",
-      "assembly",
-      "attributes",
-      "author",
-      "authorLogin",
-      "checkOutDate",
-      "checkOutUser",
-      "components",
-      "description",
-      "hasPathData",
-      "iteration",
-      "lastIterationNumber",
-      "name",
-      "notifications",
-      "number",
-      "obsolete",
-      "optional",
-      "partUsageLinkId",
-      "partUsageLinkReferenceDescription",
-      "path",
-      "released",
-      "standardPart",
-      "substitute",
-      "substituteIds",
-      "unit",
-      "version",
-      "virtual"
-    ],
-    "status": "✗MISMATCH FA=500 PY=200"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/bom",
+    "desc": "BOM",
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/paths",
+    "desc": "路径",
+    "fa_code": 404,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/path-choices",
+    "desc": "路径选择",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/versions-choices",
+    "desc": "版本选择",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/releases/last",
+    "desc": "最后发布",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
     "method": "GET",
     "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/baselines",
     "desc": "基线",
@@ -937,21 +1282,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=404 PY=200"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Products产品",
     "method": "GET",
     "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/configurations",
     "desc": "配置",
     "fa_code": 404,
     "py_code": 405,
     "missing_keys": [],
-    "extra_keys": [
-      "detail"
-    ],
-    "status": "✗MISMATCH FA=404 PY=405"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Products产品",
     "method": "GET",
     "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/instances",
     "desc": "实例",
@@ -959,19 +1308,77 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=500 PY=200"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Products产品",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/decode-path/SEED-COMPARE-PART-A",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/decode-path/SEED-CMP-PART-A",
     "desc": "路径解码",
-    "fa_code": 500,
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/export-files",
+    "desc": "导出文件",
+    "fa_code": 404,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=500 PY=200"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI/path-to-path-links-types",
+    "desc": "P2P类型",
+    "fa_code": 404,
+    "py_code": 500,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/product-baselines",
+    "desc": "全局基线",
+    "fa_code": 200,
+    "py_code": 500,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/product-baselines/SEED-CMP-CI/baselines",
+    "desc": "CI基线",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
     "method": "GET",
     "path": "/workspaces/Workspace_2/product-configurations",
     "desc": "全局配置",
@@ -979,9 +1386,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/product-configurations/SEED-CMP-CI/configurations",
+    "desc": "CI配置",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
     "method": "GET",
     "path": "/workspaces/Workspace_2/product-instances",
     "desc": "全局实例",
@@ -989,9 +1412,38 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Products产品",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/product-instances/SEED-CMP-CI/instances",
+    "desc": "CI实例",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Products产品",
+    "method": "DELETE",
+    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI",
+    "desc": "删CI",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/users",
     "desc": "用户列表",
@@ -999,9 +1451,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/users/me",
     "desc": "当前用户",
@@ -1009,9 +1464,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [
+      [
+        "email",
+        "example1@example.com",
+        "t@t.com",
+        "value-diff"
+      ],
+      [
+        "name",
+        "测试账号",
+        "Test",
+        "value-diff"
+      ]
+    ],
+    "field_diff_count": 2,
+    "category": "PARTIAL"
   },
   {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/users/admin",
     "desc": "管理员",
@@ -1019,9 +1490,38 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [
+      [
+        "email",
+        "example1@example.com",
+        "t@t.com",
+        "value-diff"
+      ],
+      [
+        "name",
+        "测试账号",
+        "Test",
+        "value-diff"
+      ]
+    ],
+    "field_diff_count": 2,
+    "category": "PARTIAL"
   },
   {
+    "stage": "Users用户管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/users/test1",
+    "desc": "用户详情",
+    "fa_code": 404,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/groups",
     "desc": "用户组",
@@ -1029,29 +1529,103 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Users用户管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/user-group",
+    "desc": "用户组(旧)",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Users用户管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/groups/SEED-CMP-GRP/users",
+    "desc": "组成员",
+    "fa_code": 404,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Users用户管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/groups/SEED-CMP-GRP/tag-subscriptions",
+    "desc": "组标签订阅",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/memberships/users",
-    "desc": "用户成员资格",
+    "desc": "用户成员",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Users用户管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/memberships/users/me",
+    "desc": "我的成员",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/memberships/usergroups",
-    "desc": "组成员资格",
+    "desc": "组成员",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Users用户管理",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/memberships/usergroups/me",
+    "desc": "我的组",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/roles",
     "desc": "角色",
@@ -1059,9 +1633,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Users用户管理",
     "method": "GET",
     "path": "/workspaces/Workspace_2/roles/inuse",
     "desc": "在用角色",
@@ -1069,39 +1646,90 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
-    "method": "GET",
-    "path": "/workspaces/Workspace_2/user-group",
-    "desc": "用户组列表(旧)",
-    "fa_code": 200,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
-  },
-  {
+    "stage": "Workflow工作流",
     "method": "GET",
     "path": "/workspaces/Workspace_2/workflow-models",
     "desc": "模板列表",
     "fa_code": 200,
-    "py_code": 200,
+    "py_code": 500,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Workflow工作流",
     "method": "GET",
     "path": "/workspaces/Workspace_2/workflow-models/SEED-CMP-WF",
     "desc": "模板详情",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Workflow工作流",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/workspace-workflows",
+    "desc": "工作区WF",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workflow工作流",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/workflow-instances/1",
+    "desc": "WF实例",
+    "fa_code": 403,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Workflow工作流",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/workflow-instances/1/aborted",
+    "desc": "终止WF实例",
+    "fa_code": 403,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Workflow工作流",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/workspace-workflows/1/aborted",
+    "desc": "终止WS WF",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Workflow工作流",
     "method": "GET",
     "path": "/workspaces/Workspace_2/tasks/test1/assigned",
     "desc": "分配任务",
@@ -1109,9 +1737,25 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workflow工作流",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/tasks/test1/in-progress",
+    "desc": "进行中任务",
+    "fa_code": 404,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "Workflow工作流",
     "method": "GET",
     "path": "/workspaces/Workspace_2/tasks/test1/documents",
     "desc": "任务文档",
@@ -1119,9 +1763,12 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workflow工作流",
     "method": "GET",
     "path": "/workspaces/Workspace_2/tasks/test1/parts",
     "desc": "任务零件",
@@ -1129,150 +1776,116 @@
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "Workflow工作流",
     "method": "GET",
-    "path": "/workspaces/Workspace_2/webhooks",
-    "desc": "Webhook",
-    "fa_code": 200,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
-  },
-  {
-    "method": "GET",
-    "path": "/workspaces/Workspace_2/notifications",
-    "desc": "通知",
-    "fa_code": 404,
-    "py_code": 404,
-    "missing_keys": [],
-    "extra_keys": [
-      "detail"
-    ],
-    "status": "✓MATCH"
-  },
-  {
-    "method": "GET",
-    "path": "/accounts/me",
-    "desc": "我的账号",
-    "fa_code": 200,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
-  },
-  {
-    "method": "GET",
-    "path": "/accounts/workspaces",
-    "desc": "我的工作区",
-    "fa_code": 200,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
-  },
-  {
-    "method": "GET",
-    "path": "/admin/accounts-stats",
-    "desc": "账号统计",
-    "fa_code": 404,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [
-      "disabledAccounts",
-      "enabledAccounts",
-      "totalAccounts"
-    ],
-    "status": "✗MISMATCH FA=404 PY=200"
-  },
-  {
-    "method": "GET",
-    "path": "/admin/workspace-stats",
-    "desc": "工作区统计",
-    "fa_code": 404,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [
-      "enabledWorkspaces",
-      "totalWorkspaces"
-    ],
-    "status": "✗MISMATCH FA=404 PY=200"
-  },
-  {
-    "method": "GET",
-    "path": "/admin/disk-usage-stats",
-    "desc": "磁盘统计",
+    "path": "/workspaces/Workspace_2/tasks/1",
+    "desc": "任务详情",
     "fa_code": 500,
     "py_code": 404,
     "missing_keys": [],
-    "extra_keys": [
-      "detail"
-    ],
-    "status": "✗MISMATCH FA=500 PY=404"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Webhook/通知",
     "method": "GET",
-    "path": "/languages",
-    "desc": "语言",
-    "fa_code": 200,
+    "path": "/workspaces/Workspace_2/webhooks",
+    "desc": "Webhook列表",
+    "fa_code": 500,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "Webhook/通知",
     "method": "GET",
-    "path": "/timezones",
-    "desc": "时区",
-    "fa_code": 200,
+    "path": "/workspaces/Workspace_2/webhooks/1",
+    "desc": "Webhook详情",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "Webhook/通知",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/notifications",
+    "desc": "通知列表",
+    "fa_code": 404,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
-    "method": "GET",
-    "path": "/platform/health",
-    "desc": "健康检查",
-    "fa_code": 200,
-    "py_code": 200,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
-  },
-  {
-    "method": "GET",
-    "path": "/organizations",
-    "desc": "组织",
-    "fa_code": 204,
-    "py_code": 204,
-    "missing_keys": [],
-    "extra_keys": [],
-    "status": "✓MATCH"
-  },
-  {
+    "stage": "杂项(LoV/Tags/属性/Share)",
     "method": "GET",
     "path": "/workspaces/Workspace_2/lov",
-    "desc": "值列表",
+    "desc": "LoV列表",
     "fa_code": 200,
     "py_code": 502,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=502"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "杂项(LoV/Tags/属性/Share)",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/lov/SEED-CMP-LOV",
+    "desc": "LoV详情",
+    "fa_code": 404,
+    "py_code": 502,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "杂项(LoV/Tags/属性/Share)",
     "method": "GET",
     "path": "/workspaces/Workspace_2/tags",
-    "desc": "标签",
+    "desc": "标签列表",
     "fa_code": 200,
     "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✓MATCH"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "杂项(LoV/Tags/属性/Share)",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/tags/eaa32b0d9f/documents",
+    "desc": "标签文档",
+    "fa_code": 200,
+    "py_code": 200,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "杂项(LoV/Tags/属性/Share)",
     "method": "GET",
     "path": "/workspaces/Workspace_2/attributes/part-iterations",
     "desc": "零件属性",
@@ -1280,9 +1893,12 @@
     "py_code": 502,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=502"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "杂项(LoV/Tags/属性/Share)",
     "method": "GET",
     "path": "/workspaces/Workspace_2/attributes/path-data",
     "desc": "路径属性",
@@ -1290,70 +1906,125 @@
     "py_code": 502,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=200 PY=502"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
-    "method": "DELETE",
-    "path": "/workspaces/Workspace_2/parts/SEED-COMPARE-PART-A",
-    "desc": "删零件",
-    "fa_code": 400,
-    "py_code": 403,
+    "stage": "杂项(LoV/Tags/属性/Share)",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A/effectivities",
+    "desc": "零件效应",
+    "fa_code": 404,
+    "py_code": 200,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=400 PY=403"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
   },
   {
+    "stage": "杂项(LoV/Tags/属性/Share)",
+    "method": "GET",
+    "path": "/workspaces/Workspace_2/effectivities/1",
+    "desc": "效应详情",
+    "fa_code": 500,
+    "py_code": 502,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "杂项(LoV/Tags/属性/Share)",
+    "method": "GET",
+    "path": "/shared/Workspace_2/documents/SEED-CMP-DOC-A",
+    "desc": "共享文档",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "杂项(LoV/Tags/属性/Share)",
+    "method": "GET",
+    "path": "/shared/Workspace_2/parts/SEED-CMP-PART-A",
+    "desc": "共享零件",
+    "fa_code": 404,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
+  },
+  {
+    "stage": "清理",
+    "method": "DELETE",
+    "path": "/workspaces/Workspace_2/parts/SEED-CMP-PART-A",
+    "desc": "删零件",
+    "fa_code": 500,
+    "py_code": 404,
+    "missing_keys": [],
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MISMATCH"
+  },
+  {
+    "stage": "清理",
     "method": "DELETE",
     "path": "/workspaces/Workspace_2/documents/SEED-CMP-DOC-A",
     "desc": "删文档",
-    "fa_code": 204,
+    "fa_code": 404,
     "py_code": 404,
     "missing_keys": [],
-    "extra_keys": [
-      "detail"
-    ],
-    "status": "✗MISMATCH FA=204 PY=404"
+    "extra_keys": [],
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "清理",
     "method": "DELETE",
     "path": "/workspaces/Workspace_2/workflow-models/SEED-CMP-WF",
     "desc": "删WF模板",
-    "fa_code": 204,
+    "fa_code": 404,
     "py_code": 404,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=204 PY=404"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
-    "method": "DELETE",
-    "path": "/workspaces/Workspace_2/products/SEED-CMP-CI",
-    "desc": "删CI",
-    "fa_code": 204,
-    "py_code": 404,
-    "missing_keys": [],
-    "extra_keys": [
-      "detail"
-    ],
-    "status": "✗MISMATCH FA=204 PY=404"
-  },
-  {
+    "stage": "清理",
     "method": "DELETE",
     "path": "/workspaces/Workspace_2/roles/SEED-CMP-ROLE",
     "desc": "删角色",
-    "fa_code": 204,
+    "fa_code": 404,
     "py_code": 404,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=204 PY=404"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   },
   {
+    "stage": "清理",
     "method": "DELETE",
     "path": "/workspaces/Workspace_2/groups/SEED-CMP-GRP",
     "desc": "删组",
     "fa_code": 404,
-    "py_code": 204,
+    "py_code": 404,
     "missing_keys": [],
     "extra_keys": [],
-    "status": "✗MISMATCH FA=404 PY=204"
+    "field_diffs": [],
+    "field_diff_count": 0,
+    "category": "MATCH"
   }
 ]
