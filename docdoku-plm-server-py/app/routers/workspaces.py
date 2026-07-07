@@ -227,7 +227,7 @@ def front_options(ws: str, db: Session = Depends(get_db),
 
 
 # 默认列（对齐前端 part-table-columns.js defaultColumns）
-_DEFAULT_PART_COLUMNS = ["pr.number", "pr.version", "pr.iteration", "pr.type", "pr.name", "pr.author"]
+_DEFAULT_PART_COLUMNS = []  # 对齐 Payara: DB 空时返回空数组，JS 自身有 defaultColumns
 
 
 def _normalize_column(col: str) -> str:
