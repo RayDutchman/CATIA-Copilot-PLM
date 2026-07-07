@@ -222,12 +222,19 @@ def front_options(ws: str, db: Session = Depends(get_db),
     ), {"ws": ws}).fetchall()
     return {
         "documentTableColumns": [r[0] for r in doc_cols] or [],
-        "partTableColumns": [r[0] for r in part_cols] or _DEFAULT_PART_COLUMNS,
+        "partTableColumns": [_normalize_column(r[0]) for r in part_cols] or _DEFAULT_PART_COLUMNS,
     }
 
 
 # 默认列（对齐前端 part-table-columns.js defaultColumns）
 _DEFAULT_PART_COLUMNS = ["pr.number", "pr.version", "pr.iteration", "pr.type", "pr.name", "pr.author"]
+
+
+def _normalize_column(col: str) -> str:
+    """确保列名带 pr. 前缀（对齐 JS cellsFactory 的 key 格式）。"""
+    if col.startswith("pr.") or col.startswith("attr"):
+        return col
+    return f"pr.{col}"
 
 
 @router.put("/workspaces/{ws}/front-options")
@@ -250,6 +257,7 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
     ), {"ws": ws})
 
     for i, col in enumerate(body.get("partTableColumns", [])):
+        col = _normalize_column(col)
         db.execute(text(
             "INSERT INTO workspace_parttablecolumn (workspace_id, tablecolumn, partcolumn_order) "
             "VALUES (:ws, :col, :ord)"
