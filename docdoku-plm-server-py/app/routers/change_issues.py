@@ -82,7 +82,10 @@ def delete_issue(ws: str, item_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    svc.delete_item(db, ChangeIssue, ws, item_id)
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    svc.delete_item(db, ChangeIssue, ws, item_id, current_user.login, is_admin)
 
 
 @router.put("/workspaces/{ws}/changes/issues/{item_id}/tags", response_model=ChangeIssueDTO)

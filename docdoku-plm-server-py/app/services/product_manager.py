@@ -802,9 +802,10 @@ class ProductService:
             db.flush()
 
     def set_tags(self, db: Session, ws: str, pn: str, ver: str,
-                 labels: list) -> PartRevision:
+                 labels: list, current_user_login: str = None) -> PartRevision:
         from app.models.part import part_revision_tags
-        pr = self.get_revision(db, ws, pn, ver)
+        pr = self.get_revision(db, ws, pn, ver,
+                               current_user_login=current_user_login)
         db.execute(part_revision_tags.delete().where(
             part_revision_tags.c.partmaster_workspace_id == ws,
             part_revision_tags.c.partmaster_partnumber == pn,
@@ -1041,7 +1042,7 @@ class ProductService:
             BinaryResource,
             part_iteration_binres, part_iteration_geometry,
             part_iteration_usagelink, part_iteration_documentlink,
-            part_iteration_attribute, part_iteration_pathdata_attr,
+            part_iteration_attribute,
         )
 
         vault_root = Path(settings.VAULT_PATH)
@@ -1162,21 +1163,32 @@ class ProductService:
                 attribute_order=row.attribute_order,
             ))
 
-        # 复制实例属性模板（纯关系）
-        for row in db.execute(
-            part_iteration_pathdata_attr.select().where(
-                part_iteration_pathdata_attr.c.workspace_id == ws,
-                part_iteration_pathdata_attr.c.partmaster_partnumber == pn,
-                part_iteration_pathdata_attr.c.partrevision_version == ver,
-                part_iteration_pathdata_attr.c.iteration == from_iter,
-            )
-        ).fetchall():
-            db.execute(part_iteration_pathdata_attr.insert().values(
-                workspace_id=ws, partmaster_partnumber=pn,
-                partrevision_version=ver, iteration=to_iter,
-                instanceattribute_template_id=row.instanceattribute_template_id,
-                attribute_order=row.attribute_order,
-            ))
+        # 复制实例属性模板：克隆 instanceattributetemplate 行再建关联（对齐 Java checkOutPart clone 逻辑）
+        from sqlalchemy import text
+        old_tpls = db.execute(text(
+            "SELECT iat.id, iat.dtype, iat.name, iat.mandatory, iat.locked, iat.attributetype "
+            "FROM instanceattributetemplate iat "
+            "JOIN partiteration_pathdata_attr ppa "
+            "  ON ppa.instanceattribute_template_id = iat.id "
+            "WHERE ppa.workspace_id = :ws AND ppa.partmaster_partnumber = :pn "
+            "  AND ppa.partrevision_version = :ver AND ppa.iteration = :iter "
+            "ORDER BY ppa.attribute_order"
+        ), {"ws": ws, "pn": pn, "ver": ver, "iter": from_iter}).fetchall()
+        for order, tpl in enumerate(old_tpls):
+            result = db.execute(text(
+                "INSERT INTO instanceattributetemplate "
+                "(dtype, name, mandatory, locked, attributetype) "
+                "VALUES (:dtype, :name, :mand, :locked, :attrtype) RETURNING id"
+            ), {"dtype": tpl[1], "name": tpl[2], "mand": tpl[3],
+                "locked": tpl[4], "attrtype": tpl[5]})
+            new_id = result.fetchone()[0]
+            db.execute(text(
+                "INSERT INTO partiteration_pathdata_attr "
+                "(workspace_id, partmaster_partnumber, partrevision_version, "
+                "iteration, instanceattribute_template_id, attribute_order) "
+                "VALUES (:ws, :pn, :ver, :iter, :tid, :order)"
+            ), {"ws": ws, "pn": pn, "ver": ver, "iter": to_iter,
+                "tid": new_id, "order": order})
 
         # 复制 nativeCADFile 引用（含 BinaryResource 深拷贝）
         old_iter = (

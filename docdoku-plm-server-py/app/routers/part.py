@@ -203,7 +203,8 @@ def set_tags(workspace_id: str, part_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    pr = svc.set_tags(db, workspace_id, number, version, body.get("tags", []))
+    pr = svc.set_tags(db, workspace_id, number, version, body.get("tags", []),
+                      current_user_login=current_user.login)
     return map_revision(pr, db)
 
 

@@ -70,11 +70,18 @@ class ChangeService:
             if not acc.enabled:
                 raise NotAllowedException("NotAllowedException71")
             # 检查用户在 workspace 中是否已启用 (Java isUserEnabled)
+            # 直接成员
             member = db.execute(sql_text(
                 "SELECT 1 FROM workspaceusermembership "
                 "WHERE workspace_id = :ws AND member_login = :login"
             ), {"ws": ws, "login": assignee_login}).first()
-            if not member:
+            # 通过组的成员（Java 同时检查 workspaceusergroupmembership）
+            group_member = db.execute(sql_text(
+                "SELECT 1 FROM workspaceusergroupmembership wgm "
+                "JOIN usergroupmapping m ON m.groupname = wgm.member_id "
+                "WHERE wgm.workspace_id = :ws AND m.login = :login"
+            ), {"ws": ws, "login": assignee_login}).first()
+            if not member and not group_member:
                 raise NotAllowedException("NotAllowedException71")
 
     def create_item(self, db: Session, ws: str, type_name: str,
@@ -143,8 +150,30 @@ class ChangeService:
         db.refresh(item)
         return item
 
-    def delete_item(self, db: Session, cls, ws: str, item_id: int):
+    def delete_item(self, db: Session, cls, ws: str, item_id: int,
+                    user_login: str = None, is_admin: bool = False):
         item = self.get_by_id(db, cls, ws, item_id)
+        # ACL 写权限检查（对齐 Java checkChangeItemWriteAccess）
+        if user_login and not is_admin:
+            acl_id = getattr(item, "acl_id", None)
+            if acl_id is not None:
+                from app.services.factory.acl_factory import check_write_access
+                if not check_write_access(db, acl_id, user_login, False):
+                    raise AccessRightException("AccessRightException")
+            else:
+                # ACL 为 null → 需要 workspace 写权限（对齐 Java hasWorkspaceWriteAccess）
+                has_write = db.execute(sql_text(
+                    "SELECT 1 FROM workspaceusermembership "
+                    "WHERE workspace_id=:ws AND member_login=:l AND readonly=false"
+                ), {"ws": ws, "l": user_login}).first()
+                if not has_write:
+                    has_write = db.execute(sql_text(
+                        "SELECT 1 FROM workspaceusergroupmembership wgm "
+                        "JOIN usergroupmapping m ON m.groupname = wgm.member_id "
+                        "WHERE wgm.workspace_id=:ws AND m.login=:l AND wgm.readonly=false"
+                    ), {"ws": ws, "l": user_login}).first()
+                if not has_write:
+                    raise AccessRightException("AccessRightException")
         # 里程碑删除前检查约束
         if cls is Milestone:
             orders = db.query(ChangeOrder).filter(
