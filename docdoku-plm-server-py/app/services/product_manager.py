@@ -206,8 +206,11 @@ class ProductService:
     def create_part(self, db: Session, workspace_id: str,
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
         from app.core.exceptions import EntityAlreadyExistsException, PartRevisionAlreadyExistsException
-        from app.services.factory.acl_factory import apply_acl
+        from app.services.factory.acl_factory import apply_acl, check_write_access
         from sqlalchemy import text as sql_text
+        # workspace 写权限检查（对齐 Java checkWorkspaceWriteAccess）
+        if not check_write_access(db, None, creator_login, False, workspace_id=workspace_id):
+            raise AccessRightException("AccessRightException")
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)
@@ -412,7 +415,7 @@ class ProductService:
         from app.core.exceptions import NotAllowedException
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, workspace_id, number, version, for_update=True)
-        if not check_write_access(db, pr.acl_id, user_login, False):
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=workspace_id):
             raise AccessRightException("AccessRightException")
         if not pr.is_last_revision:
             raise NotAllowedException("NotAllowedException72")
@@ -924,7 +927,7 @@ class ProductService:
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, pn, ver,
                                current_user_login=current_user_login)
-        if current_user_login and not check_write_access(db, pr.acl_id, current_user_login, False):
+        if current_user_login and not check_write_access(db, pr.acl_id, current_user_login, False, workspace_id=ws):
             raise AccessRightException("AccessRightException")
         db.execute(part_revision_tags.delete().where(
             part_revision_tags.c.partmaster_workspace_id == ws,
