@@ -309,10 +309,22 @@ class WorkflowService:
             ), {"rn": role_name, "rw": role_ws}).first()
             if not has_user and not has_group:
                 raise NotAllowedException("NotAllowedException56")
-        # 将 step-0 的任务状态设为 IN_PROGRESS（1），启动工作流
-        db.execute(text(
-            "UPDATE task SET status = 1 WHERE workflow_id = :wf_id AND activity_step = 0"
-        ), {"wf_id": wf_id})
+        # 获取 step-0 activity 的 dtype，Sequential 只启动第 1 个 task
+        dtype_row = db.execute(text(
+            "SELECT dtype FROM activity WHERE workflow_id = :wf_id AND step = 0"
+        ), {"wf_id": wf_id}).first()
+        dtype = dtype_row[0] if dtype_row else ""
+        if dtype == "SEQUENTIAL":
+            db.execute(text(
+                "UPDATE task SET status = 1, startdate = NOW() WHERE id IN ("
+                "SELECT id FROM task WHERE workflow_id = :wf_id AND activity_step = 0 "
+                "AND status = 0 ORDER BY num LIMIT 1)"
+            ), {"wf_id": wf_id})
+        else:
+            db.execute(text(
+                "UPDATE task SET status = 1, startdate = NOW() "
+                "WHERE workflow_id = :wf_id AND activity_step = 0 AND status = 0"
+            ), {"wf_id": wf_id})
         # 创建 workspace_workflow 记录
         ww_id = str(uuid.uuid4())
         db.execute(text(

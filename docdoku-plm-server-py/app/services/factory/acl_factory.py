@@ -2,6 +2,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+from app.core.exceptions import AccessRightException
 
 # Java ACLPermission enum ordinals: FORBIDDEN=0, READ_ONLY=1, FULL_ACCESS=2
 FORBIDDEN = 0
@@ -46,7 +47,8 @@ def apply_acl(db: Session, acl_id: int | None,
 
 
 def check_read_access(db: Session, acl_id: int | None,
-                      user_login: str, is_admin: bool) -> bool:
+                      user_login: str, is_admin: bool,
+                      workspace_id: str | None = None) -> bool:
     if is_admin:
         return True
     if acl_id is None:
@@ -71,11 +73,26 @@ def check_read_access(db: Session, acl_id: int | None,
 
 
 def check_write_access(db: Session, acl_id: int | None,
-                       user_login: str, is_admin: bool) -> bool:
+                       user_login: str, is_admin: bool,
+                       workspace_id: str | None = None) -> bool:
     if is_admin:
         return True
     if acl_id is None:
-        return True  # 无 ACL = 公开
+        if workspace_id:
+            has = db.execute(text(
+                "SELECT 1 FROM workspaceusermembership "
+                "WHERE workspace_id=:ws AND member_login=:l AND readonly=false"
+            ), {"ws": workspace_id, "l": user_login}).first()
+            if not has:
+                has = db.execute(text(
+                    "SELECT 1 FROM workspaceusergroupmembership wgm "
+                    "JOIN usergroupmapping ugm ON wgm.member_id=ugm.groupname "
+                    "WHERE wgm.workspace_id=:ws AND ugm.login=:l "
+                    "AND wgm.readonly=false"
+                ), {"ws": workspace_id, "l": user_login}).first()
+            if not has:
+                raise AccessRightException("AccessRightException")
+        return True
     acl = db.query(ACL).filter(ACL.id == acl_id).first()
     if not acl or not acl.enabled:
         return True
