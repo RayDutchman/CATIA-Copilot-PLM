@@ -550,3 +550,39 @@ def ci_document_links(ws: str, ci_id: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     return []
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/document-links/{pn}/{config_spec}")
+@router.get("/workspaces/{ws}/products/{ci_id}/document-links/{pn}/{config_spec}/", include_in_schema=False)
+def ci_document_links_wip(ws: str, ci_id: str, pn: str, config_spec: str,
+                           current_user: Account = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    """返回 CI 下指定零件的最新 document-links（WIP 配置规约）。"""
+    from app.models.product import PartRevision, PartIteration
+    from app.models.document import DocumentLink
+
+    rev = db.query(PartRevision).filter(
+        PartRevision.workspace_id == ws,
+        PartRevision.partmaster_partnumber == pn,
+    ).order_by(PartRevision.creation_date.desc()).first()
+    if not rev:
+        return []
+    last_it = rev.last_iteration
+    if not last_it:
+        return []
+    links = db.query(DocumentLink).filter(
+        DocumentLink.workspace_id == ws,
+        DocumentLink.partmaster_partnumber == last_it.partmaster_partnumber,
+        DocumentLink.partrevision_version == last_it.partrevision_version,
+        DocumentLink.iteration == last_it.iteration,
+    ).all()
+    result = []
+    for dl in links:
+        result.append({
+            "documentMasterId": dl.targetdocumentmaster_id,
+            "documentRevisionVersion": dl.targetdocumentrevision_version,
+            "iteration": dl.target_iteration,
+            "workspaceId": ws,
+            "commentLink": dl.comment or "",
+        })
+    return result

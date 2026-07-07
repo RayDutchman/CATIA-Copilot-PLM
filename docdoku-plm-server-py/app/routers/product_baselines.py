@@ -308,12 +308,21 @@ def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
 def get_baseline_by_id(ws: str, bl_id: int,
+                       light: bool = Query(False),
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
     if not bl:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
+    if light:
+        return {
+            "id": bl.id, "name": bl.name, "type": bl.type,
+            "configurationItemId": bl.configurationitem_id,
+            "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
+            "description": bl.description or "",
+            "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
+        }
     return _bl_detail_dict(bl, db)
 
 
