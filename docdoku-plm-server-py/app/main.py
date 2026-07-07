@@ -1,5 +1,5 @@
 """FastAPI 应用入口。"""
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share, attributes, lov, tags, document_template_files, part_template_files
@@ -113,6 +113,13 @@ app.include_router(part_template_files.router, prefix=API_PREFIX)
 app.include_router(document_baseline_export.router)
 app.include_router(instance_collection.router)
 app.include_router(virtual_instance_collection.router)
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket):
+    """WebSocket 端点 /ws（对标 WebSocketApplication @ServerEndpoint("/ws")）。"""
+    from app.ws.endpoint import handle_websocket
+    await handle_websocket(websocket)
 
 
 @app.get(f"{API_PREFIX}/health")

@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-07-07 — P4B WebSocket + Extension 全量迁移 (29 文件)
+
+### P4B-WS WebSocket (13 条目)
+- feat(ws): W-001 endpoint.py — FastAPI WebSocket /ws 端点（JWT 认证 + 模块路由），替代 Java @ServerEndpoint
+- feat(ws): W-002 message.py — WSMessage JSON 消息容器（type 判别 + 类型安全访问器）
+- feat(ws): W-003/004 — 编解码器由 FastAPI 原生 JSON 序列化替代（无需独立 Decoder/Encoder）
+- feat(ws): W-005 module.py — WebSocketModule 抽象基类（can_decode + process）
+- feat(ws): W-006 sessions_manager.py — WSSessionsManager 单例（user_login→List[WebSocket] + broadcast + hangup）
+- feat(ws): W-007/008 chat_module.py — ChatModule（CHAT_JOIN/LEAVE/MESSAGE 消息处理 + 房间委派）
+- feat(ws): W-009/010 room.py — Room + RoomManager（context 键多用户房间 + 生命周期管理）
+- feat(ws): W-011 collaborative_module.py — CollaborativeModule（多用户实时协同 3D 同步：鼠标/相机/选中/标注）
+- feat(ws): W-012 status_module.py — StatusModule（状态订阅/广播）
+- feat(ws): W-013 webrtc_module.py + webrtc_utils.py — WebRTC 信令中继（OFFER/ANSWER/ICE_CANDIDATE/HANGUP/CALL/REJECT）
+
+### P4B-EXT Extension (16 条目)
+- feat(ext): X-001 cad_converter.py — CADConverter 抽象基类 + ConversionInput/Output DTO（插件式转换框架）
+- feat(ext): X-002 conversion_order.py — ConversionOrder DTO（Kafka 转换订单消息体）
+- feat(ext): X-003 conversion_result_proxy.py — ConversionResultProxy DTO（conversion-service 回调数据）
+- feat(ext): X-004 converter_utils.py — 工具函数（CAD 格式检测、vault 路径构建）
+- feat(ext): X-005 ondemand_converter.py — OnDemandConverterService（按需格式转换 stub）
+- feat(ext): X-006 attribute_model.py — ImportAttribute DTO + AttributeType 枚举
+- feat(ext): X-007 attributes_holder.py — AttributesHolder 标记接口
+- feat(ext): X-008 attributes_importer_utils.py — 属性类型推断 + 值转换 + 模板校验（对标 312 行 Java）
+- feat(ext): X-009/010 bom_importer.py — BomImporter 抽象基类 + BomImportRow/BomImportResult DTO
+- feat(ext): X-011/012/013 part_importer.py — PartImporter 抽象基类 + PartToImport/PartImportResult DTO
+- feat(ext): X-014/015/016 path_data_importer.py — PathDataImporter 抽象基类 + PathDataToImport/PathDataImportResult DTO
+- chore(main): 注册 /ws WebSocket 端点
+
 ## 2026-07-07 — P3B-B File Utils + Export 层迁移
 
 - feat(file): R-049~052 — file/util 工具包 (binary_resource_streaming/download_meta/download_response/upload)，Range 解析/MIME 类型/ETag/Content-Disposition 等提取为独立模块
