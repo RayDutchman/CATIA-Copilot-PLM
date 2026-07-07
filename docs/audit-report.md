@@ -235,3 +235,51 @@ B1 ✅  B2 ✅  B3 ✅  B4 ✅  B5 ✅  B6 ✅  B7 ✅
 2. **7 维审计 > HTTP 对拍** — HTTP 对拍只能验证 ~50% 的问题。SQL 逻辑/值语义/stub 必须靠代码级审计。
 3. **文件映射表 + throw-matrix** — 系统性清单远比随机发现高效。60 对 → 3 轮审计 → 0 残留。
 4. **AI agent 编排模式** — 主 agent 不写代码，只做任务分解 + 并行派发 → 收集结果 → pytest → commit。
+
+---
+
+## 第二轮全量审计 (2026-07-07 修复后)
+
+> 执行：Step 1-5 全部重跑。Step 4: 73/42/47 (数值稳定)。Step 5: 4 文件对 × 3 方法 7 维审计。
+
+### Step 1-3 快速重验
+
+| Step | 结果 |
+|------|------|
+| 1. NotImplementedError | 4 (已知抽象类，预期内) |
+| 2. 空函数 | 0 ✅ |
+| 3. TODO | 0 ✅ (B7 全清理) |
+
+### Step 5 — 第二轮代码质量汇总
+
+| 文件对 | 🔴 | 🟡 | 关键发现 |
+|--------|------|------|------|
+| ProductManager | 6 | 5 | create_part/checkout/set_tags 缺 workspace 写权限 |
+| DocumentManager | 4 | 5 | create_doc Workflow stub + null ACL 安全缺口；delete ✅ 完全对齐并超越 Java |
+| ChangeManager | 3 | 2 | create/update/tags 缺写权限 (B2 漏项) |
+| Workflow | 7 | 6 | B5 回归: inst.workflow Sequential 全启动；_relaunch 策略错误 |
+
+### 新增 🔴 发现
+
+| # | 描述 | 影响范围 |
+|---|------|---------|
+| N1 | `create_item`/`update_item`/`set_tags` 缺写权限 (B2 漏项) | `change_manager.py` |
+| N2 | `create_part`/`checkout`/`set_tags` 缺 workspace 写权限 | `product_manager.py` |
+| N3 | `create_document`/`checkin` null ACL 安全缺口 | `document_manager.py` + `acl_factory.py` |
+| N4 | `_relaunch_workflow` 新建非 clone + 未 stop tasks | `task_manager.py` |
+| N5 | `instantiate_workflow` Sequential 不区分 dtype 全启动 | `workflow_manager.py` |
+| N6 | `check_write_access` null ACL 无条件返 True | `acl_factory.py` (全局) |
+
+### 跨文件根因
+
+**最大盲点**：`acl_factory.check_write_access` 在 `acl_id is None` 时无条件返回 True，Java 对应代码要求 workspace 写权限回退。影响 4 service × ~8 方法。
+
+### 修复优先级
+
+| 优先级 | 内容 | 文件 |
+|--------|------|------|
+| P0 | `check_write_access` null ACL → workspace 回退 | `acl_factory.py` |
+| P0 | `instantiate_workflow` Sequential dtype 区分 | `workflow_manager.py` |
+| P1 | create/update/tags 写权限补齐 | `change_manager.py` + `product_manager.py` |
+| P2 | `_relaunch_workflow` clone 策略修正 | `task_manager.py` |
+| P2 | `create_document` Workflow 实例化补全 | `document_manager.py`
