@@ -20,6 +20,22 @@ from app.schemas.part import PartCreationDTO, PartIterationUpdateDTO
 from app.services.indexer_manager import indexer_manager
 
 
+def _validate_mask(mask: str, value: str) -> bool:
+    """验证给定值是否匹配掩码（*匹配字母数字，#匹配数字）。"""
+    if not mask:
+        return True
+    if len(mask) != len(value):
+        return False
+    import re
+    alphanum = re.compile(r'[a-zA-Z0-9]')
+    for mc, vc in zip(mask, value):
+        if mc == '*' and not alphanum.match(vc):
+            return False
+        if mc == '#' and not vc.isdigit():
+            return False
+    return True
+
+
 class ProductService:
 
     # ── 查询 ──────────────────────────────────────────────────
@@ -226,6 +242,8 @@ class ProductService:
                 from app.core.exceptions import PartMasterTemplateNotFoundException
                 raise PartMasterTemplateNotFoundException(
                     "PartMasterTemplateNotFoundException", body.template_id)
+            if tpl.mask and not _validate_mask(tpl.mask, body.number):
+                raise NotAllowedException("NotAllowedException42")
             master.type = tpl.part_type or ""
             master.attributes_locked = tpl.attributes_locked or False
         db.add(master)
@@ -392,7 +410,10 @@ class ProductService:
     def checkout(self, db: Session, workspace_id: str,
                  number: str, version: str, user_login: str) -> PartRevision:
         from app.core.exceptions import NotAllowedException
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, workspace_id, number, version, for_update=True)
+        if not check_write_access(db, pr.acl_id, user_login, False):
+            raise AccessRightException("AccessRightException")
         if not pr.is_last_revision:
             raise NotAllowedException("NotAllowedException72")
         if pr.checkout_user_login:
@@ -804,8 +825,11 @@ class ProductService:
     def set_tags(self, db: Session, ws: str, pn: str, ver: str,
                  labels: list, current_user_login: str = None) -> PartRevision:
         from app.models.part import part_revision_tags
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, pn, ver,
                                current_user_login=current_user_login)
+        if current_user_login and not check_write_access(db, pr.acl_id, current_user_login, False):
+            raise AccessRightException("AccessRightException")
         db.execute(part_revision_tags.delete().where(
             part_revision_tags.c.partmaster_workspace_id == ws,
             part_revision_tags.c.partmaster_partnumber == pn,

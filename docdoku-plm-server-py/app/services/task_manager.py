@@ -205,8 +205,7 @@ class TaskService:
         if cur_status != 1:
             raise NotAllowedException("NotAllowedException40")
         if cur_worker != user_login:
-            if not self._is_admin(db, user_login):
-                raise NotAllowedException("NotAllowedException40")
+            raise NotAllowedException("NotAllowedException40")
 
         # isPotentialWorker 检查：用户必须是指定角色的成员
         if not skip_potential_worker_check:
@@ -246,11 +245,6 @@ class TaskService:
                 holder_type = "documents"
                 holder_reference = doc[0]
                 holder_version = doc[1]
-                new_status = 1 if status == 2 else 0
-                db.execute(text(
-                    "UPDATE documentrevision SET status = :st "
-                    "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
-                ), {"st": new_status, "ws": ws, "dm": doc[0], "v": doc[1]})
             else:
                 part = db.execute(text(
                     "SELECT partmaster_partnumber, version FROM partrevision "
@@ -260,11 +254,6 @@ class TaskService:
                     holder_type = "part"
                     holder_reference = part[0]
                     holder_version = part[1]
-                    new_status = 1 if status == 2 else 0
-                    db.execute(text(
-                        "UPDATE partrevision SET status = :st "
-                        "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :v"
-                    ), {"st": new_status, "ws": ws, "pn": part[0], "v": part[1]})
                 else:
                     ww = db.execute(text(
                         "SELECT id FROM workspace_workflow "
@@ -283,15 +272,19 @@ class TaskService:
 
     def _advance_activity(self, db: Session, ws: str, wf_id: int,
                            step: int, completed_num: int, user_login: str):
-        """审批通过后推进活动：根据 tasksToComplete 启动下一批 tasks。"""
+        """审批通过后推进活动：根据 tasksToComplete 启动下一批 tasks。
+        
+        Sequential 类型严格顺序执行，每次只启动一个 task。
+        """
         from sqlalchemy import text
-        # 获取当前活动的 tasksToComplete 配置
+        # 获取当前活动的 tasksToComplete 和 dtype
         activity = db.execute(text(
-            "SELECT tasksToComplete FROM activity WHERE workflow_id = :wf_id AND step = :step"
+            "SELECT tasksToComplete, dtype FROM activity WHERE workflow_id = :wf_id AND step = :step"
         ), {"wf_id": wf_id, "step": step}).first()
         if not activity:
             return
         ttc = activity[0] or 0
+        dtype = activity[1] if len(activity) > 1 else ""
         # 统计当前活动已审批的任务数
         approved_cnt = db.scalar(text(
             "SELECT COUNT(*) FROM task "
@@ -309,11 +302,12 @@ class TaskService:
             ), {"wf_id": wf_id, "step": step})
             self._start_activity(db, ws, wf_id, step + 1)
         elif running_cnt == 0 and approved_cnt < ttc:
-            # 没有 running task 且未完成 — 启动足够数量的 task
+            # 没有 running task 且未完成 — Sequential 每次只启动一个 task
+            limit = 1 if dtype == "SEQUENTIAL" else ttc - approved_cnt
             pending = db.execute(text(
                 "SELECT num FROM task WHERE workflow_id = :wf_id "
                 "AND activity_step = :step AND status = 0 ORDER BY num LIMIT :limit"
-            ), {"wf_id": wf_id, "step": step, "limit": ttc - approved_cnt}).fetchall()
+            ), {"wf_id": wf_id, "step": step, "limit": limit}).fetchall()
             for (tnum,) in pending:
                 db.execute(text(
                     "UPDATE task SET status = 1, startdate = NOW() "
@@ -321,18 +315,23 @@ class TaskService:
                 ), {"wf_id": wf_id, "step": step, "num": tnum})
 
     def _start_activity(self, db: Session, ws: str, wf_id: int, step: int):
-        """启动指定活动的第一个 batch tasks."""
+        """启动指定活动的第一个 batch tasks。
+        
+        Sequential 类型每次只启动一个 task。
+        """
         from sqlalchemy import text
         activity = db.execute(text(
-            "SELECT taskstocomplete FROM activity WHERE workflow_id = :wf_id AND step = :step"
+            "SELECT taskstocomplete, dtype FROM activity WHERE workflow_id = :wf_id AND step = :step"
         ), {"wf_id": wf_id, "step": step}).first()
         if not activity:
             return
         ttc = activity[0] or 1
+        dtype = activity[1] if len(activity) > 1 else ""
+        limit = 1 if dtype == "SEQUENTIAL" else ttc
         pending = db.execute(text(
             "SELECT num FROM task WHERE workflow_id = :wf_id "
             "AND activity_step = :step AND status = 0 ORDER BY num LIMIT :limit"
-        ), {"wf_id": wf_id, "step": step, "limit": ttc}).fetchall()
+        ), {"wf_id": wf_id, "step": step, "limit": limit}).fetchall()
         for (tnum,) in pending:
             db.execute(text(
                 "UPDATE task SET status = 1, startdate = NOW() "

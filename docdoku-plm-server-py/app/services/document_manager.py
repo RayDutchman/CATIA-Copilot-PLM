@@ -7,6 +7,7 @@ from app.models.document import (
     document_revision_tags,
 )
 from app.core.exceptions import (
+    AccessRightException,
     EntityAlreadyExistsException, EntityConstraintException,
     NotAllowedException, EntityNotFoundException,
     DocumentRevisionNotFoundException,
@@ -17,6 +18,21 @@ from app.services.indexer_manager import indexer_manager
 
 
 class DocumentService:
+
+    @staticmethod
+    def _validate_mask(mask: str, value: str) -> bool:
+        if not mask:
+            return True
+        if len(mask) != len(value):
+            return False
+        import re
+        alphanum = re.compile(r'[a-zA-Z0-9]')
+        for mc, vc in zip(mask, value):
+            if mc == '*' and not alphanum.match(vc):
+                return False
+            if mc == '#' and not vc.isdigit():
+                return False
+        return True
 
     def get_revision(self, db, ws, doc_id, ver):
         pr = db.query(DocumentRevision).filter(
@@ -55,6 +71,8 @@ class DocumentService:
             author_workspace_id=ws, author_login=user_login)
         if template_id:
             tpl = self.get_template(db, ws, template_id)
+            if not self._validate_mask(tpl.mask or "", doc_id):
+                raise NotAllowedException("NotAllowedException42")
             if tpl.id_generated and tpl.mask:
                 import re
                 prefix = re.sub(r'\{[^}]*\}', '', tpl.mask)
@@ -102,7 +120,10 @@ class DocumentService:
         return rev
 
     def delete_revision(self, db, ws, doc_id, ver, user_login):
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
+        if not check_write_access(db, pr.acl_id, user_login, False):
+            raise AccessRightException("AccessRightException")
 
         # 管理员跳过 home 文件夹检查
         from sqlalchemy import text as _text
@@ -338,7 +359,10 @@ class DocumentService:
         return owner != user_login
 
     def checkout(self, db, ws, doc_id, ver, user_login):
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
+        if not check_write_access(db, pr.acl_id, user_login, False):
+            raise AccessRightException("AccessRightException")
         if pr.checkout_user_login and pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException37")
         if pr.status != 0:
@@ -575,7 +599,10 @@ class DocumentService:
                 "iter": dst_iter, "aid": attr_id, "order": row[12] or 0})
 
     def checkin(self, db, ws, doc_id, ver, user_login):
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
+        if not check_write_access(db, pr.acl_id, user_login, False):
+            raise AccessRightException("AccessRightException")
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException20")
         now = datetime.utcnow()
