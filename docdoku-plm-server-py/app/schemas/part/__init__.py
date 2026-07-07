@@ -28,6 +28,7 @@ class PartIterationUpdateDTO(BaseModel):
     model_config = ConfigDict(extra='forbid')
     iterationNote: Optional[str] = None
     instanceAttributes: Optional[List[dict]] = None
+    instanceAttributeTemplates: Optional[List[dict]] = None
     components: Optional[List[PartUsageLinkDTO]] = None
     linkedDocuments: Optional[List[dict]] = None
 

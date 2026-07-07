@@ -525,13 +525,72 @@ class ProductService:
             self._sync_linked_documents(db, target, body.linkedDocuments)
         # 更新实例属性
         if body.instanceAttributes is not None:
+            # hasValidChange 校验（对齐 Java AttributesConsistencyUtils）
+            from types import SimpleNamespace
+            from sqlalchemy import text as sql_text
+            rows = db.execute(sql_text(
+                "SELECT ia.id, ia.name, ia.locked, ia.mandatory, "
+                "ia.stringvalue, ia.datevalue, ia.floatvalue, ia.integervalue, ia.urlvalue, "
+                "ia.booleanvalue "
+                "FROM instanceattribute ia "
+                "JOIN partiteration_attribute pia ON pia.instanceattribute_id = ia.id "
+                "WHERE pia.workspace_id=:ws AND pia.partmaster_partnumber=:pn "
+                "AND pia.partrevision_version=:ver AND pia.iteration=:it "
+                "ORDER BY pia.attribute_order"
+            ), {"ws": workspace_id, "pn": number, "ver": version, "it": iteration_num}).fetchall()
+            def _extract_value(row):
+                vals = []
+                if row.stringvalue is not None:
+                    vals.append(str(row.stringvalue))
+                if row.datevalue is not None:
+                    vals.append(str(row.datevalue))
+                if row.floatvalue is not None:
+                    vals.append(str(row.floatvalue))
+                if row.integervalue is not None:
+                    vals.append(str(row.integervalue))
+                if row.urlvalue is not None:
+                    vals.append(str(row.urlvalue))
+                if row.booleanvalue is not None:
+                    vals.append(str(row.booleanvalue))
+                return vals[0] if vals else None
+            current_attrs = [
+                SimpleNamespace(
+                    name=row.name or "",
+                    locked=row.locked or False,
+                    mandatory=row.mandatory or False,
+                    value=_extract_value(row),
+                )
+                for row in rows
+            ]
+            def _dto_value(d):
+                for key in ("textValue", "longTextValue", "numberValue", "dateValue", "urlValue", "booleanValue"):
+                    v = d.get(key)
+                    if v is not None:
+                        return str(v)
+                return None
+            new_attrs = [
+                SimpleNamespace(
+                    name=a.get("name", ""),
+                    locked=a.get("locked", False),
+                    mandatory=a.get("mandatory", False),
+                    value=_dto_value(a),
+                )
+                for a in body.instanceAttributes
+            ]
+            from app.services.validation.attributes_consistency_utils import has_valid_change
+            if not has_valid_change(current_attrs, pr.part_master.attributes_locked or False, new_attrs):
+                raise NotAllowedException("NotAllowedException59")
             self._sync_instance_attributes(db, target, body.instanceAttributes)
+        # 同步实例属性模板（对齐 Java updatePartIteration 中的模板同步）
+        if body.instanceAttributeTemplates is not None:
+            self._sync_instance_attribute_templates(db, target, body.instanceAttributeTemplates)
         # 更新子件列表
         if body.components is not None:
             self._check_cyclic_assembly(db, target, body.components, workspace_id)
             self._sync_components(db, target, body.components, workspace_id)
         db.commit()
         db.refresh(pr)
+        indexer_manager.index_part_revision(pr)
         return pr
 
     def _check_cyclic_assembly(self, db: Session, iteration: PartIteration,
@@ -742,6 +801,43 @@ class ProductService:
                 "VALUES (:ws, :pn, :ver, :it, :aid, :order)"
             ), {"ws": ws, "pn": pn, "ver": ver, "it": it,
                 "aid": attr_id, "order": order})
+
+    def _sync_instance_attribute_templates(self, db: Session, iteration: PartIteration,
+                                            templates: list) -> None:
+        """同步 InstanceAttributeTemplate 列表（对齐 Java updatePartIteration 中的模板同步）。"""
+        from sqlalchemy import text
+        ws = iteration.workspace_id
+        pn = iteration.partmaster_partnumber
+        ver = iteration.partrevision_version
+        it = iteration.iteration
+        # 删除旧关联
+        db.execute(text(
+            "DELETE FROM partiteration_pathdata_attr "
+            "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+            "AND partrevision_version=:ver AND iteration=:it"
+        ), {"ws": ws, "pn": pn, "ver": ver, "it": it})
+        # 插入新模板属性
+        for tpl in (templates or []):
+            result = db.execute(text(
+                "INSERT INTO instanceattributetemplate "
+                "(name, dtype, mandatory, locked, attributetype, lov_name, lov_workspace_id) "
+                "VALUES (:name, :dtype, :mand, :locked, :atype, :lov_name, :lov_ws) RETURNING id"
+            ), {
+                "name": tpl.get("name", ""),
+                "dtype": tpl.get("dtype", ""),
+                "mand": tpl.get("mandatory", False),
+                "locked": tpl.get("locked", False),
+                "atype": tpl.get("attributeType", ""),
+                "lov_name": tpl.get("lovName"),
+                "lov_ws": tpl.get("lovWorkspaceId"),
+            })
+            attr_id = result.fetchone()[0]
+            db.execute(text(
+                "INSERT INTO partiteration_pathdata_attr "
+                "(workspace_id, partmaster_partnumber, partrevision_version, iteration, "
+                "instanceattributetemplate_id) "
+                "VALUES (:ws, :pn, :ver, :it, :aid)"
+            ), {"ws": ws, "pn": pn, "ver": ver, "it": it, "aid": attr_id})
 
     def release(self, db: Session, ws: str, pn: str, ver: str,
                 user_login: str) -> PartRevision:
