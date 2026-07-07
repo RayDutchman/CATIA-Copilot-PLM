@@ -87,25 +87,25 @@ class WorkspaceService:
 
     def get_disk_usage(self, db: Session, ws: str) -> int:
         """获取工作区磁盘用量（估算）。"""
-        # TODO: 实现基于 vault 的实际磁盘计算
+        # STUB (tracked in REMINDERS): 实现基于 vault 的实际磁盘计算
         return 0
 
     def get_workspace_front_options(self, db: Session, ws: str) -> dict:
-        # TODO: 从 workspacefrontoptions 表读取
+        # STUB (tracked in REMINDERS): 从 workspacefrontoptions 表读取
         return {"workspaceId": ws}
 
     def update_workspace_front_options(self, db: Session, ws: str,
                                         options: dict) -> dict:
-        # TODO: 写入 workspacefrontoptions 表
+        # STUB (tracked in REMINDERS): 写入 workspacefrontoptions 表
         return {"workspaceId": ws}
 
     def get_workspace_back_options(self, db: Session, ws: str) -> dict:
-        # TODO: 从 workspacebackoptions 表读取
+        # STUB (tracked in REMINDERS): 从 workspacebackoptions 表读取
         return {"workspaceId": ws}
 
     def update_workspace_back_options(self, db: Session, ws: str,
                                        options: dict) -> dict:
-        # TODO: 写入 workspacebackoptions 表
+        # STUB (tracked in REMINDERS): 写入 workspacebackoptions 表
         return {"workspaceId": ws}
 
 

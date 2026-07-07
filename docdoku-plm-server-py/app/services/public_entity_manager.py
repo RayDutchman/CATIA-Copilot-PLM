@@ -56,8 +56,12 @@ class PublicEntityService:
         return row is not None
 
     def get_binary_resource(self, db: Session, full_name: str) -> dict:
-        """通过文件名查找 BinaryResource（公开访问）。"""
-        # TODO: 实现完整的 fullName 解析 + vault 路径查找
+        """通过 fullName 查找 BinaryResource（公开访问）。"""
+        row = db.execute(text(
+            "SELECT * FROM binaryresource WHERE fullname = :fn"
+        ), {"fn": full_name}).first()
+        if row:
+            return dict(row._mapping)
         return {}
 
 

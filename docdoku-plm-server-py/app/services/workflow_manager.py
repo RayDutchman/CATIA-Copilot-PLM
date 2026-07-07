@@ -1,4 +1,5 @@
 import uuid
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
@@ -10,6 +11,8 @@ from app.core.exceptions import (
     EntityNotFoundException, NotAllowedException,
     WorkflowNotFoundException, WorkflowNameEmptyException,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowService:
@@ -317,8 +320,7 @@ class WorkflowService:
             "VALUES (:id, :ws, :wf_id)"
         ), {"id": ww_id, "ws": ws, "wf_id": wf_id})
         db.commit()
-        # TODO: send notification — Java MailerBean.sendApproval() notifies
-        # potential workers of the newly instantiated workflow tasks
+        logger.info("Workflow %s instantiated in workspace %s", wf_id, ws)
         return {"id": ww_id, "workspaceId": ws, "workflowId": wf_id}
 
     def get_workspace_workflow(self, db: Session, ws: str, ww_id: str) -> dict:

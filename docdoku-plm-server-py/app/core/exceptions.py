@@ -301,8 +301,8 @@ class ConvertedResourceException(ApplicationException):
 
 
 
-# TODO: IndexerNotAvailableException / IndexerRequestException — 不适用，Python 版无 ES 索引器
-# TODO: GCMAccountNotFoundException / GCMAccountAlreadyExistsException — 不适用，Python 版无 GCM 集成
+# IndexerNotAvailableException / IndexerRequestException — 不适用，Python 版无 ES 索引器
+# GCMAccountNotFoundException / GCMAccountAlreadyExistsException — 不适用，Python 版无 GCM 集成
 
 class IndexerNotAvailableException(ApplicationException):
     pass

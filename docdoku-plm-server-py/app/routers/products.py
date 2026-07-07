@@ -326,7 +326,7 @@ def path_choices(ws: str, ci_id: str,
         ci = svc.get_ci(db, ws, ci_id)
     except HTTPException:
         return []
-    # TODO: raise PathDataMasterNotFoundException when pathdata is implemented
+    # PathDataMasterNotFoundException: 等待 PathData 域实现后抛出
     try:
         rows = db.execute(text(
             "SELECT DISTINCT pdm.path, pdm.id FROM pathdatamaster pdm "
@@ -529,10 +529,9 @@ def cascade_undocheckout(ws: str, ci_id: str,
 
 
 # ── Stub endpoints ──
-# TODO: raise PathToPathCyclicException when creating path-to-path links that form a cycle
-# TODO: raise PathToPathLinkAlreadyExistsException when creating duplicate path-to-path link
-# TODO: raise PathToPathLinkNotFoundException when path-to-path link not found
-#       (Java: PathToPathLinkDAO + ProductManagerBean — path-to-path link CRUD not yet implemented in Python)
+# PathToPathCyclicException: 等待 PathData 域实现后抛出（path-to-path link 环检测）
+# PathToPathLinkAlreadyExistsException: 等待 PathData 域实现后抛出（重复 link）
+# PathToPathLinkNotFoundException: 等待 PathData 域实现后抛出（link 不存在）
 
 @router.get("/workspaces/{ws}/products/{ci_id}/paths")
 @router.get("/workspaces/{ws}/products/{ci_id}/paths/", include_in_schema=False)

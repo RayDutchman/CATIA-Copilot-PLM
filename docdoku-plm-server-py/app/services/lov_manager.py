@@ -63,8 +63,11 @@ class LOVService:
         return self.find_lov(db, ws, new_name)
 
     def is_lov_deletable(self, db: Session, ws: str, lov_name: str) -> bool:
-        # TODO: 检查是否有模板引用此 LOV
-        return True
+        row = db.execute(text(
+            "SELECT 1 FROM instanceattributetemplate "
+            "WHERE lov_name = :n AND lov_workspace_id = :ws LIMIT 1"
+        ), {"n": lov_name, "ws": ws}).first()
+        return row is None
 
 
 lov_service = LOVService()

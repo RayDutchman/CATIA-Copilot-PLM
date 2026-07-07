@@ -253,7 +253,7 @@ class ProductStructureService:
             "virtual": is_virtual,
             "substitute": is_substitute,
             "partUsageLinkReferenceDescription": usage_link.reference_description if usage_link else None,
-            "hasPathData": False,  # TODO: raise PathDataMasterNotFoundException when pathdata is implemented
+            "hasPathData": self._check_has_path_data(db, rev.workspace_id, path),
             "accessDeny": access_deny,
             "attributes": [],
             "components": [],
@@ -276,6 +276,16 @@ class ProductStructureService:
                                                      is_admin=is_admin)
                 comp["components"].append(child_comp)
         return comp
+
+    def _check_has_path_data(self, db: Session, ws: str, comp_path: str) -> bool:
+        """检查组件路径是否有 PathDataMaster 记录。"""
+        relative = comp_path.split("-", 1)[1] if "-" in comp_path else ""
+        if not relative:
+            return False
+        row = db.execute(text(
+            "SELECT 1 FROM pathdatamaster WHERE path = :p LIMIT 1"
+        ), {"p": relative}).first()
+        return row is not None
 
     def decode_path(self, db: Session, ws: str, ci_id: str, path_str: str):
         """u1-u4-u7 → LightPartLinkDTO[{number, name, referenceDescription, fullId}]"""

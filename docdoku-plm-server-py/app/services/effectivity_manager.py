@@ -1,11 +1,11 @@
 """分时有效性管理——对标 Payara EffectivityManagerBean。
 
 管理零件版本的有效性（SerialNumber/Date/Lot based effectivity）。
-TODO: 完整实现 CRUD 逻辑。
 """
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.models.product.effectivity import Effectivity
 
 
 class EffectivityService:
@@ -20,6 +20,79 @@ class EffectivityService:
             raise EntityNotFoundException("EffectivityNotFoundException", str(effectivity_id))
         return dict(row._mapping)
 
+    def create_effectivity(self, db: Session, ws: str, part_number: str,
+                            version: str, body: dict) -> Effectivity:
+        """创建有效性记录（D/S/L 自动按 typeEffectivity 分派）。"""
+        type_eff = body.get("typeEffectivity", "DATEBASEDEFFECTIVITY")
+        ci_id = body.get("configurationItemNumber")
+        name = body.get("name", "")
+        description = body.get("description", "")
+        now = datetime.utcnow()
+        if type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
+            eff = Effectivity(
+                dtype="S", name=name, description=description,
+                creation_date=now,
+                start_number=body.get("startNumber"),
+                end_number=body.get("endNumber"),
+                configurationitem_id=ci_id,
+                configurationitem_workspace_id=ws,
+            )
+        elif type_eff == "LOTBASEDEFFECTIVITY":
+            eff = Effectivity(
+                dtype="L", name=name, description=description,
+                creation_date=now,
+                start_lot=body.get("startLotId"),
+                end_lot=body.get("endLotId"),
+                configurationitem_id=ci_id,
+                configurationitem_workspace_id=ws,
+            )
+        else:
+            eff = Effectivity(
+                dtype="D", name=name, description=description,
+                creation_date=now,
+                start_date=_parse_date(body.get("startDate")),
+                end_date=_parse_date(body.get("endDate")),
+                configurationitem_id=ci_id,
+                configurationitem_workspace_id=ws,
+            )
+        db.add(eff)
+        db.flush()
+        db.execute(text(
+            "INSERT INTO partrevision_effectivity "
+            "(workspace_id, partmaster_partnumber, partrevision_version, effectivity_id) "
+            "VALUES (:ws, :pn, :ver, :eid)"
+        ), {"ws": ws, "pn": part_number, "ver": version, "eid": eff.id})
+        db.commit()
+        db.refresh(eff)
+        return eff
+
+    def update_effectivity(self, db: Session, ws: str, effectivity_id: int,
+                            body: dict) -> Effectivity:
+        """更新有效性记录的通用字段。"""
+        eff = db.query(Effectivity).filter(Effectivity.id == effectivity_id).first()
+        if not eff:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("EffectivityNotFoundException", str(effectivity_id))
+        if "name" in body:
+            eff.name = body["name"]
+        if "description" in body:
+            eff.description = body["description"]
+        if "startDate" in body:
+            eff.start_date = _parse_date(body["startDate"])
+        if "endDate" in body:
+            eff.end_date = _parse_date(body["endDate"])
+        if "startNumber" in body:
+            eff.start_number = body["startNumber"]
+        if "endNumber" in body:
+            eff.end_number = body["endNumber"]
+        if "startLotId" in body:
+            eff.start_lot = body["startLotId"]
+        if "endLotId" in body:
+            eff.end_lot = body["endLotId"]
+        db.commit()
+        db.refresh(eff)
+        return eff
+
     def delete_effectivity(self, db: Session, ws: str, part_number: str,
                             version: str, effectivity_id: int) -> None:
         db.execute(text(
@@ -27,7 +100,16 @@ class EffectivityService:
         ), {"id": effectivity_id, "ws": ws})
         db.commit()
 
-    # TODO: create/update methods for SerialNumberBased, DateBased, LotBased effectivities
+
+def _parse_date(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
 
 
 effectivity_service = EffectivityService()

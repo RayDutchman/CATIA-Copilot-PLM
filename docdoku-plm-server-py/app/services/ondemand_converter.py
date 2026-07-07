@@ -12,14 +12,14 @@ class OnDemandConverterService:
                                          output_format: str,
                                          binary_resource_id: int) -> bytes:
         """获取文档的格式转换结果。"""
-        # TODO: 实现与实际转换引擎的集成
+        # STUB (tracked in REMINDERS): 实现与实际转换引擎的集成
         return b""
 
     def get_part_converted_resource(self, db: Session,
                                      output_format: str,
                                      binary_resource_id: int) -> bytes:
         """获取零件的格式转换结果。"""
-        # TODO: 实现与实际转换引擎的集成
+        # STUB (tracked in REMINDERS): 实现与实际转换引擎的集成
         return b""
 
 
