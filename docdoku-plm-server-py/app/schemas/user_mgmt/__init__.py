@@ -75,8 +75,9 @@ from app.schemas.part import UserDTO
 
 
 class UserDTOExtended(UserDTO):
-    """扩展 UserDTO，增加 admin/timeZone 字段（accounts/me 等端点使用）"""
+    """扩展 UserDTO，增加 admin/timeZone/enabled 字段（accounts/me 等端点使用）"""
     model_config = ConfigDict(from_attributes=True, extra='forbid')
+    enabled: Optional[bool] = None
     admin: Optional[bool] = None
     timeZone: Optional[str] = None
 
