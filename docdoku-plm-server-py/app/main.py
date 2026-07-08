@@ -2,6 +2,7 @@
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from urllib.parse import unquote
 from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share, attributes, lov, tags, document_template_files, part_template_files
 from app.routers.export import document_baseline_export, instance_collection, virtual_instance_collection
 from app.core.exception_handlers import register_exception_handlers
@@ -39,6 +40,16 @@ class TrailingSlashMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(TrailingSlashMiddleware)
+
+# Starlette 0.x 兼容: 路径参数不自动 URL 解码，手动处理
+class URLDecodeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.scope.get("path", "")
+        if "%" in path:
+            request.scope["path"] = unquote(path)
+        return await call_next(request)
+
+app.add_middleware(URLDecodeMiddleware)
 
 register_exception_handlers(app)
 
