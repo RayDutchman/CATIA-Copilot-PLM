@@ -542,6 +542,17 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
         "INSERT INTO workspace (id, description, enabled, folderlocked, admin_login) "
         "VALUES (:id, :desc, TRUE, :folder_locked, :admin)"
     ), {"id": ws_id, "desc": desc, "folder_locked": folder_locked, "admin": admin})
+
+    # Payara 对齐: createWorkspace → createUser + addUserMembership
+    db.execute(text(
+        "INSERT INTO userdata (login, workspace_id) VALUES (:login, :ws)"
+    ), {"login": admin, "ws": ws_id})
+    db.execute(text(
+        "INSERT INTO workspaceusermembership "
+        "(workspace_id, member_login, member_workspace_id) "
+        "VALUES (:ws, :login, :ws) "
+        "ON CONFLICT DO NOTHING"
+    ), {"ws": ws_id, "login": admin})
     db.commit()
 
     indexer_manager.create_index(ws_id)  # 对标 createWorkspace:157
