@@ -53,7 +53,7 @@ def _model_to_dict(m, db: Session = None) -> dict:
             "type": a.dtype,
             "lifeCycleState": a.lifecyclestate,
             "tasksToComplete": a.taskstocomplete,
-            "tasks": [{
+            "taskModels": [{
                 "num": t.num,
                 "title": t.title or "",
                 "instructions": t.instructions or "",
