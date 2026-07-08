@@ -307,17 +307,19 @@ def create_part_template(workspace_id: str,
                          body: dict = Body(...),
                          current_user: Account = Depends(get_current_user),
                          db: Session = Depends(get_db)):
+    # Payara PartTemplateCreationDTO 字段名是 reference，不是 id
+    template_id = body.get("reference") or body.get("id") or ""
     existing = (
         db.query(PartMasterTemplate)
         .filter(PartMasterTemplate.workspace_id == workspace_id,
-                PartMasterTemplate.id == body.get("id", ""))
+                PartMasterTemplate.id == template_id)
         .first()
     )
     if existing:
         raise PartMasterTemplateAlreadyExistsException(
-            "PartMasterTemplateAlreadyExistsException", body.get("id", ""))
+            "PartMasterTemplateAlreadyExistsException", template_id)
     t = PartMasterTemplate(
-        id=body.get("id", ""),
+        id=template_id,
         workspace_id=workspace_id,
         mask=body.get("mask", ""),
         id_generated=body.get("idGenerated", False),

@@ -13,7 +13,7 @@ from app.core.exceptions import WorkspaceNotEnabledException, EntityNotFoundExce
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
-_WS_RE = re.compile(r"^/docdoku-plm-server-rest/api/workspaces/(?!(more|reachable-users))([^/]+)")
+_WS_RE = re.compile(r"^/docdoku-plm-server-rest/api/workspaces/(?!(?:more|reachable-users))([^/]+)")
 
 
 def get_current_user(

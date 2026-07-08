@@ -32,9 +32,13 @@ def list_root(ws: str, current_user: Account = Depends(get_current_user),
     result = []
     for f in folders:
         is_home = f.completepath == home_path
+        folder_name = f.completepath.split('/')[-1]
+        # 过滤其他用户的主文件夹（~ 开头的文件夹是用户专属，不属于普通文件夹列表）
+        if not is_home and folder_name.startswith("~"):
+            continue
         result.append({
             "id": f"{ws}:{f.completepath}",
-            "name": f.completepath.split('/')[-1],
+            "name": folder_name,
             "path": f.completepath, "home": is_home,
         })
     return result

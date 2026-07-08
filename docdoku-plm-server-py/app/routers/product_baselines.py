@@ -15,8 +15,8 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
 
 
-def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> str | None:
-    """查询 CI 的根零件最新版本字符串。"""
+def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
+    """查询 CI 的根零件最新版本信息。"""
     ci = db.query(ConfigurationItem).filter(
         ConfigurationItem.workspace_id == ws,
         ConfigurationItem.id == ci_id,
@@ -29,7 +29,11 @@ def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> str | None:
     ).order_by(PartRevision.creation_date.desc()).first()
     if not rev:
         return None
-    return rev.version
+    return {
+        "partNumber": ci.partmaster_partnumber,
+        "version": rev.version,
+        "status": rev.status,
+    }
 
 
 def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
