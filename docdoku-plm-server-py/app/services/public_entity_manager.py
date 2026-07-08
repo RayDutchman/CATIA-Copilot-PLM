@@ -19,7 +19,7 @@ class PublicEntityService:
         if not row:
             from app.core.exceptions import EntityNotFoundException
             raise EntityNotFoundException("PartRevisionNotFoundException",
-                                           f"{part_number}-{version}")
+                                           part_number, version)
         return dict(row._mapping)
 
     def get_public_document_revision(self, db: Session, ws: str,
@@ -32,7 +32,7 @@ class PublicEntityService:
         if not row:
             from app.core.exceptions import EntityNotFoundException
             raise EntityNotFoundException("DocumentRevisionNotFoundException",
-                                           f"{document_id}-{version}")
+                                           document_id, version)
         return dict(row._mapping)
 
     def can_access_part(self, db: Session, ws: str,
