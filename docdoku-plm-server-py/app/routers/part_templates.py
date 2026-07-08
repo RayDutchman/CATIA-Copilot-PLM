@@ -19,8 +19,8 @@ from app.schemas.part import PartTemplateDTO, GeneratedIdDTO, AclIdDTO
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-def _list_template_files(db: Session, workspace_id: str, template_id: str) -> list[str]:
-    """返回模板附件的文件名列表。Payara 对齐: PartMasterTemplate.attachedFile (@OneToOne BinaryResource) → attachedfile_fullname 列。"""
+def _list_template_files(db: Session, workspace_id: str, template_id: str) -> str | None:
+    """返回模板附件的文件名。Payara 对齐: String attachedFile (@OneToOne)。"""
     from sqlalchemy import text
     row = db.execute(text(
         "SELECT attachedfile_fullname FROM partmastertemplate "
@@ -28,8 +28,8 @@ def _list_template_files(db: Session, workspace_id: str, template_id: str) -> li
     ), {"ws": workspace_id, "tid": template_id}).first()
     if row and row[0]:
         from pathlib import Path
-        return [Path(row[0]).name]
-    return []
+        return Path(row[0]).name
+    return None
 
 
 def _build_acl(db: Session, acl_id: int) -> dict | None:
@@ -261,7 +261,7 @@ def list_part_templates(workspace_id: str,
             "workflowModelId": t.workflowmodel_id,
             "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
             "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
-            "attachedFiles": _list_template_files(db, workspace_id, t.id),
+            "attachedFile": _list_template_files(db, workspace_id, t.id),
         })
     return result
 
@@ -295,7 +295,7 @@ def get_part_template(workspace_id: str, template_id: str,
         "workflowModelId": t.workflowmodel_id,
         "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
         "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
-        "attachedFiles": _list_template_files(db, workspace_id, t.id),
+        "attachedFile": _list_template_files(db, workspace_id, t.id),
     }
 
 
@@ -346,7 +346,7 @@ def create_part_template(workspace_id: str,
         "workflowModelId": t.workflowmodel_id,
         "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
         "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
-        "attachedFiles": _list_template_files(db, workspace_id, t.id),
+        "attachedFile": _list_template_files(db, workspace_id, t.id),
     }
 
 
@@ -392,7 +392,7 @@ def update_part_template(workspace_id: str, template_id: str,
         "workflowModelId": t.workflowmodel_id,
         "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
         "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
-        "attachedFiles": _list_template_files(db, workspace_id, t.id),
+        "attachedFile": _list_template_files(db, workspace_id, t.id),
     }
 
 

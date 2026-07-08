@@ -20,4 +20,4 @@ class PartTemplateDTO(BaseModel):
     workflowModelId: Optional[str] = None
     attributeTemplates: list = []
     attributeInstanceTemplates: list = []
-    attachedFiles: list = []
+    attachedFile: Optional[str] = None  # Payara: String attachedFile (@OneToOne BinaryResource → 单个文件名)
