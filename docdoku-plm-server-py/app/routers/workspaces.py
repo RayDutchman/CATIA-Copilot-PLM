@@ -36,7 +36,7 @@ def _check_workspace_admin(db: Session, ws: str, current_user: Account):
         "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
     ), {"w": ws, "l": current_user.login}).first()
     if not is_ws_admin:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
 
 
 def _row_to_dict(r) -> dict:
@@ -523,7 +523,7 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
             "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
         ), {"l": current_user.login}).first()
         if not is_admin:
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", current_user.login)
     ws_id = body.get("id", "").strip()
     if not ws_id:
         raise NotAllowedException("NotAllowedException9", ws_id)

@@ -92,7 +92,7 @@ def update_organization(
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     if current_user.login != existing[1]:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
     description = body.get("description", "")
     db.execute(text(
         "UPDATE organization SET description = :description WHERE name = :name"
@@ -117,7 +117,7 @@ def delete_organization(
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     if current_user.login != existing[1]:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
     db.execute(text(
         "DELETE FROM organization_account WHERE organization_name = :name"
     ), {"name": org_name})
@@ -205,7 +205,7 @@ def move_member(
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     if current_user.login != existing[1]:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
     login = body.get("login", "").strip()
     if not login:
         raise NotAllowedException("NotAllowedException9", login)

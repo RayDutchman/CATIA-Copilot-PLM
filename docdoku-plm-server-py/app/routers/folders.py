@@ -20,7 +20,7 @@ def _check_workspace_write_access(db: Session, ws: str, login: str):
         "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
     ), {"l": login, "w": ws}).first()
     if not row:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", login)
 
 
 @router.get("/workspaces/{ws}/folders", response_model=List[FolderDTO])

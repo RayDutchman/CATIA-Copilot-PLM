@@ -191,7 +191,7 @@ class ProductService:
             "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
         ), {"l": login, "w": workspace_id}).first()
         if not row:
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", login)
 
     def _next_version(self, current: str) -> str:
         if not current:
@@ -210,7 +210,7 @@ class ProductService:
         from sqlalchemy import text as sql_text
         # workspace 写权限检查（对齐 Java checkWorkspaceWriteAccess）
         if not check_write_access(db, None, creator_login, False, workspace_id=workspace_id):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", creator_login)
         # 检查零件号唯一性
         existing = (
             db.query(PartMaster)
@@ -416,7 +416,7 @@ class ProductService:
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=workspace_id):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         if not pr.is_last_revision:
             raise NotAllowedException("NotAllowedException72")
         if pr.checkout_user_login:
@@ -512,7 +512,7 @@ class ProductService:
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException25", number)
         if iteration_num != pr.last_iteration_number:
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         # 找目标迭代
         target = next(
             (it for it in pr.iterations if it.iteration == iteration_num), None
@@ -928,7 +928,7 @@ class ProductService:
         pr = self.get_revision(db, ws, pn, ver,
                                current_user_login=current_user_login)
         if current_user_login and not check_write_access(db, pr.acl_id, current_user_login, False, workspace_id=ws):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", current_user_login or "")
         db.execute(part_revision_tags.delete().where(
             part_revision_tags.c.partmaster_workspace_id == ws,
             part_revision_tags.c.partmaster_partnumber == pn,

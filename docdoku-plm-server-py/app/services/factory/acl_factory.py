@@ -91,7 +91,7 @@ def check_write_access(db: Session, acl_id: int | None,
                     "AND wgm.readonly=false"
                 ), {"ws": workspace_id, "l": user_login}).first()
             if not has:
-                raise AccessRightException("AccessRightException")
+                raise AccessRightException("AccessRightException", user_login)
         return True
     acl = db.query(ACL).filter(ACL.id == acl_id).first()
     if not acl or not acl.enabled:

@@ -25,7 +25,7 @@ def _check_is_admin(db: Session, ws: str, current_user: Account):
         "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
     ), {"w": ws, "l": current_user.login}).first()
     if not is_ws_admin:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
 
 
 def _role_to_dict(r, db: Session) -> dict:

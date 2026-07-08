@@ -22,7 +22,7 @@ def _check_workspace_access(db: Session, ws: str, login: str):
         "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
     ), {"l": login, "w": ws}).first()
     if not row:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", login)
 
 
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}", response_model=WorkflowDTO)

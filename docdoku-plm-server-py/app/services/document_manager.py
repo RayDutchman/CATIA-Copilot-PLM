@@ -128,7 +128,7 @@ class DocumentService:
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
         if not check_write_access(db, pr.acl_id, user_login, False):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
 
         # 管理员跳过 home 文件夹检查
         from sqlalchemy import text as _text
@@ -367,7 +367,7 @@ class DocumentService:
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
         if not check_write_access(db, pr.acl_id, user_login, False):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login and pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException37")
         if pr.status != 0:
@@ -607,7 +607,7 @@ class DocumentService:
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
         if not check_write_access(db, pr.acl_id, user_login, False):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException20")
         now = datetime.utcnow()

@@ -130,7 +130,7 @@ class ChangeService:
         # workspace 写权限检查（对齐 Java checkWorkspaceWriteAccess）
         from app.services.factory.acl_factory import check_write_access
         if not check_write_access(db, None, user_login, False, workspace_id=ws):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         item = cls(**kwargs)
         db.add(item)
         db.commit()
@@ -147,7 +147,7 @@ class ChangeService:
         from app.services.factory.acl_factory import check_write_access
         acl_id = getattr(item, "acl_id", None)
         if not check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         for key, val in body.items():
             if key == "assignee" and isinstance(val, dict):
                 assignee_login = val.get("login")
@@ -170,7 +170,7 @@ class ChangeService:
             if acl_id is not None:
                 from app.services.factory.acl_factory import check_write_access
                 if not check_write_access(db, acl_id, user_login, False):
-                    raise AccessRightException("AccessRightException")
+                    raise AccessRightException("AccessRightException", user_login)
             else:
                 # ACL 为 null → 需要 workspace 写权限（对齐 Java hasWorkspaceWriteAccess）
                 has_write = db.execute(sql_text(
@@ -184,7 +184,7 @@ class ChangeService:
                         "WHERE wgm.workspace_id=:ws AND m.login=:l AND wgm.readonly=false"
                     ), {"ws": ws, "l": user_login}).first()
                 if not has_write:
-                    raise AccessRightException("AccessRightException")
+                    raise AccessRightException("AccessRightException", user_login)
         # 里程碑删除前检查约束
         if cls is Milestone:
             orders = db.query(ChangeOrder).filter(
@@ -265,7 +265,7 @@ class ChangeService:
         item = self.get_by_id(db, cls, ws, item_id)
         acl_id = getattr(item, "acl_id", None)
         if not check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws):
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", user_login)
         tag_tbl = TAG_TABLES[cls]
         pk_col = list(tag_tbl.primary_key.columns)[0]
         db.execute(tag_tbl.delete().where(pk_col == item_id))

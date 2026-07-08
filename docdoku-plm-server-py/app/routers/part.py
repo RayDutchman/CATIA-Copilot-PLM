@@ -342,7 +342,7 @@ def update_part_acl(workspace_id: str, part_key: str, body: dict,
         "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
     ), {"w": workspace_id, "l": current_user.login}).scalar()
     if pr.author_login != current_user.login and not is_admin:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
     acl_id = getattr(pr, "acl_id", None)
     user_entries = body.get("userEntries", {})
     group_entries = body.get("groupEntries", {})

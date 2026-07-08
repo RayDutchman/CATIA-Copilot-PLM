@@ -296,7 +296,7 @@ class IndexerManager:
     def _check_admin(db, ws: str, current_user):
         """检查用户是否为全局 admin 或工作区 admin。"""
         if not current_user or not current_user.login:
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", current_user.login if current_user else "unknown")
 
         # 检查全局 admin
         from app.models.auth import UserGroupMapping
@@ -313,7 +313,7 @@ class IndexerManager:
             {"w": ws, "l": current_user.login},
         ).fetchone()
         if not row:
-            raise AccessRightException("AccessRightException")
+            raise AccessRightException("AccessRightException", current_user.login)
 
     # ── 全量重建 ──────────────────────────────────────────────────
 

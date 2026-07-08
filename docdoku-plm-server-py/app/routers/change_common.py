@@ -47,7 +47,7 @@ def _check_workspace_access(db: Session, ws: str, login: str):
         "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
     ), {"l": login, "w": ws}).first()
     if not row:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", login)
 
 
 def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Account] = None) -> dict:

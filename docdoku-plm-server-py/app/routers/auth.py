@@ -28,10 +28,10 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
     credential = db.query(Credential).filter(Credential.login == body.login).first()
 
     if not account or not credential or not account.enabled:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", body.login)
 
     if not verify_password(body.password, credential.password):
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", body.login)
 
     # 从 usergroupmapping 表查询角色组（与 Payara UserGroupMapping 一致）
     mapping = db.query(UserGroupMapping).filter(UserGroupMapping.login == account.login).first()

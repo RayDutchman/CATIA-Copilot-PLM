@@ -23,7 +23,7 @@ def _require_admin(db: Session, current_user: Account):
         "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
     ), {"l": current_user.login}).first()
     if not is_admin:
-        raise AccessRightException("AccessRightException")
+        raise AccessRightException("AccessRightException", current_user.login)
 
 
 def _account_to_dict(r) -> dict:
