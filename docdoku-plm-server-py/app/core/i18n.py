@@ -29,6 +29,23 @@ def _load(lang: str) -> dict[str, str]:
     return table
 
 
+import string
+
+
+class _SafeFormatter(string.Formatter):
+    """格式化器：缺失的 {0}/{1} 占位替换为空字符串，避免裸 {0} 暴露给用户。"""
+    def get_value(self, key, args, kwargs):
+        if isinstance(key, int) and key >= len(args):
+            return ''
+        try:
+            return super().get_value(key, args, kwargs)
+        except (IndexError, KeyError):
+            return ''
+
+
+_safe_fmt = _SafeFormatter()
+
+
 def get(key: str, lang: str | None = None, *args) -> str:
     table = _load(_resolve_lang(lang))
     template = table.get(key)
@@ -38,5 +55,6 @@ def get(key: str, lang: str | None = None, *args) -> str:
         try:
             return template.format(*args)
         except (IndexError, KeyError):
-            return template
-    return template
+            pass
+    # 安全回退：缺失的 {0}/{1} 替换为空字符串
+    return _safe_fmt.format(template, *args)
