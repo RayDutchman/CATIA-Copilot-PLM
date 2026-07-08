@@ -91,7 +91,7 @@ def get_admin(ws: str, db: Session = Depends(get_db),
         "WHERE w.id = :ws"
     ), {"ws": ws}).fetchone()
     if not r:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     return {"login": r[0], "name": r[1] or "", "email": r[2] or "",
             "language": r[3] or "", "workspaceId": ws}
 
@@ -102,7 +102,7 @@ def get_user(ws: str, login: str, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise UserNotFoundException("UserNotFoundException")
+        raise UserNotFoundException("UserNotFoundException", login)
     return {
         "login": acc.login,
         "name": acc.name or "",
@@ -120,7 +120,7 @@ def user_tag_subscriptions(ws: str, login: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise UserNotFoundException("UserNotFoundException")
+        raise UserNotFoundException("UserNotFoundException", login)
     rows = db.execute(text(
         "SELECT tag_workspace_id, tag_label, oniterationchange, onstatechange "
         "FROM tagusersubscription "
@@ -142,7 +142,7 @@ def user_tag_subscription_put(ws: str, login: str, tagName: str,
     _check_is_admin(db, ws, current_user)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise UserNotFoundException("UserNotFoundException")
+        raise UserNotFoundException("UserNotFoundException", login)
     on_iter = (body or {}).get("onIterationChange", False)
     on_state = (body or {}).get("onStateChange", False)
     db.execute(text(

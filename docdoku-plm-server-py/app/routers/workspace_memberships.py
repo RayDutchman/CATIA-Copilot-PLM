@@ -105,7 +105,7 @@ def add_user(ws: str, body: dict, db: Session = Depends(get_db),
         raise NotAllowedException("NotAllowedException9", login)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise UserNotFoundException("UserNotFoundException")
+        raise UserNotFoundException("UserNotFoundException", login)
     user_mgmt_service.add_user(db, ws, login, body.get("group"))
     return Response(status_code=204)
 
@@ -123,7 +123,7 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
         "FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not r:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     return _workspace_to_dict(r)
 
 
@@ -159,12 +159,12 @@ def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
         raise NotAllowedException("NotAllowedException9", login)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
-        raise UserNotFoundException("UserNotFoundException")
+        raise UserNotFoundException("UserNotFoundException", login)
     ws_row = db.execute(text(
         "SELECT id FROM workspace WHERE id = :id"
     ), {"id": ws}).fetchone()
     if not ws_row:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException")
+        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
     db.execute(text(
         "UPDATE workspace SET admin_login = :login WHERE id = :id"
     ), {"login": login, "id": ws})
