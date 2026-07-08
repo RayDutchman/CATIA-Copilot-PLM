@@ -20,3 +20,4 @@ class PartTemplateDTO(BaseModel):
     workflowModelId: Optional[str] = None
     attributeTemplates: list = []
     attributeInstanceTemplates: list = []
+    attachedFiles: list = []

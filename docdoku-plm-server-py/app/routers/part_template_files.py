@@ -85,18 +85,11 @@ def upload_part_template_files(
             db.add(br)
             db.flush()
 
-        # 关联到 partmastertemplate_binres
-        exists = db.execute(text(
-            "SELECT 1 FROM partmastertemplate_binres "
-            "WHERE workspace_id=:ws AND partmastertemplate_id=:tid "
-            "AND attachedfile_fullname=:fn"
-        ), {"ws": ws, "tid": template_id, "fn": full_name}).first()
-        if exists is None:
-            db.execute(text(
-                "INSERT INTO partmastertemplate_binres "
-                "(workspace_id, partmastertemplate_id, attachedfile_fullname) "
-                "VALUES (:ws, :tid, :fn)"
-            ), {"ws": ws, "tid": template_id, "fn": full_name})
+        # Payara 对齐: @OneToOne BinaryResource → 更新 partmastertemplate.attachedfile_fullname
+        db.execute(text(
+            "UPDATE partmastertemplate SET attachedfile_fullname = :fn "
+            "WHERE workspace_id = :ws AND id = :tid"
+        ), {"fn": full_name, "ws": ws, "tid": template_id})
 
         db.commit()
         saved.append(fn)

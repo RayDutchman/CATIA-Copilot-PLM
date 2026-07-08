@@ -23,3 +23,4 @@ class PartMasterTemplate(Base):
     modification_date = Column("modificationdate", DateTime)
     acl_id = Column(Integer, nullable=True)
     workflowmodel_id = Column(String, nullable=True)
+    attachedfile_fullname = Column(String, nullable=True)  # FK → binaryresource.fullname (@OneToOne)
