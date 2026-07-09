@@ -6,6 +6,47 @@
 
 ---
 
+## 2026-07-09 — 迁移收尾 A+B+C 批次（~25 项）+ 修复 3 个生产 SQL bug
+
+### 事实纠正 + 架构对齐（会话后半）
+- fix(docker): back-py `Dockerfile` base image `python:3.11-slim` → `python:3.11-slim-bookworm`（本地已缓存），**恢复 rebuild 可用**。核实结论："back-py 不能 rebuild" 是误区——镜像仓库不通但 pip(PyPI) 容器内正常、基础镜像已缓存；实测 `docker build` + `compose up --force-recreate back-py` 完整通过并 health ok
+- docs(instructions): `.opencode/instructions.md` 新增「重建 FastAPI 后端(back-py)」章节 + 纠正 docker cp 误区
+- refactor(workspace): `workspace_manager.py` 5 方法确认按 tracker.csv 映射（`WorkspaceManagerBean.java`）应为**真实实现**（原 stub 违反映射，Payara 该 Bean 方法均真实）；`workspaces.py` 路由改为委派 workspace_service，对齐 Payara `Resource→ManagerBean→DAO` 分层，消除重复逻辑
+
+
+### A 基础设施
+- fix(nginx): SSL Proxy(9000→443) API+ws 改指向 `front`，复用 FastAPI 全覆盖路由（`proxy/nginx.conf`）；附带修复丢失的 `cert.key`（自签名重建，止住 1117 次 crash-loop）
+- feat(doc-baselines): 补 `GET /{id}`（详情）+ `GET /{id}-light`（轻量）端点（export-files 早已存在于 export router）；对齐 Java DocumentBaselinesResource
+- fix(doc-baselines): `type` int→enum 名（LATEST/RELEASED）修复 latent extra=forbid 500（list/create/get）
+
+### B 数据降级修复（对齐 Payara，复用 decode_path）
+- feat(product-config/baseline): `substitutesParts`/`optionalsParts` 用 decode_path 从 link 路径表解码填充（原硬编码 []）；config `substituteLinks`/`optionalUsageLinks` 从 `prdcfg_*link` 表读取
+- fix(schema): `ProductConfigurationDTO.substituteLinks/optionalUsageLinks` 改 `List[str]` 对齐 Java `List<String>`
+- feat(product-structure): 组件 `attributes`（实例属性，dtype→InstanceAttributeType 枚举）/`notifications`/`hasModificationNotification` 真实查询（原 []/False）
+
+### C 小型 stub
+- feat(workspace): WorkspaceManager 5 个 dead stub 改真实实现（disk-usage 求和 vault、front/back options 读写表）；`/disk-usage` 端点返回真实总量
+- feat(query): `get_queries`（递归 queryrule 树 + selects/orderBy/groupedBy/contexts）/`delete_query`（级联删）真实化
+- chore(converter): OnDemandConverter 注释明确化（需 LibreOffice 引擎，deferred）
+- feat(schema): EffectivityDTO 空壳→填充全字段对齐 Payara
+
+### 修复 3 个 pre-existing 生产 SQL bug（Workspace_2 有基线数据才暴露）
+- fix(baseline): `_query_substitute_links` `pm.number`→`pm.partnumber`
+- fix(baseline): `_query_optional_links` 删除不存在的 `pul.component_partversion` join 条件
+- fix(baseline): `_query_path_to_path_links` 改返回 []（`pathtopathlink` 无 name/workspace_id 列；PPL 域延后）
+
+### 文档 / 计划
+- docs: 新增两大域独立计划 `plans/2026-07-09-pathdata-domain.md`（15-20h）、`plans/2026-07-09-importer-domain.md`（2-3天）
+- docs: 今日执行计划 `plans/2026-07-09-migration-finish-abc.md`
+- docs: `migration/loose-ends.md` 更新完成状态 + 记录 2 个新发现 loose-end（Query 执行引擎、filter configSpec 解析 500）
+
+### 验证
+- pytest 176 passed / 1 skipped（零回归）；app import OK
+- docker cp 11 文件 + restart back-py，health ok
+- 线上冒烟：document-baselines/product-baselines/product-configurations/products/disk-usage/front-options/back-options/parts-queries 全 200；product structure 全量遍历 attributes/notifications 已填充；HTTPS(9000) 经 ssl-proxy 200
+
+---
+
 ## 2026-07-08 — 审计遗留修复：check_write_access 全覆盖 + extra=forbid 对齐 Payara
 
 - docs: **docs/ 目录重组**（消除 Agent 阅读歧义，按 活跃/参考/归档 三态分层）

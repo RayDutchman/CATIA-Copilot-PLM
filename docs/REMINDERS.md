@@ -6,7 +6,7 @@
 
 ## 待办
 
-> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`（~59 处，含 PathData/装配路径、Importer、产品配置降级、OnDemandConverter、WorkspaceManager stub 等）。本文件只保留**跨领域非迁移**待办。
+> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-09 已完成 A+B+C 批次（SSL Proxy 切 FastAPI、DocumentBaselines 补端点、产品配置/基线数据填充、Product Structure 属性/通知、WorkspaceManager/Query 读删、EffectivityDTO）+ 修复 3 个生产 SQL bug。**剩余 4 个功能域**（均有计划或待排期）：① PathData/装配路径（`plans/2026-07-09-pathdata-domain.md`）② Importer 导入（`plans/2026-07-09-importer-domain.md`）③ Query 执行引擎 ④ filter configSpec 解析。本文件只保留**跨领域非迁移**待办。
 
 ### 高优先级
 

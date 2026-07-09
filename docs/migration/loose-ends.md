@@ -1,10 +1,27 @@
 # FastAPI 迁移遗留清单（Migration Loose Ends）
 
-> 生成日期：2026-07-08
+> 生成日期：2026-07-08 ｜ 更新：2026-07-09（A+B+C 批次完成）
 > 范围：Java EE Payara (`docdoku-plm-server`) → FastAPI (`docdoku-plm-server-py`) 后端迁移
 > 状态：**核心业务已 100% 走 FastAPI，Payara 在生产链路已被完全绕过**，剩余为功能性 loose ends
 >
 > 本文件汇总所有未完成/占位/降级项，作为后续收尾的唯一清单。修复某项后请在本文件勾选并同步 `CHANGELOG.md` / `REMINDERS.md`。
+
+## 2026-07-09 进展摘要（A+B+C 批次）
+- ✅ **A1 SSL Proxy(9000→443) 切 FastAPI**：`proxy/nginx.conf` API+ws 改指向 `front`（复用 FastAPI 全覆盖）。附带修复丢失的 `cert.key`（自签名重建，crash-loop 1117 次已止）。
+- ✅ **A2 DocumentBaselines**：补 `GET /{id}` + `GET /{id}-light`（export-files 早已存在）；修复 `type` int→enum 名 latent 500。
+- ✅ **B1 产品配置/基线 substitutesParts/optionalsParts**：用 decode_path 从 link 路径表解码填充；config substituteLinks schema 改 `List[str]` 对齐 Payara。
+- ✅ **B2 Product Structure**：`attributes`（实例属性）/`notifications`/`hasModificationNotification` 全量遍历路径已真实查询。
+- ✅ **C1 WorkspaceManager**：5 个 dead stub 改为真实实现；`/disk-usage` 返回真实 vault 总量。
+- ✅ **C2 Query**：`get_queries`（递归 rule 树）/`delete_query`（级联删）真实化。POST=查询执行引擎（recursive rule + 执行），改列为**新 loose-end**（见下）。
+- ✅ **C3**：OnDemandConverter 注释明确化（需 LibreOffice 引擎，deferred）；EffectivityDTO 空壳→填充字段。
+- ✅ **附带修复 3 个 pre-existing 生产 SQL bug**（Workspace_2 有基线数据才暴露）：
+  - `_query_substitute_links`：`pm.number`→`pm.partnumber`
+  - `_query_optional_links`：删除不存在的 `pul.component_partversion` join 条件
+  - `_query_path_to_path_links`：`pathtopathlink` 无 `name`/`workspace_id` 列 → 改返回 []（PPL 域延后）
+
+## 两大域已出独立计划
+- 📋 **PathData/Path-to-Path**：`docs/superpowers/plans/2026-07-09-pathdata-domain.md`（15–20h）
+- 📋 **Importer**：`docs/superpowers/plans/2026-07-09-importer-domain.md`（2–3 天）
 
 ---
 
@@ -103,64 +120,44 @@ Java 25 个 HTTP 方法 → Python ~8 个独立路径。缺失清单：
 
 ---
 
-## 三、🟡 P2 — 产品配置 / 基线数据降级（6 处，字段硬编码空）
+## 三、🟡 P2 — 产品配置 / 基线数据降级（✅ 2026-07-09 已完成）
 
-| 位置 | 硬编码为 `[]` 的字段 | 影响 |
-|------|---------------------|------|
-| `app/routers/product_configurations.py:73-76` | `substituteLinks`, `optionalUsageLinks`, `substitutesParts`, `optionalsParts` | 产品配置详情缺替代件/可选件 |
-| `app/routers/product_configurations.py:107-111` | 同上（`list_configs()`） | 产品配置列表 |
-| `app/routers/product_configurations.py:126-130` | 同上（`list_ci_configs()`） | CI 产品配置列表 |
-| `app/routers/product_baselines.py:58-59` | `substitutesParts`, `optionalsParts`（`_bl_summary_dict()`） | 基线摘要 |
-| `app/routers/product_baselines.py:79-80` | `substitutesParts`, `optionalsParts`（`_bl_detail_dict()`） | 基线详情 |
+以下原硬编码 `[]` 的 `substitutesParts`/`optionalsParts` 已用 decode_path 真实填充；`substituteLinks`/`optionalUsageLinks` 已从路径表读取。config `substituteLinks` schema 已改 `List[str]` 对齐 Payara。
 
-> 注：baseline 中 `substituteLinks`/`optionalUsageLinks` 有实际查询（`_query_substitute_links`/`_query_optional_links`），仅 `substitutesParts`/`optionalsParts` 为空；product_configurations 中四字段全空。
+| 位置 | 原字段 | 状态 |
+|------|-------|------|
+| `product_configurations.py` `_config_to_dict`/list/list_ci | 四字段 | ✅ 已填充 |
+| `product_baselines.py` `_bl_summary_dict`/`_bl_detail_dict` | substitutesParts/optionalsParts | ✅ 已填充 |
 
 ---
 
-## 四、🟡 P2 — Product Structure 组件降级（4 处）
+## 四、🟡 P2 — Product Structure 组件降级（✅ 2026-07-09 大部完成）
 
-| 位置 | 降级内容 | 影响 |
-|------|----------|------|
-| `app/services/product_structure.py:165` | `"attributes": []`（filter 遍历不查实例属性） | filter 结构无属性 |
-| `app/services/product_structure.py:168` | `"notifications": []`（filter 遍历不查通知） | filter 结构无修改通知 |
-| `app/services/product_structure.py:258` | `"attributes": []`（全量遍历也不查实例属性） | 结构组件无自定义属性 |
-| `app/routers/products.py:65` | `"hasModificationNotification": False` 硬编码 | CI 列表/详情 |
+| 位置 | 内容 | 状态 |
+|------|------|------|
+| `product_structure.py` `_build_component` | `attributes`（实例属性）| ✅ 真实查询 |
+| `product_structure.py` `_build_component`/`_convert_visitor_component` | `notifications` | ✅ 真实查询 |
+| `product_structure.py` `_convert_visitor_component` | `attributes` | ✅ 真实查询 |
+| `products.py` `_ci_to_dict` | `hasModificationNotification` | ✅ 真实查询 |
+| `product_structure.py` config-spec 遍历 `hasPathData` | 仍 False | ⏳ 随 PathData 域（见计划 Task 8）|
 
 ---
 
-## 五、🟢 P3 — 小型单表 STUB
+## 五、🟢 P3 — 小型单表 STUB（✅ 2026-07-09 大部完成）
 
-### 5.1 WorkspaceManager（5 处，均单表 CRUD，工作量小）
+### 5.1 WorkspaceManager（✅ 已完成 — 改为真实实现 + 路由委派）
+tracker.csv 映射 `WorkspaceManagerBean.java → workspace_manager.py`，Payara 该 Bean 的 `getDiskUsageInWorkspace`/`getWorkspaceFrontOptions`/`updateWorkspaceFrontOptions`/`getWorkspaceBackOptions`/`updateWorkspaceBackOptions` 均为**真实方法**。按对齐 Payara 铁律，`workspace_manager.py` 现已改为真实实现（原为 stub，违反映射），并将 `workspaces.py` 路由改为委派 service（对齐 Payara `WorkspaceResource → WorkspaceManagerBean → DAO` 分层）。前端 workspace 信息（disk usage/文档数/零件数/成员）本就由 workspaces.py 路由真实提供，此次消除了重复逻辑。
 
-| 位置 | 缺失内容 |
-|------|----------|
-| `app/services/workspace_manager.py:88-91` | `get_disk_usage()` → 返回 0，未做 vault 磁盘计算 |
-| `app/services/workspace_manager.py:93-95` | `get_workspace_front_options()` → 未读 `workspacefrontoptions` 表 |
-| `app/services/workspace_manager.py:97-100` | `update_workspace_front_options()` → 未写 `workspacefrontoptions` 表 |
-| `app/services/workspace_manager.py:102-104` | `get_workspace_back_options()` → 未读 `workspacebackoptions` 表 |
-| `app/services/workspace_manager.py:106-109` | `update_workspace_back_options()` → 未写 `workspacebackoptions` 表 |
+### 5.2 Query 查询（✅ 读/删完成，创建=执行引擎延后）
+- ✅ `get_queries()`：真实查询（含递归 queryrule 树 + selects/orderBy/groupedBy/contexts）
+- ✅ `delete_query()`：真实级联删除（子表 + 递归 queryrule 树）
+- ⏳ `post_workspace_query()`/`post_queries()` = Java `runCustomQuery`（**查询执行引擎**：递归 rule 树 → 结果集），非简单 CRUD。见新 loose-end「Query 执行引擎」。
 
-### 5.2 Query 查询（4 处，工作量小）
+### 5.3 OnDemandConverter（⏳ deferred — 需外部引擎）
+`get_document_converted_resource`/`get_part_converted_resource` 依赖 LibreOffice/jodconverter（Java `OfficeOnDemandConverter`），容器内无此引擎，且无 Python 调用方。已明确注释：无引擎时返回空（对齐 Payara null 行为）。
 
-| 位置 | 缺失内容 |
-|------|----------|
-| `app/routers/parts.py:250-253` | `get_queries()` → `return []`，不查库 |
-| `app/routers/parts.py:260-278` | `post_workspace_query()` → 只检查重名返回 `{"id": 0}`，不创建 |
-| `app/routers/parts.py:281-301` | `post_queries()` → 同上 |
-| `app/routers/parts.py:304-308` | `delete_query()` → 直接 204，不删库 |
-
-### 5.3 OnDemandConverter（2 处，工作量中）
-
-| 位置 | 缺失内容 |
-|------|----------|
-| `app/services/ondemand_converter.py:11-16` | `get_document_converted_resource()` → 返回空 bytes |
-| `app/services/ondemand_converter.py:18-23` | `get_part_converted_resource()` → 返回空 bytes |
-
-### 5.4 EffectivityDTO（1 处，工作量小）
-
-| 位置 | 缺失内容 |
-|------|----------|
-| `app/schemas/misc/effectivity.py:7-10` | `EffectivityDTO` 空壳（仅 `pass`）。注：`effectivity.py` 的 CRUD 端点实为完整实现，返回 dict 而非该 DTO，功能可用，仅 DTO 未填充 |
+### 5.4 EffectivityDTO（✅ 已完成）
+空壳 schema 已填充全字段（id/name/description/configurationItemNumber/workspaceId/typeEffectivity + date/number/lot 起止字段），对齐 Payara + 路由实际输出。
 
 ---
 
@@ -168,9 +165,18 @@ Java 25 个 HTTP 方法 → Python ~8 个独立路径。缺失清单：
 
 | 项 | 现状 | 影响 / 建议 |
 |----|------|-------------|
-| **SSL Proxy (9000→443 HTTPS)** | `docdoku-plm-docker/proxy/nginx.conf:22-34` — API + WebSocket **全量走 Payara `back:8080`**，尚未更新 | ⚠️ 若生产用 HTTPS，用户实际未用上 FastAPI。**低风险高价值收尾项**：复制 Port 80 的 location 规则即可 |
-| **DocumentBaselines 端点缺 3 个** | `document_baselines.py` 缺 `GET /{id}`（单基线详情）、`GET /{id}-light`、`GET /{id}/export-files` | 基线详情/导出功能不可用 |
+| ~~SSL Proxy (9000→443 HTTPS)~~ | ✅ 2026-07-09 已切 FastAPI（指向 front）；附带修复丢失的 cert.key | — |
+| ~~DocumentBaselines 端点缺 3 个~~ | ✅ 2026-07-09：补 `GET /{id}` + `/{id}-light`；export-files 早已存在 | — |
 | **Payara 容器保留** | 作为 Port 85 (host:8005) 对比端点，设计如此 | 迁移验证期保留，无需处理 |
+
+---
+
+## 六之二、🆕 2026-07-09 新发现 loose ends
+
+| 项 | 位置 | 说明 | 工作量 |
+|----|------|------|--------|
+| **Query 执行引擎** | `parts.py` `post_workspace_query`/`post_queries` | Java `runCustomQuery`：递归 QueryRule 树 → 动态查询 part 结果集（+可选 save）。当前仅做重名检查返回 `{"id":0}`。需实现规则→SQL 编译器。 | 大 |
+| **filter configSpec 解析** | `products.py:141` `filter_structure` / `product_structure.py:112` | `configSpec` 字符串（"latest"/"released"/"wip"/baseline-id）直接传给 PSFilterVisitor，未解析为 ProductConfigSpec 对象 → 有 configSpec 时 500（`'str' object has no attribute 'filter_part_iterations'`）。全量遍历（无 configSpec）正常。 | 中 |
 
 ---
 
@@ -184,30 +190,28 @@ Java 25 个 HTTP 方法 → Python ~8 个独立路径。缺失清单：
 
 ---
 
-## 八、修复优先级建议
+## 八、剩余工作优先级（2026-07-09 更新）
 
-| 优先级 | 项 | 理由 | 工作量 |
-|--------|-----|------|--------|
-| 1 | **SSL Proxy 切 FastAPI**（第六节） | 低风险、高价值，仅改 nginx 配置 | 小 |
-| 2 | **PathData / Path-to-Path 域**（第一节） | 最大功能缺口，CATIA 协同设计关键 | 大 |
-| 3 | **产品配置/基线 substitutesParts/optionalsParts**（第三节） | 数据完整性，用户可见 | 中 |
-| 4 | **Product Structure attributes/notifications**（第四节） | 结构树属性缺失 | 中 |
-| 5 | **Importer 域**（第二节） | 功能完整但使用频率待评估 | 大 |
-| 6 | **DocumentBaselines 3 端点**（第六节） | 基线详情/导出 | 小 |
-| 7 | **WorkspaceManager / Query / OnDemandConverter 小 stub**（第五节） | 边角功能 | 小 |
+| 优先级 | 项 | 计划/状态 | 工作量 |
+|--------|-----|----------|--------|
+| 1 | **PathData / Path-to-Path 域**（第一节） | 📋 `plans/2026-07-09-pathdata-domain.md` | 大 (15-20h) |
+| 2 | **Importer 域**（第二节） | 📋 `plans/2026-07-09-importer-domain.md` | 大 (2-3天) |
+| 3 | **Query 执行引擎**（六之二） | 待排期 | 大 |
+| 4 | **filter configSpec 解析**（六之二） | 待排期 | 中 |
+| 5 | **OnDemandConverter**（5.3） | deferred（需 LibreOffice 引擎） | 中 |
+| — | ~~A/B/C 批次~~ | ✅ 2026-07-09 完成 | — |
 
----
+## 九、统计汇总（2026-07-09 更新）
 
-## 九、统计汇总
+| 域 | 状态 |
+|----|------|
+| 基础设施（SSL Proxy/DocumentBaselines）| ✅ 完成 |
+| 产品配置/基线降级 | ✅ 完成 |
+| Product Structure 降级 | ✅ 完成（config-spec hasPathData 随 PathData 域）|
+| WorkspaceManager / Query 读删 / EffectivityDTO | ✅ 完成 |
+| 3 个 pre-existing 生产 SQL bug | ✅ 修复 |
+| PathData / Path-to-Path | ⏳ 出计划 |
+| Importer | ⏳ 出计划 |
+| Query 执行引擎 / filter configSpec / OnDemandConverter | ⏳ 待排期 |
 
-| 域 | 待修项 | 工作量 |
-|----|:--:|:--:|
-| PathData / Path-to-Path（第一节） | ~25 | 大 |
-| Importer（第二节） | 9 | 大 |
-| 产品配置/基线降级（第三节） | 6 | 中 |
-| Product Structure 降级（第四节） | 4 | 中 |
-| WorkspaceManager / Query / Converter / Effectivity（第五节） | 12 | 小 |
-| 基础设施（第六节） | 3 类 | 小-中 |
-| **合计需修** | **~59 处** | 核心：PathData → Importer |
-
-> 全部集中在 **产品实例 / 装配路径 / 导入** 三个功能面，用户认证、零件、文档、变更、工作流、用户组等主干业务已完整迁移。
+> 主干业务（认证/零件/文档/变更/工作流/用户组/产品结构/基线/配置）已完整迁移。剩余为 **装配路径(PathData)**、**批量导入(Importer)**、**自定义查询执行**、**配置规格过滤** 四个功能面。
