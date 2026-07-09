@@ -21,6 +21,7 @@ from app.schemas.admin import (
 )
 from app.schemas.misc import TagDTO, LOVDTO, LOVValueDTO
 from app.services.indexer_manager import indexer_manager
+from app.services.workspace_manager import workspace_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -142,7 +143,7 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/disk-usage/", include_in_schema=False)
 def disk_usage(ws: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
-    return {"total": 0}
+    return {"total": workspace_service.get_disk_usage(db, ws)}
 
 
 @router.get("/workspaces/{ws}/disk-usage-stats", response_model=DiskUsageDTO)
@@ -212,64 +213,14 @@ def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/front-options/", include_in_schema=False)
 def front_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    part_cols = db.execute(text(
-        "SELECT tablecolumn FROM workspace_parttablecolumn "
-        "WHERE workspace_id = :ws ORDER BY partcolumn_order"
-    ), {"ws": ws}).fetchall()
-    doc_cols = db.execute(text(
-        "SELECT tablecolumn FROM workspace_documenttablecolumn "
-        "WHERE workspace_id = :ws ORDER BY documentcolumn_order"
-    ), {"ws": ws}).fetchall()
-    return {
-        "documentTableColumns": [r[0] for r in doc_cols] or [],
-        "partTableColumns": [_normalize_column(r[0]) for r in part_cols] or _DEFAULT_PART_COLUMNS,
-    }
-
-
-# 默认列（对齐前端 part-table-columns.js defaultColumns）
-_DEFAULT_PART_COLUMNS = []  # 对齐 Payara: DB 空时返回空数组，JS 自身有 defaultColumns
-
-
-def _normalize_column(col: str) -> str:
-    """确保列名带 pr. 前缀（对齐 JS cellsFactory 的 key 格式）。"""
-    if col.startswith("pr.") or col.startswith("attr"):
-        return col
-    return f"pr.{col}"
+    return workspace_service.get_workspace_front_options(db, ws)
 
 
 @router.put("/workspaces/{ws}/front-options")
 @router.put("/workspaces/{ws}/front-options/", include_in_schema=False)
 def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
-    existing = db.execute(text(
-        "SELECT workspace_id FROM workspacefrontoptions WHERE workspace_id = :ws"
-    ), {"ws": ws}).fetchone()
-    if not existing:
-        db.execute(text(
-            "INSERT INTO workspacefrontoptions (workspace_id) VALUES (:ws)"
-        ), {"ws": ws})
-
-    db.execute(text(
-        "DELETE FROM workspace_parttablecolumn WHERE workspace_id = :ws"
-    ), {"ws": ws})
-    db.execute(text(
-        "DELETE FROM workspace_documenttablecolumn WHERE workspace_id = :ws"
-    ), {"ws": ws})
-
-    for i, col in enumerate(body.get("partTableColumns", [])):
-        col = _normalize_column(col)
-        db.execute(text(
-            "INSERT INTO workspace_parttablecolumn (workspace_id, tablecolumn, partcolumn_order) "
-            "VALUES (:ws, :col, :ord)"
-        ), {"ws": ws, "col": col, "ord": i})
-
-    for i, col in enumerate(body.get("documentTableColumns", [])):
-        db.execute(text(
-            "INSERT INTO workspace_documenttablecolumn (workspace_id, tablecolumn, documentcolumn_order) "
-            "VALUES (:ws, :col, :ord)"
-        ), {"ws": ws, "col": col, "ord": i})
-
-    db.commit()
+    workspace_service.update_workspace_front_options(db, ws, body)
     return Response(status_code=204)
 
 
@@ -277,30 +228,14 @@ def save_front_options(ws: str, body: dict, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/back-options/", include_in_schema=False)
 def back_options(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    row = db.execute(text(
-        "SELECT sendemails FROM workspacebackoptions WHERE workspace_id = :ws"
-    ), {"ws": ws}).fetchone()
-    send_emails = bool(row[0]) if row else False
-    return {"sendEmails": send_emails, "workspaceId": ws}
+    return workspace_service.get_workspace_back_options(db, ws)
 
 
 @router.put("/workspaces/{ws}/back-options")
 @router.put("/workspaces/{ws}/back-options/", include_in_schema=False)
 def save_back_options(ws: str, body: dict, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    send_emails = body.get("sendEmails", False)
-    existing = db.execute(text(
-        "SELECT workspace_id FROM workspacebackoptions WHERE workspace_id = :ws"
-    ), {"ws": ws}).fetchone()
-    if existing:
-        db.execute(text(
-            "UPDATE workspacebackoptions SET sendemails = :se WHERE workspace_id = :ws"
-        ), {"se": send_emails, "ws": ws})
-    else:
-        db.execute(text(
-            "INSERT INTO workspacebackoptions (workspace_id, sendemails) VALUES (:ws, :se)"
-        ), {"ws": ws, "se": send_emails})
-    db.commit()
+    workspace_service.update_workspace_back_options(db, ws, body)
     return Response(status_code=204)
 
 

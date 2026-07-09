@@ -14,7 +14,7 @@ class ProductConfigurationDTO(BaseModel):
     author: Optional[UserDTO] = None
     acl: Optional[dict] = None
     creationDate: Optional[str] = None
-    substituteLinks: List[dict] = []
-    optionalUsageLinks: List[dict] = []
+    substituteLinks: List[str] = []
+    optionalUsageLinks: List[str] = []
     substitutesParts: List[dict] = []
     optionalsParts: List[dict] = []

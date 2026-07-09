@@ -62,7 +62,9 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
         "designItemLatestVersion": latest_version,
         "author": _get_user_dto(db, ci.author_login, ci.workspace_id),
         "creationDate": _fmt_date(ci.creation_date),
-        "hasModificationNotification": False,
+        "hasModificationNotification": svc._has_modification_notification(
+            db, ci.workspace_id, ci.partmaster_partnumber
+        ) if ci.partmaster_partnumber else False,
         "pathToPathLinks": [],
     }
 

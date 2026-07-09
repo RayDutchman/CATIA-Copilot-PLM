@@ -162,10 +162,12 @@ class ProductStructureService:
             "partUsageLinkReferenceDescription": None,
             "hasPathData": False,
             "accessDeny": False,
-            "attributes": [],
+            "attributes": self._instance_attributes(
+                db, pm.workspace_id, pm.number, rev.version,
+                retained.iteration) if (rev and retained) else [],
             "components": [],
             "substituteIds": [],
-            "notifications": [],
+            "notifications": self._modification_notifications(db, pm.workspace_id, pm.number),
         }
         for child in comp.components:
             child_dict = self._convert_visitor_component(db, child, ci_id,
@@ -218,18 +220,8 @@ class ProductStructureService:
             from app.services.factory.acl_factory import check_read_access
             access_deny = not check_read_access(db, rev.acl_id, user_login, is_admin)
         # notifications: 查询影响该零件主记录的修改通知
-        notif_rows = db.execute(text(
-            "SELECT id, acknowledged, ackauthor_login, acknowledgementcomment, "
-            "acknowledgementdate, ackauthor_workspace_id "
-            "FROM modificationnotification WHERE impacted_workspace_id = :ws "
-            "AND impacted_partmaster_partnumber = :pn"
-        ), {"ws": rev.workspace_id, "pn": rev.partmaster_partnumber}).fetchall()
-        notifications = [
-            {"id": r[0], "acknowledged": r[1], "ackAuthorLogin": r[2],
-             "ackComment": r[3], "ackDate": str(r[4]) if r[4] else None,
-             "ackAuthorWorkspaceId": r[5]}
-            for r in notif_rows
-        ]
+        notifications = self._modification_notifications(
+            db, rev.workspace_id, rev.partmaster_partnumber)
         comp = {
             "number": rev.partmaster_partnumber,
             "name": rev.part_master.name or "",
@@ -255,7 +247,9 @@ class ProductStructureService:
             "partUsageLinkReferenceDescription": usage_link.reference_description if usage_link else None,
             "hasPathData": self._check_has_path_data(db, rev.workspace_id, path),
             "accessDeny": access_deny,
-            "attributes": [],
+            "attributes": self._instance_attributes(
+                db, rev.workspace_id, rev.partmaster_partnumber, rev.version,
+                last_it.iteration if last_it else None),
             "components": [],
             "substituteIds": sub_ids,
             "notifications": notifications,
@@ -286,6 +280,86 @@ class ProductStructureService:
             "SELECT 1 FROM pathdatamaster WHERE path = :p LIMIT 1"
         ), {"p": relative}).first()
         return row is not None
+
+    # dtype(JPA 判别符) → InstanceAttributeType 枚举名（对齐 Payara InstanceAttributeDTO.type）
+    _DTYPE_TO_TYPE = {
+        "InstanceTextAttribute": "TEXT",
+        "InstanceNumberAttribute": "NUMBER",
+        "InstanceDateAttribute": "DATE",
+        "InstanceBooleanAttribute": "BOOLEAN",
+        "InstanceURLAttribute": "URL",
+        "InstanceListOfValuesAttribute": "LOV",
+        "InstanceLongTextAttribute": "LONG_TEXT",
+        "InstancePartNumberAttribute": "PART_NUMBER",
+    }
+
+    def _instance_attributes(self, db: Session, ws: str, pn: str, ver: str, it: int) -> list:
+        """查询零件迭代的实例属性，映射为 Payara InstanceAttributeDTO 形状。"""
+        if it is None:
+            return []
+        rows = db.execute(text(
+            "SELECT ia.dtype, ia.name, ia.mandatory, ia.locked, "
+            "ia.textvalue, ia.numbervalue, ia.datevalue, ia.booleanvalue, "
+            "ia.urlvalue, ia.longtextvalue "
+            "FROM instanceattribute ia "
+            "JOIN partiteration_attribute pia ON pia.instanceattribute_id = ia.id "
+            "WHERE pia.workspace_id=:ws AND pia.partmaster_partnumber=:pn "
+            "AND pia.partrevision_version=:ver AND pia.iteration=:it "
+            "ORDER BY pia.attribute_order"
+        ), {"ws": ws, "pn": pn, "ver": ver, "it": it}).fetchall()
+        result = []
+        for r in rows:
+            dtype = r[0] or "InstanceTextAttribute"
+            attr_type = self._DTYPE_TO_TYPE.get(dtype, "TEXT")
+            # 按类型取值 → string（对齐 Java InstanceAttributeDTO.value:String）
+            if attr_type in ("TEXT", "PART_NUMBER"):
+                value = r[4]
+            elif attr_type == "NUMBER":
+                value = str(r[5]) if r[5] is not None else None
+            elif attr_type == "DATE":
+                value = str(r[6]) if r[6] is not None else None
+            elif attr_type == "BOOLEAN":
+                value = str(r[7]) if r[7] is not None else None
+            elif attr_type == "URL":
+                value = r[8]
+            elif attr_type == "LONG_TEXT":
+                value = r[9]
+            else:
+                value = r[4]
+            result.append({
+                "workspaceId": ws,
+                "name": r[1] or "",
+                "mandatory": r[2] or False,
+                "locked": r[3] or False,
+                "type": attr_type,
+                "value": value if value is not None else "",
+                "lovName": None,
+                "items": [],
+            })
+        return result
+
+    def _has_modification_notification(self, db: Session, ws: str, pn: str) -> bool:
+        """零件主记录是否有修改通知（对齐 Java hasModificationNotification）。"""
+        row = db.execute(text(
+            "SELECT 1 FROM modificationnotification "
+            "WHERE impacted_workspace_id = :ws AND impacted_partmaster_partnumber = :pn LIMIT 1"
+        ), {"ws": ws, "pn": pn}).first()
+        return row is not None
+
+    def _modification_notifications(self, db: Session, ws: str, pn: str) -> list:
+        """查询影响该零件主记录的修改通知列表。"""
+        notif_rows = db.execute(text(
+            "SELECT id, acknowledged, ackauthor_login, acknowledgementcomment, "
+            "acknowledgementdate, ackauthor_workspace_id "
+            "FROM modificationnotification WHERE impacted_workspace_id = :ws "
+            "AND impacted_partmaster_partnumber = :pn"
+        ), {"ws": ws, "pn": pn}).fetchall()
+        return [
+            {"id": r[0], "acknowledged": r[1], "ackAuthorLogin": r[2],
+             "ackComment": r[3], "ackDate": str(r[4]) if r[4] else None,
+             "ackAuthorWorkspaceId": r[5]}
+            for r in notif_rows
+        ]
 
     def decode_path(self, db: Session, ws: str, ci_id: str, path_str: str):
         """u1-u4-u7 → LightPartLinkDTO[{number, name, referenceDescription, fullId}]"""

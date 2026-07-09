@@ -55,8 +55,8 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
         "substituteLinks": _query_substitute_links(db, ws, b.partcollection_id),
         "optionalUsageLinks": _query_optional_links(db, ws, b.partcollection_id),
         "pathToPathLinks": _query_path_to_path_links(db, ws),
-        "substitutesParts": [],
-        "optionalsParts": [],
+        "substitutesParts": _decode_paths_to_part_links(db, ws, b.configurationitem_id, _baseline_substitute_paths(db, b.id)),
+        "optionalsParts": _decode_paths_to_part_links(db, ws, b.configurationitem_id, _baseline_optional_paths(db, b.id)),
     }
 
 
@@ -76,8 +76,8 @@ def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
         "substituteLinks": _query_substitute_links(db, ws, bl.partcollection_id),
         "optionalUsageLinks": _query_optional_links(db, ws, bl.partcollection_id),
         "pathToPathLinks": _query_path_to_path_links(db, ws),
-        "substitutesParts": [],
-        "optionalsParts": [],
+        "substitutesParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_substitute_paths(db, bl.id)),
+        "optionalsParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_optional_paths(db, bl.id)),
     }
 
 
@@ -180,13 +180,10 @@ def _has_obsolete_parts(db: Session, partcollection_id: int | None) -> bool:
 
 
 def _query_path_to_path_links(db: Session, ws: str) -> list:
-    rows = db.execute(sql_text(
-        "SELECT id, type, name, sourcepath, targetpath, description "
-        "FROM pathtopathlink WHERE workspace_id = :ws"
-    ), {"ws": ws}).fetchall()
-    return [{"id": r[0], "type": r[1], "name": r[2],
-             "sourcePath": r[3], "targetPath": r[4], "description": r[5]}
-            for r in rows]
+    # pathtopathlink 表列: id, type, sourcepath, targetpath, description（无 name/workspace_id）
+    # 工作区维度关联通过 productbaseline_p2plink 等连接表；PathData/PPL 域整体延后
+    # （见 docs/migration/loose-ends.md 第一节），此处返回空以避免无效列查询。
+    return []
 
 
 def _query_substitute_links(db: Session, ws: str, partcollection_id: int | None) -> list:
@@ -199,7 +196,7 @@ def _query_substitute_links(db: Session, ws: str, partcollection_id: int | None)
         "JOIN baselinedpart bp ON bp.target_workspace_id = pul.component_workspace_id "
         "AND bp.target_partmaster_partnumber = pul.component_partnumber "
         "LEFT JOIN partmaster pm ON pm.workspace_id = psl.substitute_workspace_id "
-        "AND pm.number = psl.substitute_partnumber "
+        "AND pm.partnumber = psl.substitute_partnumber "
         "WHERE bp.partcollection_id = :pc_id"
     ), {"pc_id": partcollection_id}).fetchall()
     return [{"partNumber": r[0], "name": r[1] or r[0]} for r in rows]
@@ -213,10 +210,39 @@ def _query_optional_links(db: Session, ws: str, partcollection_id: int | None) -
         "FROM partusagelink pul "
         "JOIN baselinedpart bp ON bp.target_workspace_id = pul.component_workspace_id "
         "AND bp.target_partmaster_partnumber = pul.component_partnumber "
-        "AND bp.target_partrevision_version = pul.component_partversion "
         "WHERE bp.partcollection_id = :pc_id AND pul.optional = true"
     ), {"pc_id": partcollection_id}).fetchall()
     return [{"partNumber": r[0]} for r in rows]
+
+
+def _decode_paths_to_part_links(db: Session, ws: str, ci_id: str, paths: list) -> list:
+    """对齐 Java：对每个 path 字符串 decodePath → LightPartLinkListDTO{partLinks:[...]}。"""
+    result = []
+    for path in paths:
+        if not path:
+            continue
+        try:
+            part_links = svc.decode_path(db, ws, ci_id, path)
+        except Exception:
+            part_links = []
+        result.append({"partLinks": part_links})
+    return result
+
+
+def _baseline_substitute_paths(db: Session, baseline_id: int) -> list:
+    rows = db.execute(sql_text(
+        "SELECT substitutelinks FROM productbaseline_substitutelink "
+        "WHERE productbaseline_id = :bid"
+    ), {"bid": baseline_id}).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
+def _baseline_optional_paths(db: Session, baseline_id: int) -> list:
+    rows = db.execute(sql_text(
+        "SELECT optionalusagelinks FROM productbaseline_optionallink "
+        "WHERE productbaseline_id = :bid"
+    ), {"bid": baseline_id}).fetchall()
+    return [r[0] for r in rows if r[0]]
 
 
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}", response_model=ProductBaselineDetailDTO)

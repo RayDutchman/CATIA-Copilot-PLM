@@ -6,6 +6,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 
+def _normalize_column(col: str) -> str:
+    """确保零件列名带 pr. 前缀（对齐 JS cellsFactory 的 key 格式）。"""
+    if col.startswith("pr.") or col.startswith("attr"):
+        return col
+    return f"pr.{col}"
+
+
 class WorkspaceService:
     """工作区管理服务。"""
 
@@ -86,27 +93,88 @@ class WorkspaceService:
         return self.get_workspace(db, ws)
 
     def get_disk_usage(self, db: Session, ws: str) -> int:
-        """获取工作区磁盘用量（估算）。"""
-        # STUB (tracked in REMINDERS): 实现基于 vault 的实际磁盘计算
-        return 0
+        """获取工作区磁盘用量（vault 目录字节数求和）。"""
+        from pathlib import Path
+        from app.core.config import settings
+        vault = Path(settings.VAULT_PATH) / ws
+        total = 0
+        if vault.exists():
+            for p in vault.rglob("*"):
+                if p.is_file():
+                    try:
+                        total += p.stat().st_size
+                    except OSError:
+                        pass
+        return total
 
     def get_workspace_front_options(self, db: Session, ws: str) -> dict:
-        # STUB (tracked in REMINDERS): 从 workspacefrontoptions 表读取
-        return {"workspaceId": ws}
+        """读取 workspacefrontoptions + 列配置（对齐 Payara getWorkspaceFrontOptions）。"""
+        part_cols = db.execute(text(
+            "SELECT tablecolumn FROM workspace_parttablecolumn "
+            "WHERE workspace_id = :ws ORDER BY partcolumn_order"
+        ), {"ws": ws}).fetchall()
+        doc_cols = db.execute(text(
+            "SELECT tablecolumn FROM workspace_documenttablecolumn "
+            "WHERE workspace_id = :ws ORDER BY documentcolumn_order"
+        ), {"ws": ws}).fetchall()
+        return {
+            "documentTableColumns": [r[0] for r in doc_cols],
+            "partTableColumns": [_normalize_column(r[0]) for r in part_cols],
+        }
 
     def update_workspace_front_options(self, db: Session, ws: str,
                                         options: dict) -> dict:
-        # STUB (tracked in REMINDERS): 写入 workspacefrontoptions 表
-        return {"workspaceId": ws}
+        """写入 workspacefrontoptions + 列配置（对齐 Payara updateWorkspaceFrontOptions）。"""
+        existing = db.execute(text(
+            "SELECT workspace_id FROM workspacefrontoptions WHERE workspace_id = :ws"
+        ), {"ws": ws}).fetchone()
+        if not existing:
+            db.execute(text(
+                "INSERT INTO workspacefrontoptions (workspace_id) VALUES (:ws)"
+            ), {"ws": ws})
+        db.execute(text(
+            "DELETE FROM workspace_parttablecolumn WHERE workspace_id = :ws"
+        ), {"ws": ws})
+        db.execute(text(
+            "DELETE FROM workspace_documenttablecolumn WHERE workspace_id = :ws"
+        ), {"ws": ws})
+        for i, col in enumerate(options.get("partTableColumns", [])):
+            db.execute(text(
+                "INSERT INTO workspace_parttablecolumn (workspace_id, tablecolumn, partcolumn_order) "
+                "VALUES (:ws, :col, :ord)"
+            ), {"ws": ws, "col": _normalize_column(col), "ord": i})
+        for i, col in enumerate(options.get("documentTableColumns", [])):
+            db.execute(text(
+                "INSERT INTO workspace_documenttablecolumn (workspace_id, tablecolumn, documentcolumn_order) "
+                "VALUES (:ws, :col, :ord)"
+            ), {"ws": ws, "col": col, "ord": i})
+        db.commit()
+        return self.get_workspace_front_options(db, ws)
 
     def get_workspace_back_options(self, db: Session, ws: str) -> dict:
-        # STUB (tracked in REMINDERS): 从 workspacebackoptions 表读取
-        return {"workspaceId": ws}
+        """读取 workspacebackoptions.sendemails。"""
+        row = db.execute(text(
+            "SELECT sendemails FROM workspacebackoptions WHERE workspace_id = :ws"
+        ), {"ws": ws}).fetchone()
+        return {"workspaceId": ws, "sendEmails": bool(row[0]) if row else False}
 
     def update_workspace_back_options(self, db: Session, ws: str,
                                        options: dict) -> dict:
-        # STUB (tracked in REMINDERS): 写入 workspacebackoptions 表
-        return {"workspaceId": ws}
+        """写入 workspacebackoptions.sendemails。"""
+        send_emails = options.get("sendEmails", False)
+        existing = db.execute(text(
+            "SELECT workspace_id FROM workspacebackoptions WHERE workspace_id = :ws"
+        ), {"ws": ws}).fetchone()
+        if existing:
+            db.execute(text(
+                "UPDATE workspacebackoptions SET sendemails = :se WHERE workspace_id = :ws"
+            ), {"se": send_emails, "ws": ws})
+        else:
+            db.execute(text(
+                "INSERT INTO workspacebackoptions (workspace_id, sendemails) VALUES (:ws, :se)"
+            ), {"ws": ws, "se": send_emails})
+        db.commit()
+        return self.get_workspace_back_options(db, ws)
 
 
 workspace_service = WorkspaceService()

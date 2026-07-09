@@ -56,12 +56,46 @@ def _build_acl(db: Session, acl_id: int) -> dict | None:
             for e in group_entries
         ],
         "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
-        "userGroupEntriesMap": {},
+        "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
     }
+
+
+def _config_substitute_paths(db: Session, config_id: int) -> list:
+    from sqlalchemy import text as _t
+    rows = db.execute(_t(
+        "SELECT substitutelinks FROM prdcfg_substitutelink "
+        "WHERE productbaseline_id = :cid"
+    ), {"cid": config_id}).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
+def _config_optional_paths(db: Session, config_id: int) -> list:
+    from sqlalchemy import text as _t
+    rows = db.execute(_t(
+        "SELECT optionalusagelinks FROM prdcfg_optionallink "
+        "WHERE productbaseline_id = :cid"
+    ), {"cid": config_id}).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
+def _decode_paths(db: Session, ws: str, ci_id: str, paths: list) -> list:
+    """每个 path → LightPartLinkListDTO{partLinks:[...]}（对齐 Java decodePath）。"""
+    result = []
+    for path in paths:
+        if not path:
+            continue
+        try:
+            part_links = svc.decode_path(db, ws, ci_id, path)
+        except Exception:
+            part_links = []
+        result.append({"partLinks": part_links})
+    return result
 
 
 def _config_to_dict(cfg, db) -> dict:
     ws = cfg.configurationitem_workspace_id
+    sub_paths = _config_substitute_paths(db, cfg.id)
+    opt_paths = _config_optional_paths(db, cfg.id)
     return {
         "id": cfg.id,
         "name": cfg.name,
@@ -70,10 +104,10 @@ def _config_to_dict(cfg, db) -> dict:
         "author": _get_user_dto(db, cfg.author_login, ws),
         "acl": _build_acl(db, cfg.acl_id) or {},
         "creationDate": _fmt_date(cfg.creation_date),
-        "substituteLinks": [],
-        "optionalUsageLinks": [],
-        "substitutesParts": [],
-        "optionalsParts": [],
+        "substituteLinks": sub_paths,
+        "optionalUsageLinks": opt_paths,
+        "substitutesParts": _decode_paths(db, ws, cfg.configurationitem_id, sub_paths),
+        "optionalsParts": _decode_paths(db, ws, cfg.configurationitem_id, opt_paths),
     }
 
 
@@ -99,17 +133,7 @@ def create_workspace_config(ws: str, body: dict,
 def list_configs(ws: str, current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     configs = svc.list_configs(db, ws)
-    return [{"id": c.id, "name": c.name,
-             "configurationItemId": c.configurationitem_id,
-             "description": c.description or "",
-             "author": _get_user_dto(db, c.author_login, ws),
-             "acl": _build_acl(db, c.acl_id) or {},
-             "creationDate": _fmt_date(c.creation_date),
-             "substituteLinks": [],
-             "optionalUsageLinks": [],
-             "substitutesParts": [],
-             "optionalsParts": [],}
-            for c in configs]
+    return [_config_to_dict(c, db) for c in configs]
 
 
 @router.get("/workspaces/{ws}/product-configurations/{pid}/configurations", response_model=List[ProductConfigurationDTO])
@@ -118,17 +142,7 @@ def list_ci_configs(ws: str, pid: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     configs = svc.list_configs(db, ws, pid)
-    return [{"id": c.id, "name": c.name,
-             "configurationItemId": c.configurationitem_id,
-             "description": c.description or "",
-             "author": _get_user_dto(db, c.author_login, ws),
-             "acl": _build_acl(db, c.acl_id) or {},
-             "creationDate": _fmt_date(c.creation_date),
-             "substituteLinks": [],
-             "optionalUsageLinks": [],
-             "substitutesParts": [],
-             "optionalsParts": [],}
-            for c in configs]
+    return [_config_to_dict(c, db) for c in configs]
 
 
 

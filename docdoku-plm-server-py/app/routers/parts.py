@@ -250,7 +250,75 @@ def create_part(
 def get_queries(workspace_id: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    return []
+    """列出工作区已保存的自定义查询（对齐 Java getQueries → QueryDTO 列表）。"""
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT id, name, creationdate, queryrule_id, pathdata_queryrule_id "
+        "FROM query WHERE author_workspace_id = :ws ORDER BY id"
+    ), {"ws": workspace_id}).fetchall()
+    result = []
+    for r in rows:
+        qid = r[0]
+        selects = [s[0] for s in db.execute(text(
+            "SELECT selects FROM query_selects WHERE query_id = :q"
+        ), {"q": qid}).fetchall()]
+        order_by = [s[0] for s in db.execute(text(
+            "SELECT orderbylist FROM query_order_by WHERE query_id = :q"
+        ), {"q": qid}).fetchall()]
+        grouped_by = [s[0] for s in db.execute(text(
+            "SELECT groupedbylist FROM query_grouped_by WHERE query_id = :q"
+        ), {"q": qid}).fetchall()]
+        result.append({
+            "id": qid,
+            "name": r[1] or "",
+            "creationDate": r[2].isoformat() + "Z" if r[2] else None,
+            "queryRule": _load_query_rule(db, r[3]),
+            "pathDataQueryRule": _load_query_rule(db, r[4]),
+            "selects": selects,
+            "orderByList": order_by,
+            "groupedByList": grouped_by,
+            "contexts": _load_query_contexts(db, qid),
+        })
+    return result
+
+
+def _load_query_rule(db, rule_id):
+    """递归加载 QueryRule 树（对齐 Java QueryRuleDTO）。"""
+    if rule_id is None:
+        return None
+    from sqlalchemy import text
+    r = db.execute(text(
+        "SELECT qid, cond, field, id, operator, type FROM queryrule WHERE qid = :q"
+    ), {"q": rule_id}).fetchone()
+    if not r:
+        return None
+    values = [v[0] for v in db.execute(text(
+        "SELECT value FROM queryrule_values WHERE queryrule_id = :q ORDER BY value_order"
+    ), {"q": rule_id}).fetchall()]
+    children = db.execute(text(
+        "SELECT qid FROM queryrule WHERE parent_query_rule = :q ORDER BY qid"
+    ), {"q": rule_id}).fetchall()
+    return {
+        "condition": r[1],
+        "field": r[2],
+        "id": r[3],
+        "operator": r[4],
+        "type": r[5],
+        "values": values,
+        "rules": [_load_query_rule(db, c[0]) for c in children],
+    }
+
+
+def _load_query_contexts(db, query_id):
+    from sqlalchemy import text
+    rows = db.execute(text(
+        "SELECT configurationitemid, serialnumber, workspaceid FROM querycontext "
+        "WHERE query_id = :q"
+    ), {"q": query_id}).fetchall()
+    return [
+        {"configurationItemId": r[0], "serialNumber": r[1], "workspaceId": r[2]}
+        for r in rows
+    ]
 
 
 @router.post("/workspaces/{workspace_id}/parts/queries",
@@ -304,8 +372,42 @@ def post_queries(body: dict = Body(...),
 @router.delete("/parts/queries/{query_id}", status_code=204)
 @router.delete("/parts/queries/{query_id}/", status_code=204, include_in_schema=False)
 def delete_query(query_id: str,
-                 current_user: Account = Depends(get_current_user)):
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """删除已保存的查询及其关联记录（对齐 Java deleteQuery）。"""
+    from sqlalchemy import text
+    try:
+        qid = int(query_id)
+    except (TypeError, ValueError):
+        return Response(status_code=204)
+    q = db.execute(text(
+        "SELECT queryrule_id, pathdata_queryrule_id FROM query WHERE id = :q"
+    ), {"q": qid}).fetchone()
+    if not q:
+        return Response(status_code=204)
+    # 先删关联子表
+    for tbl in ("query_selects", "query_order_by", "query_grouped_by", "querycontext"):
+        db.execute(text(f"DELETE FROM {tbl} WHERE query_id = :q"), {"q": qid})
+    db.execute(text("DELETE FROM query WHERE id = :q"), {"q": qid})
+    # 再递归删 queryrule 树
+    for root_rule in (q[0], q[1]):
+        _delete_query_rule(db, root_rule)
+    db.commit()
     return Response(status_code=204)
+
+
+def _delete_query_rule(db, rule_id):
+    """递归删除 queryrule 及其子规则、values。"""
+    if rule_id is None:
+        return
+    from sqlalchemy import text
+    children = db.execute(text(
+        "SELECT qid FROM queryrule WHERE parent_query_rule = :q"
+    ), {"q": rule_id}).fetchall()
+    for c in children:
+        _delete_query_rule(db, c[0])
+    db.execute(text("DELETE FROM queryrule_values WHERE queryrule_id = :q"), {"q": rule_id})
+    db.execute(text("DELETE FROM queryrule WHERE qid = :q"), {"q": rule_id})
 
 
 @router.get("/parts/query-export",
