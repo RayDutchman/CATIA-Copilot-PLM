@@ -91,10 +91,21 @@ class WorkspaceWorkflowMinimalDTO(BaseModel):
 from app.schemas.part import UserDTO
 
 
-class ACLDTO(BaseModel):
+class ACLEntryDTO(BaseModel):
+    """对齐 Payara ACLEntryDTO：{key, value(权限名)}"""
     model_config = ConfigDict(extra='forbid')
-    userEntries: Optional[dict[str, str]] = None  # "login:workspaceId" -> permission
-    groupEntries: Optional[dict[str, str]] = None
+    key: str
+    value: str  # FORBIDDEN / READ_ONLY / FULL_ACCESS
+
+
+class ACLDTO(BaseModel):
+    """对齐 Payara ACLDTO：userEntries/groupEntries 为 List<ACLEntryDTO>，
+    另有两个 getter 派生的 Map 字段（userEntriesMap/userGroupEntriesMap）。"""
+    model_config = ConfigDict(extra='forbid')
+    userEntries: Optional[List[ACLEntryDTO]] = None
+    groupEntries: Optional[List[ACLEntryDTO]] = None
+    userEntriesMap: Optional[dict[str, str]] = None
+    userGroupEntriesMap: Optional[dict[str, str]] = None
 
 # Re-exports from split files
 from app.schemas.workflow.activity_model import ActivityModelDTO  # noqa: E402, F401

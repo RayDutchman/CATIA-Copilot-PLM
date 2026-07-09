@@ -37,7 +37,8 @@ def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[
 
     writable = True
     if db and current_user:
-        writable = check_write_access(db, getattr(ms, "acl_id", None), current_user.login, is_admin)
+        writable = check_write_access(db, getattr(ms, "acl_id", None), current_user.login, is_admin,
+                                      workspace_id=getattr(ms, "workspace_id", None))
 
     dd = getattr(ms, "due_date", None)
     data = dict(

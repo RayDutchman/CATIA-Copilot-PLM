@@ -206,7 +206,6 @@ def list_product_instances(ws: str,
                             db: Session = Depends(get_db)):
     instances = svc.list_instances(db, ws)
     return [{"serialNumber": i.serialnumber,
-             "workspaceId": i.workspace_id,
              "configurationItemId": i.configurationitem_id}
             for i in instances]
 
@@ -228,7 +227,6 @@ def get_product_instance(ws: str, sn: str,
     ).order_by(ProductInstanceIteration.iteration).all()
     return {
         "serialNumber": inst.serialnumber,
-        "workspaceId": inst.workspace_id,
         "configurationItemId": inst.configurationitem_id,
         "identifier": f"{ws}/{inst.configurationitem_id}-{inst.serialnumber}",
         "productInstanceIterations": [
@@ -238,7 +236,6 @@ def get_product_instance(ws: str, sn: str,
                 "creationDate": _fmt_date(it.creation_date),
                 "modificationDate": _fmt_date(it.modification_date),
                 "author": _get_user_dto(db, it.author_login, ws),
-                "productBaselineId": it.productbaseline_id,
             }
             for it in iterations
         ],
@@ -252,7 +249,6 @@ def list_ci_instances(ws: str, pid: str,
                        db: Session = Depends(get_db)):
     instances = svc.list_instances(db, ws, pid)
     return [{"serialNumber": i.serialnumber,
-             "workspaceId": i.workspace_id,
              "configurationItemId": i.configurationitem_id}
             for i in instances]
 

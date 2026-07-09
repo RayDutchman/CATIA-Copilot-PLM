@@ -43,7 +43,6 @@ class TaskService:
             "worker": worker or {},
             "closureComment": row[1] if len(row) > 1 else None,
             "closureDate": str(row[2]) if len(row) > 2 and row[2] else None,
-            "closingDate": str(row[2]) if len(row) > 2 and row[2] else None,
             "signature": row[5] if len(row) > 5 else None,
         }
 

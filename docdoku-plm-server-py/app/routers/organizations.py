@@ -16,7 +16,8 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
 def _org_to_dict(r) -> dict:
-    return {"name": r[0], "description": r[1] or ""}
+    return {"name": r[0], "description": r[1] or "",
+            "owner": r[2] if len(r) > 2 else None}
 
 
 @router.get("/organizations", response_model=OrganizationDTO | None)
@@ -28,7 +29,7 @@ def list_organizations(
 ):
     """返回当前用户的组织（Java 为 'my organization' 模型）。无组织时返回 204。"""
     r = db.execute(text(
-        "SELECT o.name, o.description FROM organization o "
+        "SELECT o.name, o.description, o.owner_login FROM organization o "
         "JOIN organization_account oa ON o.name = oa.organization_name "
         "WHERE oa.account_login = :login"
     ), {"login": current_user.login}).fetchone()
@@ -71,7 +72,7 @@ def get_organization(
     current_user: Account = Depends(get_current_user),
 ):
     r = db.execute(text(
-        "SELECT name, description FROM organization WHERE name = :name"
+        "SELECT name, description, owner_login FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     if not r:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
@@ -99,7 +100,7 @@ def update_organization(
     ), {"description": description, "name": org_name})
     db.commit()
     r = db.execute(text(
-        "SELECT name, description FROM organization WHERE name = :name"
+        "SELECT name, description, owner_login FROM organization WHERE name = :name"
     ), {"name": org_name}).fetchone()
     return _org_to_dict(r)
 

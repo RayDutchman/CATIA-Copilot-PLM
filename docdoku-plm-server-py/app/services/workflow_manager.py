@@ -43,9 +43,10 @@ class WorkflowService:
         return group_entry is not None
 
     def _check_write_access(self, db: Session, acl_id: int | None,
-                            user_login: str) -> None:
+                            user_login: str, workspace_id: str | None = None) -> None:
         from app.services.factory.acl_factory import check_write_access
-        if not check_write_access(db, acl_id, user_login, self._is_admin(db, user_login)):
+        if not check_write_access(db, acl_id, user_login, self._is_admin(db, user_login),
+                                  workspace_id=workspace_id):
             raise NotAllowedException("NotAllowedException34")
 
     def _is_potential_worker(self, db: Session, ws: str, user_login: str,
@@ -130,7 +131,7 @@ class WorkflowService:
                      user_login: str = None) -> WorkflowModel:
         m = self.get_model(db, ws, model_id)
         if user_login:
-            self._check_write_access(db, m.acl_id, user_login)
+            self._check_write_access(db, m.acl_id, user_login, workspace_id=ws)
         m.finalLifecycleState = final_state
         if activity_models is not None:
             # 删除旧 ActivityModel（级联删除旧 TaskModel）
@@ -167,7 +168,7 @@ class WorkflowService:
                      user_login: str = None):
         m = self.get_model(db, ws, model_id)
         if user_login:
-            self._check_write_access(db, m.acl_id, user_login)
+            self._check_write_access(db, m.acl_id, user_login, workspace_id=ws)
         # 检查是否被文档模板引用
         doc_tmpl = db.execute(text(
             "SELECT 1 FROM documentmastertemplate "

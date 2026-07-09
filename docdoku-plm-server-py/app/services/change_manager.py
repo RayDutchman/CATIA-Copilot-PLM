@@ -169,7 +169,7 @@ class ChangeService:
             acl_id = getattr(item, "acl_id", None)
             if acl_id is not None:
                 from app.services.factory.acl_factory import check_write_access
-                if not check_write_access(db, acl_id, user_login, False):
+                if not check_write_access(db, acl_id, user_login, False, workspace_id=ws):
                     raise AccessRightException("AccessRightException", user_login)
             else:
                 # ACL 为 null → 需要 workspace 写权限（对齐 Java hasWorkspaceWriteAccess）

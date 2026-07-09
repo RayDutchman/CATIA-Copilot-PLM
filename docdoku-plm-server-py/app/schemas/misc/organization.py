@@ -8,3 +8,4 @@ class OrganizationDTO(BaseModel):
     model_config = ConfigDict(extra='forbid')
     name: str
     description: Optional[str] = None
+    owner: Optional[str] = None

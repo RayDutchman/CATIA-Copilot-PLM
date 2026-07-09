@@ -109,7 +109,6 @@ def list_instance_iterations(ws: str, ci_id: str, sn: str,
             "creationDate": it.creation_date.isoformat() + "Z" if it.creation_date else None,
             "modificationDate": it.modification_date.isoformat() + "Z" if it.modification_date else None,
             "author": _get_user(db, it.author_login or "", ws),
-            "productBaselineId": it.productbaseline_id,
         }
         for it in iterations
     ]

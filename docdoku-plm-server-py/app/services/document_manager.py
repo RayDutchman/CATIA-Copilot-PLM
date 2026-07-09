@@ -127,7 +127,7 @@ class DocumentService:
     def delete_revision(self, db, ws, doc_id, ver, user_login):
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
-        if not check_write_access(db, pr.acl_id, user_login, False):
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
             raise AccessRightException("AccessRightException", user_login)
 
         # 管理员跳过 home 文件夹检查
@@ -366,7 +366,7 @@ class DocumentService:
     def checkout(self, db, ws, doc_id, ver, user_login):
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
-        if not check_write_access(db, pr.acl_id, user_login, False):
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
             raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login and pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException37")
@@ -606,7 +606,7 @@ class DocumentService:
     def checkin(self, db, ws, doc_id, ver, user_login):
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
-        if not check_write_access(db, pr.acl_id, user_login, False):
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
             raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException20")

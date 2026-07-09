@@ -8,8 +8,9 @@ from app.core.exceptions import NotAllowedException
 from app.models.auth import Account
 from app.services.task_manager import task_service, STATUS_MAP
 from app.schemas.workflow import (
-    TaskWrapperDTO, TaskHolderDocDTO, TaskHolderPartDTO,
+    TaskWrapperDTO, TaskHolderPartDTO,
 )
+from app.schemas.document.document_revision import DocumentRevisionDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -266,7 +267,7 @@ def process_task(ws: str, task_id: str, body: dict, db: Session = Depends(get_db
     return holder
 
 
-@router.get(f"{PREFIX}/tasks/{{login}}/documents", response_model=List[TaskHolderDocDTO])
+@router.get(f"{PREFIX}/tasks/{{login}}/documents", response_model=List[DocumentRevisionDTO])
 @router.get(f"{PREFIX}/tasks/{{login}}/documents/", include_in_schema=False)
 def task_documents(ws: str, login: str,
                    filter: str = None,
@@ -287,7 +288,14 @@ def task_documents(ws: str, login: str,
         DocumentRevision.workspace_id == ws,
         DocumentRevision.workflow_id.in_(wf_ids)
     ).all()
-    return [_doc_to_dict(db, d) for d in docs]
+    # 对齐 Payara Tools.createLightDocumentRevisionDTO：清空 tags 与 workflow
+    result = []
+    for d in docs:
+        dto = _doc_to_dict(db, d)
+        dto["tags"] = []
+        dto["workflow"] = None
+        result.append(dto)
+    return result
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/parts", response_model=List[TaskHolderPartDTO])

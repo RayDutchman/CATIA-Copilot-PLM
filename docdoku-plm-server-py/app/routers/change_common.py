@@ -76,7 +76,8 @@ def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Acc
 
     writable = True
     if db and current_user:
-        writable = check_write_access(db, getattr(item, "acl_id", None), current_user.login, is_admin)
+        writable = check_write_access(db, getattr(item, "acl_id", None), current_user.login, is_admin,
+                                      workspace_id=getattr(item, "workspace_id", None))
 
     data = dict(
         acl=_get_acl_dict(db, getattr(item, "acl_id", None)) or {},

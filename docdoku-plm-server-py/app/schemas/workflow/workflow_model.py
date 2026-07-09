@@ -9,7 +9,7 @@ class WorkflowModelDTO(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra='forbid')
 
     id: str
-    workspaceId: Optional[str] = None
+    reference: Optional[str] = None
     finalLifeCycleState: Optional[str] = None
     creationDate: Optional[str] = None
     author: Optional[UserDTO] = None
