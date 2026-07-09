@@ -103,6 +103,20 @@ cd ../docdoku-plm-docker
 docker compose up -d --force-recreate --no-deps conversion
 ```
 
+### 重建 FastAPI 后端（back-py）
+
+```bash
+cd docdoku-plm-server-py
+docker build -t docdoku-plm-docker-back-py:latest .
+cd ../docdoku-plm-docker
+docker compose up -d --force-recreate --no-deps back-py
+```
+
+> **⚠️ 纠正一个流传的误区**："back-py 不能 rebuild、只能 docker cp" 是**错误**的。
+> - 真相：**Docker 镜像仓库**（`dockerhub.timeweb.cloud`）不通，但 **pip(PyPI) 在容器内可正常访问**，基础镜像 `python:3.11-slim-bookworm` 已本地缓存。
+> - 之前 build 失败的唯一原因：Dockerfile 曾 pin `python:3.11-slim`（本地无此 tag → 去坏掉的 mirror 拉 metadata 失败）。已改为本地已缓存的 `python:3.11-slim-bookworm`，`docker build` 完整通过。
+> - **正常改代码后请用上面的 rebuild 流程**（更干净、可复现）。`docker cp` + `docker restart docdoku-plm-docker-back-py-1` 仅作为快速热修的权宜手段。
+
 ---
 
 ## 数据库
