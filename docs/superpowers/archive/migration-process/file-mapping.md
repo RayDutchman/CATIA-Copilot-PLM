@@ -1,5 +1,8 @@
 # Java → Python 审计维度参考
 
+> 🗄️ **已归档（施工期文档，2026-07-09 归档）**：本文档为 Payara→FastAPI 后端迁移**施工期**的历史记录，仅供追溯。文中 `docs/xxx.md` 形式的旧路径可能已失效。当前活跃文档见 `docs/DOCS_INDEX.md`，迁移剩余缺口见 `docs/migration/loose-ends.md`。
+
+
 > **用于 AI 逐文件对比检查时参考**。7 维审计 Prompt 已迁至 `docs/ai-execution-rules.md`。
 > 业务映射表已被 `docs/migration-tracker.csv` 完全覆盖，不在此重复。
 > 审计历史已迁至 `docs/audit-report.md`。

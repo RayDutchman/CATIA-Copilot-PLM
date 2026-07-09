@@ -6,11 +6,11 @@
 
 ## 待办
 
+> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`（~59 处，含 PathData/装配路径、Importer、产品配置降级、OnDemandConverter、WorkspaceManager stub 等）。本文件只保留**跨领域非迁移**待办。
+
 ### 高优先级
 
 - [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — TASK_USER/TASK_USERGROUP 多对多表已接入: instantiate_workflow INSERT 分配, _is_potential_worker 查双表, get_assigned_tasks JOIN 双表。对齐 Java Task.assignedUsers/assignedGroups。
-
-- [ ] **PathData 域未实现** — PathDataMasterNotFoundException 等异常 stub，pathdata CRUD 和 path-to-path link CRUD 都是占位代码。实现后补 raise。
 
 - [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但 FA 侧不加载。需 tcpdump 抓包或升级 Three.js。
 
@@ -30,14 +30,6 @@
 
 - [ ] **portproxy 规则与 Docker 端口冲突** — iphlpsvc 占用 8000/8001。
 
-### 低优先级（STUB 跟踪）
-
-以下 12 项已在代码中标注 `STUB (tracked in REMINDERS)`，不再使用 TODO 关键字：
-
-- [ ] **importer** — 5 项 Excel/preview/PathData/BOM 导入器 stub
-- [ ] **ondemand_converter** — 2 项转换引擎集成 stub
-- [ ] **workspace_manager** — 5 项磁盘计算/选项表查询 stub
-
 ---
 
 ## 已知限制
@@ -50,6 +42,12 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **审计遗留三项处理 (2026-07-08)**:
+  - **check_write_access null-ACL 全覆盖** — 补全 7 处未传 workspace_id 的调用点（milestones/change_common/document_manager×3/workflow_manager 封装+2 caller/change_manager 一致性），acl_id=None 时正确校验 workspace 写权限
+  - **extra=forbid 静默 500** — 7 项风险修复，全部对齐 Payara Java DTO：TaskDTO 删 closingDate；ACLDTO 改 List<ACLEntryDTO>+2 Map；WorkflowModelDTO workspaceId→reference；TaskHolderDoc 端点改 DocumentRevisionDTO（light）；ProductInstance 删 productBaselineId/workspaceId；OrganizationDTO 补 owner
+  - **_relaunch_workflow** — 验证审计遗留已于 2164b07/9bfe150 解决（INSERT SELECT 深拷贝），无需改动
+  - 176 passed / 1 skipped，线上 5 端点 200/204 无 500
 
 - [x] **审计修复 B1-B7 全量完成 (2026-07-07)** — 12/13 发现已修复（见 audit-report.md）:
   B1: 级联删除 8 表 + 模板 + Workflow Tasks

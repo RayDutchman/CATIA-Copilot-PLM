@@ -1,5 +1,8 @@
 # Payara → FastAPI 完整迁移计划
 
+> 🗄️ **已归档（施工期文档，2026-07-09 归档）**：本文档为 Payara→FastAPI 后端迁移**施工期**的历史记录，仅供追溯。文中 `docs/xxx.md` 形式的旧路径可能已失效。当前活跃文档见 `docs/DOCS_INDEX.md`，迁移剩余缺口见 `docs/migration/loose-ends.md`。
+
+
 > **最后更新**：2026-07-07（迁移阶段全部完成，进入审计修复阶段）
 > **追踪表**：`docs/migration-tracker.csv`（523 已完成 + 1 不适用 = **524/524 ✅**）
 > **方法论**：`docs/migration-methodology.md`

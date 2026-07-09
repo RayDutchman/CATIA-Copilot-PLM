@@ -33,7 +33,7 @@ grep -rn "throw new" docdoku-plm-server-ejb/ --include='*.java' \
   | sed 's/.*throw new \([A-Za-z]*\).*/\1/' | sort | uniq -c | sort -rn
 ```
 
-产物：`docs/throw-matrix.md` —— 每个 Payara 异常的抛出次数 + Python 对齐状态。
+产物：`docs/superpowers/archive/migration-process/throw-matrix.md` —— 每个 Payara 异常的抛出次数 + Python 对齐状态。
 
 **写代码前就建立这张表，它将是第 7 维审计的依据。**
 
@@ -50,7 +50,7 @@ grep -A1 "public " <Bean>.java | grep "throws"
 
 ## 三、文件映射表
 
-核心资产：`docs/file-mapping.md`。每一行是一个检查单位。
+核心资产：`docs/superpowers/archive/migration-process/file-mapping.md`。每一行是一个检查单位。
 
 ---
 
@@ -60,9 +60,9 @@ grep -A1 "public " <Bean>.java | grep "throws"
 
 ### 第 7 维：Exception throw parity
 
-**操作**：对照 `docs/throw-matrix.md`，逐行检查 Python 是否有等价 `raise`。不是"随机发现报什么"，是系统化清单。
+**操作**：对照 `docs/superpowers/archive/migration-process/throw-matrix.md`，逐行检查 Python 是否有等价 `raise`。不是"随机发现报什么"，是系统化清单。
 
-Agent 指令：`Read docs/throw-matrix.md. For each row marked "缺 raise", check the Python file-mapping peer and add the appropriate raise statement.`
+Agent 指令：`Read docs/superpowers/archive/migration-process/throw-matrix.md. For each row marked "缺 raise", check the Python file-mapping peer and add the appropriate raise statement.`
 
 **评估**：throw matrix 中所有行都是 ✅ 才算通过。
 
@@ -98,8 +98,8 @@ Agent 指令：`Read docs/throw-matrix.md. For each row marked "缺 raise", chec
 
 | 工具 | 用途 |
 |------|------|
-| `docs/throw-matrix.md` | **新增**——预生成的异常对照表 |
-| `docs/file-mapping.md` | 文件映射表 + 7 维审计 Prompt |
+| `docs/superpowers/archive/migration-process/throw-matrix.md` | **新增**——预生成的异常对照表 |
+| `docs/superpowers/archive/migration-process/file-mapping.md` | 文件映射表 + 7 维审计 Prompt |
 | `tests/test_i18n_bypass.py` | **新增**——零容忍 i18n 绕过 |
 | `scripts/full_compare_v2.py` | HTTP 层兜底对比 |
 | `pytest tests/ -q` | 回归测试 |

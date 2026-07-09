@@ -1,5 +1,8 @@
 # 自动化迁移产线设计
 
+> 🗄️ **已归档（施工期文档，2026-07-09 归档）**：本文档为 Payara→FastAPI 后端迁移**施工期**的历史记录，仅供追溯。文中 `docs/xxx.md` 形式的旧路径可能已失效。当前活跃文档见 `docs/DOCS_INDEX.md`，迁移剩余缺口见 `docs/migration/loose-ends.md`。
+
+
 > **你只需要两条指令**：启动 + 确认阶段切换。其余全自动。
 > AI 执行规则详见 `docs/ai-execution-rules.md`。
 

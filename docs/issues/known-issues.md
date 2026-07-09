@@ -495,8 +495,45 @@
       LEFT JOIN partiteration pi ON pi.nativecadfile_fullname = br.fullname
       WHERE br.fullname LIKE '%/nativecad/%' AND pi.iteration IS NULL
   );
-  ```
+   ```
 
 ---
 
-*最后更新：2026-06-16*
+## 十六、FastAPI 后端迁移：DTO 对齐与权限校验 Bug
+
+### [BUG-45] Pydantic `extra=forbid` + response_model 字段不匹配导致静默 500
+
+- **文件：** `docdoku-plm-server-py/` 多处 `_*_dict` helper 与对应 schema
+- **根本原因：**
+  FastAPI 端点用带 `model_config = ConfigDict(extra='forbid')` 的 Pydantic schema 作 `response_model`，当 helper 返回的 dict 字段名/类型与 schema 不一致时，Pydantic 在响应序列化阶段抛 `ResponseValidationError` → HTTP 500，但 DB 事务可能已提交（数据已持久化，静默失败）。
+- **影响：** 多个只读/写端点返回 500 或空数据，但操作实际已成功，前后端数据不一致。
+- **修复状态：** `已修复`（2026-07-08，全部对齐 Payara Java DTO）
+- **修复方案（7 项，铁律：以 Payara `docdoku-plm-server-rest/.../dto/*.java` 为准）：**
+  1. **TaskDTO** — 删除 helper 多余键 `closingDate`（Payara 仅有 `closureDate`）`services/task_manager.py`
+  2. **ACLDTO** — schema 由 `dict[str,str]` 改为 `List[ACLEntryDTO]`（{key,value}）+ getter 派生的 `userEntriesMap`/`userGroupEntriesMap`（Payara `ACLDTO.java` 序列化 4 个 JSON 属性）
+  3. **WorkflowModelDTO** — 去掉 Payara 不存在的 `workspaceId`，改为实际字段 `reference`
+  4. **TaskHolderDocDTO** — `tasks/{login}/documents` response_model 改为 `DocumentRevisionDTO`（Payara 返回精简版，`Tools.createLightDocumentRevisionDTO` 清空 tags/workflow）
+  5. **ProductInstanceIterationDTO** — 删除 Payara 不存在的 `productBaselineId`（Payara 用嵌套 `basedOn`）
+  6. **ProductInstanceMasterDTO** — 删除 Payara 不存在的 `workspaceId`
+  7. **OrganizationDTO** — 补 Payara 实际存在的 `owner` 字段（`OrganizationResource` dozer 全量映射）
+- **防御建议：** 新写 helper 前先查 Payara DTO 类，逐字段核对名称/类型/单复数；响应体 schema 慎用 `extra=forbid`。
+
+---
+
+### [BUG-46] check_write_access：acl_id=None 时未校验 workspace 写权限
+
+- **文件：** `docdoku-plm-server-py/app/services/factory/acl_factory.py:75` 及 7 处调用点
+- **根本原因：**
+  `check_write_access` 在 `acl_id is None`（null ACL）时无条件 `return True`，任何 workspace 成员（含 readonly）都被视为有写权限。修复引入 `workspace_id` 参数后，仍有 7 处调用点未传该参数，null-ACL 场景权限绕过。
+- **影响：** readonly 成员可对无 ACL 的文档/变更项/工作流模型执行写操作。
+- **修复状态：** `已修复`（2026-07-08）
+- **修复方案：** 补全所有调用点传 `workspace_id`：
+  - `routers/milestones.py`、`routers/change_common.py`（helper 传 `item.workspace_id`）
+  - `services/document_manager.py` delete_revision/checkout/checkin（传 `ws`）
+  - `services/workflow_manager.py` `_check_write_access` 新增参数 + update_model/delete_model 传入
+  - `services/change_manager.py` delete_item 一致性补全
+- **验证：** pytest 176 passed / 1 skipped，线上 health ok，5 端点 200/204 无 500。
+
+---
+
+*最后更新：2026-07-08*

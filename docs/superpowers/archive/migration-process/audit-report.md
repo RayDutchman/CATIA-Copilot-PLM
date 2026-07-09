@@ -1,5 +1,8 @@
 # 验收审计报告
 
+> 🗄️ **已归档（施工期文档，2026-07-09 归档）**：本文档为 Payara→FastAPI 后端迁移**施工期**的历史记录，仅供追溯。文中 `docs/xxx.md` 形式的旧路径可能已失效。当前活跃文档见 `docs/DOCS_INDEX.md`，迁移剩余缺口见 `docs/migration/loose-ends.md`。
+
+
 > 生成时间: 2026-07-07 | 提交范围: 42a1820, 8c24d97, 4796f96, 58c3fbb
 
 ## Step 1 — NotImplementedError 审计 ✅

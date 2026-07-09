@@ -1,5 +1,8 @@
 # Exception Throw Matrix: Java → Python
 
+> 🗄️ **已归档（施工期文档，2026-07-09 归档）**：本文档为 Payara→FastAPI 后端迁移**施工期**的历史记录，仅供追溯。文中 `docs/xxx.md` 形式的旧路径可能已失效。当前活跃文档见 `docs/DOCS_INDEX.md`，迁移剩余缺口见 `docs/migration/loose-ends.md`。
+
+
 > 从 Payara EJB 源码自动生成，用于 7 维审计第 7 维"Exception throw parity"。
 > Python 异常定义在 `app/core/exceptions.py`。
 

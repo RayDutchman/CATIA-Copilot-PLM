@@ -6,7 +6,45 @@
 
 ---
 
-## 2026-07-07 — P4B WebSocket + Extension 全量迁移 (29 文件)
+## 2026-07-08 — 审计遗留修复：check_write_access 全覆盖 + extra=forbid 对齐 Payara
+
+- docs: **docs/ 目录重组**（消除 Agent 阅读歧义，按 活跃/参考/归档 三态分层）
+  - 新增 `docs/migration/`：`loose-ends.md`（迁移缺口唯一台账）+ `methodology.md` + `tracker.csv` + `README.md`
+  - 施工期文档归档至 `docs/superpowers/archive/migration-process/`（ai-execution-rules、batch-protocol、file-mapping、throw-matrix、migration-plan-complete、audit-report、fastapi-migration-roadmap，均加 🗄️ banner）
+  - `handoff-2026-07-08.md` → `docs/superpowers/archive/handoffs/`
+  - 重写 `DOCS_INDEX.md` 为通用文档地图 + 按场景 Agent 阅读路由（移除过时的"CSV 唯一任务队列"语义）
+  - `REMINDERS.md` 去重：迁移明细移交 loose-ends，仅保留跨领域非迁移待办
+  - 执行计划：`docs/superpowers/plans/2026-07-09-docs-reorg.md`
+- docs: 新增 `docs/migration/loose-ends.md` — Payara→FastAPI 迁移完整遗留清单（~59 处未完成/降级项，按域分组+优先级）
+
+### check_write_access null-ACL workspace 写权限（补全 7 处调用点）
+- fix(acl): acl_id=None 时须校验 workspace 写权限，补全所有未传 workspace_id 的调用点
+  - `routers/milestones.py:40` — `_milestone_to_dict` 传 `workspace_id=ms.workspace_id`
+  - `routers/change_common.py:79` — `_item_to_dict` 传 `workspace_id=item.workspace_id`
+  - `services/document_manager.py:130/369/609` — delete_revision/checkout/checkin 传 `workspace_id=ws`
+  - `services/workflow_manager.py:45` — `_check_write_access` 新增 `workspace_id` 参数，update_model/delete_model 传入 `ws`
+  - `services/change_manager.py:172` — delete_item 一致性补 `workspace_id=ws`（原有 null-ACL 内联回退，无漏洞）
+
+### extra=forbid 静默 500 风险修复（7 项，全部对齐 Payara Java DTO）
+- fix(dto): TaskDTO — 删除 helper 多余字段 `closingDate`（Payara TaskDTO 仅有 `closureDate`）`services/task_manager.py:46`
+- fix(dto): ACLDTO schema 对齐 Payara — `userEntries`/`groupEntries` 改为 `List[ACLEntryDTO]`（{key,value}），新增 getter 派生的 `userEntriesMap`/`userGroupEntriesMap`；新增 `ACLEntryDTO` `schemas/workflow/__init__.py`
+- fix(dto): workflow-models acl_data — `userGroupEntriesMap` 由 groupEntries 正确派生（原硬编码 `{}`）`routers/workflow_models.py:41`
+- fix(dto): WorkflowModelDTO — 去掉 Payara 不存在的 `workspaceId`，改为 Payara 实际字段 `reference` `schemas/workflow/workflow_model.py:12`
+- fix(dto): TaskHolderDocDTO — `tasks/{login}/documents` 端点 response_model 改为 `DocumentRevisionDTO`（Payara 实际返回精简版 DocumentRevisionDTO），清空 tags/workflow 对齐 `Tools.createLightDocumentRevisionDTO` `routers/tasks.py:269`
+- fix(dto): ProductInstanceIterationDTO — 删除 Payara 不存在的 `productBaselineId`（Payara 用 `basedOn`）`routers/product_instances.py`、`routers/products.py`
+- fix(dto): ProductInstanceMasterDTO — 删除 Payara 不存在的 `workspaceId`（列表/详情端点均清理）`routers/products.py`
+- fix(dto): OrganizationDTO — 补 Payara 实际存在的 `owner` 字段，list/get/update 端点 SQL 补查 `owner_login` `schemas/misc/organization.py`、`routers/organizations.py`
+
+### 验证
+- pytest 176 passed / 1 skipped（基线不退化）
+- app import OK + 各 DTO schema 单测通过（含嵌套 ACLDTO 序列化）
+- 已 docker cp 14 文件 + 重启 back-py，health ok，5 个修复端点线上 200/204 无 500
+
+### 审计验证（无需改动）
+- `_relaunch_workflow` 已于 commit 2164b07 改为 INSERT SELECT 深拷贝（9bfe150 补全 task_user/task_usergroup），审计遗留策略问题已解决
+
+---
+
 
 ### P4B-WS WebSocket (13 条目)
 - feat(ws): W-001 endpoint.py — FastAPI WebSocket /ws 端点（JWT 认证 + 模块路由），替代 Java @ServerEndpoint

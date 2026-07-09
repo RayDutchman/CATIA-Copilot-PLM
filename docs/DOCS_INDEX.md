@@ -1,87 +1,83 @@
-# 文档索引（AI 必读）
+# 文档索引（Agent 必读）
 
-> AI agent 启动时先读本文件，了解哪些文档需要读、哪些需要更新、哪些已过时。
+> **这是 `docs/` 的唯一入口。** Agent 启动时先读本文件，判断该读哪些文档。
+> 文档按生命周期分三态：**🟢 活跃**（持续更新）、**📘 稳定参考**（按需查阅）、**🗄️ 归档**（历史追溯）。
 
 ---
 
-## 一、持续更新文件（每次会话/每批任务后必更新）
+## 一、按场景的 Agent 阅读路由
+
+| 你要做的事 | 先读 |
+|-----------|------|
+| **修 bug / 排查问题** | `issues/known-issues.md` → 对应 `architecture/*.md` |
+| **继续后端迁移收尾** | `migration/loose-ends.md`（剩余缺口唯一台账）→ `migration/methodology.md`（方法论） |
+| **了解当前待办/阻塞** | `REMINDERS.md` |
+| **查系统架构 / 容器 / CAD 转换** | `architecture/*.md` |
+| **查 REST API / 认证 / 用户手册** | `reference/*.md` |
+| **部署 / 运维** | `setup/*.md` |
+| **做前端迁移（Backbone→React）** | `migration/methodology.md`（复用后端迁移方法论） |
+| **查迁移施工历史** | `superpowers/archive/migration-process/*` |
+
+---
+
+## 二、🟢 活跃文档（每次会话/任务后维护）
 
 | 文件 | 用途 | 更新时机 |
 |------|------|---------|
-| `docs/CHANGELOG.md` | 变更日志（feat/fix/chore/docs） | 每批任务完成后追加 |
-| `docs/REMINDERS.md` | 待办 + 已知问题 + 已解决 | 每批任务完成后同步 |
-| `docs/migration-tracker.csv` | **唯一任务队列**（523 行） | 每批任务完成后更新状态 |
-| `docs/audit-report.md` | 验收审计报告（5步） | 审计完成后更新 |
+| `CHANGELOG.md` | 变更日志（feat/fix/chore/docs） | 每批任务完成后追加 |
+| `REMINDERS.md` | 跨领域滚动待办 + 阻塞 + 已解决 | 每批任务完成后同步 |
+| `migration/loose-ends.md` | **后端迁移剩余缺口唯一台账**（~59 处） | 修复某项后勾选 |
+| `issues/known-issues.md` | 已知 Bug 追踪 | 发现/修复 bug 时 |
+
+> ⚠️ **迁移已完成**：Payara→FastAPI 后端迁移主体已 100% 完成（`migration/tracker.csv` 523/523），Payara 生产链路已被绕过。**不要**再把 `tracker.csv` 当作待办队列——剩余功能缺口只看 `migration/loose-ends.md`。
 
 ---
 
-## 二、AI 执行规则（任务时必读）
+## 三、📘 稳定参考（按需查阅，不常更新）
 
-| 文件 | 用途 | 说明 |
-|------|------|------|
-| `docs/ai-execution-rules.md` | **AI 自驱动行为规则** | 定义了执行循环、分批评审、并行策略、验证步骤 |
-| `docs/batch-protocol.md` | 产线设计概览（给人看） | 配合 ai-execution-rules.md 使用 |
-| `docs/migration-tracker.csv` | **唯一任务队列+进度** | AI 每次启动从 CSV 读待办、完成后写回 |
-| `docs/file-mapping.md` | 基础设施映射参考（22 项）+ 文件夹结构 | 按需 |
-| `docs/ai-execution-rules.md` | **AI 自驱动行为规则 + 7 维审计 Prompt + 全量审计结果** | 任务时必读 |
-| `docs/throw-matrix.md` | 异常抛出对照表 | 第 7 维审计（Exception throw parity）依据 |
-
-> ✅ **成功经验**：`ai-execution-rules.md` + `migration-tracker.csv` 组合已证明可让 AI 无人干预下自驱执行 523 行迁移。
-
----
-
-## 三、方法论与参考（需要时查阅，不常更新）
-
-| 文件 | 用途 | 更新频率 |
-|------|------|---------|
-| `docs/migration-methodology.md` | **迁移方法论（最终版）** | 低（方法论定型后少改） |
-| `docs/superpowers/fastapi-migration-roadmap.md` | 原始路线图（含阶段依赖+经验教训） | 低（作为历史参考保留） |
-| `docs/migration-plan-complete.md` | 迁移计划（含完成度评估） | ⚠️ 内容已过时，待更新 |
-| `docs/architecture/*.md` | 容器架构/CAD转换/数据管理 | 按需（架构变更时） |
-| `docs/reference/*.md` | REST API/认证/用户手册 | 按需 |
-| `docs/setup/*.md` | 部署运维操作手册 | 按需 |
-| `docs/issues/known-issues.md` | 已知 Bug 追踪 | 发现/修复 bug 时 |
+| 目录/文件 | 用途 |
+|-----------|------|
+| `architecture/containers.md` | 容器架构、端口、数据卷 |
+| `architecture/3d-visualization.md` · `3d-preview-pipeline.md` | 3D 预览 / CAD 转换机制 |
+| `architecture/assembly-position.md` | 装配体位置 / cadInstances |
+| `architecture/data-management.md` | 数据管理、vault 结构 |
+| `architecture/gltf-migration-plan.md` | STEP→glTF 迁移方案（🟢 **已完成**，实施结果见 3d-preview-pipeline.md） |
+| `architecture/conversion-service-python-migration-plan.md` | 转换服务 Java→Python 方案（🟡 **待评审，未实施**） |
+| `reference/rest-api.md` | REST API 参考 |
+| `reference/auth-and-accounts.md` | 认证与账号 |
+| `reference/user-manual.md` · `3d-preview-tuning.md` | 用户手册 / 3D 调优 |
+| `setup/deployment-wsl2-docker.md` · `linux-ops-guide.md` | 部署与运维 |
+| `migration/methodology.md` | 迁移方法论（7 维审计 + 文件映射法，前端迁移可复用） |
+| `migration/README.md` | 迁移专题目录说明 |
 
 ---
 
-## 四、已过时文件（归档或删除候选）
+## 四、🗄️ 归档（历史追溯，勿作为当前依据）
 
-| 文件 | 原因 | 建议 |
-|------|------|------|
-| `docs/superpowers/plans/*.md` (8个) | 2026-07-04~06 阶段计划，执行完毕 | 归档到 `docs/superpowers/archive/` |
-| `docs/superpowers/specs/*.md` (7个) | 2026-07-04~06 设计文档，执行完毕 | 归档到 `docs/superpowers/archive/` |
-| `docs/batch-protocol.md` | 内容已被 ai-execution-rules.md 覆盖 | 保留作为给人看的概览 |
+| 目录 | 内容 |
+|------|------|
+| `migration/tracker.csv` | 523 条后端迁移施工记录（只读，已 100% 完成） |
+| `superpowers/archive/migration-process/` | 施工期工具文档：ai-execution-rules、batch-protocol、file-mapping、throw-matrix、migration-plan-complete、audit-report、fastapi-migration-roadmap |
+| `superpowers/archive/handoffs/` | 会话交接快照（handoff-2026-07-08.md 等） |
+| `superpowers/archive/plans/` · `specs/` | 已执行完毕的阶段计划与设计文档 |
 
----
-
-## 五、推荐 AI 阅读顺序
-
-当用户说"执行迁移"或"开始修复"时，AI 按此顺序读：
-
-```
-1. docs/ai-execution-rules.md      ← 怎么执行
-2. docs/migration-tracker.csv      ← 做什么（任务队列）
-3. docs/REMINDERS.md               ← 当前待办/阻塞
-4. docs/file-mapping.md L108-136   ← 审计 prompt 模板
-5. docs/throw-matrix.md            ← 异常对齐参考
-```
-
-如果涉及架构变更：额外读 `docs/architecture/*.md`。
-如果涉及 i18n/异常：额外读 `docs/migration-methodology.md`。
+> 归档文档顶部均有 🗄️ banner，文中 `docs/xxx.md` 旧路径可能已失效，以本索引为准。
 
 ---
 
-## 六、文件依赖关系
+## 五、superpowers 规范目录
 
-```
-docs/batch-protocol.md (给人看)
-  └─ docs/ai-execution-rules.md (给AI看)
-       ├─ docs/migration-tracker.csv (任务队列)
-       ├─ docs/file-mapping.md (审计模板)
-       ├─ docs/throw-matrix.md (异常参考)
-       ├─ docs/CHANGELOG.md (写)
-       ├─ docs/REMINDERS.md (写)
-       └─ docs/audit-report.md (写)
+| 目录 | 用途 |
+|------|------|
+| `superpowers/plans/` | **新**实现计划存放处（`YYYY-MM-DD-<feature>.md`，writing-plans skill 规范） |
+| `superpowers/specs/` | **新**设计文档存放处 |
+| `superpowers/archive/` | 上述执行完毕后归档至此 |
 
-docs/migration-methodology.md (方法论总纲)
-  └─ docs/superpowers/fastapi-migration-roadmap.md (历史路线图)
+---
+
+## 六、文档维护规则（会话收尾必做）
+
+完成任务后按 `.opencode/instructions.md` 要求：
+1. 更新 `CHANGELOG.md`（当天日期条目）
+2. 更新 `REMINDERS.md`（已解决移出待办、新增阻塞）
+3. 同步相关文档：改架构→`architecture/`；修 bug→`issues/known-issues.md`；迁移收尾→`migration/loose-ends.md`（勾选）
