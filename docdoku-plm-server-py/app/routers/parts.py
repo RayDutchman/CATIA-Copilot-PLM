@@ -369,8 +369,8 @@ def _run_custom_query(db, workspace_id, body, request, login):
     return build_query_result_rows(rows, body, db)
 
 
-@router.post("/workspaces/{workspace_id}/parts/queries")
-@router.post("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
+@router.post("/workspaces/{workspace_id}/parts/queries", response_model=list)
+@router.post("/workspaces/{workspace_id}/parts/queries/", response_model=list, include_in_schema=False)
 def post_workspace_query(workspace_id: str,
                          request: Request,
                          body: dict = Body(...),
@@ -582,11 +582,12 @@ def post_import(workspace_id: str,
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            tmp.write(data)
             file_path = tmp.name
+            tmp.write(data)
 
-        create_import(db, import_id, filename, current_user.login, workspace_id)
+        # 先算权限，避免 _query_admin_flag 抛错时留下 pending 孤儿导入记录
         is_admin = _query_admin_flag(db, workspace_id, current_user.login)
+        create_import(db, import_id, filename, current_user.login, workspace_id)
 
         try:
             if importType == "attributes":
@@ -645,8 +646,8 @@ def post_import_preview(workspace_id: str,
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            tmp.write(data)
             file_path = tmp.name
+            tmp.write(data)
 
         is_admin = _query_admin_flag(db, workspace_id, current_user.login)
 

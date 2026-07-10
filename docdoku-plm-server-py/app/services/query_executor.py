@@ -3,6 +3,7 @@
 将前端 QueryRule 树编译为参数化 SQL 的 WHERE 片段，执行后按权限/检入状态后过滤，
 返回 PartRevision ORM 列表供 part_mapper.map_revision 映射为 DTO。
 """
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import text
@@ -13,6 +14,15 @@ from app.services.factory.acl_factory import check_read_access
 
 # 版本状态字符串 → 整数（对齐 partrevision.status: 0=WIP/1=RELEASED/2=OBSOLETE）
 _STATUS_MAP = {"WIP": 0, "RELEASED": 1, "OBSOLETE": 2}
+
+# 合法 SQL 标识符（列名）白名单正则：字段前缀去除后的子名需匹配，
+# 防止用户自定义 field 的列名部分被拼入 SQL 造成注入（值始终走绑定参数）。
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_ident(name):
+    """校验列名子串是否为安全 SQL 标识符（仅字母/数字/下划线，首字符非数字）。"""
+    return bool(name) and bool(_IDENT_RE.match(name))
 
 # 属性字段前缀 → (dtype 判别值, instanceattribute 值列名, 值类型)
 # dtype 判别值对齐 product_structure._DTYPE_TO_TYPE 的键（EclipseLink 单表继承类名）
@@ -164,7 +174,9 @@ def _pr_leaf(sub, operator, rtype, values, params):
         return _cmp("pr.creationdate", operator, "date", values, params)
     if sub == "version":
         return _cmp("pr.version", operator, "string", values, params)
-    # 其他 pr 列名按 rule.type 直译
+    # 其他 pr 列名按 rule.type 直译（列名白名单校验，非法则恒真跳过）
+    if not _safe_ident(sub):
+        return "1=1"
     vtype = {"double": "double", "date": "date", "status": "status"}.get(rtype, "string")
     return _cmp(f"pr.{sub.lower()}", operator, vtype, values, params)
 
@@ -182,7 +194,12 @@ def _leaf_predicate(rule, params):
             "number": "pm.partnumber", "name": "pm.name",
             "type": "pm.type", "standardPart": "pm.standardpart",
         }
-        col = col_map.get(sub, f"pm.{sub.lower()}")
+        col = col_map.get(sub)
+        if col is None:
+            # 未知 pm 子字段：列名白名单校验，非法则恒真跳过
+            if not _safe_ident(sub):
+                return "1=1"
+            col = f"pm.{sub.lower()}"
         vtype = "boolean" if sub == "standardPart" else "string"
         return _cmp(col, operator, vtype, values, params)
 
