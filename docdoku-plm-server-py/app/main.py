@@ -197,9 +197,13 @@ app.include_router(virtual_instance_collection.router)
 app.include_router(dev_router.router)
 
 
-@app.websocket("/ws")
-async def ws_endpoint(websocket):
-    """WebSocket 端点 /ws（对标 WebSocketApplication @ServerEndpoint("/ws")）。"""
+@app.websocket("/docdoku-plm-server-rest/ws")
+async def ws_endpoint(websocket: WebSocket):
+    """WebSocket 端点（对标 WebSocketApplication @ServerEndpoint("/ws")）。
+
+    前端/nginx 实际访问路径为 /docdoku-plm-server-rest/ws（不带 /api 前缀），
+    故此处注册完整路径，否则 Starlette 无匹配路由 → 握手被关闭（表现为 403）。
+    """
     from app.ws.endpoint import handle_websocket
     await handle_websocket(websocket)
 
