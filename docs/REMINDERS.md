@@ -6,7 +6,7 @@
 
 ## 待办
 
-> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限/Baseline/LOV/export-files SQL 修复合集。**剩余 2 个功能域**：① Importer 导入 ② Query 执行引擎。本文件只保留**跨领域非迁移**待办。
+> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限/Baseline/LOV/export-files SQL 修复合集，并**新增 Query 自定义查询执行引擎（分支 feat/py-query-execution-engine）**。**剩余功能域**：① Importer 导入（下一项）。本文件只保留**跨领域非迁移**待办。
 
 ### 高优先级
 
@@ -52,6 +52,11 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **2026-07-10 Query 执行引擎**（分支 feat/py-query-execution-engine）:
+  - 查询保存（递归 queryrule 树）+ PartRevision 执行器（前缀路由/operator/属性 EXISTS）
+  - PathData 执行器（pd-attr-\*）+ context PBS 过滤 + mergeRows + QueryResult 序列化
+  - runCustomQuery 端点（run/save/export）；pytest 189 passed（+22）；docker cp 部署 + 线上冒烟通过
 
 - [x] **2026-07-10 全量修复合集**（67 文件，c668d31）:
   - PathData/P2P 域完整实现（18 端点 + Service + DFS 环检测）

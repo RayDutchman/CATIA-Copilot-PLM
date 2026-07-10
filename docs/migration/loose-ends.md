@@ -77,12 +77,20 @@
 
 ---
 
-## 三、🟠 P1 — Query 执行引擎
+## 三、✅ P1 — Query 执行引擎（2026-07-10 完成）
 
-| 项 | 位置 | 说明 | 工作量 |
-|----|------|------|--------|
-| **查询执行** | `parts.py` `post_workspace_query`/`post_queries` | Java `runCustomQuery`：递归 QueryRule 树→动态 SQL。当前 = 重名检查 `{"id":0}` | 大 |
-| **查询保存** | 同上 | 递归 rule 树序列化写入 DB（selects/orderBy/contexts） | 中 |
+**已完成**（分支 `feat/py-query-execution-engine`，对齐 Payara `PartRevisionQueryDAO`/`PathDataQueryDAO`/`ProductManagerBean`）：
+
+| 项 | 状态 | 实现 |
+|----|------|------|
+| **查询保存** | ✅ | `_save_query`/`_save_query_rule`（递归 queryrule 树 + 子表 + 序列 ID + 同名去重） |
+| **PartRevision 执行** | ✅ | `app/services/query_executor.py`（11 前缀路由 + operator + date 区间 + pr.\* 特殊 + 属性 EXISTS + 权限/检入后过滤） |
+| **PathData 执行** | ✅ | `run_pathdata_query`（pd-attr-\* + 产品实例路径集合） |
+| **context PBS 过滤** | ✅ | `app/services/query_pbs.py`（PSFilterVisitor 遍历 + QueryResultRow + P2P + mergeRows） |
+| **QueryResult 序列化** | ✅ | `app/schemas/query_result.py`（按 selects 输出 JSON 数组） |
+| **runCustomQuery 端点** | ✅ | `POST /workspaces/{ws}/parts/queries`（run+save+export） |
+
+> 遗留小项（非阻塞）：① 签出隐藏（checkout-by-other 的末迭代 DTO 隐藏）在查询结果路径未做，避免 DetachedInstanceError，其他路径已有保护；② `export=XLS` 由既有 `query-export` GET 端点服务，POST 端点 XLS 返回 JSON 数组；③ pytest 全量 189 passed，仅 10 个预存 seed 数据失败。
 
 ---
 

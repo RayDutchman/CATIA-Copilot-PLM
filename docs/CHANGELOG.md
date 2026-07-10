@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-10 — Query 自定义查询执行引擎（FastAPI）
+
+> 分支 `feat/py-query-execution-engine`。对齐 Payara `PartRevisionQueryDAO` / `PathDataQueryDAO` / `ProductManagerBean` / `QueryResultMessageBodyWriter`。全量 pytest 189 passed（+22 新测试）/ 10 预存 seed 失败 / 1 skipped，无回归；docker cp 部署 back-py 并线上冒烟通过。
+
+- feat(py-query): 查询保存 `_save_query`/`_save_query_rule`（`app/routers/parts.py`）——递归写入 queryrule 树 + queryrule_values + selects/orderBy/groupedBy + querycontext，同名先删除，ID 走序列 `nextval`；抽出可复用 `_delete_query_by_id`
+- feat(py-query): PartRevision 查询执行器（`app/services/query_executor.py`）——QueryRule 树递归 AND/OR、11 种 field 前缀路由（pm./pr./author./attr-{TEXT,LONG_TEXT,DATE,BOOLEAN,URL,NUMBER,LOV,PART_NUMBER}.）、全量 operator 映射、date equal 展开日区间、pr.* 特殊字段（checkInDate/modificationDate 末迭代约束、status 枚举、tags join、linkedDocuments 恒真）、属性 EXISTS 子查询按需 join（优于 Java 无条件 cross join）、后过滤（已检入迭代 + `check_read_access`）
+- feat(py-query): PathData 查询执行器 `run_pathdata_query`（pd-attr-\* 前缀，挂 pathdataiteration_attribute，按产品实例迭代路径集合过滤，返回 path 集合）
+- feat(py-query): context PBS 过滤（`app/services/query_pbs.py`）——按 QueryContext 用 PSFilterVisitor 遍历装配结构，构建 QueryResultRow（depth/amount/path/P2P sources·targets/context），应用 pathDataQueryRule 过滤；`merge_rows` 取 PBS ∩ PartRevision 结果交集
+- feat(py-query): QueryResult 序列化（`app/schemas/query_result.py`）——按 `selects` 输出 JSON 行数组，pr.partKey 恒输出，attr-\*/pd-attr-\* 始终数组，ctx.\* 仅 context 行
+- feat(py-query): `POST /workspaces/{ws}/parts/queries` runCustomQuery 端点真实化（run + `?save=` 保存 + `?export=` JSON/CSV(400)），替换原 `{"id":0}` 桩
+
+---
+
 ## 2026-07-09 — deps 访问控制 + 基线校验 + 错误收集工具
 
 ### deps.py 工作区访问控制修复
