@@ -291,6 +291,21 @@ class TestMergeLov:
         result = merge_attributes(db, self.WS, [], parsed, "P010", errors)
         assert len(errors) == 1
         assert "LovValueNotFound" in errors[0]
+        assert "P010" in errors[0]
+        assert not errors[0].startswith("ConversionError")
+        assert len(result) == 0
+
+    def test_lov_missing_name(self, db):
+        parsed = [
+            ParsedAttribute(name="Color", type="LOV", value="Red",
+                           lov_name=None),
+        ]
+        errors: list[str] = []
+        result = merge_attributes(db, self.WS, [], parsed, "P011", errors)
+        assert len(errors) == 1
+        assert "LovValueNotFound" in errors[0]
+        assert "P011" in errors[0]
+        assert "has no LOV name" in errors[0]
         assert len(result) == 0
 
 

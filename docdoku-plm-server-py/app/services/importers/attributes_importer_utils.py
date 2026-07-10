@@ -144,8 +144,8 @@ def merge_attributes(db, workspace_id: str,
     - available = list(existing) 用于匹配去重，命中即移除
     - 更新模式（attribute_id != None）：在 available 找 name+type 相同者 → 更新 value
     - 新建模式（attribute_id == None）：在 available 找不到 → append；找到 → DuplicateEntry
-    - LOV 值走 resolve_lov_index
-    - 值转换失败（ValueError）记 error 并跳过该属性
+    - LOV 值走 resolve_lov_index（lov_name 缺失或值不存在记 LovValueNotFound，不用 ConversionError 包装）
+    - 非 LOV 类型值转换失败（ValueError）记 ConversionError 并跳过该属性
     """
     result = list(existing)
     available = list(existing)  # 同一对象引用，修改 result 中的对象也反映在 available
@@ -166,13 +166,10 @@ def merge_attributes(db, workspace_id: str,
                     f"attribute '{pa.name}' <{pa.type}>"
                 )
                 continue
-            try:
-                new_val = _resolve_value(db, workspace_id, pa)
-            except ValueError as e:
-                errors.append(
-                    f"ConversionError: part '{part_number}' "
-                    f"attribute '{pa.name}' <{pa.type}> value '{pa.value}': {e}"
-                )
+            new_val = _resolve_value_safe(
+                db, workspace_id, pa, part_number, errors,
+            )
+            if new_val is _SENTINEL_ERROR:
                 continue
             match.value = new_val
             available.remove(match)
@@ -184,13 +181,10 @@ def merge_attributes(db, workspace_id: str,
                     f"attribute '{pa.name}' <{pa.type}>"
                 )
                 continue
-            try:
-                new_val = _resolve_value(db, workspace_id, pa)
-            except ValueError as e:
-                errors.append(
-                    f"ConversionError: part '{part_number}' "
-                    f"attribute '{pa.name}' <{pa.type}> value '{pa.value}': {e}"
-                )
+            new_val = _resolve_value_safe(
+                db, workspace_id, pa, part_number, errors,
+            )
+            if new_val is _SENTINEL_ERROR:
                 continue
             result.append(MergedAttribute(
                 name=pa.name,
@@ -201,20 +195,43 @@ def merge_attributes(db, workspace_id: str,
     return result
 
 
-def _resolve_value(db, workspace_id: str, pa) -> object:
-    """根据属性类型和 lov_name 解析最终值。
+# 哨兵对象，标记 _resolve_value_safe 遇到错误（已记入 errors）
+_SENTINEL_ERROR = object()
 
-    非 LOV：调用 convert_value；LOV：调用 resolve_lov_index。
-    Raises ValueError: 值格式错误或 LOV 值不存在。
+
+def _resolve_value_safe(db, workspace_id: str, pa,
+                        part_number: str, errors: list[str]) -> object:
+    """解析属性值，区分 LOV 错误和普通转换错误。
+
+    LOV 值不存在或 lov_name 缺失 → 直接向 errors 追加 LovValueNotFound，返回哨兵。
+    非 LOV 类型转换失败 → 向 errors 追加 ConversionError，返回哨兵。
+    成功 → 返回解析后的值（int 索引 / str / float / datetime / bool）。
     """
-    if pa.type == "LOV" and pa.lov_name:
+    if pa.type == "LOV":
+        if not pa.lov_name:
+            errors.append(
+                f"LovValueNotFound: part '{part_number}' "
+                f"attribute '{pa.name}' has no LOV name"
+            )
+            return _SENTINEL_ERROR
         idx = resolve_lov_index(db, workspace_id, pa.lov_name, pa.value)
         if idx is None:
-            raise ValueError(f"LovValueNotFound: part '{pa.lov_name}' "
-                             f"value '{pa.value}' not found in LOV list")
+            errors.append(
+                f"LovValueNotFound: part '{part_number}' "
+                f"attribute '{pa.name}' value '{pa.value}' "
+                f"not found in LOV '{pa.lov_name}'"
+            )
+            return _SENTINEL_ERROR
         return idx
 
-    return convert_value(pa.type, pa.value)
+    try:
+        return convert_value(pa.type, pa.value)
+    except ValueError as e:
+        errors.append(
+            f"ConversionError: part '{part_number}' "
+            f"attribute '{pa.name}' <{pa.type}> value '{pa.value}': {e}"
+        )
+        return _SENTINEL_ERROR
 
 
 # ── dry-run 判断 ───────────────────────────────────────────────────────────
