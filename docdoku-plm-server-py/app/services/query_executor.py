@@ -219,6 +219,79 @@ def build_part_where(rule, params, joins=None):
     return _leaf_predicate(rule, params)
 
 
+# PathData 属性前缀（pd-attr-*）复用同一组 (dtype, 值列, 值类型)
+_PD_ATTR_PREFIXES = {"pd-" + k: v for k, v in _ATTR_PREFIXES.items()}
+
+
+def _pd_attr_exists(prefix, field, operator, values, params):
+    """PathData 属性叶子 → EXISTS 子查询（挂 pathdataiteration_attribute）。"""
+    dtype, valcol, vtype = _PD_ATTR_PREFIXES[prefix]
+    attr_name = field[len(prefix):]
+    dtype_key = f"p{len(params)}"
+    params[dtype_key] = dtype
+    name_key = f"p{len(params)}"
+    params[name_key] = attr_name
+    inner = _cmp(f"ia.{valcol}", operator, vtype, values, params)
+    return (
+        "EXISTS (SELECT 1 FROM pathdataiteration_attribute pda "
+        "JOIN instanceattribute ia ON ia.id = pda.instanceattribute_id "
+        "WHERE pda.pathdatamaster_id = pdm.id AND pda.pathdata_iteration = pdi.iteration "
+        f"AND ia.dtype = :{dtype_key} AND ia.name = :{name_key} AND {inner})"
+    )
+
+
+def _pd_leaf(rule, params):
+    field = rule.get("field") or ""
+    for prefix in _PD_ATTR_PREFIXES:
+        if field.startswith(prefix):
+            return _pd_attr_exists(prefix, field, rule.get("operator"),
+                                   rule.get("values") or [], params)
+    return "1=1"
+
+
+def build_pathdata_where(rule, params):
+    """递归编译 PathData QueryRule 树（对齐 PathDataQueryDAO.getPredicate）。"""
+    if rule is None:
+        return "1=1"
+    sub_rules = rule.get("rules") or []
+    if sub_rules:
+        cond = (rule.get("condition") or "AND").upper()
+        joiner = " OR " if cond == "OR" else " AND "
+        parts = [build_pathdata_where(r, params) for r in sub_rules]
+        parts = [p for p in parts if p and p != "1=1"] or ["1=1"]
+        return "(" + joiner.join(parts) + ")"
+    return _pd_leaf(rule, params)
+
+
+def run_pathdata_query(db: Session, pii_key: dict, pathdata_rule: dict) -> set:
+    """执行 PathData 查询，返回匹配的 path 字符串集合（对齐 PathDataQueryDAO.runQuery）。
+
+    pii_key: {workspace_id, configurationitem_id, serialnumber, iteration}
+    先取该产品实例迭代下所有 pathdatamaster，再按 pd-attr-* 规则过滤。
+    """
+    from sqlalchemy import bindparam
+
+    path_rows = db.execute(text(
+        "SELECT pathdatamaster_id FROM prdinstiteration_pathdatamstr "
+        "WHERE workspace_id = :ws AND configurationitem_id = :ci "
+        "AND prdinstancemaster_serialnumber = :sn AND prdinstanceiteration_iteration = :it"
+    ), {"ws": pii_key["workspace_id"], "ci": pii_key["configurationitem_id"],
+        "sn": pii_key["serialnumber"], "it": pii_key["iteration"]}).fetchall()
+    path_ids = [r[0] for r in path_rows]
+    if not path_ids:
+        return set()
+    params = {"__ids": path_ids}
+    where = build_pathdata_where(pathdata_rule, params)
+    sql = (
+        "SELECT DISTINCT pdm.path FROM pathdatamaster pdm "
+        "JOIN pathdataiteration pdi ON pdi.pathdatamaster_id = pdm.id "
+        "WHERE pdm.id IN :__ids AND (" + where + ")"
+    )
+    stmt = text(sql).bindparams(bindparam("__ids", expanding=True))
+    rows = db.execute(stmt, params).fetchall()
+    return {r[0] for r in rows}
+
+
 def run_part_query(db: Session, workspace_id: str, query: dict,
                    user_login: str, is_admin: bool) -> list:
     """执行 PartRevision 查询：编译 WHERE → 查主键 → 加载 ORM → 权限/检入后过滤。
