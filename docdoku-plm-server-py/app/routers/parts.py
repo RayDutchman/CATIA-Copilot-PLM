@@ -1,6 +1,8 @@
 """零件集合路由（PartsResource）。"""
 import uuid
-from fastapi import APIRouter, Depends, Query, Body, Request
+import tempfile
+import os
+from fastapi import APIRouter, Depends, Query, Body, Request, UploadFile, File, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
@@ -10,6 +12,12 @@ from app.models.auth import Account
 from app.models.part import PartRevision, PartIteration, part_revision_tags
 from app.schemas.part import (
     PartRevisionDTO, PartCreationDTO, CountDTO, LightPartMasterDTO,
+)
+from app.schemas.import_ import ImportDTO
+from app.schemas.import_preview import ImportPreviewDTO
+from app.services.importer import importer_service
+from app.services.importers.import_record import (
+    create_import, complete_import, get_import, list_imports, delete_import_record,
 )
 from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision
@@ -526,45 +534,158 @@ def query_export(request: Request,
 # ── imports ────────────────────────────────────────────────────
 
 @router.get("/workspaces/{workspace_id}/parts/imports/{filename}",
-            response_model=dict)
+            response_model=list[ImportDTO])
 @router.get("/workspaces/{workspace_id}/parts/imports/{filename}/",
-            response_model=dict, include_in_schema=False)
+            response_model=list[ImportDTO], include_in_schema=False)
 def imports_get(workspace_id: str, filename: str,
-                current_user: Account = Depends(get_current_user)):
-    return {}
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """列出某 workspace 下指定 filename 的所有导入记录。"""
+    return list_imports(db, user_workspace_id=workspace_id, filename=filename)
 
 
 @router.get("/workspaces/{workspace_id}/parts/import/{import_id}",
-            response_model=dict)
+            response_model=ImportDTO)
 @router.get("/workspaces/{workspace_id}/parts/import/{import_id}/",
-            response_model=dict, include_in_schema=False)
+            response_model=ImportDTO, include_in_schema=False)
 def import_get(workspace_id: str, import_id: str,
-               current_user: Account = Depends(get_current_user)):
-    return {}
+               current_user: Account = Depends(get_current_user),
+               db: Session = Depends(get_db)):
+    """按 id 读取单条导入记录。不存在返回 404。"""
+    dto = get_import(db, import_id)
+    if dto is None:
+        raise HTTPException(status_code=404, detail=f"Import {import_id} not found")
+    return dto
 
 
-@router.post("/parts/import",
-             status_code=201, response_model=dict)
-@router.post("/parts/import/",
-             status_code=201, response_model=dict, include_in_schema=False)
-def post_import(body: dict = Body(...),
-                current_user: Account = Depends(get_current_user)):
-    import_id = f"import-{uuid.uuid4().hex[:12]}"
-    return {"id": import_id}
+@router.post("/workspaces/{workspace_id}/parts/import",
+             status_code=204)
+@router.post("/workspaces/{workspace_id}/parts/import/",
+             status_code=204, include_in_schema=False)
+def post_import(workspace_id: str,
+                upload: UploadFile = File(...),
+                autoCheckout: bool = Query(False),
+                autoCheckin: bool = Query(False),
+                permissiveUpdate: bool = Query(False),
+                revisionNote: str = Query(""),
+                importType: str = Query(...),
+                current_user: Account = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """批量导入 excel 属性/BOM 数据。返回 204，通过 GET imports/{filename} 轮询结果。"""
+    if importType not in ("attributes", "bom"):
+        raise HTTPException(status_code=400, detail=f"Invalid importType: {importType}")
+
+    data = upload.file.read()
+    filename = upload.filename
+    import_id = uuid.uuid4().hex
+    file_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(data)
+            file_path = tmp.name
+
+        create_import(db, import_id, filename, current_user.login, workspace_id)
+        is_admin = _query_admin_flag(db, workspace_id, current_user.login)
+
+        try:
+            if importType == "attributes":
+                result = importer_service.import_into_parts(
+                    db, workspace_id, file_path, filename,
+                    user_login=current_user.login, is_admin=is_admin,
+                    revision_note=revisionNote,
+                    auto_checkout=autoCheckout,
+                    auto_checkin=autoCheckin,
+                    permissive_update=permissiveUpdate,
+                )
+            else:
+                result = importer_service.import_bom(
+                    db, workspace_id, file_path, filename,
+                    user_login=current_user.login, is_admin=is_admin,
+                    revision_note=revisionNote,
+                    auto_checkout=autoCheckout,
+                    auto_checkin=autoCheckin,
+                    permissive_update=permissiveUpdate,
+                )
+            complete_import(db, import_id,
+                            result.get("succeed", False),
+                            result.get("errors", []),
+                            result.get("warnings", []))
+        except Exception as e:
+            complete_import(db, import_id, False, [str(e)], [])
+    finally:
+        if file_path:
+            try:
+                os.unlink(file_path)
+            except OSError:
+                pass
+
+    return Response(status_code=204)
 
 
-@router.post("/parts/importPreview",
-             status_code=201, response_model=dict)
-@router.post("/parts/importPreview/",
-             status_code=201, response_model=dict, include_in_schema=False)
-def post_import_preview(body: dict = Body(...),
-                        current_user: Account = Depends(get_current_user)):
-    import_id = f"import-{uuid.uuid4().hex[:12]}"
-    return {"id": import_id}
+@router.post("/workspaces/{workspace_id}/parts/importPreview",
+             response_model=ImportPreviewDTO)
+@router.post("/workspaces/{workspace_id}/parts/importPreview/",
+             response_model=ImportPreviewDTO, include_in_schema=False)
+def post_import_preview(workspace_id: str,
+                        upload: UploadFile = File(...),
+                        autoCheckout: bool = Query(False),
+                        autoCheckin: bool = Query(False),
+                        permissiveUpdate: bool = Query(False),
+                        importType: str = Query(...),
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """试运行导入——返回需要 checkout 的零件列表（不写库）。"""
+    if importType not in ("attributes", "bom"):
+        raise HTTPException(status_code=400, detail=f"Invalid importType: {importType}")
+
+    data = upload.file.read()
+    filename = upload.filename
+    file_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(data)
+            file_path = tmp.name
+
+        is_admin = _query_admin_flag(db, workspace_id, current_user.login)
+
+        if importType == "attributes":
+            result = importer_service.dry_run_import_into_parts(
+                db, workspace_id, file_path, filename,
+                user_login=current_user.login, is_admin=is_admin,
+                auto_checkout=autoCheckout,
+                auto_checkin=autoCheckin,
+                permissive_update=permissiveUpdate,
+            )
+        else:
+            result = importer_service.dry_run_import_bom(
+                db, workspace_id, file_path, filename,
+                user_login=current_user.login, is_admin=is_admin,
+                auto_checkout=autoCheckout,
+                auto_checkin=autoCheckin,
+                permissive_update=permissiveUpdate,
+            )
+
+        return ImportPreviewDTO(
+            partRevsToCheckout=result.get("partRevsToCheckout", []),
+            partsToCreate=result.get("partsToCreate", []),
+        )
+    finally:
+        if file_path:
+            try:
+                os.unlink(file_path)
+            except OSError:
+                pass
 
 
-@router.delete("/parts/import/{import_id}", status_code=204)
-@router.delete("/parts/import/{import_id}/", status_code=204, include_in_schema=False)
-def delete_import(import_id: str,
-                  current_user: Account = Depends(get_current_user)):
+@router.delete("/workspaces/{workspace_id}/parts/import/{import_id}",
+               status_code=204)
+@router.delete("/workspaces/{workspace_id}/parts/import/{import_id}/",
+               status_code=204, include_in_schema=False)
+def delete_import(workspace_id: str, import_id: str,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """删除导入记录及其子表。"""
+    delete_import_record(db, import_id)
     return Response(status_code=204)
