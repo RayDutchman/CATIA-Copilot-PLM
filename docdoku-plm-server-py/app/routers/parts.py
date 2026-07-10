@@ -376,25 +376,28 @@ def delete_query(query_id: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     """删除已保存的查询及其关联记录（对齐 Java deleteQuery）。"""
-    from sqlalchemy import text
     try:
         qid = int(query_id)
     except (TypeError, ValueError):
         return Response(status_code=204)
-    q = db.execute(text(
-        "SELECT queryrule_id, pathdata_queryrule_id FROM query WHERE id = :q"
-    ), {"q": qid}).fetchone()
-    if not q:
-        return Response(status_code=204)
-    # 先删关联子表
-    for tbl in ("query_selects", "query_order_by", "query_grouped_by", "querycontext"):
-        db.execute(text(f"DELETE FROM {tbl} WHERE query_id = :q"), {"q": qid})
-    db.execute(text("DELETE FROM query WHERE id = :q"), {"q": qid})
-    # 再递归删 queryrule 树
-    for root_rule in (q[0], q[1]):
-        _delete_query_rule(db, root_rule)
+    _delete_query_by_id(db, qid)
     db.commit()
     return Response(status_code=204)
+
+
+def _delete_query_by_id(db, query_id):
+    """按 id 删除查询及其所有子表 + queryrule 树（供 _save_query 复用）。"""
+    from sqlalchemy import text
+    q = db.execute(text(
+        "SELECT queryrule_id, pathdata_queryrule_id FROM query WHERE id = :q"
+    ), {"q": query_id}).fetchone()
+    if not q:
+        return
+    for tbl in ("query_selects", "query_order_by", "query_grouped_by", "querycontext"):
+        db.execute(text(f"DELETE FROM {tbl} WHERE query_id = :q"), {"q": query_id})
+    db.execute(text("DELETE FROM query WHERE id = :q"), {"q": query_id})
+    for root_rule in (q[0], q[1]):
+        _delete_query_rule(db, root_rule)
 
 
 def _delete_query_rule(db, rule_id):
@@ -409,6 +412,66 @@ def _delete_query_rule(db, rule_id):
         _delete_query_rule(db, c[0])
     db.execute(text("DELETE FROM queryrule_values WHERE queryrule_id = :q"), {"q": rule_id})
     db.execute(text("DELETE FROM queryrule WHERE qid = :q"), {"q": rule_id})
+
+
+def _save_query_rule(db, rule):
+    """递归写入 queryrule 树，返回根 qid（对齐 Java QueryDAO.persistQueryRules）。"""
+    if rule is None:
+        return None
+    from sqlalchemy import text
+    qid = db.execute(text("SELECT nextval('queryrule_qid_seq')")).scalar()
+    db.execute(text(
+        "INSERT INTO queryrule (qid, cond, field, id, operator, type, parent_query_rule) "
+        "VALUES (:qid, :cond, :field, :rid, :op, :type, NULL)"
+    ), {"qid": qid, "cond": rule.get("condition"), "field": rule.get("field"),
+        "rid": rule.get("id"), "op": rule.get("operator"), "type": rule.get("type")})
+    for i, v in enumerate(rule.get("values") or []):
+        db.execute(text(
+            "INSERT INTO queryrule_values (queryrule_id, value, value_order) "
+            "VALUES (:q, :v, :o)"
+        ), {"q": qid, "v": str(v), "o": i})
+    for child in rule.get("rules") or []:
+        child_qid = _save_query_rule(db, child)
+        db.execute(text("UPDATE queryrule SET parent_query_rule=:p WHERE qid=:c"),
+                   {"p": qid, "c": child_qid})
+    return qid
+
+
+def _save_query(db, workspace_id, author_login, body):
+    """保存自定义查询（对齐 Java ProductManagerBean.createQuery）。同名先删除。"""
+    from sqlalchemy import text
+    name = body.get("name")
+    existing = db.execute(text(
+        "SELECT id FROM query WHERE name=:n AND author_workspace_id=:w"
+    ), {"n": name, "w": workspace_id}).fetchall()
+    for e in existing:
+        _delete_query_by_id(db, e[0])
+    rule_id = _save_query_rule(db, body.get("queryRule"))
+    pd_rule_id = _save_query_rule(db, body.get("pathDataQueryRule"))
+    qid = db.execute(text("SELECT nextval('query_id_seq')")).scalar()
+    db.execute(text(
+        "INSERT INTO query (id, name, creationdate, author_workspace_id, author_login, "
+        "queryrule_id, pathdata_queryrule_id) "
+        "VALUES (:id, :n, now(), :w, :a, :r, :pr)"
+    ), {"id": qid, "n": name, "w": workspace_id, "a": author_login,
+        "r": rule_id, "pr": pd_rule_id})
+    for s in body.get("selects") or []:
+        db.execute(text("INSERT INTO query_selects (query_id, selects) VALUES (:q,:s)"),
+                   {"q": qid, "s": s})
+    for o in body.get("orderByList") or []:
+        db.execute(text("INSERT INTO query_order_by (query_id, orderbylist) VALUES (:q,:o)"),
+                   {"q": qid, "o": o})
+    for g in body.get("groupedByList") or []:
+        db.execute(text("INSERT INTO query_grouped_by (query_id, groupedbylist) VALUES (:q,:g)"),
+                   {"q": qid, "g": g})
+    for c in body.get("contexts") or []:
+        cid = db.execute(text("SELECT nextval('querycontext_id_seq')")).scalar()
+        db.execute(text(
+            "INSERT INTO querycontext (id, configurationitemid, serialnumber, workspaceid, query_id) "
+            "VALUES (:id, :ci, :sn, :ws, :q)"
+        ), {"id": cid, "ci": c.get("configurationItemId"), "sn": c.get("serialNumber"),
+            "ws": c.get("workspaceId") or workspace_id, "q": qid})
+    return qid
 
 
 @router.get("/parts/query-export",
