@@ -139,11 +139,7 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
     }
 
 
-@router.get("/workspaces/{ws}/disk-usage", response_model=Dict[str, int])
-@router.get("/workspaces/{ws}/disk-usage/", include_in_schema=False)
-def disk_usage(ws: str, db: Session = Depends(get_db),
-               current_user: Account = Depends(get_current_user)):
-    return {"total": workspace_service.get_disk_usage(db, ws)}
+
 
 
 @router.get("/workspaces/{ws}/disk-usage-stats", response_model=DiskUsageDTO)

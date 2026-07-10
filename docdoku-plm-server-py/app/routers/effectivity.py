@@ -76,7 +76,7 @@ def get_effectivities(
     rows = db.execute(text(
         "SELECT e.* FROM effectivity e "
         "JOIN partrevision_effectivity pre ON pre.effectivity_id = e.id "
-        "WHERE pre.workspace_id = :ws "
+        "WHERE pre.partmaster_workspace_id = :ws "
         "AND pre.partmaster_partnumber = :pn "
         "AND pre.partrevision_version = :ver"
     ), {"ws": workspace_id, "pn": part_number, "ver": version}).fetchall()

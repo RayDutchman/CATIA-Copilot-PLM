@@ -192,3 +192,193 @@ def rebase_instance(ws: str, ci_id: str, sn: str,
     from fastapi.responses import Response
     return Response(status_code=204)
 
+
+# ══════════════════════════════════════════════════════════
+# PathData 端点
+# ══════════════════════════════════════════════════════════
+
+from app.services.products.path_data_service import path_data_service
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{path:path}")
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{path:path}/", include_in_schema=False)
+def get_path_data(ws: str, ci_id: str, sn: str, path: str,
+                  current_user: Account = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    """按路径字符串获取 PathDataMaster（找不到返回空 DTO，不报 404）。"""
+    master = path_data_service.get_path_data_by_path(db, ws, ci_id, sn, path)
+    if not master:
+        # 对齐 Java：找不到返回空 DTO，包含路径信息
+        return {
+            "id": None,
+            "path": path,
+            "serialNumber": sn,
+            "partLinksList": None,
+            "pathDataIterations": [],
+            "partAttributes": [],
+            "partAttributeTemplates": [],
+        }
+    return path_data_service._build_master_dict(db, ws, ci_id, sn, master["id"])
+
+
+@router.post("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{path:path}/new", status_code=201)
+@router.post("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{path:path}/new/", status_code=201, include_in_schema=False)
+def create_path_data_master(ws: str, ci_id: str, sn: str, path: str,
+                             body: dict = None,
+                             current_user: Account = Depends(get_current_user),
+                             db: Session = Depends(get_db)):
+    """创建 PathDataMaster（含首迭代）。若同路径 master 已存在则追加迭代。"""
+    body = body or {}
+    attrs = body.get("instanceAttributes", [])
+    note = body.get("iterationNote", "")
+    return path_data_service.create_path_data_master(db, ws, ci_id, sn, path, attrs, note)
+
+
+@router.post("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}", status_code=201)
+@router.post("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}/", status_code=201, include_in_schema=False)
+def add_path_data_iteration(ws: str, ci_id: str, sn: str, master_id: int,
+                             body: dict = None,
+                             current_user: Account = Depends(get_current_user),
+                             db: Session = Depends(get_db)):
+    """向已有 PathDataMaster 追加新迭代。"""
+    body = body or {}
+    attrs = body.get("instanceAttributes", [])
+    note = body.get("iterationNote", "")
+    linked_docs = body.get("linkedDocuments", [])
+    return path_data_service.add_new_path_data_iteration(
+        db, ws, ci_id, sn, master_id, attrs, note, linked_docs
+    )
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}/iterations/{iteration}")
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}/iterations/{iteration}/", include_in_schema=False)
+def update_path_data(ws: str, ci_id: str, sn: str, master_id: int, iteration: int,
+                     body: dict = None,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    """更新 PathDataIteration 的属性/备注/文档链接。"""
+    body = body or {}
+    attrs = body.get("instanceAttributes", [])
+    note = body.get("iterationNote", "")
+    linked_docs = body.get("linkedDocuments")
+    return path_data_service.update_path_data(
+        db, ws, ci_id, sn, master_id, iteration, attrs, note, linked_docs
+    )
+
+
+@router.delete("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}", status_code=204)
+@router.delete("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}/", status_code=204, include_in_schema=False)
+def delete_path_data(ws: str, ci_id: str, sn: str, master_id: int,
+                     current_user: Account = Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    """删除 PathDataMaster 及其所有迭代。"""
+    from fastapi.responses import Response
+    path_data_service.delete_path_data(db, ws, ci_id, sn, master_id)
+    return Response(status_code=204)
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}/iterations/{iteration}/files/{file_name}")
+def rename_path_data_file(ws: str, ci_id: str, sn: str, master_id: int,
+                           iteration: int, file_name: str,
+                           body: dict = None,
+                           current_user: Account = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    """重命名 PathDataIteration 附件（文件名变更）。"""
+    import os
+    from app.services.binary_storage import _vault_root
+    body = body or {}
+    new_name = body.get("name", file_name)
+    vault_dir = _vault_root() / ws / "product-instances" / sn / "pathdata" / str(master_id) / "iterations" / str(iteration)
+    old_path = vault_dir / file_name
+    new_path = vault_dir / new_name
+    try:
+        if old_path.exists():
+            old_path.rename(new_path)
+    except Exception:
+        pass  # 文件不存在时静默忽略
+    return {"name": new_name, "fullName": str(new_path)}
+
+
+@router.delete("/workspaces/{ws}/products/{ci_id}/instances/{sn}/pathdata/{master_id}/iterations/{iteration}/files/{file_name}", status_code=204)
+def delete_path_data_file(ws: str, ci_id: str, sn: str, master_id: int,
+                           iteration: int, file_name: str,
+                           current_user: Account = Depends(get_current_user),
+                           db: Session = Depends(get_db)):
+    """删除 PathDataIteration 附件。"""
+    import os
+    from fastapi.responses import Response
+    from app.services.binary_storage import _vault_root
+    vault_path = _vault_root() / ws / "product-instances" / sn / "pathdata" / str(master_id) / "iterations" / str(iteration) / file_name
+    try:
+        if vault_path.exists():
+            vault_path.unlink()
+    except Exception:
+        pass
+    return Response(status_code=204)
+
+
+# ══════════════════════════════════════════════════════════
+# PathToPathLink 实例级端点
+# ══════════════════════════════════════════════════════════
+
+from app.services.products.path_to_path_service import path_to_path_service
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/path-to-path-links-types")
+def instance_p2p_link_types(ws: str, ci_id: str, sn: str,
+                             current_user: Account = Depends(get_current_user),
+                             db: Session = Depends(get_db)):
+    """获取产品实例的所有 PathToPathLink 类型列表。"""
+    return path_to_path_service.get_link_types_for_instance(db, ws, ci_id, sn)
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/path-to-path-links")
+def instance_p2p_links(ws: str, ci_id: str, sn: str,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """获取产品实例的所有 PathToPathLink。"""
+    return path_to_path_service.get_links_for_instance(db, ws, ci_id, sn)
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/path-to-path-links/{link_id}")
+def instance_p2p_link_by_id(ws: str, ci_id: str, sn: str, link_id: int,
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    """按 ID 获取单个 PathToPathLink。"""
+    from app.core.exceptions import PathToPathLinkNotFoundException
+    link = path_to_path_service.get_link_by_id(db, link_id)
+    if not link:
+        raise PathToPathLinkNotFoundException("PathToPathLinkNotFoundException", str(link_id))
+    return link
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/path-to-path-links/source/{source_path:path}/target/{target_path:path}")
+def instance_p2p_links_by_source_target(ws: str, ci_id: str, sn: str,
+                                         source_path: str, target_path: str,
+                                         current_user: Account = Depends(get_current_user),
+                                         db: Session = Depends(get_db)):
+    """按 sourcePath + targetPath 筛选实例级 PathToPathLink。"""
+    return path_to_path_service.get_links_from_source_and_target_for_instance(
+        db, ws, ci_id, sn, source_path, target_path
+    )
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/path-to-path-links-roots/{link_type}")
+def instance_p2p_root_links(ws: str, ci_id: str, sn: str, link_type: str,
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    """获取实例级指定类型的根 PathToPathLink。"""
+    return path_to_path_service.get_root_links_for_instance(db, ws, ci_id, sn, link_type)
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/link-path-part/{path_part:path}")
+def instance_link_path_part(ws: str, ci_id: str, sn: str, path_part: str,
+                              current_user: Account = Depends(get_current_user),
+                              db: Session = Depends(get_db)):
+    """从路径字符串解析末级 PartMaster 信息。"""
+    decoded = svc.decode_path(db, ws, ci_id, path_part)
+    if not decoded:
+        return {}
+    # 返回末级 link 的 component 信息
+    last = decoded[-1] if decoded else {}
+    return last

@@ -38,6 +38,15 @@ def _baselined_documents(db: Session, baseline_id: int) -> list:
 
 def _baseline_to_dict(db: Session, r, ws: str, *, with_docs: bool = True) -> dict:
     """r 列顺序: id, name, description, type, creationdate, author_login, author_workspace_id"""
+    author_login = r[5] or ""
+    # 查 Account 表填充真实姓名
+    author_name = author_login
+    if author_login:
+        acc = db.execute(sql_text(
+            "SELECT name FROM account WHERE login = :l"
+        ), {"l": author_login}).first()
+        if acc and acc[0]:
+            author_name = acc[0]
     return {
         "id": r[0],
         "name": r[1] or "",
@@ -45,8 +54,8 @@ def _baseline_to_dict(db: Session, r, ws: str, *, with_docs: bool = True) -> dic
         "type": _baseline_type_name(r[3]),
         "creationDate": r[4].isoformat() + "Z" if r[4] else None,
         "author": {
-            "login": r[5] or "",
-            "name": r[5] or "",
+            "login": author_login,
+            "name": author_name,
             "workspaceId": r[6] or ws,
         },
         "baselinedDocuments": _baselined_documents(db, r[0]) if with_docs else [],
@@ -150,7 +159,7 @@ def create_doc_baseline(ws: str, body: dict,
         "description": body.get("description", ""),
         "type": _baseline_type_name(body.get("type", 0)),
         "creationDate": now.isoformat() + "Z",
-        "author": {"login": current_user.login, "name": current_user.login, "workspaceId": ws},
+        "author": {"login": current_user.login, "name": current_user.name or current_user.login, "workspaceId": ws},
         "baselinedDocuments": [
             {"documentMasterId": d[0], "version": d[1], "iteration": d[2]}
             for d in docs

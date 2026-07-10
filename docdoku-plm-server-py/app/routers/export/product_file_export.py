@@ -31,16 +31,16 @@ def build_product_export_zip(
             # 收集产品树中所有零件的 nativeCAD
             native_rows = db.execute(sql_text(
                 """
-                SELECT DISTINCT pi.partmaster_partnumber, br.full_name
+                SELECT DISTINCT pi.partmaster_partnumber, br.fullname
                 FROM partiteration pi
-                JOIN binaryresource br ON br.full_name = pi.nativecad_file_fullname
+                JOIN binaryresource br ON br.fullname = pi.nativecadfile_fullname
                 WHERE pi.workspace_id = :ws
-                  AND pi.nativecad_file_fullname IS NOT NULL
+                  AND pi.nativecadfile_fullname IS NOT NULL
                 """,
             ), {"ws": workspace_id}).fetchall()
 
             for row in native_rows:
-                full_name = row.full_name
+                full_name = row.fullname
                 if not full_name:
                     continue
                 file_path = vault_root / full_name
@@ -54,7 +54,7 @@ def build_product_export_zip(
         # 附件
         attach_rows = db.execute(sql_text(
             """
-            SELECT DISTINCT pi.partmaster_partnumber, br.full_name
+            SELECT DISTINCT pi.partmaster_partnumber, br.fullname
             FROM partiteration pi
             JOIN partiteration_binres pib ON (
                 pib.workspace_id = pi.workspace_id
@@ -62,13 +62,13 @@ def build_product_export_zip(
                 AND pib.partrevision_version = pi.partrevision_version
                 AND pib.iteration = pi.iteration
             )
-            JOIN binaryresource br ON br.full_name = pib.attachedfile_fullname
+            JOIN binaryresource br ON br.fullname = pib.attachedfile_fullname
             WHERE pi.workspace_id = :ws
             """,
         ), {"ws": workspace_id}).fetchall()
 
         for row in attach_rows:
-            full_name = row.full_name
+            full_name = row.fullname
             if not full_name:
                 continue
             file_path = vault_root / full_name

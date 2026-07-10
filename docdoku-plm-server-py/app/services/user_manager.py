@@ -34,6 +34,7 @@ class UserMgmtService:
             raise UserGroupAlreadyExistsException("UserGroupAlreadyExistsException", group_id)
         g = UserGroup(id=group_id, workspace_id=ws)
         db.add(g)
+        db.flush()  # 确保 usergroup 行先于 membership 写入，避免 FK 违规
         db.execute(text(
             "INSERT INTO workspaceusergroupmembership "
             "(workspace_id, member_id, member_workspace_id, readonly) "

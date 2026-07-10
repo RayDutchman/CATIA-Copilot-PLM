@@ -96,22 +96,6 @@ def get_admin(ws: str, db: Session = Depends(get_db),
             "language": r[3] or "", "workspaceId": ws}
 
 
-@router.get(f"{PREFIX}/users/{{login}}", response_model=UserDTO)
-@router.get(f"{PREFIX}/users/{{login}}/", include_in_schema=False)
-def get_user(ws: str, login: str, db: Session = Depends(get_db),
-             current_user: Account = Depends(get_current_user)):
-    acc = db.query(Account).filter(Account.login == login).first()
-    if not acc:
-        raise UserNotFoundException("UserNotFoundException", login)
-    return {
-        "login": acc.login,
-        "name": acc.name or "",
-        "email": acc.email or "",
-        "language": acc.language or "en",
-        "workspaceId": ws,
-    }
-
-
 # ============ 用户 tag 订阅 ============
 
 @router.get(f"{PREFIX}/users/{{login}}/tag-subscriptions", response_model=List[TagSubscriptionDTO])

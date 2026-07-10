@@ -94,14 +94,61 @@ class ProductStructureService:
         db.refresh(ci)
         return ci
 
+    @staticmethod
+    def parse_config_spec_str(config_spec_str: str, db: Session = None,
+                               user_login: str = None):
+        """将 configSpec 字符串解析为 ProductStructureFilter 或 ProductConfigSpec 对象。
+
+        对齐 Payara ProductManagerBean.getConfigSpec(configSpecType, workspaceId)：
+        - "latest"        → LatestCheckedInPSFilter
+        - "released"      → LatestReleasedPSFilter
+        - "wip"           → WIPPSFilter
+        - "pi-{serial}"   → 产品实例 configSpec（暂用 wip fallback）
+        - 整数字符串      → 基线 ID → ResolvedCollectionConfigSpec（需 DB 查询）
+        若无法识别则返回 None（全量遍历）。
+        """
+        if not config_spec_str:
+            return None
+        val = config_spec_str.strip().lower()
+        if val == "latest":
+            from app.services.configuration.filter.latest_checked_in_ps_filter import LatestCheckedInPSFilter
+            return LatestCheckedInPSFilter()
+        if val == "released":
+            from app.services.configuration.filter.latest_released_ps_filter import LatestReleasedPSFilter
+            return LatestReleasedPSFilter()
+        if val == "wip":
+            from app.services.configuration.filter.wip_ps_filter import WIPPSFilter
+            return WIPPSFilter(user_login=user_login or "")
+        if val.startswith("pi-"):
+            # 产品实例规格：暂用 wip fallback
+            from app.services.configuration.filter.wip_ps_filter import WIPPSFilter
+            return WIPPSFilter(user_login=user_login or "")
+        # 尝试解析为基线 ID
+        # 注意：PSFilterVisitor 需要 ProductStructureFilter（filter_part_iterations），
+        # 而 ResolvedCollectionConfigSpec 继承 ProductConfigSpec（filter_part_iteration 单数），
+        # 两者接口不匹配，不能直接传给 PSFilterVisitor。
+        # 基线 configSpec 暂用全量遍历（return None），
+        # 待实现 ProductBaselinePSFilter（继承 ProductStructureFilter）后再接入。
+        try:
+            int(config_spec_str)  # 验证是合法整数
+            # 基线 ID configSpec：降级为全量遍历（不过滤），避免接口不匹配导致 500
+            return None
+        except (ValueError, TypeError):
+            pass
+        return None
+
     def filter_product_structure(self, db: Session, ws: str, ci_id: str,
                                   config_spec=None, path=None, depth=None,
                                   user_login: str = None, is_admin: bool = False):
         """返回递归 ComponentDTO 列表。每节点含 24 字段 + components[] 递归。
 
-        若提供 config_spec（ProductStructureFilter 或 ProductConfigSpec），
-        则使用 PSFilterVisitor 按配置规格遍历；否则走旧版全量遍历。
+        若提供 config_spec（字符串或 ProductStructureFilter/ProductConfigSpec 对象），
+        则解析后使用 PSFilterVisitor 按配置规格遍历；否则走旧版全量遍历。
         """
+        # 若传入的是字符串，先解析为 filter 对象
+        if isinstance(config_spec, str):
+            config_spec = self.parse_config_spec_str(config_spec, db=db, user_login=user_login)
+
         ci = self.get_ci(db, ws, ci_id)
         root_pn = ci.partmaster_partnumber
         master = db.query(PartMaster).filter(
@@ -152,7 +199,7 @@ class ProductStructureService:
             "assembly": bool(retained and retained.components) if retained else False,
             "released": rev.status == 1 if rev else False,
             "obsolete": rev.status == 2 if rev else False,
-            "author": pm.author_login or "",
+            "author": self._resolve_user_name(db, pm.author_login),
             "authorLogin": pm.author_login or "",
             "checkOutUser": None,
             "checkOutDate": None,
@@ -160,7 +207,9 @@ class ProductStructureService:
             "virtual": False,
             "substitute": False,
             "partUsageLinkReferenceDescription": None,
-            "hasPathData": False,
+            "hasPathData": self._check_has_path_data_from_link_path(
+                db, comp.path, comp.part_master.workspace_id if comp.part_master else ""
+            ),
             "accessDeny": False,
             "attributes": self._instance_attributes(
                 db, pm.workspace_id, pm.number, rev.version,
@@ -271,14 +320,57 @@ class ProductStructureService:
                 comp["components"].append(child_comp)
         return comp
 
-    def _check_has_path_data(self, db: Session, ws: str, comp_path: str) -> bool:
-        """检查组件路径是否有 PathDataMaster 记录。"""
-        relative = comp_path.split("-", 1)[1] if "-" in comp_path else ""
-        if not relative:
+    def _check_has_path_data_from_link_path(self, db: Session,
+                                              link_path: list, ws: str) -> bool:
+        """从 PartLink 列表路径检查是否有 PathDataMaster 记录。
+
+        link_path 是 PSFilterVisitor Component.path（PartLink 对象列表）。
+        构建 "-1-u{id1}-u{id2}" 格式的路径字符串再查 DB。
+        """
+        if not link_path:
             return False
+        parts = []
+        for link in link_path:
+            link_id = getattr(link, 'id', None)
+            if link_id is None:
+                return False
+            # PartUsageLink → "u", PartSubstituteLink → "s"
+            from app.models.part import PartSubstituteLink
+            prefix = "s" if isinstance(link, PartSubstituteLink) else "u"
+            parts.append(f"{prefix}{link_id}")
+        db_path = "-1-" + "-".join(parts)
         row = db.execute(text(
             "SELECT 1 FROM pathdatamaster WHERE path = :p LIMIT 1"
-        ), {"p": relative}).first()
+        ), {"p": db_path}).first()
+        return row is not None
+
+    def _resolve_user_name(self, db: Session, login: str) -> str:
+        """查 Account 表返回用户真实姓名，找不到时降级为 login。"""
+        if not login:
+            return ""
+        acc = db.query(Account).filter(Account.login == login).first()
+        if acc and acc.name:
+            return acc.name
+        return login
+
+    def _check_has_path_data(self, db: Session, ws: str, comp_path: str) -> bool:
+        """检查组件路径是否有 PathDataMaster 记录。
+
+        comp_path 格式：{ci_id}-u2-u5（如 "BIKE-u2-u5"）。
+        pathdatamaster.path 存储的是 "-1-u2-u5"（Java 格式，以 -1 为根节点）。
+        需要将 {ci_id} 前缀替换为 -1 再查询。
+        """
+        if not comp_path or "-u" not in comp_path and "-s" not in comp_path:
+            return False
+        # 取第一个 - 后的部分（"-u2-u5"），拼上 "-1" 前缀
+        dash_idx = comp_path.find("-")
+        if dash_idx == -1:
+            return False
+        suffix = comp_path[dash_idx:]  # 形如 "-u2-u5"
+        db_path = "-1" + suffix       # 形如 "-1-u2-u5"
+        row = db.execute(text(
+            "SELECT 1 FROM pathdatamaster WHERE path = :p LIMIT 1"
+        ), {"p": db_path}).first()
         return row is not None
 
     # dtype(JPA 判别符) → InstanceAttributeType 枚举名（对齐 Payara InstanceAttributeDTO.type）
@@ -414,6 +506,14 @@ class ProductStructureService:
                         substitute_links: list | None = None,
                         optional_usage_links: list | None = None):
         ci = self.get_ci(db, ws, ci_id)
+
+        # 零件可用性校验（对齐 Java ProductBaselineCreationConfigSpec + PSFilterVisitor）
+        root_pn = ci.partmaster_partnumber
+        master = db.query(PartMaster).filter(
+            PartMaster.workspace_id == ws, PartMaster.number == root_pn).first()
+        if master:
+            self._validate_baseline_parts(db, master, bl_type)
+
         # 创建 PartCollection
         db.execute(text(
             "INSERT INTO partcollection (creationdate, author_workspace_id, author_login) "
@@ -458,6 +558,68 @@ class ProductStructureService:
                     "ver": ol.get("version", "A")})
         db.commit(); db.refresh(bl)
         return bl
+
+    def _validate_baseline_parts(self, db: Session, root_pm, bl_type: int):
+        """BFS 遍历产品结构，校验所有零件有可用迭代。
+
+        对齐 Java ProductBaselineCreationConfigSpec + PSFilterVisitor：
+        - LATEST(0)：每个零件必须有最后已签入迭代（lastCheckedInIteration）
+        - RELEASED(1)：每个零件必须至少有一个发布版本
+        不满足 → NotAllowedException49（零件号不含可用迭代）
+        """
+        from app.core.exceptions import NotAllowedException
+        visited = set()
+        queue = [root_pm]
+
+        while queue:
+            pm = queue.pop(0)
+            key = (pm.workspace_id, pm.number)
+            if key in visited:
+                continue
+            visited.add(key)
+
+            if bl_type == 0:  # LATEST — 对齐 Java getLastCheckedInIteration()
+                rev = pm.last_revision
+                if rev is None:
+                    raise NotAllowedException("NotAllowedException49", pm.number)
+                # 已签出的零件无可用迭代（Java: checkOutUser != null → null）
+                if rev.checkout_user_login:
+                    raise NotAllowedException("NotAllowedException49", pm.number)
+                last_it = rev.last_iteration
+                if last_it is None:
+                    raise NotAllowedException("NotAllowedException49", pm.number)
+                for link in (last_it.components or []):
+                    child = db.query(PartMaster).filter(
+                        PartMaster.workspace_id == link.component_workspace_id,
+                        PartMaster.number == link.component_partnumber,
+                    ).first()
+                    if child:
+                        queue.append(child)
+            else:  # RELEASED (1) 或其他
+                has_released = db.execute(text(
+                    "SELECT 1 FROM partrevision "
+                    "WHERE workspace_id = :ws AND partmaster_partnumber = :pn "
+                    "AND status = 1 LIMIT 1"
+                ), {"ws": pm.workspace_id, "pn": pm.number}).first()
+                if not has_released:
+                    raise NotAllowedException("NotAllowedException49", pm.number)
+                # 通过已发布版本遍历子件
+                released_rev = db.query(PartRevision).filter(
+                    PartRevision.workspace_id == pm.workspace_id,
+                    PartRevision.partmaster_partnumber == pm.number,
+                    PartRevision.status == 1,
+                ).order_by(PartRevision.version.desc()).first()
+                if released_rev:
+                    last_it = released_rev.last_iteration
+                    if last_it:
+                        for link in (last_it.components or []):
+                            child = db.query(PartMaster).filter(
+                                PartMaster.workspace_id == link.component_workspace_id,
+                                PartMaster.number == link.component_partnumber,
+                            ).first()
+                            if child:
+                                queue.append(child)
+
 
     def delete_baseline(self, db: Session, ws: str, bl_id: int):
         bl = db.query(ProductBaseline).filter(

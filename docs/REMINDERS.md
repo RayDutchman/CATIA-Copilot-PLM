@@ -6,7 +6,7 @@
 
 ## 待办
 
-> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-09 已完成 A+B+C 批次（SSL Proxy 切 FastAPI、DocumentBaselines 补端点、产品配置/基线数据填充、Product Structure 属性/通知、WorkspaceManager/Query 读删、EffectivityDTO）+ 修复 3 个生产 SQL bug。**剩余 4 个功能域**（均有计划或待排期）：① PathData/装配路径（`plans/2026-07-09-pathdata-domain.md`）② Importer 导入（`plans/2026-07-09-importer-domain.md`）③ Query 执行引擎 ④ filter configSpec 解析。本文件只保留**跨领域非迁移**待办。
+> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-09 已完成 A+B+C 批次 + PathData/P2P 域 + configSpec 解析修复 + 基线可用性校验 + deps 访问控制修复 + 用户姓名全量修复 + 用户权限 bug 修复。**剩余 2 个功能域**（均有计划或待排期）：① Importer 导入（`plans/2026-07-09-importer-domain.md`）② Query 执行引擎（待排期）。本文件只保留**跨领域非迁移**待办。
 
 ### 高优先级
 
@@ -29,6 +29,17 @@
 - [ ] **Windows 重启后 Docker 端口失效** — WSL mirrored 模式 timing 问题，`wsl --shutdown` 恢复。
 
 - [ ] **portproxy 规则与 Docker 端口冲突** — iphlpsvc 占用 8000/8001。
+
+---
+
+## 用户报出的 Bug（2026-07-09 会话，待用户确认修复）
+
+| # | 问题 | 状态 | 备注 |
+|---|------|------|------|
+| 1 | ~~删除工作区报"未找到用户 test1"~~ | ✅ Fixed | deps.py: 补 workplace.admin_login 检查 |
+| 2 | ~~创建基线报 TypeError `undefined 'name'`~~ | ✅ Fixed | (a) 补零件可用性校验对齐 Java (b) 响应返回 _bl_summary_dict 含 author |
+| 3 | 通知设置不持久化 | ⏳ 待确认 | 调查发现 API 实现正确（有 commit），可能是前端权限问题（非 admin 返回403），需用户确认登录身份 |
+| 4 | Payara JPA 缓存导致 8000/8005 权限互相不可见 | ⏳ 已知 | 架构问题，见 2026-07-09 调查结论（EclipseLink L2 缓存） |
 
 ---
 

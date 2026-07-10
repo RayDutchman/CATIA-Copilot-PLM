@@ -34,7 +34,24 @@ def _doc_to_dict(db, rev, current_user_login=None):
     return _doc_full(db, rev, current_user_login)
 
 
-def _part_to_dict(rev):
+def _part_to_dict(db: Session, rev):
+    """转换 PartRevision 为 dict，author/checkOutUser 查 Account 表填充真实姓名。"""
+    # 查 author 姓名
+    author_acc = db.query(Account).filter(Account.login == rev.author_login).first() if rev.author_login else None
+    author = {
+        "login": rev.author_login or "",
+        "name": (author_acc.name if author_acc and author_acc.name else rev.author_login) or "",
+        "workspaceId": rev.workspace_id,
+    }
+    # 查 checkOutUser 姓名
+    checkout_user = {}
+    if rev.checkout_user_login:
+        co_acc = db.query(Account).filter(Account.login == rev.checkout_user_login).first()
+        checkout_user = {
+            "login": rev.checkout_user_login,
+            "name": (co_acc.name if co_acc and co_acc.name else rev.checkout_user_login) or "",
+            "workspaceId": rev.workspace_id,
+        }
     return {
         "partKey": f"{rev.partmaster_partnumber}-{rev.version}",
         "partNumber": rev.partmaster_partnumber,
@@ -44,10 +61,10 @@ def _part_to_dict(rev):
         "description": rev.description or "",
         "type": rev.part_master.type if rev.part_master else "",
         "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
-        "checkOutUser": {"login": rev.checkout_user_login} if rev.checkout_user_login else {},
+        "checkOutUser": checkout_user,
         "checkOutDate": int(rev.check_out_date.timestamp() * 1000) if rev.check_out_date else None,
         "standardPart": rev.part_master.standard_part if rev.part_master else False,
-        "author": {"login": rev.author_login, "name": rev.author_login},
+        "author": author,
         "creationDate": int(rev.creation_date.timestamp() * 1000) if rev.creation_date else None,
     }
 
@@ -57,79 +74,6 @@ def _part_to_dict(rev):
 def assigned_tasks(ws: str, login: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     return task_service.get_assigned_tasks(db, ws, login)
-
-
-@router.get(f"{PREFIX}/tasks/{{login}}/in-progress", response_model=List[TaskWrapperDTO])
-@router.get(f"{PREFIX}/tasks/{{login}}/in-progress/", include_in_schema=False)
-def in_progress_tasks(ws: str, login: str, db: Session = Depends(get_db),
-                      current_user: Account = Depends(get_current_user)):
-    """返回指定用户当前进行中的任务（status=1）。"""
-    from sqlalchemy import text
-    rows = db.execute(text(
-        "SELECT t.* FROM task t "
-        "WHERE t.worker_login = :l AND t.worker_workspace_id = :w "
-        "AND t.status = 1"
-    ), {"l": login, "w": ws}).fetchall()
-    result = []
-    for t in rows:
-        wf_id = t[11] if len(t) > 11 else None
-        holder_type = None
-        holder_reference = None
-        holder_version = None
-        if wf_id:
-            doc = db.execute(text(
-                "SELECT documentmaster_id, version FROM documentrevision "
-                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-            ), {"wf_id": wf_id, "ws": ws}).first()
-            if doc:
-                holder_type = "documents"
-                holder_reference = doc[0]
-                holder_version = doc[1]
-            else:
-                part = db.execute(text(
-                    "SELECT partmaster_partnumber, version FROM partrevision "
-                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-                ), {"wf_id": wf_id, "ws": ws}).first()
-                if part:
-                    holder_type = "part"
-                    holder_reference = part[0]
-                    holder_version = part[1]
-                else:
-                    ww = db.execute(text(
-                        "SELECT id FROM workspace_workflow "
-                        "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-                    ), {"wf_id": wf_id, "ws": ws}).first()
-                    if ww:
-                        holder_type = "workspace-workflow"
-                        holder_reference = ww[0]
-        worker_login = t[13] if len(t) > 13 else None
-        worker_ws = t[12] if len(t) > 12 else None
-        worker = None
-        if worker_login:
-            acc = db.query(Account).filter(Account.login == worker_login).first()
-            if acc:
-                worker = {"login": acc.login, "name": acc.name or acc.login,
-                          "email": acc.email, "workspaceId": worker_ws}
-            else:
-                worker = {"login": worker_login, "name": worker_login,
-                          "workspaceId": worker_ws}
-        result.append({
-            "num": t[0],
-            "workflowId": wf_id,
-            "activityStep": t[10] if len(t) > 10 else None,
-            "title": t[9] if len(t) > 9 else None,
-            "instructions": t[4] if len(t) > 4 else None,
-            "status": STATUS_MAP.get(t[7], "NOT_STARTED"),
-            "worker": worker or {},
-            "closureComment": t[1] if len(t) > 1 else None,
-            "signature": t[5] if len(t) > 5 else None,
-            "closureDate": str(t[2]) if len(t) > 2 and t[2] else None,
-            "holderType": holder_type,
-            "holderReference": holder_reference,
-            "holderVersion": holder_version,
-            "workspaceId": ws,
-        })
-    return result
 
 
 @router.get(f"{PREFIX}/tasks/{{task_id}}", response_model=TaskWrapperDTO)
@@ -173,12 +117,24 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
                 if ww:
                     holder_type = "workspace-workflow"
                     holder_reference = ww[0]
+    # 查 worker 姓名
+    _worker_login = t[13] if len(t) > 13 and t[13] else None
+    _worker_ws = t[12] if len(t) > 12 else None
+    if _worker_login:
+        _worker_acc = db.query(Account).filter(Account.login == _worker_login).first()
+        _worker = {
+            "login": _worker_login,
+            "name": (_worker_acc.name if _worker_acc and _worker_acc.name else _worker_login) or "",
+            "workspaceId": _worker_ws,
+        }
+    else:
+        _worker = {}
     return {
         "num": t[0],
         "title": t[9] if len(t) > 9 and t[9] else "",
         "instructions": t[4] if len(t) > 4 and t[4] else "",
         "status": STATUS_MAP.get(t[7], "NOT_STARTED"),
-        "worker": {"login": t[13]} if len(t) > 13 and t[13] else {},
+        "worker": _worker,
         "closureComment": t[1] if len(t) > 1 else None,
         "signature": t[5] if len(t) > 5 else None,
         "closureDate": t[2].isoformat() + "Z" if len(t) > 2 and t[2] else None,
@@ -319,4 +275,4 @@ def task_parts(ws: str, login: str,
         PartRevision.workspace_id == ws,
         PartRevision.workflow_id.in_(wf_ids)
     ).all()
-    return [_part_to_dict(p) for p in parts]
+    return [_part_to_dict(db, p) for p in parts]

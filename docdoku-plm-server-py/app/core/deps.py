@@ -45,10 +45,21 @@ def get_current_user(
             "SELECT 1 FROM userdata WHERE login=:l AND workspace_id=:w"
         ), {"l": account.login, "w": ws}).first()
         if not member:
-            # Payara 管理员可见所有工作区
+            # Payara 管理员可见所有工作区；工作区创建者可访问自己管理的工作区
             is_admin = db.execute(text(
                 "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
             ), {"l": account.login}).first()
-            if not is_admin:
+            is_ws_admin = db.execute(text(
+                "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+            ), {"w": ws, "l": account.login}).first()
+            # 检查是否通过用户组成员资格间接属于工作区
+            is_group_member = db.execute(text(
+                "SELECT 1 FROM usergroup_user uu "
+                "JOIN workspaceusergroupmembership wgm "
+                "  ON wgm.member_id = uu.usergroup_id "
+                "  AND wgm.member_workspace_id = uu.usergroup_id_workspace_id "
+                "WHERE uu.user_login = :l AND wgm.workspace_id = :w"
+            ), {"l": account.login, "w": ws}).first()
+            if not is_admin and not is_ws_admin and not is_group_member:
                 raise EntityNotFoundException("UserNotFoundException", account.login)
     return account

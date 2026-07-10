@@ -6,6 +6,108 @@
 
 ---
 
+## 2026-07-09 — deps 访问控制 + 基线校验 + 错误收集工具
+
+### deps.py 工作区访问控制修复
+- fix(deps): 补 `workspace.admin_login` 检查——工作区管理员即使不在该工作区的 userdata 表中，也应能访问自己管理的工作区（对齐 Java `checkWorkspaceReadAccess`）
+- fix(deps): 补 `workspaceusergroupmembership` 用户组成员资格检查——通过用户组间接属于工作区的用户也能访问（对齐 Java `userGroupDAO.getUserGroupMemberships()` 回退逻辑）
+
+### 基线创建校验 + 响应修复
+- feat(baseline): `ProductStructureService._validate_baseline_parts()` BFS 遍历全量校验零件可用性
+  - LATEST：每个零件必须有已签入迭代（`checkout_user_login` 非空 → 拒绝，对齐 Java `getLastCheckedInIteration()`）
+  - RELEASED：每个零件必须至少有一个发布版本（`status=1`）
+  - 不满足 → `NotAllowedException49`（"根据所选类型没有可用迭代"）
+- fix(baseline): POST `create_baseline` 响应由`{"id","name"}`改为完整`_bl_summary_dict()`（含 author/type/configurationItemId 等），消除前端 `TypeError: Cannot read properties of undefined (reading 'name')`
+
+### 开发错误收集工具
+- chore(dev): 新增 `app/core/error_collector.py` + `app/routers/dev.py`，所有 4xx/5xx 请求自动记录到内存
+  - GET `/dev/errors` HTML 表格（可过滤 5xx、JSON 格式、一键清空）
+  - `ErrorCollectorMiddleware` 自动记录 URL/方法/请求体/响应体/用户名/时间戳
+
+### PartCreationDTO 422 修复
+- fix(schema): `PartCreationDTO` 补 Field alias（standardPart/workflowModelId/templateId/roleMapping → snake_case），`extra='forbid'` 改为 `extra='ignore'`；消除 POST /parts 创建时的 422
+
+### 测试
+- 176 passed / 1 skipped（基线保持）
+- 冒烟验证：ACLCI-7E8C3E 基线创建正确拒绝（零件 ACLCFG-15FF13 已签出无可用迭代），ACLCI-B98DED 正确创建并返回完整 author
+
+## 2026-07-09 — effectivities 500 修复 + 用户姓名全量修复
+
+### effectivities SQL bug
+- fix(effectivity): `effectivity.py:79` `pre.workspace_id` → `pre.partmaster_workspace_id`（实际表 `partrevision_effectivity` 无 `workspace_id` 列，导致 500）
+
+### 用户姓名显示全量修复
+- fix(tasks): `_part_to_dict` 补查 Account 表，author/checkOutUser 字段填充真实 `name`（原先直接用 login）；`get_task` 端点 worker 字段同步补 name
+- fix(document_baselines): `_baseline_to_dict` 补查 Account 表填充 author name；create 端点 `"name": current_user.name`（原 `current_user.login`）
+- fix(product_structure): `_convert_visitor_component` 新增 `_resolve_user_name()` 辅助方法，author 字段从 login 改为真实姓名
+- fix(products): `last_release` 端点 checkOutUser 构建方式重构，消除初始化时 `name=login` 的临时状态
+
+### 全量检查工具
+- chore: 新增 `scripts/check_user_dto_consistency.py`，AST 扫描 app/ 检测用户 DTO 中 `name=login`/缺 name 字段的问题；Critical 0 / Warning 50（均为内部 JWT payload dict，非前端 DTO，属误报）
+
+### 测试
+- 176 passed / 1 skipped（基线保持）
+- effectivities 端点冒烟：200 OK，不再 500
+
+## 2026-07-09 — P2P decodePath 验证 + 用户权限 bug 修复 + 代码审查修复
+
+### 代码审查修复（review fixes）
+- fix(p2p): `product_configurations.py` 删除与 `products.py` 重复注册的 POST `/path-to-path-links` 路由（first-match-wins，重复路由导致 `product_configurations.py` 版本死代码）
+- fix(p2p): `pathFrom==pathTo` 由 `PathToPathLinkAlreadyExistsException` 改为 `NotAllowedException("NotAllowedException57")`，对齐 Java
+- fix(p2p): `create_path_to_path_link` 的 rollback 由仅捕 `PathToPathCyclicException` 扩展为 `except Exception`，防止 DB 错误留下半提交状态
+- fix(product-structure): 基线 ID 作 configSpec 时，`ResolvedCollectionConfigSpec` 接口（`filter_part_iteration`）不匹配 `PSFilterVisitor`（`filter_part_iterations`），改为全量遍历降级
+- fix(path-data): `_sync_linked_documents` 修正列名错误（`pathdata_master_id` → `pathdatamaster_id`），改为通过 `documentlink` 中间表关联（对齐 `partiteration_documentlink` 模式），移除吃掉所有异常的 `except Exception: pass`
+- fix(path-data): `delete_path_data` 补充级联清理引用该路径的 `pathtopathlink` 记录（含 CI/baseline/实例关联表）
+- fix(products): `_ci_to_dict` 中 `pathToPathLinks: []` 硬编码改为调用 `get_links_for_ci()` 真实查询
+
+### decodePath 路径验证补齐
+- feat(p2p): `path_to_path_service.py` 新增 `_validate_path()`：创建 P2P link 前调用 `decode_path()` 验证 sourcePath/targetPath 有效性；无效路径抛 `PartUsageLinkNotFoundException`；对齐 Java `ProductManagerBean.createPathToPathLink` 铁律
+
+### 用户权限被重置 Bug 修复
+- fix(workspace): `workspace_memberships.py:212` 字段名错误修复：
+  - **根因**：`body.get("readOnly", False)` 读取了不存在的字段，而前端发送的是 `membership: "READ_ONLY"` 字符串，导致 `readonly` 永远写入 `false`，设置只读权限实际上无效
+  - **修复**：改为 `membership == "READ_ONLY"` 正确解析（向后兼容 `readOnly` 布尔字段）
+  - **同时修复**：删除错误的 `UPDATE account SET enabled = ...`（Java 不触及该全局字段）
+  - 冒烟验证：READ_ONLY → DB `readonly=t`，FULL_ACCESS → DB `readonly=f`，双向正确
+
+### 测试
+- 176 passed / 1 skipped（基线保持）
+
+## 2026-07-09 — PathData / Path-to-Path Link 域 + configSpec 解析修复
+
+### PathData / PathToPathLink 域（P0 主功能，18+ 端点）
+- feat(path-data): 新增 `app/services/products/path_data_service.py`（PathData CRUD Service）
+  - `create_path_data_master`：创建 master + 首迭代（同路径已存在则追加迭代，实例必须存在）
+  - `add_new_path_data_iteration`：追加新迭代（属性+文档链接）
+  - `update_path_data`：更新迭代属性/备注/文档链接（先删后建）
+  - `delete_path_data`：删 master + 级联删迭代/属性/关联
+  - `get_path_data_by_path`：按路径查 master（找不到返回 None，不抛异常）
+  - `get_attributes_for_iteration`：查迭代实例属性
+- feat(path-to-path): 新增 `app/services/products/path_to_path_service.py`（P2P Service）
+  - CI 级：`create_path_to_path_link`（含 DFS 环检测）/`update`/`delete`/`get_links_for_ci`/`get_link_types_for_ci`/`get_links_from_source_and_target`
+  - 实例级：`get_links_for_instance`/`get_link_types_for_instance`/`get_root_links_for_instance`/`get_links_from_source_and_target_for_instance`
+- feat(router): `product_instances.py` 补充 PathData 8 端点 + P2P 实例级 6 端点
+- feat(router): `products.py` 补充 CI 级 P2P CRUD 5 端点（list/create/get-by-id/update/delete）
+- fix(router): `product_configurations.py` create_path_to_path_link stub → 真实实现（调用 service）
+- fix(router): `product_baselines.py` `_query_path_to_path_links` 真实实现（通过 productbaseline_p2plink 关联表查）；`baseline_path_to_path_links_types`/`detail` stub → 真实实现
+- fix(orm): `path_data_master.py` / `path_data_iteration.py` 重建（复合主键对齐 DB、删除不存在的列）
+- fix(orm): `path_to_path_link.py` 列名对齐（sourcepath/targetpath，删除不存在的 name/workspace_id 列）
+- fix(schema): `path_to_path_link.py` 补 `sourceComponents`/`targetComponents` 字段（extra=forbid）
+
+### configSpec 解析 Bug 修复（filter 端点）
+- fix(product-structure): `filter_product_structure` 支持字符串 `configSpec` 解析（latest/released/wip/pi-/baseline-id）
+  - 新增 `parse_config_spec_str` 静态方法，映射到对应 PSFilter/ConfigSpec 对象
+  - 修复了 configSpec=latest/released/wip 时报 `'str' object has no attribute 'filter_part_iterations'` 500 的 bug
+
+### hasPathData 路径格式修复
+- fix(product-structure): `_check_has_path_data` 路径格式修复（`{ci_id}-u2-u5` → `-1-u2-u5` 再查 DB）
+- feat(product-structure): `_check_has_path_data_from_link_path`：visitor Component.path（PartLink 列表）→ `-1-u{id}` 格式 → DB 查询；`_convert_visitor_component` `hasPathData` 从硬编码 False 改为真实查询
+- feat(product-baselines): `_query_path_to_path_links` 传入 baseline_id 后真实查 productbaseline_p2plink
+
+### 测试
+- 176 passed / 1 skipped（基线保持）
+- 冒烟通过：CI P2P CRUD（创建/更新/删除/查类型）、PathData GET 返回空 DTO、PathData Create 验证实例存在
+
 ## 2026-07-09 — 迁移收尾 A+B+C 批次（~25 项）+ 修复 3 个生产 SQL bug
 
 ### 事实纠正 + 架构对齐（会话后半）

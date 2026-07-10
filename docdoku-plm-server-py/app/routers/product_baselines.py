@@ -54,8 +54,7 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
         "baselinedParts": _query_baselined_parts(db, b.partcollection_id) if b.partcollection_id else [],
         "substituteLinks": _query_substitute_links(db, ws, b.partcollection_id),
         "optionalUsageLinks": _query_optional_links(db, ws, b.partcollection_id),
-        "pathToPathLinks": _query_path_to_path_links(db, ws),
-        "substitutesParts": _decode_paths_to_part_links(db, ws, b.configurationitem_id, _baseline_substitute_paths(db, b.id)),
+        "pathToPathLinks": _query_path_to_path_links(db, ws, b.id),
         "optionalsParts": _decode_paths_to_part_links(db, ws, b.configurationitem_id, _baseline_optional_paths(db, b.id)),
     }
 
@@ -75,7 +74,7 @@ def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
         "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
         "substituteLinks": _query_substitute_links(db, ws, bl.partcollection_id),
         "optionalUsageLinks": _query_optional_links(db, ws, bl.partcollection_id),
-        "pathToPathLinks": _query_path_to_path_links(db, ws),
+        "pathToPathLinks": _query_path_to_path_links(db, ws, bl.id),
         "substitutesParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_substitute_paths(db, bl.id)),
         "optionalsParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_optional_paths(db, bl.id)),
     }
@@ -111,7 +110,7 @@ def create_workspace_baseline(ws: str, body: dict,
                                current_user.login, body.get("baselinedParts"),
                                body.get("substituteLinks"),
                                body.get("optionalUsageLinks"))
-    return {"id": bl.id, "name": bl.name}
+    return _bl_summary_dict(bl, db)
 
 
 @router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines", response_model=List[ProductBaselineSummaryDTO])
@@ -138,7 +137,7 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
                                current_user.login, body.get("baselinedParts"),
                                body.get("substituteLinks"),
                                body.get("optionalUsageLinks"))
-    return {"id": bl.id, "name": bl.name}
+    return _bl_summary_dict(bl, db)
 
 
 def _get_user(db: Session, login: str, ws: str) -> dict:
@@ -179,11 +178,26 @@ def _has_obsolete_parts(db: Session, partcollection_id: int | None) -> bool:
     return row is not None
 
 
-def _query_path_to_path_links(db: Session, ws: str) -> list:
-    # pathtopathlink 表列: id, type, sourcepath, targetpath, description（无 name/workspace_id）
-    # 工作区维度关联通过 productbaseline_p2plink 等连接表；PathData/PPL 域整体延后
-    # （见 docs/migration/loose-ends.md 第一节），此处返回空以避免无效列查询。
-    return []
+def _query_path_to_path_links(db: Session, ws: str, baseline_id: int = None) -> list:
+    """查询 PathToPathLink 列表。
+
+    若提供 baseline_id → 通过 productbaseline_p2plink 关联表查该基线的 links。
+    否则返回空（工作区维度无直接关联，只有 CI 和 baseline 维度有关联）。
+    """
+    if baseline_id is None:
+        return []
+    rows = db.execute(sql_text(
+        "SELECT ppl.id, ppl.type, ppl.sourcepath, ppl.targetpath, ppl.description "
+        "FROM pathtopathlink ppl "
+        "JOIN productbaseline_p2plink pbp ON pbp.pathtopathlink_id = ppl.id "
+        "WHERE pbp.productbaseline_id = :bid"
+    ), {"bid": baseline_id}).fetchall()
+    return [
+        {"id": r[0], "type": r[1], "sourcePath": r[2],
+         "targetPath": r[3], "description": r[4],
+         "sourceComponents": [], "targetComponents": []}
+        for r in rows
+    ]
 
 
 def _query_substitute_links(db: Session, ws: str, partcollection_id: int | None) -> list:
@@ -304,7 +318,7 @@ def create_baseline(ws: str, ci_id: str, body: dict,
                                current_user.login, body.get("baselinedParts"),
                                body.get("substituteLinks"),
                                body.get("optionalUsageLinks"))
-    return {"id": bl.id, "name": bl.name}
+    return _bl_summary_dict(bl, db)
 
 
 @router.delete("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
@@ -321,19 +335,30 @@ def delete_baseline(ws: str, ci_id: str, bl_id: int,
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types")
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types/", include_in_schema=False)
 def baseline_path_to_path_links_types(ws: str, pid: str, bid: int,
-                                       current_user: Account = Depends(get_current_user)):
-    return []
+                                       current_user: Account = Depends(get_current_user),
+                                       db: Session = Depends(get_db)):
+    """获取产品基线的 PathToPathLink 类型列表。"""
+    links = _query_path_to_path_links(db, ws, bid)
+    return list({lk["type"] for lk in links if lk.get("type")})
 
 
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}")
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}/", include_in_schema=False)
 def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
                                         source: str, target: str,
-                                        current_user: Account = Depends(get_current_user)):
-    return {}
+                                        current_user: Account = Depends(get_current_user),
+                                        db: Session = Depends(get_db)):
+    """获取产品基线的 PathToPathLink（按 source/target 筛选）。"""
+    links = _query_path_to_path_links(db, ws, bid)
+    return [
+        lk for lk in links
+        if lk.get("sourcePath") == source and lk.get("targetPath") == target
+    ]
 
 
 # ── product-baselines/{id} direct endpoints ──
+# 注意：light 版本通过 ?light=true 查询参数获取，不需要独立的 -light 后缀端点。
+# Java ProductBaselinesResource 仅使用 @QueryParam("light")，无 -light 后缀路径。
 
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}", response_model=ProductBaselineDetailDTO)
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}/", include_in_schema=False)
@@ -356,24 +381,6 @@ def get_baseline_by_id(ws: str, bl_id: int,
     return _bl_detail_dict(bl, db)
 
 
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}-light")
-@router.get("/workspaces/{ws}/product-baselines/{bl_id}-light/", include_in_schema=False)
-def get_baseline_light(ws: str, bl_id: int,
-                        current_user: Account = Depends(get_current_user),
-                        db: Session = Depends(get_db)):
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
-    if not bl:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-    return {
-        "id": bl.id, "name": bl.name, "type": bl.type,
-        "configurationItemId": bl.configurationitem_id,
-        "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
-        "description": bl.description or "",
-        "author": _get_user(db, bl.author_login or "", bl.configurationitem_workspace_id),
-    }
-
-
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}/export-files")
 @router.get("/workspaces/{ws}/product-baselines/{bl_id}/export-files/", include_in_schema=False)
 def baseline_export_files(ws: str, bl_id: int,
@@ -386,7 +393,7 @@ def baseline_export_files(ws: str, bl_id: int,
     from sqlalchemy import text
     rows = db.execute(text(
         """
-        SELECT DISTINCT br.full_name
+        SELECT DISTINCT br.fullname
         FROM baselinedpart bp
         JOIN partiteration pi ON (
             pi.workspace_id = bp.target_workspace_id
@@ -395,12 +402,44 @@ def baseline_export_files(ws: str, bl_id: int,
             AND pi.iteration = bp.target_iteration
         )
         JOIN binaryresource br ON (
-            br.full_name = pi.nativecad_file_fullname
+            br.fullname = pi.nativecadfile_fullname
         )
         WHERE bp.partcollection_id = (
             SELECT partcollection_id FROM productbaseline WHERE id = :bl_id
         )
-        AND pi.nativecad_file_fullname IS NOT NULL
+        AND pi.nativecadfile_fullname IS NOT NULL
         """
     ), {"bl_id": bl_id}).fetchall()
     return [{"fullName": r[0]} for r in rows]
+
+
+@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/parts")
+@router.get("/workspaces/{ws}/product-baselines/{ci_id}/baselines/{bl_id}/parts/", include_in_schema=False)
+def baseline_parts(ws: str, ci_id: str, bl_id: int,
+                   q: str = Query(None),
+                   current_user: Account = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    """返回基线中的零件列表（含关键字搜索，最多8条）。
+
+    对齐 Java ProductBaselinesResource.getProductBaselineParts → getBaselinedPartWithReference。
+    """
+    base_sql = (
+        "SELECT bp.target_partmaster_partnumber, bp.target_partrevision_version, "
+        "bp.target_iteration, pm.name "
+        "FROM baselinedpart bp "
+        "JOIN partmaster pm ON pm.workspace_id = bp.target_workspace_id "
+        "AND pm.partnumber = bp.target_partmaster_partnumber "
+        "WHERE bp.partcollection_id = ("
+        "  SELECT partcollection_id FROM productbaseline WHERE id = :bid"
+        ")"
+    )
+    params = {"bid": bl_id}
+    if q:
+        base_sql += " AND bp.target_partmaster_partnumber ILIKE :q"
+        params["q"] = f"%{q}%"
+    base_sql += " ORDER BY bp.target_partmaster_partnumber LIMIT 8"
+    rows = db.execute(sql_text(base_sql), params).fetchall()
+    return [
+        {"partNumber": r[0], "version": r[1], "iteration": r[2], "name": r[3] or r[0]}
+        for r in rows
+    ]

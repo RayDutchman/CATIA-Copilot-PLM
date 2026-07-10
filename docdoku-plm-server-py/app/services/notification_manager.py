@@ -29,12 +29,6 @@ class NotificationService:
         ), {"ws": ws}).fetchall()
         return [self._to_dict(r) for r in rows]
 
-    def list_all(self, db: Session, ws: str) -> list:
-        """返回工作区所有修改通知（按时间倒序）。"""
-        return db.query(ModificationNotification).filter(
-            ModificationNotification.impacted_workspace_id == ws,
-        ).order_by(ModificationNotification.id.desc()).all()
-
     # ========== Tag 订阅管理（P1 stubs） ==========
 
     def subscribe_to_tag_event(self, db: Session, ws: str, tag_label: str,

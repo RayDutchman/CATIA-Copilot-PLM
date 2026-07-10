@@ -5,10 +5,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from urllib.parse import unquote
 from app.routers import auth, parts, part, part_templates, effectivity, part_files, document_files, folders, documents, document, document_baselines, document_templates, products, product_instances, product_files, product_baselines, product_configurations, layers, change_issues, change_requests, change_orders, milestones, roles, users, user_groups, workspace_memberships, accounts, admin, notifications, webhooks, workflow_models, workflow, tasks, workspaces, organizations, languages, timezones, platform, share, attributes, lov, tags, document_template_files, part_template_files
 from app.routers.export import document_baseline_export, instance_collection, virtual_instance_collection
+from app.routers import dev as dev_router
 from app.core.exception_handlers import register_exception_handlers
 from app.core.security import verify_token
 from app.core.database import SessionLocal
 from app.models.auth import Account
+from app.core.error_collector import record as _record_error
 
 # 路径前缀与 Payara 完全一致，Backbone 前端无需任何修改
 API_PREFIX = "/docdoku-plm-server-rest/api"
@@ -77,6 +79,74 @@ class UserLanguageMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(UserLanguageMiddleware)
 
+
+class ErrorCollectorMiddleware(BaseHTTPMiddleware):
+    """记录所有 4xx/5xx 请求到内存，供 /dev/errors 查询。"""
+
+    # 不记录这些路径（静态资源、健康检查）
+    _SKIP_PREFIXES = ("/dev/", "/docs", "/openapi", "/health")
+
+    async def dispatch(self, request: Request, call_next):
+        # 跳过不需要记录的路径
+        path = request.url.path
+        if any(path.startswith(p) for p in self._SKIP_PREFIXES):
+            return await call_next(request)
+
+        # 读取请求体（需要缓冲）
+        req_body = None
+        try:
+            body_bytes = await request.body()
+            if body_bytes:
+                req_body = body_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            pass
+
+        response = await call_next(request)
+
+        # 只记录 4xx/5xx
+        if response.status_code >= 400:
+            # 读取响应体
+            res_body = None
+            try:
+                from starlette.responses import Response as StarResponse
+                res_bytes = b""
+                async for chunk in response.body_iterator:
+                    res_bytes += chunk
+                res_body = res_bytes.decode("utf-8", errors="replace")
+                # 重建响应（body_iterator 只能消费一次）
+                response = StarResponse(
+                    content=res_bytes,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.media_type,
+                )
+            except Exception:
+                pass
+
+            # 从 JWT 解析用户名
+            user = None
+            try:
+                auth_header = request.headers.get("authorization", "")
+                if auth_header.startswith("Bearer "):
+                    payload = verify_token(auth_header[7:])
+                    user = payload.get("login", "")
+            except Exception:
+                pass
+
+            _record_error(
+                method=request.method,
+                url=str(request.url),
+                status=response.status_code,
+                req_body=req_body,
+                res_body=res_body,
+                user=user,
+            )
+
+        return response
+
+
+app.add_middleware(ErrorCollectorMiddleware)
+
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(parts.router, prefix=API_PREFIX)
 app.include_router(part.router)
@@ -124,6 +194,7 @@ app.include_router(part_template_files.router, prefix=API_PREFIX)
 app.include_router(document_baseline_export.router)
 app.include_router(instance_collection.router)
 app.include_router(virtual_instance_collection.router)
+app.include_router(dev_router.router)
 
 
 @app.websocket("/ws")

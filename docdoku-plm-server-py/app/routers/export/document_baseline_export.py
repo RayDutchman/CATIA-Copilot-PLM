@@ -36,15 +36,15 @@ def export_document_baseline_files(
     # 查询基线文档的二进制文件
     rows = db.execute(sql_text(
         """
-        SELECT DISTINCT br.full_name
+        SELECT DISTINCT br.fullname
         FROM baselineddocument bd
         JOIN documentiteration_binres dib ON (
             dib.workspace_id = bd.target_workspace_id
             AND dib.documentmaster_id = bd.target_documentmaster_id
-            AND dib.documentrevision_version = bd.target_documentrevision_version
+            AND dib.documentrevision_version = bd.target_docrevision_version
             AND dib.iteration = bd.target_iteration
         )
-        JOIN binaryresource br ON br.full_name = dib.attachedfile_fullname
+        JOIN binaryresource br ON br.fullname = dib.attachedfile_fullname
         WHERE bd.documentcollection_id = (
             SELECT documentcollection_id FROM documentbaseline
             WHERE id = :bl_id

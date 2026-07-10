@@ -15,11 +15,11 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
 def _build_lov_dto(lov_row: dict, db, ws: str) -> dict:
-    """将 listofvalues 行 + 关联 attributes 组装成 DTO。"""
+    """将 lov 行 + 关联 namevalues 组装成 DTO。"""
     from sqlalchemy import text
     attrs = db.execute(text(
-        "SELECT attr_name, attr_value FROM listofvaluesattribute "
-        "WHERE workspace_id = :ws AND lov_name = :n ORDER BY attr_name"
+        "SELECT name, value FROM lov_namevalue "
+        "WHERE lov_workspace_id = :ws AND lov_name = :n ORDER BY namevalue_order"
     ), {"ws": ws, "n": lov_row["name"]}).fetchall()
     return {
         "name": lov_row["name"],

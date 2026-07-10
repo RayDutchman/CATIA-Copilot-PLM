@@ -22,11 +22,12 @@ svc = ProductService()
 def list_parts(
     workspace_id: str,
     start: int = Query(0, ge=0),
-    length: int = Query(50, ge=1, le=500),
+    # 对齐 Payara: length=0 表示返回全部（不限量）
+    length: int = Query(50, ge=0, le=500),
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    revisions = svc.list_revisions(db, workspace_id, start, length)
+    revisions = svc.list_revisions(db, workspace_id, start, length if length > 0 else None)
     return [map_revision(pr, db) for pr in revisions]
 
 
@@ -88,7 +89,7 @@ def search_parts(
     attributes: str = Query(None),
     content: str = Query(None),
     start: int = Query(0, ge=0, alias="from"),
-    length: int = Query(50, ge=1, le=500, alias="size"),
+    length: int = Query(50, ge=0, le=500, alias="size"),
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

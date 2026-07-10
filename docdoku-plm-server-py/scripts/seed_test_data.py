@@ -45,15 +45,14 @@ def cleanup():
         ("partiteration_geometry", "partmaster_partnumber"),
         ("partiteration_binres", "partmaster_partnumber"),
         ("partiteration_partusagelink", "partmaster_partnumber"),
-        ("partusagelink_cadinstance", None),
-        ("cadinstance", None),
-        ("partiteration_attribute", None),
-        ("partiteration_documentlink", None),
+        # partusagelink_cadinstance / cadinstance 无 SEED- 前缀列，通过 FK CASCADE 自动清理
+        ("partiteration_attribute", "partmaster_partnumber"),       # 修复：原 col=None 误清全表
+        ("partiteration_documentlink", "partmaster_partnumber"),     # 修复：原 col=None 误清全表
         ("partusagelink", "component_partnumber"),
         ("partrevision_tag", "partmaster_partnumber"),
         ("conversion", "partmaster_partnumber"),
-        ("partrevision_effectivity", None),
-        # 变更关联表
+        ("partrevision_effectivity", "partmaster_partnumber"),      # 修复：原 col=None 误清全表
+        # 变更关联表（FK 级联清理）
         ("changeorder_affected_document", None),
         ("changeorder_affected_part", None),
         ("changeissue_affected_document", None),
@@ -65,10 +64,11 @@ def cleanup():
         ("changeissue_tag", None),
         ("changerequest_changeissue", None),
         ("changeorder_changerequest", None),
-        ("changeorder", None),
-        ("changerequest", None),
-        ("changeissue", None),
-        ("milestone", None),
+        # 变更实体（用 name 列过滤 SEED- 前缀）
+        ("changeorder", "name"),
+        ("changerequest", "name"),
+        ("changeissue", "name"),
+        ("milestone", "description"),  # milestone 无 name 列，用 description 匹配
         # 产品结构
         ("productbaseline_optional", None),
         ("productbaseline_substitute", None),

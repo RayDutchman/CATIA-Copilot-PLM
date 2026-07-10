@@ -56,6 +56,12 @@ def compare(name, method, path, body=None, token_fa=None, token_py=None):
     py_code, py_data = curl(method, PY, path, body_dict=body, token=token_py)
     fa_keys = get_keys(fa_data); py_keys = get_keys(py_data)
     if fa_code == py_code and fa_keys == py_keys:
+        # 同状态码同 key：深度对比错误文本（仅 4xx/5xx 时）
+        if fa_code >= 400 and isinstance(fa_data, dict) and isinstance(py_data, dict):
+            fa_msg = fa_data.get("detail") or fa_data.get("message") or str(fa_data)
+            py_msg = py_data.get("detail") or py_data.get("message") or str(py_data)
+            if fa_msg != py_msg:
+                return "PARTIAL", f"{fa_code} err-msg-diff FA={fa_msg[:80]} PY={py_msg[:80]}"
         return "MATCH", fa_code
     elif fa_code == py_code:
         fa_only = set(fa_keys) - set(py_keys)
@@ -110,7 +116,6 @@ A(E("GET",  "/workspaces/more", "ws-more"))
 A(E("GET", f"/workspaces/{WS}", "ws-detail"))
 A(E("GET", f"/workspaces/{WS}/stats-overview", "ws-stats"))
 A(E("GET", f"/workspaces/{WS}/disk-usage-stats", "ws-disk"))
-A(E("GET", f"/workspaces/{WS}/disk-usage", "ws-disk-usage"))
 A(E("GET", f"/workspaces/{WS}/front-options", "ws-front-opt"))
 A(E("GET", f"/workspaces/{WS}/back-options", "ws-back-opt"))
 A(E("PUT", f"/workspaces/{WS}/front-options", "ws-front-opt-update", {"xml": ""}))
@@ -123,7 +128,6 @@ A(E("GET", f"/workspaces/{WS}/users-stats", "ws-users-stats"))
 A(E("GET", f"/workspaces/{WS}/users", "users"))
 A(E("GET", f"/workspaces/{WS}/users/me", "users-me"))
 A(E("GET", f"/workspaces/{WS}/users/admin", "users-admin"))
-A(E("GET", f"/workspaces/{WS}/users/{LOGIN}", "user-detail"))
 A(E("GET", f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions", "user-tag-subs"))
 A(E("PUT", f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions/tag1", "user-tag-sub-add", {}))
 A(E("DELETE", f"/workspaces/{WS}/users/{LOGIN}/tag-subscriptions/tag1", "user-tag-sub-del"))
@@ -329,7 +333,6 @@ def _milestones():
 
 # ━━ Tasks ━━
 A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/assigned", "tasks-assigned"))
-A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/in-progress", "tasks-in-progress"))
 A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/documents", "tasks-docs"))
 A(E("GET", f"/workspaces/{WS}/tasks/{LOGIN}/parts", "tasks-parts"))
 A(E("GET", f"/workspaces/{WS}/tasks/1", "task-detail"))
@@ -358,9 +361,6 @@ A(E("GET", f"/workspaces/{WS}/effectivities/1", "eff-detail"))
 # ━━ Webhooks ━━
 A(E("GET", f"/workspaces/{WS}/webhooks", "webhooks"))
 A(E("GET", f"/workspaces/{WS}/webhooks/1", "webhook-detail"))
-
-# ━━ Notifications ━━
-A(E("GET", f"/workspaces/{WS}/notifications", "notifications"))
 
 # ━━ Shared ━━
 A(E("GET", f"/shared/{WS}/documents/SEED-DOC-A", "shared-doc"))

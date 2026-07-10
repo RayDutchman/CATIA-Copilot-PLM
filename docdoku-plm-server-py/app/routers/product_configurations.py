@@ -231,9 +231,5 @@ def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
     return {"aclId": new_acl_id}
 
 
-@router.post("/workspaces/{ws}/products/{pid}/path-to-path-links", status_code=201)
-def create_path_to_path_link(ws: str, pid: str, body: dict,
-                              current_user: Account = Depends(get_current_user),
-                              db: Session = Depends(get_db)):
-    """创建路径间链接 stub。"""
-    return {"id": -1, "status": "stub"}
+# 注意：CI 级 PathToPathLink CRUD（POST/GET/PUT/DELETE）定义在 products.py 路由中，
+# 避免与 product_configurations.py 的同 prefix 路由冲突。

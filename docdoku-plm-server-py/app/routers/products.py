@@ -38,6 +38,15 @@ def _fmt_date(d) -> str | None:
     return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
 
 
+def _p2p_svc_lazy(db, ws: str, ci_id: str) -> list:
+    """延迟查询 CI 的 PathToPathLink 列表（避免在文件顶部循环引用）。"""
+    from app.services.products.path_to_path_service import path_to_path_service
+    try:
+        return path_to_path_service.get_links_for_ci(db, ws, ci_id)
+    except Exception:
+        return []
+
+
 def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
     name = ""
     latest_version = ""
@@ -65,7 +74,7 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
         "hasModificationNotification": svc._has_modification_notification(
             db, ci.workspace_id, ci.partmaster_partnumber
         ) if ci.partmaster_partnumber else False,
-        "pathToPathLinks": [],
+        "pathToPathLinks": _p2p_svc_lazy(db, ci.workspace_id, ci.id),
     }
 
 
@@ -282,18 +291,14 @@ def last_release(ws: str, ci_id: str,
         author_name = pm_author.name
     chk_user = None
     if rev.checkout_user_login:
+        chk_acct = db.query(Account).filter(Account.login == rev.checkout_user_login).first()
         chk_user = {
             "login": rev.checkout_user_login,
-            "name": rev.checkout_user_login,
-            "email": None,
-            "language": None,
+            "name": (chk_acct.name if chk_acct and chk_acct.name else rev.checkout_user_login) or "",
+            "email": chk_acct.email if chk_acct else None,
+            "language": chk_acct.language if chk_acct else None,
             "workspaceId": rev.checkout_user_workspace_id or ws,
         }
-        chk_acct = db.query(Account).filter(Account.login == rev.checkout_user_login).first()
-        if chk_acct:
-            chk_user["name"] = chk_acct.name or chk_acct.login
-            chk_user["email"] = chk_acct.email
-            chk_user["language"] = chk_acct.language
     return {
         "partKey": f"{rev.partmaster_partnumber}-{rev.version}",
         "number": rev.partmaster_partnumber,
@@ -398,28 +403,38 @@ def export_files(ws: str, pid: str,
 def path_to_path_links_types(ws: str, pid: str,
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
-    """返回 CI 的路径间链接类型列表。"""
+    """返回 CI 下所有路径间链接的去重类型列表。
+
+    对齐 Payara ProductManagerBean.getPathToPathLinkTypes()：
+    通过 configurationitem_p2plink 关联表找属于该 CI 的 links，再去重 type。
+    """
     rows = db.execute(text(
-        "SELECT id, type, name, sourcepath, targetpath, description "
-        "FROM pathtopathlink "
-        "WHERE workspace_id = :ws"
-    ), {"ws": ws}).fetchall()
-    return [{"id": r[0], "type": r[1], "name": r[2],
-             "sourcePath": r[3], "targetPath": r[4], "description": r[5]}
-            for r in rows]
+        "SELECT DISTINCT ppl.type "
+        "FROM pathtopathlink ppl "
+        "JOIN configurationitem_p2plink cp ON cp.pathtopathlink_id = ppl.id "
+        "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci"
+    ), {"ws": ws, "ci": pid}).fetchall()
+    return [r[0] for r in rows if r[0]]
 
 
-@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}")
-@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source}/target/{target}/", include_in_schema=False)
+@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source:path}/target/{target:path}")
+@router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source:path}/target/{target:path}/", include_in_schema=False)
 def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
                                current_user: Account = Depends(get_current_user),
                                db: Session = Depends(get_db)):
-    """返回指定源→目标的路径间链接详情。"""
+    """返回 CI 下指定源→目标路径的链接列表。
+
+    对齐 Payara ProductManagerBean.getPathToPathLinkFromSourceAndTarget()。
+    """
     rows = db.execute(text(
-        "SELECT id, type, name, description FROM pathtopathlink "
-        "WHERE workspace_id = :ws AND sourcepath = :src AND targetpath = :tgt"
-    ), {"ws": ws, "src": source, "tgt": target}).fetchall()
-    return [{"id": r[0], "type": r[1], "name": r[2], "description": r[3]}
+        "SELECT ppl.id, ppl.type, ppl.description, ppl.sourcepath, ppl.targetpath "
+        "FROM pathtopathlink ppl "
+        "JOIN configurationitem_p2plink cp ON cp.pathtopathlink_id = ppl.id "
+        "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci "
+        "AND ppl.sourcepath = :src AND ppl.targetpath = :tgt"
+    ), {"ws": ws, "ci": pid, "src": source, "tgt": target}).fetchall()
+    return [{"id": r[0], "type": r[1], "description": r[2],
+             "sourceComponents": [], "targetComponents": []}
             for r in rows]
 
 
@@ -583,3 +598,68 @@ def ci_document_links_wip(ws: str, ci_id: str, pn: str, config_spec: str,
             "commentLink": dl.comment or "",
         })
     return result
+
+
+# ══════════════════════════════════════════════════════════
+# CI 级 PathToPathLink CRUD（对齐 Payara ProductManagerBean）
+# ══════════════════════════════════════════════════════════
+
+from app.services.products.path_to_path_service import path_to_path_service as _p2p_svc
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/path-to-path-links")
+@router.get("/workspaces/{ws}/products/{ci_id}/path-to-path-links/", include_in_schema=False)
+def ci_p2p_links_list(ws: str, ci_id: str,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """获取 CI 的所有 PathToPathLink 列表。"""
+    return _p2p_svc.get_links_for_ci(db, ws, ci_id)
+
+
+@router.post("/workspaces/{ws}/products/{ci_id}/path-to-path-links", status_code=201)
+@router.post("/workspaces/{ws}/products/{ci_id}/path-to-path-links/", status_code=201, include_in_schema=False)
+def ci_create_p2p_link(ws: str, ci_id: str, body: dict,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """创建 CI 级 PathToPathLink（含环检测）。"""
+    link_type = body.get("type", "")
+    path_from = body.get("sourcePath", body.get("pathFrom", ""))
+    path_to = body.get("targetPath", body.get("pathTo", ""))
+    description = body.get("description", "")
+    return _p2p_svc.create_path_to_path_link(
+        db, ws, ci_id, link_type, path_from, path_to, description
+    )
+
+
+@router.get("/workspaces/{ws}/products/{ci_id}/path-to-path-links/{link_id}")
+@router.get("/workspaces/{ws}/products/{ci_id}/path-to-path-links/{link_id}/", include_in_schema=False)
+def ci_p2p_link_by_id(ws: str, ci_id: str, link_id: int,
+                       current_user: Account = Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    """按 ID 获取 CI 级单个 PathToPathLink。"""
+    from app.core.exceptions import PathToPathLinkNotFoundException
+    link = _p2p_svc.get_link_by_id(db, link_id)
+    if not link:
+        raise PathToPathLinkNotFoundException("PathToPathLinkNotFoundException", str(link_id))
+    return link
+
+
+@router.put("/workspaces/{ws}/products/{ci_id}/path-to-path-links/{link_id}")
+@router.put("/workspaces/{ws}/products/{ci_id}/path-to-path-links/{link_id}/", include_in_schema=False)
+def ci_update_p2p_link(ws: str, ci_id: str, link_id: int, body: dict,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """更新 CI 级 PathToPathLink（只能改 description）。"""
+    description = body.get("description", "")
+    return _p2p_svc.update_path_to_path_link(db, ws, ci_id, link_id, description)
+
+
+@router.delete("/workspaces/{ws}/products/{ci_id}/path-to-path-links/{link_id}", status_code=204)
+@router.delete("/workspaces/{ws}/products/{ci_id}/path-to-path-links/{link_id}/", status_code=204, include_in_schema=False)
+def ci_delete_p2p_link(ws: str, ci_id: str, link_id: int,
+                        current_user: Account = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """删除 CI 级 PathToPathLink。"""
+    from fastapi.responses import Response
+    _p2p_svc.delete_path_to_path_link(db, ws, ci_id, link_id)
+    return Response(status_code=204)

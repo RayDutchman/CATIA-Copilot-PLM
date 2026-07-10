@@ -1,6 +1,6 @@
 # FastAPI 迁移遗留清单（Migration Loose Ends）
 
-> 生成日期：2026-07-08 ｜ 更新：2026-07-09（A+B+C 批次完成）
+> 生成日期：2026-07-08 ｜ 更新：2026-07-09（A+B+C 批次 + PathData/P2P 域完成）
 > 范围：Java EE Payara (`docdoku-plm-server`) → FastAPI (`docdoku-plm-server-py`) 后端迁移
 > 状态：**核心业务已 100% 走 FastAPI，Payara 在生产链路已被完全绕过**，剩余为功能性 loose ends
 >
@@ -18,6 +18,18 @@
   - `_query_substitute_links`：`pm.number`→`pm.partnumber`
   - `_query_optional_links`：删除不存在的 `pul.component_partversion` join 条件
   - `_query_path_to_path_links`：`pathtopathlink` 无 `name`/`workspace_id` 列 → 改返回 []（PPL 域延后）
+
+## 2026-07-09 进展摘要（PathData/P2P + configSpec 修复）
+- ✅ **PathData / Path-to-Path Link 域全量实现**：
+  - 新建 `path_data_service.py`：5 个 CRUD 方法（create/addIter/update/delete/getByPath）
+  - 新建 `path_to_path_service.py`：CI 级 CRUD（含 DFS 环检测）+ 实例级查询
+  - `product_instances.py`：补 PathData 8 端点 + P2P 实例级 6 端点
+  - `products.py`：补 CI 级 P2P CRUD 5 端点
+  - `product_configurations.py`：create_path_to_path_link stub → 真实实现
+  - `product_baselines.py`：P2P 查询真实化（通过 productbaseline_p2plink）
+  - ORM 重建（path_data_master/path_data_iteration/path_to_path_link）
+- ✅ **filter configSpec 解析 Bug 修复**：`parse_config_spec_str` 静态方法，支持 latest/released/wip/baseline-id；消除 `'str' object has no attribute 'filter_part_iterations'` 500
+- ✅ **hasPathData 路径格式修复**：`_check_has_path_data` 路径格式 `{ci_id}-u2-u5` → `-1-u2-u5`；visitor 路径也支持真实查询
 
 ## 两大域已出独立计划
 - 📋 **PathData/Path-to-Path**：`docs/superpowers/plans/2026-07-09-pathdata-domain.md`（15–20h）
@@ -40,13 +52,13 @@
 
 ---
 
-## 一、🔴 P0 — PathData / Path-to-Path Link 域（最大缺口，跨层缺失）
+## 一、✅ P0 — PathData / Path-to-Path Link 域（**2026-07-09 已完成**）
 
-这是唯一"Python 端点显著少于 Java"的域，且牵连多处降级。对 CATIA 装配路径级数据（路径实例属性、路径文件、路径间链接）是关键功能。
+> 已完成：PathData CRUD Service + PathToPathLink Service（含 DFS 环检测）+ 18 个 REST 端点 + ORM 重建 + 降级点回填。冒烟测试通过（176 passed）。
 
-### 1.1 REST 端点缺失（`ProductInstancesResource` → `product_instances.py`，缺 ~17 个）
+~~### 1.1 REST 端点缺失（`ProductInstancesResource` → `product_instances.py`，缺 ~17 个）~~
 
-Java 25 个 HTTP 方法 → Python ~8 个独立路径。缺失清单：
+所有端点已实现，见 `CHANGELOG.md` 2026-07-09 条目。
 
 | 状态 | Java 端点路径 | 说明 |
 |------|-------------|------|

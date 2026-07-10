@@ -89,13 +89,3 @@ def acknowledge_notification(ws: str, notification_id: int, body: dict = Body(..
         db, ws, notification_id,
         body.get("ackComment", ""), current_user.login)
     return _build_notification_dict(n, db)
-
-
-@router.get(f"{PREFIX}/notifications", response_model=List[ModificationNotificationDTO])
-@router.get(f"{PREFIX}/notifications/", include_in_schema=False)
-def list_notifications(ws: str, db: Session = Depends(get_db),
-                       current_user: Account = Depends(get_current_user)):
-    """返回工作区所有修改通知（按时间倒序）。"""
-    notifications = notification_service.list_all(db, ws)
-    return [_build_notification_dict(n, db) for n in notifications]
-

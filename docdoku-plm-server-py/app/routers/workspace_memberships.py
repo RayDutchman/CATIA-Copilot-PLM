@@ -204,14 +204,25 @@ def disable_user(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/user-access/", include_in_schema=False)
 def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
-    """设置用户访问权限"""
+    """设置用户工作区访问权限。
+
+    对齐 Java WorkspaceResource.setUserAccess → UserManagerBean.grantUserAccess：
+    - 前端发送 {login, membership: "READ_ONLY"|"FULL_ACCESS"}
+    - 只写 workspaceusermembership.readonly，不触及 account.enabled（全局字段）
+    """
     _check_workspace_admin(db, ws, current_user)
     login = body.get("member", {}).get("login", "") or body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
-    read_only = body.get("readOnly", False)
-    db.execute(text("UPDATE account SET enabled = :en WHERE login = :l"),
-               {"en": not read_only, "l": login})
+
+    # 对齐 Java UserDTO.getMembership() == WorkspaceMembership.READ_ONLY
+    membership = body.get("membership", "")
+    if membership:
+        read_only = (membership == "READ_ONLY")
+    else:
+        # 兼容旧的 readOnly 布尔字段（向后兼容）
+        read_only = body.get("readOnly", False)
+
     db.execute(text(
         "INSERT INTO workspaceusermembership "
         "(workspace_id, member_login, member_workspace_id, readonly) "

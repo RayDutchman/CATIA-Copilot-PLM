@@ -92,21 +92,6 @@ class WorkspaceService:
         db.commit()
         return self.get_workspace(db, ws)
 
-    def get_disk_usage(self, db: Session, ws: str) -> int:
-        """获取工作区磁盘用量（vault 目录字节数求和）。"""
-        from pathlib import Path
-        from app.core.config import settings
-        vault = Path(settings.VAULT_PATH) / ws
-        total = 0
-        if vault.exists():
-            for p in vault.rglob("*"):
-                if p.is_file():
-                    try:
-                        total += p.stat().st_size
-                    except OSError:
-                        pass
-        return total
-
     def get_workspace_front_options(self, db: Session, ws: str) -> dict:
         """读取 workspacefrontoptions + 列配置（对齐 Payara getWorkspaceFrontOptions）。"""
         part_cols = db.execute(text(
