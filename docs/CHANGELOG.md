@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-07-10 — 工作区删除 500 修复 + WebSocket /ws 403 修复
+
+> 分支 `feat/py-query-execution-engine`。均已 docker cp 部署 back-py 并线上验证。
+
+### fix(py-workspace): 删除工作区 500（FK 违规）
+- 症状：admin 删除 `Workspace_2` 报 500（`DELETE /workspaces/Workspace_2`），但能删空工作区"测试工作区"。
+- 根因：`app/routers/workspaces.py::delete_workspace` 的手写级联删除**覆盖不全**——空工作区无子数据可删成功，而 Workspace_2 富数据触发 `fk_changeissue_affected_part_iteration` 等外键；实测缺失约 40+ 张引用表（变更管理/effectivity/layer/marker/产品实例子链接/pathData/P2P/query/import/模板/workflow/订阅/collection/shared entity 等）。
+- 修复：对齐 Payara `WorkspaceDAO.removeWorkspace` 的完整级联（17 阶段），并用 `SET LOCAL session_replication_role='replica'` 关闭 FK 触发器以规避严格删除顺序（changeit 为超级用户）。**保留全局 `account`/`credential`/`usergroupmapping`（注册用户）**，仅删除 `userdata`（工作区成员关系）；用户不在任何工作区时才清理其 `usergroupmapping`。运行时纯 SQL、不依赖 Java 源码。
+- 验证（非破坏性）：对 Workspace_2 真实数据（2656 零件）执行 flush 后，23 项残留引用检查全部为 0，再 rollback，数据未改动。
+
+### fix(py-ws): WebSocket /ws 握手 403
+- 双重根因：（1）路由注册为 `/ws`，但前端/nginx 实际访问 `/docdoku-plm-server-rest/ws`，Starlette 无匹配路由；（2）`ws_endpoint(websocket)` 缺 `WebSocket` 类型注解 → FastAPI 将 `websocket` 误判为**必填 query 参数**，握手时校验缺参 → 403（`websocket_param_name=None, query_params=['websocket']`）。
+- 修复（`app/main.py`）：路由改为 `@app.websocket("/docdoku-plm-server-rest/ws")` + 参数注解 `websocket: WebSocket`。
+- 验证：握手返回 `101 Switching Protocols`（back-py 直连 + 经 front nginx），AUTH 消息往返得到 `{"type":"AUTH_OK","login":"test1"}`。
+
+---
+
 ## 2026-07-10 — Importer 属性导入域（FastAPI）
 
 > 分支 `feat/py-query-execution-engine`。对齐 Payara `ExcelParser` / `AttributesImporterUtils` / `ImporterBean` / `PartsResource`。仅 `.xlsx` 属性导入落地（BOM 保留 stub，Java 侧本无实现）。全量 pytest 272 passed（+83 新测试）/ 10 预存 seed 失败 / 1 skipped，无回归；docker cp 部署 back-py 并线上冒烟通过（preview/import/poll/delete 全链路）。

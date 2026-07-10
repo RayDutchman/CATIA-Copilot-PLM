@@ -113,10 +113,11 @@
 
 | 项 | 状态 |
 |----|------|
-| WebSocket /ws 403 | 已知问题（握手失败），不影响主功能 |
+| WebSocket /ws 403 | ✅ 2026-07-10 修复（路径对齐 `/docdoku-plm-server-rest/ws` + 补 `WebSocket` 类型注解） |
 | OnDemandConverter | deferred（需 LibreOffice 引擎） |
 | Payara 容器保留 | Port 85 (8005) 对比用，设计如此 |
-| pytest 10 failures | 种子数据权限问题导致，非代码 bug（seed_test_data 需修） |
+| pytest 失败 | 种子数据/测试脆弱性（seed_test_data 需修；含删除"测试工作区"后 test_query_save 依赖缺失） |
+| 工作区删除级联 | ✅ 2026-07-10 修复（delete_workspace 完整级联 + replica 模式，保留 account/credential） |
 
 ---
 
@@ -126,8 +127,8 @@
 |--------|-----|----------|--------|
 | 1 | ~~Importer 域~~ | ✅ 2026-07-10 完成 | — |
 | 2 | ~~Query 执行引擎~~ | ✅ 2026-07-10 完成 | — |
-| 3 | **WebSocket 403** | 待排期 | 中 |
-| 4 | **种子脚本修复** | 权限 + 数据一致性（解阻 10 个 pytest 失败） | 小 |
+| 3 | ~~WebSocket 403~~ | ✅ 2026-07-10 修复 | — |
+| 4 | **种子脚本修复** | 权限 + 数据一致性（解阻 pytest 失败；含 test_query_save 硬编码工作区依赖） | 小 |
 
 ---
 

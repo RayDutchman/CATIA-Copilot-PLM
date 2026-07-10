@@ -19,7 +19,7 @@
 - [ ] **reindex 邮件通知 i18n** — 基础实现已完成，待补全多语言资源
 - [ ] **Decimation 减面优化** — conversion 容器脚本缺失
 - [ ] **Windows 重启后 Docker 端口失效** — `wsl --shutdown` 恢复
-- [ ] **WebSocket /ws 403** — 握手失败，已知遗留
+- [x] **WebSocket /ws 403（2026-07-10 已修复）** — 路由路径对齐 `/docdoku-plm-server-rest/ws` + 补 `WebSocket` 类型注解，握手 101 + AUTH_OK
 
 ---
 
@@ -52,6 +52,11 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **2026-07-10 工作区删除 500 + WebSocket 403 修复**（分支 feat/py-query-execution-engine）:
+  - 删除工作区：手写级联补全（对齐 WorkspaceDAO.removeWorkspace，replica 模式关 FK 触发器），保留 account/credential/usergroupmapping，仅删 userdata；对 Workspace_2 真实数据非破坏性验证残留引用全 0
+  - WebSocket：路由路径 `/docdoku-plm-server-rest/ws` + 补 `WebSocket` 注解（原 FastAPI 误判 websocket 为必填 query 参数），握手 101 + AUTH_OK
+  - 注：`test_query_save` 因用户删除"测试工作区"导致其硬编码依赖（userdata e@测试用工作区）缺失而失败——数据/测试脆弱性，非代码回归；归入种子脚本待办
 
 - [x] **2026-07-10 Importer 属性导入域**（分支 feat/py-query-execution-engine）:
   - Excel 解析器（对齐 ExcelParser.java）+ 属性合并工具（merge/LOV）+ Import 记录 CRUD
