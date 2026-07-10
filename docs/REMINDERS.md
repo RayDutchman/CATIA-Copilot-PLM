@@ -6,58 +6,66 @@
 
 ## 待办
 
-> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-09 已完成 A+B+C 批次 + PathData/P2P 域 + configSpec 解析修复 + 基线可用性校验 + deps 访问控制修复 + 用户姓名全量修复 + 用户权限 bug 修复。**剩余 2 个功能域**（均有计划或待排期）：① Importer 导入（`plans/2026-07-09-importer-domain.md`）② Query 执行引擎（待排期）。本文件只保留**跨领域非迁移**待办。
+> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限/Baseline/LOV/export-files SQL 修复合集。**剩余 2 个功能域**：① Importer 导入 ② Query 执行引擎。本文件只保留**跨领域非迁移**待办。
 
 ### 高优先级
 
-- [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — TASK_USER/TASK_USERGROUP 多对多表已接入: instantiate_workflow INSERT 分配, _is_potential_worker 查双表, get_assigned_tasks JOIN 双表。对齐 Java Task.assignedUsers/assignedGroups。
-
-- [ ] **3D 预览不显示** — Nginx/uvicorn HTTP 代理层与 Three.js r90 交互差异。GLB 字节/headers 对齐，但 FA 侧不加载。需 tcpdump 抓包或升级 Three.js。
-
-- [x] **update_iteration 3 项辅助功能已补齐 (2026-07-07)**:
-  - `_sync_instance_attribute_templates` — InstanceAttributeTemplate 同步
-  - `hasValidChange` 校验 — AttributesConsistencyUtils 验证
-  - ES reindex — indexer_manager.index_part_revision
-  **装配 BOM 同步组件（_sync_components）本身已完整实现**（DELETE old + INSERT PartUsageLink + CADInstance + BFS 循环检测）
+- [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — 多对多表已接入
+- [ ] **3D 预览不显示** — Three.js r90 交互差异，需升级或抓包
+- [x] **update_iteration 3 项辅助功能已补齐 (2026-07-07)**
 
 ### 中优先级
 
-- [ ] **reindex 邮件通知 i18n 中英双语** — notifier.py 已实现基础中英 i18n，后续需对齐 Java PropertiesLoader 完整多语言资源文件 + 账号语言字段填充。
-
-- [ ] **Decimation 减面优化一直失败** — conversion 容器脚本缺失。
-
-- [ ] **Windows 重启后 Docker 端口失效** — WSL mirrored 模式 timing 问题，`wsl --shutdown` 恢复。
-
-- [ ] **portproxy 规则与 Docker 端口冲突** — iphlpsvc 占用 8000/8001。
+- [ ] **reindex 邮件通知 i18n** — 基础实现已完成，待补全多语言资源
+- [ ] **Decimation 减面优化** — conversion 容器脚本缺失
+- [ ] **Windows 重启后 Docker 端口失效** — `wsl --shutdown` 恢复
+- [ ] **WebSocket /ws 403** — 握手失败，已知遗留
 
 ---
 
-## 用户报出的 Bug（2026-07-09 会话，待用户确认修复）
+## 用户报出的 Bug（2026-07-10 更新）
 
 | # | 问题 | 状态 | 备注 |
 |---|------|------|------|
-| 1 | ~~删除工作区报"未找到用户 test1"~~ | ✅ Fixed | deps.py: 补 workplace.admin_login 检查 |
-| 2 | ~~创建基线报 TypeError `undefined 'name'`~~ | ✅ Fixed | (a) 补零件可用性校验对齐 Java (b) 响应返回 _bl_summary_dict 含 author |
-| 3 | 通知设置不持久化 | ⏳ 待确认 | 调查发现 API 实现正确（有 commit），可能是前端权限问题（非 admin 返回403），需用户确认登录身份 |
-| 4 | Payara JPA 缓存导致 8000/8005 权限互相不可见 | ⏳ 已知 | 架构问题，见 2026-07-09 调查结论（EclipseLink L2 缓存） |
+| 1 | ~~删除工作区"未找到用户 test1"~~ | ✅ Fixed | deps.py 补 admin_login + usergroup_user 组检查 |
+| 2 | ~~创建基线 TypeError + 校验缺失~~ | ✅ Fixed | BFS 校验 + response 补 author |
+| 3 | 通知设置不持久化 | ⏳ 待确认 | API 实现正确，可能是前端权限问题 |
+| 4 | Payara JPA 缓存 8000/8005 权限互相不可见 | ⏳ 已知 | EclipseLink L2 缓存架构问题 |
+| 5 | ~~effectivities 500~~ | ✅ Fixed | pre.workspace_id→pre.partmaster_workspace_id |
+| 6 | ~~用户列表显示 login 而非姓名~~ | ✅ Fixed | tasks/doc_baselines/product_structure 全量补 Account.name |
+| 7 | ~~零件创建 422 (camelCase)~~ | ✅ Fixed | PartCreationDTO 补 Field alias |
+| 8 | ~~零件列表"显示全部" 422~~ | ✅ Fixed | length ge=1→ge=0 对齐 Payara pMaxResults==0 |
+| 9 | ~~admin 账号前端崩溃 (CoWorkersAccessView)~~ | ✅ 已定位 | 前端 bug（4 个 main.js 缺 admin guard），非后端 |
+| 10 | ~~export-files 3 端点 500~~ | ✅ Fixed | br.fullname/pi.nativecadfile_fullname/bd.target_docrevision_version |
+| 11 | ~~LOV 500~~ | ✅ Fixed | listofvalues→lov 表名修正 |
+| 12 | ~~groups 创建 500~~ | ✅ Fixed | create_group 补 db.flush() |
 
 ---
 
 ## 已知限制
 
-- **CATIA 原生格式不支持转换** — `.CATPart`/`.CATProduct`/`.3dxml` 需预先导出为 STEP/STL
-- **back 容器 JVM 参数需两次重启才生效**
+- **CATIA 原生格式不支持转换** — 需预先导出 STEP/STL
+- **back 容器 JVM 参数需两次重启** — Payara 特性
 - **Conversion service Decimation 持续失败** — 不影响 GLB 生成
-- **REST API BasicAuth 401** — `admin:password` 经 BasicAuth 调 REST API 返回 401（JWT 正常）
+- **pytest 10 failures** — 种子数据脚本权限问题导致（非代码 bug）
 
 ---
 
 ## 已解决（近期）
 
+- [x] **2026-07-10 全量修复合集**（67 文件，c668d31）:
+  - PathData/P2P 域完整实现（18 端点 + Service + DFS 环检测）
+  - 全量对比修复：export-files SQL 列名、LOV 表名、effectivities 列名、groups FK、parts length=0
+  - 用户姓名全量修复：tasks/doc_baselines/product_structure/products
+  - 权限 bug + deps 访问控制对齐 + PartCreationDTO camelCase
+  - baseline 完整修复（校验 + 响应 + parts 端点）
+  - 4 个 FA 自创端点删除
+  - 对比脚本增强（158 端点 + 错误文本对比 + 行为测试）
+  - 176 passed / 1 skipped / 行为测试 10/10
+
 - [x] **审计遗留三项处理 (2026-07-08)**:
-  - **check_write_access null-ACL 全覆盖** — 补全 7 处未传 workspace_id 的调用点（milestones/change_common/document_manager×3/workflow_manager 封装+2 caller/change_manager 一致性），acl_id=None 时正确校验 workspace 写权限
-  - **extra=forbid 静默 500** — 7 项风险修复，全部对齐 Payara Java DTO：TaskDTO 删 closingDate；ACLDTO 改 List<ACLEntryDTO>+2 Map；WorkflowModelDTO workspaceId→reference；TaskHolderDoc 端点改 DocumentRevisionDTO（light）；ProductInstance 删 productBaselineId/workspaceId；OrganizationDTO 补 owner
-  - **_relaunch_workflow** — 验证审计遗留已于 2164b07/9bfe150 解决（INSERT SELECT 深拷贝），无需改动
+  - check_write_access null-ACL 全覆盖
+  - extra=forbid 静默 500 — 7 项风险修复
   - 176 passed / 1 skipped，线上 5 端点 200/204 无 500
 
 - [x] **审计修复 B1-B7 全量完成 (2026-07-07)** — 12/13 发现已修复（见 audit-report.md）:
