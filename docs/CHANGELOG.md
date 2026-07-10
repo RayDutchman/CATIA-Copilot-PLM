@@ -17,6 +17,7 @@
 - feat(py-import): `ImporterService` 属性导入编排（`app/services/importer.py`）——对齐 doPartImport/bulkPartUpdate：PartMaster 查找、写权限/canChange 判定、checkout 前迭代读现有属性→merge→错误门控（有错不写）→checkout→dtype 感知写入→commit→可选 checkin；`dry_run_import_into_parts` 返回 partRevsToCheckout；BOM 方法保留 stub
 - feat(py-import): 5 个 import REST 端点接入（`app/routers/parts.py`，全部 `/workspaces/{ws}/parts/...`）——POST import（multipart `upload`，importType 门控，import_record 持久化，204）、POST importPreview（同步返回 ImportPreviewDTO，200）、GET imports/{filename}、GET import/{id}（404）、DELETE import/{id}（204）
 - fix(py): 最终评审修复——`query_executor` pr.*/pm.* 未知列名走 `_safe_ident` 白名单防 SQL 注入（+3 回归测试）；`post_workspace_query` 补 `response_model=list`；导入端点先算 is_admin 再 create_import（避免孤儿 pending 记录）
+- docs(tracker): 同步 `migration/tracker.csv`——新增 5 条 PythonSpecial 行（Y-009~013：query_executor/query_pbs/excel_parser/attributes_importer_utils/import_record），订正 R-056（query_result.py 实际位置）与 X-008（ext/ 版未启用，功能见 Y-012）
 
 > 已知设计分歧（记录待后续统一）：`importer._write_iteration_attributes` **写入** `instanceattribute.dtype`（如 `InstanceTextAttribute`），而应用内既有 `product_manager._sync_instance_attributes` **不写** dtype。此分歧是刻意的——保证导入的属性能被 `query_executor`（按 `ia.dtype` 过滤）检索到。后续可考虑统一 `_sync` 也写 dtype。
 

@@ -305,7 +305,7 @@ R-052,Router,file,P3B,已完成,BinaryResourceUpload.java,upload.py,,
 R-053,Router,writers,P3B,已完成,DocumentBaselineFileExportMessageBodyWriter.java,document_baseline_export.py,,
 R-054,Router,writers,P3B,已完成,InstanceCollectionMessageBodyWriter.java,instance_collection.py,,
 R-055,Router,writers,P3B,已完成,ProductFileExportMessageBodyWriter.java,product_file_export.py (集成到products.py),,
-R-056,Router,writers,P3B,已完成,QueryResultMessageBodyWriter.java,query_result.py (集成到parts.py),,
+R-056,Router,writers,P3B,已完成,QueryResultMessageBodyWriter.java,app/schemas/query_result.py,,按 selects 序列化；端点集成到 parts.py runCustomQuery
 R-057,Router,writers,P3B,已完成,VirtualInstanceCollectionMessageBodyWriter.java,virtual_instance_collection.py,,
 R-058,Router,util,P3B,已完成,DocumentBaselineFileExport.java,document_baseline_file_export.py,,
 R-059,Router,util,P3B,已完成,FileDownloadTools.java,file_download_tools.py,,
@@ -471,7 +471,7 @@ X-004,Extension,ext,P4B,已完成,ConverterUtils.java,ext/converter_utils.py,,
 X-005,Extension,ext,P4B,已完成,OnDemandConverter.java,ext/ondemand_converter.py,,
 X-006,Extension,ext,P4B,已完成,Attribute.java,ext/attribute_model.py,,
 X-007,Extension,ext,P4B,已完成,AttributesHolder.java,ext/attributes_holder.py,,
-X-008,Extension,ext,P4B,已完成,AttributesImporterUtils.java,ext/attributes_importer_utils.py,,
+X-008,Extension,ext,P4B,已完成,AttributesImporterUtils.java,ext/attributes_importer_utils.py,,ext/ 为占位抽象未启用；功能实现见 Y-012 app/services/importers/attributes_importer_utils.py
 X-009,Extension,ext,P4B,已完成,BomImporter.java,ext/bom_importer.py（含BomImportResult）,,
 X-010,Extension,ext,P4B,已完成,BomImporterResult.java,ext/bom_importer.py(与X-009合并),,
 X-011,Extension,ext,P4B,已完成,PartImporter.java,ext/part_importer.py（含PartImportResult+PartToImport）,,
@@ -522,3 +522,8 @@ Y-005,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/s
 Y-006,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/acl_helper.py,,ACL 条目创建/更新 → ACLFactory
 Y-007,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/vault.py,,Vault 文件路径规则 → BinaryStorageManagerBean
 Y-008,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/es_query_builder.py,,ES 搜索 DSL 构建 → IndexerQueryBuilder
+Y-009,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/query_executor.py,,查询执行引擎 → PartRevisionQueryDAO/PathDataQueryDAO/QueryPredicateBuilder
+Y-010,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/query_pbs.py,,context PBS 过滤 → ProductManagerBean.filterPBS + QueryResult.mergeRows
+Y-011,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/importers/excel_parser.py,,Excel 属性解析 → ExcelParser.java
+Y-012,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/importers/attributes_importer_utils.py,,属性合并/LOV 校验 → AttributesImporterUtils.java（X-008 的 ext/ 版本未使用）
+Y-013,PythonSpecial,python_special,P0,已完成,(无 Java 对应),app/services/importers/import_record.py,,Import 记录 CRUD → ImporterBean/Import 持久化
