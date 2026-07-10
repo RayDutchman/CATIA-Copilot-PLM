@@ -322,52 +322,68 @@ def _load_query_contexts(db, query_id):
     ]
 
 
-@router.post("/workspaces/{workspace_id}/parts/queries",
-             response_model=dict)
-@router.post("/workspaces/{workspace_id}/parts/queries/",
-             response_model=dict, include_in_schema=False)
+def _query_admin_flag(db, workspace_id, login):
+    """判断用户对该工作区是否为管理员（工作区 admin 或全局 admin 组）。"""
+    from sqlalchemy import text
+    if workspace_id:
+        ws_admin = db.execute(text(
+            "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+        ), {"w": workspace_id, "l": login}).first()
+        if ws_admin:
+            return True
+    return db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": login}).first() is not None
+
+
+def _run_custom_query(db, workspace_id, body, request, login):
+    """运行自定义查询（对齐 Java runCustomQuery）：执行 + 可选保存 + 按 selects 序列化。"""
+    from fastapi.responses import JSONResponse
+    from app.services.query_executor import run_part_query
+    from app.services.query_pbs import filter_pbs, merge_rows
+    from app.schemas.query_result import build_query_result_rows
+
+    export = (request.query_params.get("export") or "JSON").upper()
+    save = str(request.query_params.get("save", "")).lower() in ("true", "1", "yes")
+    if export == "CSV":
+        return JSONResponse(status_code=400,
+                            content={"message": "CSV export not supported"})
+    is_admin = _query_admin_flag(db, workspace_id, login)
+    parts = run_part_query(db, workspace_id, body, login, is_admin)
+    if body.get("contexts"):
+        pbs_rows = filter_pbs(db, workspace_id, body, login, is_admin)
+        rows = merge_rows(pbs_rows, parts)
+    else:
+        rows = [{"partRevision": pr} for pr in parts]
+    if save and body.get("name"):
+        _save_query(db, workspace_id, login, body)
+        db.commit()
+    return build_query_result_rows(rows, body, db)
+
+
+@router.post("/workspaces/{workspace_id}/parts/queries")
+@router.post("/workspaces/{workspace_id}/parts/queries/", include_in_schema=False)
 def post_workspace_query(workspace_id: str,
+                         request: Request,
                          body: dict = Body(...),
-                         current_user: Account = Depends(get_current_user)):
-    """Query CRUD 是 stub，仅做重复名称检查。"""
-    from app.core.exceptions import QueryAlreadyExistsException
-    from sqlalchemy import text
-    from app.core.database import SessionLocal
-    db = SessionLocal()
-    try:
-        name = body.get("name") or body.get("id")
-        if name:
-            exists = db.execute(text(
-                "SELECT 1 FROM query WHERE name=:n AND author_workspace_id=:w"
-            ), {"n": name, "w": workspace_id}).first()
-            if exists:
-                raise QueryAlreadyExistsException("QueryAlreadyExistsException", name)
-    finally:
-        db.close()
-    return {"id": 0}
+                         current_user: Account = Depends(get_current_user),
+                         db: Session = Depends(get_db)):
+    """运行/保存自定义查询（对齐 Java runCustomQuery，返回 QueryResult 行数组）。"""
+    return _run_custom_query(db, workspace_id, body, request, current_user.login)
 
 
-@router.post("/parts/queries",
-             response_model=dict)
-@router.post("/parts/queries/",
-             response_model=dict, include_in_schema=False)
-def post_queries(body: dict = Body(...),
-                 current_user: Account = Depends(get_current_user)):
-    from app.core.exceptions import QueryAlreadyExistsException
-    from sqlalchemy import text
-    from app.core.database import SessionLocal
-    db = SessionLocal()
-    try:
-        name = body.get("name") or body.get("id")
-        if name:
-            exists = db.execute(text(
-                "SELECT 1 FROM query WHERE name=:n"
-            ), {"n": name}).first()
-            if exists:
-                raise QueryAlreadyExistsException("QueryAlreadyExistsException", name)
-    finally:
-        db.close()
-    return {"id": 0}
+@router.post("/parts/queries")
+@router.post("/parts/queries/", include_in_schema=False)
+def post_queries(request: Request,
+                 body: dict = Body(...),
+                 current_user: Account = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    """无 workspace 前缀版本：从 body.contexts 推断工作区，无法推断则退回重名检查。"""
+    ctxs = body.get("contexts") or []
+    ws = ctxs[0].get("workspaceId") if ctxs else None
+    if not ws:
+        return {"id": 0}
+    return _run_custom_query(db, ws, body, request, current_user.login)
 
 
 @router.delete("/parts/queries/{query_id}", status_code=204)
