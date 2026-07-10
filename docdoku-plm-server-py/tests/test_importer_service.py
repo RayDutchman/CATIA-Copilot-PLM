@@ -6,6 +6,7 @@
 - dry_run 不产生副作用
 - _write_iteration_attributes 写入带 dtype
 - BOM/PathData stub 返回 NotSupported
+- error-path 验证无 DB 写入
 
 注意：避免真实 checkout/checkin（会 commit 污染 DB）。
 """
@@ -37,6 +38,10 @@ class TestImportIntoParts:
         file_path = str(tmp_path / "invalid_date.xlsx")
         Path(file_path).write_bytes(xlsx_bytes)
 
+        before_count = db.execute(text(
+            "SELECT count(*) FROM instanceattribute"
+        )).scalar()
+
         result = _importer.import_into_parts(
             db, WS, file_path, "invalid_date.xlsx",
             user_login=USER, is_admin=True,
@@ -45,15 +50,24 @@ class TestImportIntoParts:
         assert result["succeed"] is False
         assert len(result["errors"]) > 0
 
+        # 确认无 DB 写入
+        after_count = db.execute(text(
+            "SELECT count(*) FROM instanceattribute"
+        )).scalar()
+        assert after_count == before_count
+
     def test_part_not_found(self, db, tmp_path):
-        """Excel 中零件号在 DB 中不存在 → succeed False，含 PartMasterNotFound。"""
+        """Excel 中零件号在 DB 中不存在 → succeed False，含 PartMasterNotFound，不写库。"""
         from tests.fixtures.make_import_xlsx import make_valid_parts_xlsx
 
         xlsx_bytes = make_valid_parts_xlsx()
         file_path = str(tmp_path / "parts.xlsx")
         Path(file_path).write_bytes(xlsx_bytes)
 
-        # PART-001, PART-002, PART-003 在 seed 里不存在
+        before_count = db.execute(text(
+            "SELECT count(*) FROM instanceattribute"
+        )).scalar()
+
         result = _importer.import_into_parts(
             db, WS, file_path, "parts.xlsx",
             user_login=USER, is_admin=True,
@@ -63,6 +77,12 @@ class TestImportIntoParts:
         assert result["succeed"] is False
         assert len(result["errors"]) > 0
         assert any("PartMasterNotFound" in e for e in result["errors"])
+
+        # 确认无 DB 写入
+        after_count = db.execute(text(
+            "SELECT count(*) FROM instanceattribute"
+        )).scalar()
+        assert after_count == before_count
 
 
 class TestDryRun:
@@ -156,7 +176,7 @@ class TestBomStub:
         assert any("NotSupported" in e for e in result["errors"])
 
     def test_dry_run_import_bom_stub(self, db, tmp_path):
-        """dry_run_import_bom 返回 errors 含 NotSupported。"""
+        """dry_run_import_bom 返回 succeed False + NotSupported。"""
         file_path = str(tmp_path / "bom.xlsx")
         Path(file_path).write_bytes(b"dummy")
 
@@ -165,6 +185,7 @@ class TestBomStub:
             user_login=USER,
         )
 
+        assert result["succeed"] is False
         assert "errors" in result
         assert any("NotSupported" in e for e in result["errors"])
 
@@ -184,3 +205,10 @@ class TestPathDataStub:
 
         assert result["succeed"] is False
         assert any("NotSupported" in e for e in result["errors"])
+
+#
+# 注意：test_revision_note_written 被跳过——
+# revision_note 写入需要真实 checkout（checkout 会新建迭代并 commit 到 DB，
+# 污染后续测试），fixture 级回滚不足以隔离，故不在此处测试。
+# revision_note 更新逻辑已在 importer.py:203-208 实现。
+#

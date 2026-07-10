@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.core.exceptions import NotAllowedException, AccessRightException
+from app.core.exceptions import NotAllowedException
 from app.services.factory.acl_factory import check_write_access
 from app.services.product_manager import ProductService
 from app.models.product.part_master import PartMaster
@@ -113,14 +113,14 @@ class ImporterService:
         from app.services.importers.excel_parser import parse_excel
 
         # 1) 解析 excel
-        data = open(file_path, "rb").read()
+        with open(file_path, "rb") as f:
+            data = f.read()
         result = parse_excel(data, "parts")
         errors = list(result.errors)
         warnings = list(result.warnings)
 
         svc = ProductService()
         to_write = []            # [(number, version, merged)]
-        auto_checked_out = []    # [(number, version)] 本次自动 checkout 的
 
         for part in result.parts:
             pm = db.query(PartMaster).filter(
@@ -200,6 +200,12 @@ class ImporterService:
                 _write_iteration_attributes(
                     db, ws, number, version, target_it, merged,
                 )
+                if revision_note:
+                    db.execute(text(
+                        "UPDATE partiteration SET iterationnote=:n "
+                        "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                        "AND partrevision_version=:ver AND iteration=:it"
+                    ), {"n": revision_note, "ws": ws, "pn": number, "ver": version, "it": target_it})
                 db.commit()
 
             if auto_checkin and did_checkout and pr.checkout_user_login == user_login:
@@ -222,7 +228,8 @@ class ImporterService:
         """
         from app.services.importers.excel_parser import parse_excel
 
-        data = open(file_path, "rb").read()
+        with open(file_path, "rb") as f:
+            data = f.read()
         result = parse_excel(data, "parts")
 
         to_checkout = []
@@ -296,6 +303,7 @@ class ImporterService:
     ) -> dict:
         """试运行 BOM 导入（暂未实现）。"""
         return {
+            "succeed": False,
             "errors": ["NotSupported: dry_run_import_bom import not implemented"],
             "warnings": [],
         }
