@@ -27,11 +27,20 @@
 
 ---
 
-## Task 0 — 依赖与真实样本确认（前置）
+## Task 0 — 依赖与样本确认（前置）
+
+> **2026-07-10 调研已确认的现状（无需重复确认）：**
+> - `requirements.txt` **无 openpyxl**（仅 `indexer_text_extractor.py` 用 try/except 延迟导入）。
+> - `app/services/importer.py`：`ImporterService` + 6 方法全 STUB，模块级单例 `importer_service`，**零外部引用**（孤立）。
+> - `app/routers/parts.py:447-491`：5 个 import 端点全空壳/假动作，**不调用 service**，POST 端点**未注入 `db`**。
+> - ORM `app/models/product/import_.py`（`Import`→表 `import`）已存在；`app/schemas/import_.py`(`ImportDTO`) + `import_preview.py`(`ImportPreviewDTO`) 已存在但未被使用。
+> - `app/ext/` 已有 `PartImporter`/`BomImporter`/`PathDataImporter` 抽象基类（含 parse/validate），无具体实现。
+> - **无真实 Excel 样本**（用户确认）→ 决策：按 `ExcelParser.java` 规范尽力实现，用**合成 .xlsx 夹具**（openpyxl 写带 cell-comment 的测试文件）做单测。
+
 - [ ] `docker exec docdoku-plm-docker-back-py-1 python -c "import openpyxl; print(openpyxl.__version__)"` 确认是否已装
-- [ ] 若未装：download wheel → docker cp → pip install（见拦路虎 1）
+- [ ] 若未装：`pip3 download openpyxl -d /tmp/whl` → `docker cp /tmp/whl/*.whl back-py:/tmp/` → `docker exec back-py pip install --no-index --find-links /tmp /tmp/openpyxl*.whl`
 - [ ] `openpyxl==3.1.5` 加入 requirements.txt
-- [ ] 获取一份真实导入 .xls/.xlsx，用 openpyxl 打印 cell comments 确认元数据格式
+- [ ] 新建合成样本夹具 `tests/fixtures/make_import_xlsx.py`：用 openpyxl 生成带表头 `名称 <类型>` / `名称 <ListOfValues> LOV名` 及首列 cell-comment `pm.number` 的 .xlsx，对齐 `ExcelParser.java` 的解析假设
 
 ## Task 1 — Excel 解析器（高，~500 行）
 文件：新建 `app/services/importers/excel_parser.py`。对齐 `ExcelParser.java`：
