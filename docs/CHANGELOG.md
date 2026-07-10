@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-10 — Importer 属性导入域（FastAPI）
+
+> 分支 `feat/py-query-execution-engine`。对齐 Payara `ExcelParser` / `AttributesImporterUtils` / `ImporterBean` / `PartsResource`。仅 `.xlsx` 属性导入落地（BOM 保留 stub，Java 侧本无实现）。全量 pytest 272 passed（+83 新测试）/ 10 预存 seed 失败 / 1 skipped，无回归；docker cp 部署 back-py 并线上冒烟通过（preview/import/poll/delete 全链路）。
+
+- chore(py-import): 新增 `openpyxl==3.1.5` 依赖（容器 + venv 已装）
+- feat(py-import): Excel 属性解析器 `app/services/importers/excel_parser.py`——`parse_excel(data, import_type)`，对齐 ExcelParser.java（`名 <类型>` / `名 <ListOfValues> <LOV名>` 表头正则、首列 cell comment 校验 pm.number/ctx.*、`|` 多值拆分、attribute_id 注释、类型校验 TEXT≤255/BOOLEAN/DATE `%Y-%m-%d %H:%M:%S`/NUMBER/URL/LOV、空值拒绝）
+- feat(py-import): 属性合并工具 `app/services/importers/attributes_importer_utils.py`——TOKEN_TO_DTYPE/VALUECOL 映射、`merge_attributes`（忠实 Java 更新/新建/DuplicateEntry/AttributeNotFound）、`resolve_lov_index`（lov_namevalue）、`would_change`
+- feat(py-import): 修正 `Import` ORM 到真实表结构（Boolean pending/succeed、startdate/enddate）+ `import_record.py` 原生 SQL CRUD（create/complete/get/list/delete，子表 import_error/import_warning）
+- feat(py-import): `ImporterService` 属性导入编排（`app/services/importer.py`）——对齐 doPartImport/bulkPartUpdate：PartMaster 查找、写权限/canChange 判定、checkout 前迭代读现有属性→merge→错误门控（有错不写）→checkout→dtype 感知写入→commit→可选 checkin；`dry_run_import_into_parts` 返回 partRevsToCheckout；BOM 方法保留 stub
+- feat(py-import): 5 个 import REST 端点接入（`app/routers/parts.py`，全部 `/workspaces/{ws}/parts/...`）——POST import（multipart `upload`，importType 门控，import_record 持久化，204）、POST importPreview（同步返回 ImportPreviewDTO，200）、GET imports/{filename}、GET import/{id}（404）、DELETE import/{id}（204）
+- fix(py): 最终评审修复——`query_executor` pr.*/pm.* 未知列名走 `_safe_ident` 白名单防 SQL 注入（+3 回归测试）；`post_workspace_query` 补 `response_model=list`；导入端点先算 is_admin 再 create_import（避免孤儿 pending 记录）
+
+> 已知设计分歧（记录待后续统一）：`importer._write_iteration_attributes` **写入** `instanceattribute.dtype`（如 `InstanceTextAttribute`），而应用内既有 `product_manager._sync_instance_attributes` **不写** dtype。此分歧是刻意的——保证导入的属性能被 `query_executor`（按 `ia.dtype` 过滤）检索到。后续可考虑统一 `_sync` 也写 dtype。
+
+---
+
 ## 2026-07-10 — Query 自定义查询执行引擎（FastAPI）
 
 > 分支 `feat/py-query-execution-engine`。对齐 Payara `PartRevisionQueryDAO` / `PathDataQueryDAO` / `ProductManagerBean` / `QueryResultMessageBodyWriter`。全量 pytest 189 passed（+22 新测试）/ 10 预存 seed 失败 / 1 skipped，无回归；docker cp 部署 back-py 并线上冒烟通过。

@@ -6,7 +6,7 @@
 
 ## 待办
 
-> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限/Baseline/LOV/export-files SQL 修复合集，并**新增 Query 自定义查询执行引擎（分支 feat/py-query-execution-engine）**。**剩余功能域**：① Importer 导入（下一项）。本文件只保留**跨领域非迁移**待办。
+> 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限修复合集，并**新增 Query 自定义查询执行引擎 + Importer 属性导入域（分支 feat/py-query-execution-engine）**。**剩余功能域**：① WebSocket /ws 403 修复；② 种子脚本修复（解阻 10 个 pytest 失败）。本文件只保留**跨领域非迁移**待办。
 
 ### 高优先级
 
@@ -52,6 +52,14 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **2026-07-10 Importer 属性导入域**（分支 feat/py-query-execution-engine）:
+  - Excel 解析器（对齐 ExcelParser.java）+ 属性合并工具（merge/LOV）+ Import 记录 CRUD
+  - ImporterService 属性导入编排（checkout→dtype 写入→checkin，错误门控）+ dry-run 预览
+  - 5 个 REST 端点接入 `/workspaces/{ws}/parts/...`；仅 .xlsx 属性导入（BOM 保留 stub）
+  - 最终评审 3 项 MUST-FIX 修复（列名白名单防注入 / response_model / 记录顺序）
+  - pytest 272 passed（+83）；docker cp 部署 + 线上冒烟全链路通过
+  - ⚠️ 设计分歧：`_write_iteration_attributes` 写 dtype，`_sync_instance_attributes` 不写（详见 loose-ends 二）
 
 - [x] **2026-07-10 Query 执行引擎**（分支 feat/py-query-execution-engine）:
   - 查询保存（递归 queryrule 树）+ PartRevision 执行器（前缀路由/operator/属性 EXISTS）

@@ -62,18 +62,20 @@
 
 ---
 
-## 二、🟠 P1 — Importer 导入域（9 处全空壳）
+## 二、✅ P1 — Importer 导入域（2026-07-10 完成）
 
-| 位置 | 缺失内容 | 影响 API |
-|------|----------|----------|
-| `app/services/importer.py:11-17` | `import_into_parts()` → stub | `POST /parts/import` |
-| `app/services/importer.py:19-26` | `dry_run_import_into_parts()` → stub | 导入预览 |
-| `app/services/importer.py:28-34` | `import_into_path_data()` → stub | 路径数据批量导入 |
-| `app/services/importer.py:36-42` | `import_bom()` → stub | BOM 导入 |
-| `app/services/importer.py:44-51` | `dry_run_import_bom()` → stub | BOM 预览 |
-| `app/routers/parts.py:448-490` | import 路由全部 stub/断连 | 5 端点 |
+**已完成**（分支 `feat/py-query-execution-engine`，对齐 Payara `ExcelParser`/`AttributesImporterUtils`/`ImporterBean`/`PartsResource`）：
 
-> 📋 独立计划：`docs/superpowers/plans/2026-07-09-importer-domain.md`（~1100 行，2–3 天）
+| 项 | 状态 | 实现 |
+|----|------|------|
+| **Excel 解析** | ✅ | `app/services/importers/excel_parser.py`（表头正则 + cell comment 校验 + `|` 多值 + 类型校验） |
+| **属性合并** | ✅ | `app/services/importers/attributes_importer_utils.py`（merge 更新/新建/DuplicateEntry/AttributeNotFound + LOV 索引解析） |
+| **Import 记录** | ✅ | `Import` ORM 修正 + `import_record.py` CRUD（子表 import_error/import_warning） |
+| **导入编排** | ✅ | `ImporterService.import_into_parts`/`dry_run_import_into_parts`（checkout→dtype 写入→checkin，错误门控） |
+| **REST 端点** | ✅ | 5 端点接入 `/workspaces/{ws}/parts/...`（import/importPreview/imports/import/delete） |
+
+> 仅 `.xlsx` 属性导入落地；**BOM 导入保留 stub**（Java `BomImporter` 本无实现）。`import_into_path_data` 亦保留 stub。
+> ⚠️ **设计分歧（待统一）**：`importer._write_iteration_attributes` 写入 `instanceattribute.dtype`，而既有 `product_manager._sync_instance_attributes` 不写 dtype。刻意为之——保证导入属性可被 `query_executor`（按 `ia.dtype` 过滤）检索。后续可统一 `_sync` 也写 dtype。
 
 ---
 
@@ -122,10 +124,10 @@
 
 | 优先级 | 项 | 计划/状态 | 工作量 |
 |--------|-----|----------|--------|
-| 1 | **Importer 域** | 📋 `plans/2026-07-09-importer-domain.md` | 大 |
-| 2 | **Query 执行引擎** | 待排期 | 大 |
+| 1 | ~~Importer 域~~ | ✅ 2026-07-10 完成 | — |
+| 2 | ~~Query 执行引擎~~ | ✅ 2026-07-10 完成 | — |
 | 3 | **WebSocket 403** | 待排期 | 中 |
-| 4 | **种子脚本修复** | 权限 + 数据一致性 | 小 |
+| 4 | **种子脚本修复** | 权限 + 数据一致性（解阻 10 个 pytest 失败） | 小 |
 
 ---
 
@@ -139,8 +141,8 @@
 | PathData / Path-to-Path Link | ✅ |
 | 用户姓名/权限/effectivities/LOV/export-files SQL | ✅ |
 | configSpec/hasPathData/baseline校验 | ✅ |
-| **Importer 导入** | ⏳ 下一项 |
-| **Query 执行引擎** | ⏳ 待排期 |
+| **Importer 导入** | ✅ 2026-07-10 完成 |
+| **Query 执行引擎** | ✅ 2026-07-10 完成 |
 | **WebSocket** | ⏳ 待排期 |
 
-> 核心业务完整。剩余：**批量导入**、**自定义查询执行**、**WebSocket 修复**。
+> 核心业务完整。剩余：**WebSocket 修复**、**种子脚本修复**（解阻 10 个 pytest 失败）。
