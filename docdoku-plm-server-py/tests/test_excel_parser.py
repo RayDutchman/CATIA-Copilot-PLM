@@ -245,8 +245,8 @@ class TestParseValidParts:
             {"values": ["PART-001", None], "comments": [None, "101"]},
         ])
         result = parse_excel(data, import_type="parts")
-        assert any("INVALID_BOOLEAN_VALUE" in e or "EMPTY_FIELD" in e for e in result.errors), \
-            f"Expected error for empty BOOLEAN: {result.errors}"
+        assert any("EMPTY_FIELD" in e for e in result.errors), \
+            f"Expected EMPTY_FIELD for empty BOOLEAN: {result.errors}"
 
     def test_empty_number_not_allowed(self):
         """NUMBER 列空值应报错。"""
@@ -261,8 +261,8 @@ class TestParseValidParts:
             {"values": ["PART-001", None], "comments": [None, "101"]},
         ])
         result = parse_excel(data, import_type="parts")
-        assert any("INVALID_NUMBER_VALUE" in e or "EMPTY_FIELD" in e for e in result.errors), \
-            f"Expected error for empty NUMBER: {result.errors}"
+        assert any("EMPTY_FIELD" in e for e in result.errors), \
+            f"Expected EMPTY_FIELD for empty NUMBER: {result.errors}"
 
     def test_empty_lov_not_allowed(self):
         """LOV 列空值应报错。"""
@@ -277,8 +277,8 @@ class TestParseValidParts:
             {"values": ["PART-001", None], "comments": [None, "101"]},
         ])
         result = parse_excel(data, import_type="parts")
-        assert any("INVALID_LOV_VALUE" in e or "EMPTY_FIELD" in e for e in result.errors), \
-            f"Expected error for empty LOV: {result.errors}"
+        assert any("EMPTY_FIELD" in e for e in result.errors), \
+            f"Expected EMPTY_FIELD for empty LOV: {result.errors}"
 
     def test_text_empty_allowed(self):
         """TEXT 列空值应允许。"""

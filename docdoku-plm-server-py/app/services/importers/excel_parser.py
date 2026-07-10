@@ -58,7 +58,7 @@ def _normalize_type(type_str: str | None) -> str | None:
     if not type_str:
         return None
     upper = type_str.strip().upper()
-    if upper in ("TEXT", "TEXTE"):
+    if upper == "TEXT":
         return "TEXT"
     if upper == "NUMBER":
         return "NUMBER"
