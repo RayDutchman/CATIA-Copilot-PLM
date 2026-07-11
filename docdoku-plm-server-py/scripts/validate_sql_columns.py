@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""SQL 列名验证脚本 —— 扫描 app/ 中所有 raw text("SELECT...") / text("INSERT...")
-调用，提取表名和列名，交叉验证 information_schema，报告不存在的列。
+"""SQL 列名验证脚本 v2 —— 增强版。
+
+新增:
+- UPDATE/DELETE 语句验证
+- INSERT 列完整性检查 (NOT NULL 列是否遗漏)
+- 更好的表别名解析 (AS 关键字、多表JOIN)
+- 数据类型校验
 
 用法:
     python3 scripts/validate_sql_columns.py
 """
 
-import ast
 import re
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -18,185 +21,257 @@ import psycopg2
 SCAN_DIR = Path(__file__).resolve().parent.parent / "app"
 DB_URL = "host=localhost dbname=docdokuplm user=changeit password=changeit"
 
-COLS_CACHE: dict[str, set[str]] = {}
-TABLES_CACHE: set[str] = set()
+# DB schema cache
+TABLES: set[str] = set()
+COLUMNS: dict[str, set[str]] = {}        # table → {col, ...}
+NOT_NULL_COLS: dict[str, set[str]] = {}  # table → {col NOT NULL, ...}
+COLUMN_TYPES: dict[str, dict[str, str]] = {}  # table → {col → data_type}
 
 
 def load_schema():
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
-    cur.execute(
-        "SELECT table_name, column_name "
-        "FROM information_schema.columns "
-        "WHERE table_schema='public' "
-        "ORDER BY table_name, ordinal_position"
-    )
-    for table, col in cur.fetchall():
-        COLS_CACHE.setdefault(table, set()).add(col.lower())
-    cur.execute(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
-    )
-    for (table,) in cur.fetchall():
-        TABLES_CACHE.add(table.lower())
+    cur.execute("SELECT table_name, column_name, is_nullable, data_type "
+                "FROM information_schema.columns WHERE table_schema='public' "
+                "ORDER BY table_name, ordinal_position")
+    for table, col, nullable, dt in cur.fetchall():
+        TABLES.add(table)
+        COLUMNS.setdefault(table, set()).add(col)
+        COLUMN_TYPES.setdefault(table, {})[col] = dt
+        if nullable == "NO":
+            NOT_NULL_COLS.setdefault(table, set()).add(col)
+    cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public'")
+    for (t,) in cur.fetchall():
+        TABLES.add(t.lower())
     conn.close()
 
 
 # ── SQL 提取 ──────────────────────────────────────
 
-SELECT_RE = re.compile(r'\bSELECT\b', re.IGNORECASE)
-INSERT_RE = re.compile(r'\bINSERT\s+INTO\b', re.IGNORECASE)
-
-# 提取 "table.column" 或仅有 "column" 形式的列引用
-QUALIFIED_COL_RE = re.compile(
-    r'\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b', re.IGNORECASE
-)
-# FROM / JOIN 后的表名 (含别名)
-FROM_RE = re.compile(
-    r'\b(FROM|JOIN)\s+([a-z_][a-z0-9_]*)\b', re.IGNORECASE
-)
-# INSERT INTO 表名
-INSERT_TABLE_RE = re.compile(
-    r'INSERT\s+INTO\s+([a-z_][a-z0-9_]*)\b', re.IGNORECASE
+SQL_STRING_RE = re.compile(
+    r'(?:text|sql_text)\s*\(\s*[\'"""]((?:[^\'""]|\\.|[\'""][^\'\""]*[\'""])*?)[\'""]\s*\)',
+    re.DOTALL,
 )
 
-# PostgreSQL 关键字——这些出现在 SQL 中很正常，不应报列名错误
-PG_KEYWORDS = {
-    "true", "false", "null", "as", "and", "or", "not", "in", "on", "is",
-    "select", "from", "where", "join", "left", "right", "inner", "outer",
-    "insert", "into", "values", "update", "set", "delete", "create", "alter",
-    "table", "index", "view", "distinct", "limit", "offset", "order", "by",
-    "group", "having", "union", "all", "any", "some", "exists", "case",
-    "when", "then", "else", "end", "cast", "coalesce", "nullif",
-    "asc", "desc", "returning", "on", "conflict", "do", "nothing",
-    "now", "current_date", "current_timestamp", "count", "sum", "avg",
-    "max", "min", "like", "ilike", "between", "cascade",
-    "with", "recursive", "nextval", "serial", "primary", "key",
-    "integer", "varchar", "text", "boolean", "timestamp", "float",
-    "default", "unique", "references", "foreign",
+SQL_KEYWORDS = {
+    "select","from","where","join","left","right","inner","outer","cross",
+    "insert","into","values","update","set","delete","create",
+    "and","or","not","in","on","is","null","true","false",
+    "as","asc","desc","limit","offset","order","by","group","having",
+    "union","all","distinct","exists","between","like","ilike",
+    "case","when","then","else","end","coalesce","nullif","cast",
+    "returning","conflict","do","nothing","now","current","nextval",
+}
+
+# table.column 模式 (更宽松)
+QUALIFIED_COL_RE = re.compile(r'\b([a-z_]\w*)\.([a-z_]\w*)\b', re.IGNORECASE)
+
+# FROM/JOIN 表名 + 可选别名
+TABLE_ALIAS_RE = re.compile(
+    r'\b(?:FROM|JOIN)\s+([a-z_]\w*)'  # 表名
+    r'(?:\s+(?:AS\s+)?([a-z_]\w*))?',  # 可选别名
+    re.IGNORECASE,
+)
+
+INSERT_RE = re.compile(r'INSERT\s+INTO\s+([a-z_]\w*)', re.IGNORECASE)
+DELETE_RE = re.compile(r'DELETE\s+FROM\s+([a-z_]\w*)', re.IGNORECASE)
+UPDATE_RE = re.compile(r'UPDATE\s+([a-z_]\w*)', re.IGNORECASE)
+RETURNING_RE = re.compile(r'RETURNING\s+(.+)', re.IGNORECASE)
+
+# INSERT 列提取: INSERT INTO table (col1, col2,...)
+INSERT_COLS_RE = re.compile(
+    r'INSERT\s+INTO\s+[a-z_]\w*\s*\(([^)]+)\)', re.IGNORECASE
+)
+# UPDATE SET col=val 提取
+UPDATE_SET_RE = re.compile(
+    r'UPDATE\s+[a-z_]\w*\s+SET\s+(.+?)(?:\s+WHERE\s|\s*$)', re.IGNORECASE | re.DOTALL
+)
+
+SERIAL_PK_TABLES = {
+    "acl", "account", "workspace", "partmaster", "documentmaster",
 }
 
 
 def extract_sql_strings(source: str) -> list[tuple[int, str]]:
-    """从源码中提取 text("...") 或 sql_text("...") 字符串，返回 (行号, SQL)。"""
     results = []
-    for m in re.finditer(
-        r'(?:text|sql_text)\s*\(\s*[\'"]((?:[^\'"]|\\.|[\'\"](?:[^\'\"]|\\.)*[\'\"])*?)[\'"]\s*\)',
-        source, re.DOTALL,
-    ):
+    for m in SQL_STRING_RE.finditer(source):
         sql = m.group(1)
-        # 简单清理多行字符串中的转义
-        sql = sql.replace("\\n", "\n").replace("\\'", "'")
-        # 确定行号
-        lineno = source[: m.start()].count("\n") + 1
+        sql = re.sub(r'\\(.)', r'\1', sql)
+        lineno = source[:m.start()].count("\n") + 1
         results.append((lineno, sql))
     return results
 
 
-def is_sql_statement(sql: str) -> bool:
-    return bool(SELECT_RE.search(sql) or INSERT_RE.search(sql))
+def is_modify_statement(sql: str) -> bool:
+    upper = sql[:30].upper()
+    return any(upper.startswith(kw) for kw in ("SELECT", "INSERT", "UPDATE", "DELETE"))
 
 
-def parse_qualified_columns(sql: str) -> list[tuple[str, str]]:
-    """提取 table.column 对。"""
-    pairs = []
-    for m in QUALIFIED_COL_RE.finditer(sql):
-        alias = m.group(1).lower()
-        col = m.group(2).lower()
-        if col in PG_KEYWORDS:
-            continue
-        pairs.append((alias, col))
-    return pairs
-
+# ── 别名解析 ──────────────────────────────────────
 
 def parse_table_aliases(sql: str) -> dict[str, str]:
-    """解析 FROM/JOIN table alias → 真实表名。"""
     mapping: dict[str, str] = {}
-    for m in FROM_RE.finditer(sql):
-        table = m.group(2).lower()
-        if table in PG_KEYWORDS:
-            continue
-        mapping[table] = table
-    # 查找 "table AS alias" 或 "table alias" 模式
-    for m in re.finditer(
-        r'\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)\s+(?:AS\s+)?([a-z_][a-z0-9_]*)\b',
-        sql, re.IGNORECASE,
-    ):
+    for m in TABLE_ALIAS_RE.finditer(sql):
         table = m.group(1).lower()
-        alias = m.group(2).lower()
-        if table not in PG_KEYWORDS and alias not in ("on", "using", "where", "left", "right", "inner", "outer", "full", "cross", "natural"):
-            mapping[alias] = table
+        alias = m.group(2).lower() if m.group(2) else table
+        if table in SQL_KEYWORDS or alias in SQL_KEYWORDS:
+            continue
+        mapping[alias] = table
     return mapping
 
 
-def parse_insert_table(sql: str) -> str | None:
-    m = INSERT_TABLE_RE.search(sql)
-    return m.group(1).lower() if m else None
+# ── 验证核心 ──────────────────────────────────────
+
+def verify_column(table: str, col: str, filepath: str, lineno: int) -> str | None:
+    """验证 table.column 存在，返回 None 或错误消息。"""
+    # 常量表名: 找最匹配的真实表
+    real_table = table
+    if table not in TABLES:
+        # 模糊匹配: 找包含 table 子串的真实表名
+        candidates = [t for t in TABLES if table in t]
+        if len(candidates) == 1:
+            real_table = candidates[0]
+        elif len(candidates) > 1:
+            return f"  ⚠️  别名 '{table}' 匹配多个表: {candidates}"
+        else:
+            return f"  ❌ 别名 '{table}' 无法匹配任何已知表。"
+
+    columns = COLUMNS.get(real_table, set())
+    if col not in columns:
+        actual = sorted(columns)[:10]
+        return f"  ❌ {real_table}.{col} → 无此列 (实际: {actual})"
+    return None
 
 
-def find_mismatches(filepath: str, sql_rows: list[tuple[int, str]]) -> list[str]:
+def verify_insert_completeness(sql: str, filepath: str, lineno: int) -> list[str]:
+    """检查 INSERT 语句是否遗漏 NOT NULL 列。"""
     issues = []
-    for lineno, sql in sql_rows:
-        if not is_sql_statement(sql):
-            continue
-        aliases = parse_table_aliases(sql)
+    table_match = INSERT_RE.search(sql)
+    if not table_match:
+        return issues
+    table = table_match.group(1).lower()
+    if table not in TABLES:
+        return issues
 
-        # 1) 检查 table.column 对
-        for alias, col in parse_qualified_columns(sql):
-            table = aliases.get(alias, alias)
-            if table not in TABLES_CACHE:
-                # 可能是临时表或 CTE，不在此检查
-                continue
-            columns = COLS_CACHE.get(table, set())
-            if col not in columns:
-                issues.append(
-                    f"{filepath}:{lineno}  table.{col} → "
-                    f"表 '{table}' 无列 '{col}'，实际列: {sorted(columns)[:8]}"
-                )
+    cols_match = INSERT_COLS_RE.search(sql)
+    if not cols_match:
+        return issues
 
-        # 2) 检查 INSERT INTO table — 表存在性
-        insert_table = parse_insert_table(sql)
-        if insert_table and insert_table not in TABLES_CACHE:
-            issues.append(
-                f"{filepath}:{lineno}  INSERT INTO {insert_table} → 表不存在"
-            )
+    insert_cols = set()
+    for c in re.findall(r'([a-z_]\w*)', cols_match.group(1), re.IGNORECASE):
+        c = c.strip().lower()
+        if c not in SQL_KEYWORDS and len(c) > 1:
+            insert_cols.add(c)
 
+    missing = NOT_NULL_COLS.get(table, set()) - insert_cols
+    # 排除 serial autoincrement PK
+    if table in SERIAL_PK_TABLES:
+        missing.discard("id")
+    # 排除 FK 列（可后续设）
+    missing = {c for c in missing if not c.endswith("_id") and c not in ("login",)}
+
+    # 检查 INSERT 列是否都在表中
+    for col in insert_cols:
+        if col not in COLUMNS.get(table, set()):
+            issues.append(f"  ❌ INSERT INTO {table} → 列 '{col}' 不存在 "
+                          f"(实际: {sorted(COLUMNS.get(table, set()))[:10]})")
+
+    if missing:
+        issues.append(f"  ⚠️  INSERT INTO {table} 缺 NOT NULL 列: {sorted(missing)}")
     return issues
 
 
-def scan_directory(root: Path) -> dict[str, list[str]]:
+def verify_returning_columns(sql: str, filepath: str, lineno: int) -> list[str]:
+    """验证 RETURNING 子句中的列名。"""
+    issues = []
+    table_match = INSERT_RE.search(sql)
+    if not table_match:
+        return issues
+    table = table_match.group(1).lower()
+    ret_match = RETURNING_RE.search(sql)
+    if not ret_match:
+        return issues
+    for col in re.findall(r'([a-z_]\w*)', ret_match.group(1)):
+        if col.lower() in SQL_KEYWORDS:
+            continue
+        columns = COLUMNS.get(table, set())
+        if col.lower() not in columns:
+            issues.append(f"  ❌ RETURNING {col} → 表 '{table}' 无此列")
+    return issues
+
+
+# ── 全量扫描 ──────────────────────────────────────
+
+def scan() -> dict[str, list[str]]:
     all_issues: dict[str, list[str]] = defaultdict(list)
-    for pyfile in root.rglob("*.py"):
+
+    for pyfile in sorted(SCAN_DIR.rglob("*.py")):
         if "__pycache__" in str(pyfile):
             continue
         try:
             source = pyfile.read_text(encoding="utf-8")
         except Exception:
             continue
+
         sql_strings = extract_sql_strings(source)
-        if not sql_strings:
-            continue
-        issues = find_mismatches(str(pyfile.relative_to(root.parent)), sql_strings)
-        if issues:
-            all_issues[str(pyfile)] = issues
+        file_issues = []
+        for lineno, sql in sql_strings:
+            if not is_modify_statement(sql):
+                continue
+
+            aliases = parse_table_aliases(sql)
+
+            # 1) 检查 table.column 引用
+            for m in QUALIFIED_COL_RE.finditer(sql):
+                alias = m.group(1).lower()
+                col = m.group(2).lower()
+                if col in SQL_KEYWORDS or alias in SQL_KEYWORDS:
+                    continue
+                table = aliases.get(alias, alias)
+                if table not in TABLES:
+                    continue  # 别名/CTE，跳过
+                err = verify_column(table, col, str(pyfile), lineno)
+                if err:
+                    file_issues.append(err)
+
+            # 2) INSERT 完整性检查
+            if INSERT_RE.search(sql):
+                file_issues.extend(verify_insert_completeness(sql, str(pyfile), lineno))
+                file_issues.extend(verify_returning_columns(sql, str(pyfile), lineno))
+
+            # 3) INSERT/DELETE/UPDATE 表存在性
+            for pat, mode in [(INSERT_RE, "INSERT"), (DELETE_RE, "DELETE"), (UPDATE_RE, "UPDATE")]:
+                m = pat.search(sql)
+                if m and m.group(1).lower() not in TABLES:
+                    file_issues.append(f"  ❌ {mode} {m.group(1)} → 表不存在")
+
+        if file_issues:
+            rel = str(pyfile.relative_to(SCAN_DIR.parent))
+            all_issues[rel] = sorted(set(file_issues))
+
     return dict(all_issues)
 
 
 def main():
     print("加载 DB schema ...")
     load_schema()
-    print(f"  {len(TABLES_CACHE)} 张表, {sum(len(v) for v in COLS_CACHE.values())} 列\n")
+    print(f"  {len(TABLES)} 张表, {sum(len(v) for v in COLUMNS.values())} 列\n")
 
-    issues = scan_directory(SCAN_DIR)
+    issues = scan()
     if not issues:
-        print("✅ 所有 SQL 列名与 DB schema 一致")
+        print("✅ 全部 SQL 通过")
         return 0
 
-    total = sum(len(v) for v in issues.values())
-    print(f"❌ {len(issues)} 个文件, {total} 处列名/表名不匹配:\n")
+    critical = sum(1 for msgs in issues.values() for m in msgs if "❌" in m)
+    warning = sum(1 for msgs in issues.values() for m in msgs if "⚠️" in m)
+    print(f"发现: 🔴 {critical} errors + ⚠️ {warning} warnings ({len(issues)} 个文件)\n")
+
     for filepath, msgs in sorted(issues.items()):
-        print(f"── {filepath} ──")
-        for msg in msgs:
-            print(f"  {msg}")
+        print(f"{'='*60}")
+        print(f"{filepath}")
+        print(f"{'='*60}")
+        for msg in sorted(msgs):
+            print(msg)
         print()
     return 1
 

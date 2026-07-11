@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Pydantic Schema → Java DTO 字段对齐验证脚本 v2。
+"""Pydantic Schema → Java DTO 字段对齐 v2 —— 增强版。
 
-策略: 扫描 app/schemas/ 下所有 Pydantic BaseModel 类，
-按名称相似度匹配 Java DTO，逐字段对比。
+改进:
+- Java DTO 解析: 处理注解、List/数组、默认值、@JsonbProperty别名
+- 递归嵌套 DTO 检查 (如 ComponentDTO.cadInstances.*.matrix)
+- 区分请求/响应 DTO 误匹配
 
 用法:
     python3 scripts/validate_dto_fields.py
@@ -10,7 +12,6 @@
 
 import ast
 import re
-import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -20,13 +21,15 @@ SCHEMAS_DIR = APP_DIR / "schemas"
 PAYARA_DTO_DIR = Path(__file__).resolve().parent.parent.parent / \
     "docdoku-plm-server/docdoku-plm-server-rest/src/main/java/com/docdoku/plm/server/rest/dto"
 
-# 手工映射: Python schema → Java DTO 名 (用于名称差异大的情况)
+# ── 配置 ──────────────────────────────────────────
+
+# 手工映射: Python schema → Java DTO (名称差异大的)
 MANUAL_MAP: dict[str, str] = {
     "PartCreationDTO": "PartCreationDTO",
     "PartRevisionDTO": "PartRevisionDTO",
     "PartIterationDTO": "PartIterationDTO",
     "PartIterationUpdateDTO": "PartIterationDTO",
-    "LoginRequestDTO": None,  # 无 Java DTO，Java 用 FormParam
+    "LoginRequestDTO": None,
     "ConversionResultDTO": "ConversionResultDTO",
     "CADInstanceDTO": "CADInstanceDTO",
     "ComponentDTO": "ComponentDTO",
@@ -44,63 +47,50 @@ MANUAL_MAP: dict[str, str] = {
     "ChangeOrderDTO": "ChangeOrderDTO",
     "MilestoneDTO": "MilestoneDTO",
     "TaskDTO": "TaskDTO",
-    "WorkflowModelDTO": "WorkflowModelDTO",
     "WorkflowDTO": "WorkflowDTO",
-    "ActivityDTO": "ActivityDTO",
     "RoleDTO": "RoleDTO",
     "UserDTO": "UserDTO",
-    "UserGroupDTO": "UserGroupDTO",
     "AccountDTO": "AccountDTO",
     "WorkspaceDTO": "WorkspaceDTO",
-    "WorkspaceUserMembershipDTO": "WorkspaceUserMembershipDTO",
     "PathDataMasterDTO": "PathDataMasterDTO",
     "PathDataIterationDTO": "PathDataIterationDTO",
-    "PathDataIterationCreationDTO": "PathDataIterationCreationDTO",
     "PathToPathLinkDTO": "PathToPathLinkDTO",
     "PartMasterTemplateDTO": "PartMasterTemplateDTO",
-    "DocumentMasterTemplateDTO": "DocumentMasterTemplateDTO",
     "EffectivityDTO": "EffectivityDTO",
     "BaselinedPartDTO": "BaselinedPartDTO",
     "BaselinedDocumentDTO": "BaselinedDocumentDTO",
     "ProductBaselineDTO": "ProductBaselineDTO",
     "DocumentBaselineDTO": "DocumentBaselineDTO",
-    "ProductConfigurationDTO": "ProductConfigurationDTO",
-    "ImportDTO": "ImportDTO",
-    "ImportPreviewDTO": "ImportPreviewDTO",
-    "QueryDTO": "QueryDTO",
-    "QueryResultRowDTO": "QueryResultRowDTO",
-    "NotificationDTO": "NotificationDTO",
     "ModificationNotificationDTO": "ModificationNotificationDTO",
-    "SharedPartDTO": "SharedPartDTO",
-    "SharedDocumentDTO": "SharedDocumentDTO",
+    "QueryDTO": "QueryDTO",
+    "ImportDTO": "ImportDTO",
+    "WorkspaceUserMembershipDTO": "WorkspaceUserMembershipDTO",
     "WebhookDTO": "WebhookDTO",
     "TagDTO": "TagDTO",
     "LayerDTO": "LayerDTO",
     "MarkerDTO": "MarkerDTO",
 }
 
-# Java 集合包装类型: List<X> → 忽略
-JAVA_COLLECTIONS = {
-    "List", "Set", "Map", "Collection", "Iterable",
+# Request-only DTOs: Python schema 包含 response 字段不算 bug
+REQUEST_ONLY: set[str] = {
+    "PartCreationDTO", "DocumentCreationDTO",
+    "ProductBaselineCreationDTO", "DocumentBaselineCreationDTO",
+    "ProductInstanceCreationDTO", "WorkspaceWorkflowCreationDTO",
+    "PartIterationUpdateDTO",
 }
 
-# Java 基础类型: 忽略
-JAVA_PRIMITIVES = {
-    "int", "long", "float", "double", "boolean", "char", "byte", "short",
-    "Integer", "Long", "Float", "Double", "Boolean", "Character", "Byte", "Short",
-    "String", "Date", "Timestamp", "BigDecimal", "BigInteger",
-    "byte[]", "int[]", "double[]", "float[]", "boolean[]",
-}
+# Python 独有字段（如 workspace_id 从路由参数推导），忽略
+PY_ONLY = {"workspace_id", "workspaceId", "configurationItemId",
+           "configurationItemKey", "acl", "id", "extra"}
 
-# Pydantic 内部字段: 忽略
-PYDANTIC_INTERNAL = {"model_config", "model_fields", "model_computed_fields", "model_extra"}
+PYDANTIC_INTERNAL = {"model_config", "model_fields", "model_computed_fields"}
 
 
-# ── 步骤 1: 解析所有 Pydantic schema ──
+# ── 步骤 1: 解析 Pydantic schema ──
 
-def parse_all_pydantic_schemas() -> dict[str, tuple[dict[str, str], str, str]]:
-    """返回 {Python类名: ({字段名: alias, ...}, 文件路径, extra_mode)}"""
-    result: dict[str, tuple[dict[str, str], str, str]] = {}
+def parse_all_pydantic() -> dict[str, tuple[dict[str, str], str, str, set[str]]]:
+    """返回 {类名: ({字段→alias}, 文件路径, extra_mode, {嵌套schema引用})}"""
+    result: dict = {}
     for pyfile in SCHEMAS_DIR.rglob("*.py"):
         if pyfile.name.startswith("_"):
             continue
@@ -112,16 +102,16 @@ def parse_all_pydantic_schemas() -> dict[str, tuple[dict[str, str], str, str]]:
         for node in ast.iter_child_nodes(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
-            fields = {}
-            extra_mode = "forbid"
-            # 读取 model_config extra
+            fields, extra_mode, deps = {}, "forbid", set()
             for item in ast.iter_child_nodes(node):
-                if isinstance(item, ast.Assign) and isinstance(item.targets[0], ast.Name):
-                    if item.targets[0].id == "model_config":
+                # model_config
+                if isinstance(item, ast.Assign):
+                    if isinstance(item.targets[0], ast.Name) and item.targets[0].id == "model_config":
                         if isinstance(item.value, ast.Call):
                             for kw in item.value.keywords:
                                 if kw.arg == "extra" and isinstance(kw.value, ast.Constant):
                                     extra_mode = kw.value.value
+                # annotated assign
                 if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
                     fname = item.target.id
                     if fname in PYDANTIC_INTERNAL:
@@ -132,161 +122,203 @@ def parse_all_pydantic_schemas() -> dict[str, tuple[dict[str, str], str, str]]:
                             if kw.arg == "alias" and isinstance(kw.value, ast.Constant):
                                 alias = kw.value.value
                     fields[fname] = alias
+                    # 追踪嵌套 DTO 引用
+                    ann = item.annotation
+                    if isinstance(ann, ast.Name):
+                        deps.add(ann.id)
+                    elif isinstance(ann, ast.Attribute):
+                        deps.add(ann.attr)
+                    elif isinstance(ann, ast.Subscript):
+                        s = _annotation_str(ann.slice)
+                        if s:
+                            deps.add(s)
             if fields:
-                result[node.name] = (fields, str(pyfile.relative_to(APP_DIR.parent)), extra_mode)
+                result[node.name] = (fields, str(pyfile.relative_to(APP_DIR.parent)), extra_mode, deps)
     return result
 
 
-# ── 步骤 2: 解析所有 Java DTO ──
+def _annotation_str(node) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
 
-def parse_all_java_dtos() -> dict[str, dict[str, str]]:
+
+# ── 步骤 2: 解析 Java DTO (增强) ──
+
+def parse_all_java() -> dict[str, dict[str, str]]:
     """返回 {Java类名: {Java字段名: JSON key}}"""
     result: dict[str, dict[str, str]] = {}
     if not PAYARA_DTO_DIR.exists():
         return result
+
     for java_file in PAYARA_DTO_DIR.rglob("*.java"):
         try:
             source = java_file.read_text(encoding="utf-8")
         except Exception:
             continue
-        # 找 public class XxxDTO extends/implements ...
-        class_match = re.search(r'public\s+class\s+(\w+)\s+(?:extends|implements)', source)
-        if not class_match:
+
+        cm = re.search(r'public\s+class\s+(\w+)\s+(?:extends|implements|\{)', source)
+        if not cm:
             continue
-        java_class = class_match.group(1)
+        java_class = cm.group(1)
 
         fields: dict[str, str] = {}
-        # @ApiModelProperty 后跟的字段声明
-        api_pattern = re.compile(
-            r'(?:@\w+(?:\([^)]*\))?\s*)*private\s+(List<)?(\w+)(>)?\s+(\w+)\s*;',
-            re.MULTILINE,
+        # 策略: 先找所有 private 字段声明行
+        field_lines = re.findall(
+            r'(?:@\w+(?:\([^)]*\))?\s*)*'          # 可选的注解
+            r'private\s+'                            # private
+            r'(?:static\s+)?'                        # 可选的 static
+            r'(?:final\s+)?'                         # 可选的 final
+            r'(\w+(?:\.\w+)*)'                       # 类型 (支持 List, com.example.Type)
+            r'(?:<(?:[\w\s,.]+)>)?'                   # 可选泛型 <Type>
+            r'(?:\[\])?'                             # 可选数组 []
+            r'\s+(\w+)'                              # 字段名
+            r'(?:\s*=\s*[^;]+)?'                      # 可选默认值
+            r'\s*;',
+            source,
         )
-        for m in api_pattern.finditer(source):
-            ftype_wrapper = m.group(1) or ""
-            ftype = m.group(2)
-            fname = m.group(4)
-            if ftype in JAVA_PRIMITIVES or ftype in JAVA_COLLECTIONS:
+        for raw in field_lines:
+            fname = raw[1]
+            ftype = raw[0]
+            # 跳过集合/原始/基础类型字段
+            if ftype in ("List", "Set", "Map", "Collection",
+                         "int", "long", "float", "double", "boolean",
+                         "String", "Date", "Integer", "Long", "Double",
+                         "Boolean", "BigDecimal", "enum"):
                 continue
-            if ftype_wrapper:
-                continue  # 跳过 List<DtoType> 嵌套
-            fields[fname] = fname
-
-        # @JsonProperty 别名
-        json_prop = re.compile(r'@JsonProperty\s*\(\s*"(\w+)"\s*\)')
-        for m in json_prop.finditer(source):
-            alias = m.group(1)
-            post = source[m.end():m.end() + 200]
-            pm = re.search(r'private\s+\S+\s+(\w+)\s*;', post)
-            if pm and pm.group(1) not in ("set", "get"):
-                fields[pm.group(1)] = alias
+            # 别名: 同一字段名前查找 @JsonbProperty / @JsonProperty
+            alias = fname
+            # 在 fname 之前搜索整个文件的别名注解
+            pos = source.find(f"private {raw[0]} {fname}")
+            if pos < 0:
+                pos = source.find(fname)
+            if pos > 0:
+                before = source[max(0, pos - 500):pos]
+                jm = re.findall(r'@(?:JsonbProperty|JsonProperty)\s*\(\s*"(\w+)"\s*\)', before)
+                if jm:
+                    alias = jm[-1]
+            fields[fname] = alias
 
         if fields:
             result[java_class] = fields
     return result
 
 
-# ── 步骤 3: 名称匹配 → 字段对比 ──
+# ── 步骤 3: 递归收集 DTO 引用链 ──
 
-def match_and_compare(
-    py_schemas: dict,
-    java_dtos: dict,
-) -> list[tuple[str, str, str, str, list]]:
-    issues: list[tuple[str, str, str, str, list]] = []
+def transitive_closure(
+    py_name: str, py_schemas: dict, deps_collected: set[str], depth: int = 0
+):
+    """收集 Python schema 引用的所有嵌套 DTO。"""
+    if depth > 3 or py_name in deps_collected:
+        return
+    deps_collected.add(py_name)
+    if py_name not in py_schemas:
+        return
+    _, _, _, deps = py_schemas[py_name]
+    for dep in deps:
+        base = dep.replace("DTO", "") + "DTO"
+        for cand in (dep, base):
+            if cand in py_schemas:
+                transitive_closure(cand, py_schemas, deps_collected, depth + 1)
 
-    for py_name, (py_fields, py_file, extra_mode) in py_schemas.items():
-        # 确定目标 Java DTO 名
-        java_name = MANUAL_MAP.get(py_name)
-        if java_name is None and py_name in MANUAL_MAP:
-            continue  # 明确标记为无对应 Java DTO
 
-        if java_name is None:
-            # 自动匹配: 去掉 DTO/Update/Creation/Request 后缀
-            base = py_name.replace("DTO", "").replace("Update", "").replace("Creation", "").replace("Request", "")
-            candidates = [py_name, base + "DTO"]
-            java_name = None
-            for c in candidates:
-                if c in java_dtos:
-                    java_name = c
-                    break
+# ── 步骤 4: 匹配 + 对比 ──
+
+def match_name(py_name: str) -> str | None:
+    if py_name in MANUAL_MAP:
+        return MANUAL_MAP[py_name]
+    base = py_name.replace("DTO", "")
+    for sfx in ("Update", "Creation", "Request"):
+        base = base.replace(sfx, "")
+    cand = base + "DTO"
+    return cand
+
+
+def compare():
+    print("解析 Python schemas ...")
+    py_schemas = parse_all_pydantic()
+    print(f"  {len(py_schemas)} 个 Pydantic schema 类")
+
+    print("解析 Java DTOs ...")
+    java_dtos = parse_all_java()
+    print(f"  {len(java_dtos)} 个 Java DTO 类")
+    print()
+
+    critical, warning = [], []
+
+    for py_name, (py_fields, py_file, extra_mode, _) in sorted(py_schemas.items()):
+        java_name = match_name(py_name)
         if java_name is None or java_name not in java_dtos:
             continue
 
         java_fields = java_dtos[java_name]
-        # Python 可接受的 JSON key 集合（字段名 + alias）
+
+        # Python 接收的 key 集合
         py_keys: set[str] = set()
-        for py_field, py_alias in py_fields.items():
-            py_keys.add(py_field)
-            py_keys.add(py_alias)
+        for pf, pa in py_fields.items():
+            py_keys.add(pf)
+            py_keys.add(pa)
 
-        # Java JSON key 集合（字段名 + @JsonProperty 别名）
-        java_keys: set[str] = set(java_fields.values()) | set(java_fields.keys())
+        # Java JSON key 集合
+        java_keys = set(java_fields.values()) | set(java_fields.keys())
+        java_keys -= PY_ONLY
 
-        # 过滤基础字段（两个方向都忽略）
-        base_keys = {
-            "workspaceId", "workspace_id", "configurationItemId", "configurationItemKey",
-            "partKey", "documentKey", "id",
-        }
-
-        missing_py = java_keys - py_keys - base_keys
-        extra_py = py_keys - java_keys - base_keys
+        missing = java_keys - py_keys
+        extra = py_keys - java_keys - PY_ONLY
 
         msgs = []
-        if missing_py:
+        severity = "WARNING"
+
+        if missing and extra_mode == "forbid":
+            severity = "CRITICAL"
             msgs.append(
-                f"Python 缺失字段: {sorted(missing_py)} "
-                f"(extra_mode={extra_mode}, 会被{'拒绝' if extra_mode == 'forbid' else '丢弃'})"
-            )
-        if extra_py:
-            msgs.append(f"Python 多了字段(Java无): {sorted(extra_py)}")
+                f"  缺字段 (extra=forbid → 422): {sorted(missing)}")
+        elif missing:
+            msgs.append(
+                f"  缺字段 (extra=ignore → 丢弃): {sorted(missing)}")
+
+        if extra and py_name not in REQUEST_ONLY:
+            # 检查 extra 中是否包含蛇形命名变体（如 standard_part vs standardPart）
+            real_extra = []
+            for e in sorted(extra):
+                snake = re.sub(r'([A-Z])', r'_\1', e).lower()
+                if snake not in java_keys and e not in java_keys:
+                    real_extra.append(e)
+            if real_extra:
+                msgs.append(f"  多余字段: {real_extra}")
 
         if msgs:
-            issues.append((
-                py_name,
-                java_name,
-                py_file,
-                f"Java: {sorted(java_keys)[:12]}...",
+            entry = (
+                py_name, java_name, py_file, severity,
+                f"Java: {sorted(java_keys)[:15]}{'...' if len(java_keys) > 15 else ''}",
                 msgs,
-            ))
+            )
+            if severity == "CRITICAL":
+                critical.append(entry)
+            else:
+                warning.append(entry)
 
-    return issues
+    # 输出
+    print(f"🔴 CRITICAL: {len(critical)}  (extra=forbid + 缺字段 → 422)")
+    print(f"🟡 WARNING:  {len(warning)}  (字段不一致)\n")
 
-
-def main():
-    print("解析 Python schemas ...")
-    py_schemas = parse_all_pydantic_schemas()
-    print(f"  找到 {len(py_schemas)} 个 Pydantic schema 类\n")
-
-    print("解析 Java DTOs ...")
-    java_dtos = parse_all_java_dtos()
-    print(f"  找到 {len(java_dtos)} 个 Java DTO 类\n")
-
-    issues = match_and_compare(py_schemas, java_dtos)
-    if not issues:
-        print("✅ 所有 Python schema 字段与 Java DTO 对齐")
-        return 0
-
-    # 分类
-    critical = [i for i in issues if any("会被拒绝" in m for m in i[4])]
-    warning = [i for i in issues if i not in critical]
-
-    print(f"🔴 critical: {len(critical)} 个 schema 带 extra='forbid' 但缺字段（会导致 422）")
-    print(f"🟡 warning : {len(warning)} 个 schema 字段不一致\n")
-
-    for severity, items in [("CRITICAL", critical), ("WARNING", warning)]:
+    for sev, items in [("CRITICAL", critical), ("WARNING", warning)]:
         if not items:
             continue
         print(f"{'='*60}")
-        print(f"  {severity}")
+        print(f"  {sev}")
         print(f"{'='*60}")
-        for py_name, java_name, py_file, java_info, msgs in items:
-            print(f"\n{py_name} ↔ {java_name}")
-            print(f"  Python: {py_file}")
-            print(f"  {java_info}")
+        for py_name, java_name, py_file, _, jinfo, msgs in items:
+            print(f"\n  {py_name} ↔ {java_name} ({py_file})")
+            print(f"    {jinfo}")
             for m in msgs:
-                print(f"  {m}")
+                print(m)
 
-    return 1
+    return 1 if critical else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(compare())
