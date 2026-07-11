@@ -17,9 +17,10 @@
 ### 中优先级
 
 - [ ] **reindex 邮件通知 i18n** — 基础实现已完成，待补全多语言资源
-- [ ] **Decimation 减面优化** — conversion 容器脚本缺失
+- [x] **Decimation 减面优化（2026-07-11 以 LOD 生成替代）** — conversion-service-py 已内置三级 LOD（deflection 0.05/0.30/1.00），失败降级
 - [ ] **Windows 重启后 Docker 端口失效** — `wsl --shutdown` 恢复
 - [x] **WebSocket /ws 403（2026-07-10 已修复）** — 路由路径对齐 `/docdoku-plm-server-rest/ws` + 补 `WebSocket` 类型注解，握手 101 + AUTH_OK
+- [x] **Conversion Service Python 化收尾（2026-07-11）** — conversion-service-py 完整接管：docker-compose.yml 本地 build、LOD 三级精度（deflection 0.05/0.30/1.00）失败降级、旧 Java 目录标注废弃。容器已重建部署，Kafka 连接正常。
 
 ---
 

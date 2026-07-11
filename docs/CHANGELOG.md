@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-07-11 — Conversion Service Python 化收尾 + LOD 生成
+
+- refactor(conversion): conversion-service-py 接管构建，docker-compose.yml 改为本地 build
+- feat(conversion): LOD 生成——deflection 三级精度（0.05/0.30/1.00），失败降级为单 LOD
+- fix(converter): 删除 vault.part_geometry_path() 和 converter_utils.vault_geometry_path() 错误路径函数（含多余 geometry/ 子目录，与 Java 不符，未被使用）
+- chore(conversion): docdoku-plm-conversion-service/ 标注废弃
+- feat(front-dev): 前端热更新开发模式——webapp.properties.json port→8009，新增 dev.sh
+
 ## 2026-07-10 — 工作区删除 500 修复 + WebSocket /ws 403 修复
 
 > 分支 `feat/py-query-execution-engine`。均已 docker cp 部署 back-py 并线上验证。

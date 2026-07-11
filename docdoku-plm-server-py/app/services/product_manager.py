@@ -533,7 +533,7 @@ class ProductService:
             from sqlalchemy import text as sql_text
             rows = db.execute(sql_text(
                 "SELECT ia.id, ia.name, ia.locked, ia.mandatory, "
-                "ia.stringvalue, ia.datevalue, ia.floatvalue, ia.integervalue, ia.urlvalue, "
+                "ia.textvalue, ia.datevalue, ia.numbervalue, ia.indexvalue, ia.urlvalue, "
                 "ia.booleanvalue "
                 "FROM instanceattribute ia "
                 "JOIN partiteration_attribute pia ON pia.instanceattribute_id = ia.id "
@@ -543,14 +543,14 @@ class ProductService:
             ), {"ws": workspace_id, "pn": number, "ver": version, "it": iteration_num}).fetchall()
             def _extract_value(row):
                 vals = []
-                if row.stringvalue is not None:
-                    vals.append(str(row.stringvalue))
+                if row.textvalue is not None:
+                    vals.append(str(row.textvalue))
                 if row.datevalue is not None:
                     vals.append(str(row.datevalue))
-                if row.floatvalue is not None:
-                    vals.append(str(row.floatvalue))
-                if row.integervalue is not None:
-                    vals.append(str(row.integervalue))
+                if row.numbervalue is not None:
+                    vals.append(str(row.numbervalue))
+                if row.indexvalue is not None:
+                    vals.append(str(row.indexvalue))
                 if row.urlvalue is not None:
                     vals.append(str(row.urlvalue))
                 if row.booleanvalue is not None:
@@ -778,16 +778,18 @@ class ProductService:
                 ), {"id": oid})
         # 插入新属性
         for order, attr in enumerate(attrs):
+            dtype = self._infer_attribute_dtype(attr)
             result = db.execute(text(
-                "INSERT INTO instanceattribute (name, mandatory, locked, "
+                "INSERT INTO instanceattribute (name, mandatory, locked, dtype, "
                 "booleanvalue, datevalue, indexvalue, numbervalue, "
                 "textvalue, longtextvalue, urlvalue) "
-                "VALUES (:name, :mand, :locked, :bv, :dv, :iv, :nv, "
-                ":tv, :ltv, :uv) RETURNING id"
+                "VALUES (:name, :mand, :locked, :dtype, "
+                ":bv, :dv, :iv, :nv, :tv, :ltv, :uv) RETURNING id"
             ), {
                 "name": attr.get("name", ""),
                 "mand": attr.get("mandatory", False),
                 "locked": attr.get("locked", False),
+                "dtype": dtype,
                 "bv": attr.get("booleanValue"),
                 "dv": attr.get("dateValue"),
                 "iv": attr.get("indexValue"),
@@ -804,6 +806,23 @@ class ProductService:
                 "VALUES (:ws, :pn, :ver, :it, :aid, :order)"
             ), {"ws": ws, "pn": pn, "ver": ver, "it": it,
                 "aid": attr_id, "order": order})
+
+    @staticmethod
+    def _infer_attribute_dtype(attr: dict) -> str:
+        """根据属性值字段推断 JPA dtype 鉴别值，对齐 Java @DiscriminatorValue。"""
+        if attr.get("booleanValue") is not None:
+            return "InstanceBooleanAttribute"
+        if attr.get("dateValue") is not None:
+            return "InstanceDateAttribute"
+        if attr.get("numberValue") is not None:
+            return "InstanceNumberAttribute"
+        if attr.get("urlValue") is not None:
+            return "InstanceURLAttribute"
+        if attr.get("indexValue") is not None:
+            return "InstanceListOfValuesAttribute"
+        if attr.get("longTextValue") is not None:
+            return "InstanceLongTextAttribute"
+        return "InstanceTextAttribute"
 
     def _sync_instance_attribute_templates(self, db: Session, iteration: PartIteration,
                                             templates: list) -> None:
@@ -1391,10 +1410,11 @@ class ProductService:
         from app.core.config import settings
         from sqlalchemy import text as sql_text
 
-        file_rows = db.execute(sql_text(
-            "SELECT attachedfile_fullname FROM partmastertemplate_binres "
-            "WHERE workspace_id=:ws AND partmastertemplate_id=:tid"
-        ), {"ws": workspace_id, "tid": template_id}).fetchall()
+        tpl = db.execute(sql_text(
+            "SELECT attachedfile_fullname FROM partmastertemplate "
+            "WHERE workspace_id=:ws AND id=:tid"
+        ), {"ws": workspace_id, "tid": template_id}).first()
+        file_rows = [(tpl[0],)] if tpl and tpl[0] else []
         if not file_rows:
             return
         vault_root = Path(settings.VAULT_PATH)

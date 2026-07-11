@@ -5,7 +5,7 @@ from typing import Optional, List
 
 
 class CADInstanceDTO(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     rx: Optional[float] = None
     ry: Optional[float] = None
     rz: Optional[float] = None
@@ -17,3 +17,4 @@ class CADInstanceDTO(BaseModel):
     m00: Optional[float] = None; m01: Optional[float] = None; m02: Optional[float] = None
     m10: Optional[float] = None; m11: Optional[float] = None; m12: Optional[float] = None
     m20: Optional[float] = None; m21: Optional[float] = None; m22: Optional[float] = None
+    matrix: Optional[List[float]] = None   # CATIA 4x4/4x3 变换矩阵展平数组

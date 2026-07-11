@@ -15,12 +15,9 @@ svc = DocumentService()
 
 
 def _check_workspace_write_access(db: Session, ws: str, login: str):
-    """检查用户是否有工作区写权限。"""
-    row = db.execute(sql_text(
-        "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :w"
-    ), {"l": login, "w": ws}).first()
-    if not row:
-        raise AccessRightException("AccessRightException", login)
+    """检查用户是否有工作区写权限，对齐 Java hasWorkspaceWriteAccess。"""
+    from app.services.factory.acl_factory import check_write_access
+    check_write_access(db, None, login, False, workspace_id=ws)
 
 
 @router.get("/workspaces/{ws}/folders", response_model=List[FolderDTO])

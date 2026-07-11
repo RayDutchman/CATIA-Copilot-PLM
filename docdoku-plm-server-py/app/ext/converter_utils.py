@@ -27,8 +27,3 @@ def is_geometry_capable(filename: str) -> bool:
 def vault_nativecad_path(ws: str, pn: str, ver: str, iteration: int, filename: str) -> str:
     """构建 nativecad 文件的 vault 相对路径。"""
     return f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
-
-
-def vault_geometry_path(ws: str, pn: str, ver: str, iteration: int, quality: str = "LOW") -> str:
-    """构建 GLB 几何体的 vault 路径。"""
-    return f"{ws}/parts/{pn}/{ver}/{iteration}/geometry/{quality}.glb"

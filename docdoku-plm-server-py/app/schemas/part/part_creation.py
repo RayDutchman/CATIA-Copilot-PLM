@@ -12,8 +12,8 @@ class PartCreationDTO(BaseModel):
     """
     model_config = ConfigDict(populate_by_name=True, extra='ignore')
 
-    number: str
-    name: str = ""
+    number: str = Field(..., alias="partNumber")
+    name: str = Field("", alias="partName")
     description: str = ""
     # 前端发 camelCase，alias 映射；同时支持 snake_case（populate_by_name=True）
     standard_part: bool = Field(False, alias="standardPart")

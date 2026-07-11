@@ -19,18 +19,6 @@ def part_nativecad_path(
     )
 
 
-def part_geometry_path(
-    workspace_id: str, part_number: str, version: str,
-    iteration: int, quality: str
-) -> Path:
-    """GLB 几何体文件路径。quality 通常为 LOW/MEDIUM/HIGH。"""
-    return (
-        _vault_root() / workspace_id / "parts"
-        / part_number / version / str(iteration)
-        / "geometry" / f"{quality}.glb"
-    )
-
-
 def part_attached_path(
     workspace_id: str, part_number: str, version: str,
     iteration: int, filename: str

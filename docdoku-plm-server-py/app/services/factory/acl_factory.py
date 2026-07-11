@@ -79,6 +79,11 @@ def check_write_access(db: Session, acl_id: int | None,
         return True
     if acl_id is None:
         if workspace_id:
+            ws_admin = db.execute(text(
+                "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+            ), {"w": workspace_id, "l": user_login}).first()
+            if ws_admin:
+                return True
             has = db.execute(text(
                 "SELECT 1 FROM workspaceusermembership "
                 "WHERE workspace_id=:ws AND member_login=:l AND readonly=false"
