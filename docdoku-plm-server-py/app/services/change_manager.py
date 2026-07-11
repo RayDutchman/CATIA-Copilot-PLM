@@ -34,7 +34,7 @@ class ChangeService:
     def _cls(self, type_name: str):
         cls = TYPE_MAP.get(type_name)
         if cls is None:
-            raise WrongInputException("WrongInputException", type_name)
+            raise WrongInputException()
         return cls
 
     def list_items(self, db: Session, ws: str, type_name: str,
