@@ -1,7 +1,11 @@
 """单个文档 CRUD（DocumentResource）。"""
+import hashlib
 import re
+import uuid
+from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sql_text
 from app.core.database import get_db
@@ -10,7 +14,7 @@ from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.core.exceptions import DocumentRevisionNotFoundException
 from app.services.document_manager import DocumentService
-from app.services.factory.acl_factory import apply_acl
+from app.services.factory.acl_factory import apply_acl, check_write_access
 from app.schemas.document import DocumentRevisionDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -647,7 +651,9 @@ def new_version(ws: str, doc_key: str, body: dict = {},
                                      title=title, description=description,
                                      workflow_model_id=workflow_model_id,
                                      user_entries=user_entries,
-                                     user_group_entries=user_group_entries)
+                                     user_group_entries=user_group_entries,
+                                     user_role_mapping=user_role_mapping,
+                                     group_role_mapping=group_role_mapping)
     old_dict = _doc_to_dict(db, old_rev, current_user.login)
     new_dict = _doc_to_dict(db, new_rev, current_user.login)
     return [old_dict, new_dict]
@@ -702,8 +708,8 @@ def remove_tag(ws: str, doc_key: str, tag_label: str,
     return svc.remove_tag(db, ws, doc_id, ver, tag_label)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/acl")
-@router.put("/workspaces/{ws}/documents/{doc_key}/acl/", include_in_schema=False)
+@router.put("/workspaces/{ws}/documents/{doc_key}/acl", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/acl/", status_code=204, include_in_schema=False)
 def update_doc_acl(ws: str, doc_key: str, body: dict,
                    db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
@@ -714,7 +720,7 @@ def update_doc_acl(ws: str, doc_key: str, body: dict,
     if dr.acl_id != new_acl_id:
         dr.acl_id = new_acl_id
         db.commit()
-    return {"aclId": new_acl_id}
+    return Response(status_code=204)
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/move", response_model=DocumentRevisionDTO)
@@ -737,32 +743,68 @@ def get_share(ws: str, doc_key: str,
     return {"publicShared": getattr(rev, "public_shared", False)}
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/publish")
-@router.put("/workspaces/{ws}/documents/{doc_key}/publish/", include_in_schema=False)
+@router.post("/workspaces/{ws}/documents/{doc_key}/share", status_code=201)
+@router.post("/workspaces/{ws}/documents/{doc_key}/share/", status_code=201, include_in_schema=False)
+def share_document(ws: str, doc_key: str,
+                   body: dict = Body({}),
+                   current_user: Account = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    svc.get_revision(db, ws, doc_id, ver)
+    from app.models.part import SharedEntity
+    shared_uuid = str(uuid.uuid4())
+    password = body.get("password")
+    expire_date_str = body.get("expireDate")
+    password_hash = hashlib.md5(password.encode()).hexdigest() if password else None
+    expire_date = datetime.fromisoformat(expire_date_str) if expire_date_str else None
+    entity = SharedEntity(
+        uuid=shared_uuid,
+        dtype="SharedDocument",
+        creation_date=datetime.utcnow(),
+        expire_date=expire_date,
+        password=password_hash,
+        author_workspace_id=ws,
+        author_login=current_user.login,
+        workspace_id=ws,
+        entity_workspace_id=ws,
+        documentmaster_id=doc_id,
+        documentrevision_version=ver,
+    )
+    db.add(entity)
+    db.commit()
+    return {"uuid": shared_uuid, "workspaceId": ws}
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/publish", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/publish/", status_code=204, include_in_schema=False)
 def publish(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     dr = svc.get_revision(db, ws, doc_id, ver)
+    acl_id = getattr(dr, "acl_id", None)
+    check_write_access(db, acl_id, current_user.login, False, workspace_id=ws)
     dr.public_shared = True
     db.commit()
-    return {"publicShared": True}
+    return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/unpublish")
-@router.put("/workspaces/{ws}/documents/{doc_key}/unpublish/", include_in_schema=False)
+@router.put("/workspaces/{ws}/documents/{doc_key}/unpublish", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/unpublish/", status_code=204, include_in_schema=False)
 def unpublish(ws: str, doc_key: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     dr = svc.get_revision(db, ws, doc_id, ver)
+    acl_id = getattr(dr, "acl_id", None)
+    check_write_access(db, acl_id, current_user.login, False, workspace_id=ws)
     dr.public_shared = False
     db.commit()
-    return {"publicShared": False}
+    return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe")
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe/", include_in_schema=False)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/subscribe/", status_code=204, include_in_schema=False)
 def subscribe_iteration_change(ws: str, doc_key: str,
                                 current_user: Account = Depends(get_current_user),
                                 db: Session = Depends(get_db)):
@@ -777,11 +819,11 @@ def subscribe_iteration_change(ws: str, doc_key: str,
         "DO NOTHING"),
         {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
     db.commit()
-    return {"status": "ok"}
+    return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe")
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe/", include_in_schema=False)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/iterationChange/unsubscribe/", status_code=204, include_in_schema=False)
 def unsubscribe_iteration_change(ws: str, doc_key: str,
                                   current_user: Account = Depends(get_current_user),
                                   db: Session = Depends(get_db)):
@@ -793,11 +835,11 @@ def unsubscribe_iteration_change(ws: str, doc_key: str,
         "AND subscriber_workspace_id=:sws"),
         {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
     db.commit()
-    return {"status": "ok"}
+    return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe")
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe/", include_in_schema=False)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/subscribe/", status_code=204, include_in_schema=False)
 def subscribe_state_change(ws: str, doc_key: str,
                             current_user: Account = Depends(get_current_user),
                             db: Session = Depends(get_db)):
@@ -812,11 +854,11 @@ def subscribe_state_change(ws: str, doc_key: str,
         "DO NOTHING"),
         {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
     db.commit()
-    return {"status": "ok"}
+    return Response(status_code=204)
 
 
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe")
-@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe/", include_in_schema=False)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe", status_code=204)
+@router.put("/workspaces/{ws}/documents/{doc_key}/notification/stateChange/unsubscribe/", status_code=204, include_in_schema=False)
 def unsubscribe_state_change(ws: str, doc_key: str,
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
@@ -828,4 +870,95 @@ def unsubscribe_state_change(ws: str, doc_key: str,
         "AND subscriber_workspace_id=:sws"),
         {"did": doc_id, "ver": ver, "ws": ws, "login": current_user.login, "sws": ws})
     db.commit()
-    return {"status": "ok"}
+    return Response(status_code=204)
+
+
+def _check_doc_file_writable(db: Session, ws: str, doc_id: str, ver: str,
+                              iteration: int, user_login: str) -> None:
+    """检查用户是否对文档迭代文件有写权限（已签出且是最新迭代）。"""
+    from app.models.document import DocumentRevision
+    from app.core.exceptions import NotAllowedException
+    dr = db.query(DocumentRevision).filter(
+        DocumentRevision.workspace_id == ws,
+        DocumentRevision.documentmaster_id == doc_id,
+        DocumentRevision.version == ver,
+    ).first()
+    if dr is None:
+        raise NotAllowedException("NotAllowedException4")
+    if dr.checkout_user_login != user_login:
+        raise NotAllowedException("NotAllowedException4")
+    if dr.last_iteration_number != iteration:
+        raise NotAllowedException("NotAllowedException4")
+
+
+@router.delete("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/files/{file_name}", status_code=204)
+@router.delete("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/files/{file_name}/", status_code=204, include_in_schema=False)
+def remove_doc_file(ws: str, doc_key: str, doc_iter: int, file_name: str,
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    _check_doc_file_writable(db, ws, doc_id, ver, doc_iter, current_user.login)
+    full_name = f"{ws}/documents/{doc_id}/{ver}/{doc_iter}/{file_name}"
+    from app.models.document import document_iteration_binres
+    from app.models.part import BinaryResource
+    from app.core.config import settings
+    from pathlib import Path
+
+    db.execute(document_iteration_binres.delete().where(
+        document_iteration_binres.c.workspace_id == ws,
+        document_iteration_binres.c.documentmaster_id == doc_id,
+        document_iteration_binres.c.documentrevision_version == ver,
+        document_iteration_binres.c.iteration == doc_iter,
+        document_iteration_binres.c.attachedfile_fullname == full_name,
+    ))
+    br = db.query(BinaryResource).filter(BinaryResource.full_name == full_name).first()
+    if br:
+        db.delete(br)
+    try:
+        vault_path = Path(settings.VAULT_PATH) / full_name
+        if vault_path.exists():
+            vault_path.unlink()
+    except Exception:
+        pass
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/files/{file_name}")
+@router.put("/workspaces/{ws}/documents/{doc_key}/iterations/{doc_iter}/files/{file_name}/", include_in_schema=False)
+def rename_doc_file(ws: str, doc_key: str, doc_iter: int, file_name: str,
+                    body: dict = Body(...),
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    doc_id, ver = _split_doc_key(doc_key)
+    _check_doc_file_writable(db, ws, doc_id, ver, doc_iter, current_user.login)
+    new_file_name = body.get("fileName")
+    if not new_file_name:
+        raise HTTPException(400, "fileName is required")
+    old_full = f"{ws}/documents/{doc_id}/{ver}/{doc_iter}/{file_name}"
+    new_full = f"{ws}/documents/{doc_id}/{ver}/{doc_iter}/{new_file_name}"
+    from app.models.document import document_iteration_binres
+    from app.models.part import BinaryResource
+    from app.core.config import settings
+    from pathlib import Path
+
+    br = db.query(BinaryResource).filter(BinaryResource.full_name == old_full).first()
+    if br:
+        br.full_name = new_full
+    db.execute(document_iteration_binres.update().where(
+        document_iteration_binres.c.workspace_id == ws,
+        document_iteration_binres.c.documentmaster_id == doc_id,
+        document_iteration_binres.c.documentrevision_version == ver,
+        document_iteration_binres.c.iteration == doc_iter,
+        document_iteration_binres.c.attachedfile_fullname == old_full,
+    ).values(attachedfile_fullname=new_full))
+    try:
+        old_path = Path(settings.VAULT_PATH) / old_full
+        new_path = Path(settings.VAULT_PATH) / new_full
+        if old_path.exists():
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            old_path.rename(new_path)
+    except Exception:
+        pass
+    db.commit()
+    return {"fullName": new_full, "name": new_file_name}

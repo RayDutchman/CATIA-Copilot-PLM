@@ -43,8 +43,6 @@ def list_root(ws: str, current_user: Account = Depends(get_current_user),
 
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders", response_model=List[FolderDTO])
 @router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/", include_in_schema=False)
-@router.get("/workspaces/{ws}/folders/{folder_path:path}/folders/",
-            include_in_schema=False)
 def list_sub(ws: str, folder_path: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):

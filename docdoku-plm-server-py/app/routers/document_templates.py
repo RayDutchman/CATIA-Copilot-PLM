@@ -134,9 +134,35 @@ def update(ws: str, template_id: str, body: dict,
     if "workflowModelId" in body:
         t.workflowmodel_id = body["workflowModelId"]
     if "attributeTemplates" in body:
-        pass  # 暂存 attributeTemplates，后续可持久化到专用表
+        # 先删除旧的属性模板关联
+        db.execute(sql_text(
+            "DELETE FROM documentmastertemplate_attr "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id})
+        # 再插入新的属性模板
+        for order, attr in enumerate(body["attributeTemplates"]):
+            attr_name = attr.get("name", "")
+            attr_dtype = attr.get("dtype", "InstanceTextAttribute")
+            attr_mandatory = attr.get("mandatory", False)
+            attr_locked = attr.get("locked", False)
+            attr_type = attr.get("attributeType", 0)
+            lov_name = attr.get("lovName")
+            lov_ws = attr.get("lovWorkspaceId")
+            result = db.execute(sql_text(
+                "INSERT INTO instanceattributetemplate "
+                "(dtype, name, mandatory, locked, attributetype, lov_name, lov_workspace_id) "
+                "VALUES (:dtype, :name, :mand, :locked, :atype, :lovn, :lovw) RETURNING id"
+            ), {"dtype": attr_dtype, "name": attr_name, "mand": attr_mandatory,
+                "locked": attr_locked, "atype": attr_type,
+                "lovn": lov_name, "lovw": lov_ws})
+            attr_id = result.fetchone()[0]
+            db.execute(sql_text(
+                "INSERT INTO documentmastertemplate_attr "
+                "(workspace_id, documentmastertemplate_id, instanceattributetemplate_id, attr_order) "
+                "VALUES (:ws, :tid, :aid, :ord)"
+            ), {"ws": ws, "tid": template_id, "aid": attr_id, "ord": order})
     if "lovs" in body or "LOVs" in body:
-        pass  # 暂存 LOVs，后续可持久化到专用表
+        pass  # 暂存 LOVs
     from datetime import datetime
     t.modification_date = datetime.utcnow()
     db.commit()
