@@ -71,6 +71,21 @@ def list_instances(ws: str, ci_id: str,
     if not root_pi:
         return []
 
+    # 若指定 path 且不是 -1，导航到该子树
+    if path and path != '-1':
+        segments = [s for s in path.split('-') if s.startswith(('u', 's')) and s[1:].isdigit()]
+        if segments:
+            from app.models.product.part_usage_link import PartUsageLink
+            link_id = int(segments[-1][1:])
+            link = db.query(PartUsageLink).filter(PartUsageLink.id == link_id).first()
+            if link:
+                child_pi = db.query(PartIteration).filter(
+                    PartIteration.workspace_id == link.component_workspace_id,
+                    PartIteration.partmaster_partnumber == link.component_partnumber,
+                ).order_by(PartIteration.iteration.desc()).first()
+                if child_pi:
+                    root_pi = child_pi
+
     result: list[dict] = []
     collect_leaf_instances(db, root_pi, identity_matrix(), [-1], result)
     return result
