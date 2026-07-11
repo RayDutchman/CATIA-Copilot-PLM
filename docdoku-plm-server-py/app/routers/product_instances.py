@@ -72,8 +72,11 @@ def list_instances(ws: str, ci_id: str,
         return []
 
     # 若指定 path 且不是 -1，导航到该子树
+    instance_ids = [-1]  # 虚拟根
     if path and path != '-1':
         segments = [s for s in path.split('-') if s.startswith(('u', 's')) and s[1:].isdigit()]
+        for seg in segments:
+            instance_ids.append(int(seg[1:]))
         if segments:
             from app.models.product.part_usage_link import PartUsageLink
             link_id = int(segments[-1][1:])
@@ -87,7 +90,7 @@ def list_instances(ws: str, ci_id: str,
                     root_pi = child_pi
 
     result: list[dict] = []
-    collect_leaf_instances(db, root_pi, identity_matrix(), [-1], result)
+    collect_leaf_instances(db, root_pi, identity_matrix(), instance_ids, result)
     return result
 
 
