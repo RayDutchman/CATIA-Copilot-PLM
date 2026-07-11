@@ -39,6 +39,12 @@ _ATTR_PREFIXES = {
 
 _DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d")
 
+# pr 表真实可查询的标量列白名单（不含已显式处理的 status/creationDate/version/checkInDate 等）
+# 进入 fallback 的 sub 不在白名单内（如 checkOutUser/author 等关系字段）则返回 1=1 避免 500
+_PR_VALID_COLS = frozenset({
+    "description", "publicshared", "checkoutdate",
+})
+
 
 def _parse_date(value):
     """解析日期字符串（对齐 Java DateUtils，宽松兼容多格式）。"""
@@ -174,11 +180,14 @@ def _pr_leaf(sub, operator, rtype, values, params):
         return _cmp("pr.creationdate", operator, "date", values, params)
     if sub == "version":
         return _cmp("pr.version", operator, "string", values, params)
-    # 其他 pr 列名按 rule.type 直译（列名白名单校验，非法则恒真跳过）
+    # 其他 pr 列名按 rule.type 直译（白名单校验，非法/关系字段则恒真跳过防 500）
     if not _safe_ident(sub):
         return "1=1"
+    col = sub.lower()
+    if col not in _PR_VALID_COLS:
+        return "1=1"  # 非白名单（如 checkOutUser/author 关系字段）→ 恒真，避免生成非法列名
     vtype = {"double": "double", "date": "date", "status": "status"}.get(rtype, "string")
-    return _cmp(f"pr.{sub.lower()}", operator, vtype, values, params)
+    return _cmp(f"pr.{col}", operator, vtype, values, params)
 
 
 def _leaf_predicate(rule, params):
@@ -210,8 +219,10 @@ def _leaf_predicate(rule, params):
         sub = field[7:]
         if sub == "login":
             return _cmp("pr.author_login", operator, "string", values, params)
-        # author.name → account 表 EXISTS
-        inner = _cmp("acc.name", operator, "string", values, params)
+        # author.name/author.email/author.language → account 表 EXISTS（对齐 Java getAuthorPredicate）
+        if not _safe_ident(sub):
+            return "1=1"
+        inner = _cmp(f"acc.{sub.lower()}", operator, "string", values, params)
         return f"EXISTS (SELECT 1 FROM account acc WHERE acc.login = pr.author_login AND {inner})"
 
     for prefix in _ATTR_PREFIXES:
@@ -314,6 +325,7 @@ def run_part_query(db: Session, workspace_id: str, query: dict,
     """执行 PartRevision 查询：编译 WHERE → 查主键 → 加载 ORM → 权限/检入后过滤。
 
     对齐 Payara PartRevisionQueryDAO.runQuery + ProductManagerBean.searchPartRevisions：
+    - 被他人签出的版本，隐藏末迭代（信息泄露防护）
     - 仅保留有已检入迭代的版本（getLastCheckedInIteration != null）
     - 剔除无读取权限的版本（hasPartRevisionReadAccess）
     """
@@ -335,6 +347,16 @@ def run_part_query(db: Session, workspace_id: str, query: dict,
         })
         if pr is None:
             continue
+        # 后过滤：被他人签出 → 隐藏末迭代（对齐 Java searchPartRevisions isCheckoutByAnotherUser）
+        # 关键：iterations 关系为 delete-orphan 级联，直接 pop 会在后续 db.commit()
+        # （如 save=true 保存查询）时把末迭代从库里删除。必须先 expunge 脱离 session
+        # （对齐 Java em.detach），使集合变更不被 flush。
+        if (pr.checkout_user_login is not None
+                and pr.checkout_user_login != user_login
+                and pr.iterations):
+            _ = pr.part_master  # 先触发关系加载，expunge 后序列化不再懒加载报错
+            db.expunge(pr)
+            pr.iterations.pop()
         # 后过滤：必须有已检入迭代
         if not any(it.check_in_date is not None for it in (pr.iterations or [])):
             continue
