@@ -221,8 +221,13 @@ class TaskService:
             "wf_id": wf_id, "step": step, "num": num})
 
         # 审批通过时：推进活动（start next tasks）
+        workflow_completed = False
         if action.upper() == "APPROVE":
-            self._advance_activity(db, ws, wf_id, step, num, user_login)
+            workflow_completed = self._advance_activity(db, ws, wf_id, step, num, user_login)
+
+        # 工作流全部活动完成时：更新持有者的生命周期状态
+        if workflow_completed:
+            self._apply_final_lifecycle_state(db, ws, wf_id)
 
         # 拒绝时：relaunchWorkflow（abort + clone + new workflow）
         relaunched = None
@@ -271,10 +276,11 @@ class TaskService:
         }
 
     def _advance_activity(self, db: Session, ws: str, wf_id: int,
-                           step: int, completed_num: int, user_login: str):
+                           step: int, completed_num: int, user_login: str) -> bool:
         """审批通过后推进活动：根据 tasksToComplete 启动下一批 tasks。
         
         Sequential 类型严格顺序执行，每次只启动一个 task。
+        返回 True 表示工作流已全部完成（当前活动完成后无下一活动）。
         """
         from sqlalchemy import text
         # 获取当前活动的 tasksToComplete 和 dtype
@@ -282,7 +288,7 @@ class TaskService:
             "SELECT tasksToComplete, dtype FROM activity WHERE workflow_id = :wf_id AND step = :step"
         ), {"wf_id": wf_id, "step": step}).first()
         if not activity:
-            return
+            return False
         ttc = activity[0] or 0
         dtype = activity[1] if len(activity) > 1 else ""
         # 统计当前活动已审批的任务数
@@ -300,7 +306,9 @@ class TaskService:
                 "UPDATE task SET status = 0 "
                 "WHERE workflow_id = :wf_id AND activity_step = :step AND status = 1"
             ), {"wf_id": wf_id, "step": step})
-            self._start_activity(db, ws, wf_id, step + 1)
+            if not self._start_activity(db, ws, wf_id, step + 1):
+                # 下一活动不存在 → 工作流全部完成
+                return True
         elif running_cnt == 0 and approved_cnt < ttc:
             # 没有 running task 且未完成 — Sequential 每次只启动一个 task
             limit = 1 if dtype == "SEQUENTIAL" else ttc - approved_cnt
@@ -313,18 +321,20 @@ class TaskService:
                     "UPDATE task SET status = 1, startdate = NOW() "
                     "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
                 ), {"wf_id": wf_id, "step": step, "num": tnum})
+        return False
 
-    def _start_activity(self, db: Session, ws: str, wf_id: int, step: int):
+    def _start_activity(self, db: Session, ws: str, wf_id: int, step: int) -> bool:
         """启动指定活动的第一个 batch tasks。
         
         Sequential 类型每次只启动一个 task。
+        返回 True 表示有活动被启动，False 表示 step 超出范围（工作流完成）。
         """
         from sqlalchemy import text
         activity = db.execute(text(
             "SELECT taskstocomplete, dtype FROM activity WHERE workflow_id = :wf_id AND step = :step"
         ), {"wf_id": wf_id, "step": step}).first()
         if not activity:
-            return
+            return False
         ttc = activity[0] or 1
         dtype = activity[1] if len(activity) > 1 else ""
         limit = 1 if dtype == "SEQUENTIAL" else ttc
@@ -337,6 +347,38 @@ class TaskService:
                 "UPDATE task SET status = 1, startdate = NOW() "
                 "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
             ), {"wf_id": wf_id, "step": step, "num": tnum})
+        return True
+
+    def _apply_final_lifecycle_state(self, db: Session, ws: str, wf_id: int):
+        """工作流全部活动完成时，将 workflow.finallifecyclestate 同步到持有者 revision 的 status 列。
+        
+        对齐 Java：Workflow.getLifeCycleState() 完成时返回 finalLifeCycleState，
+        持有者 PartRevision/DocumentRevision 的 getLifeCycleState() 委托给 workflow。
+        本方法将 finalLifeCycleState 映射为 revision status 整数值并持久化到 DB。
+        """
+        from sqlalchemy import text
+        wf = db.execute(text(
+            "SELECT finallifecyclestate FROM workflow WHERE id = :id"
+        ), {"id": wf_id}).first()
+        if not wf or not wf[0]:
+            return
+        final_lcs = wf[0].upper()
+        # finalLifeCycleState → status 映射（对齐 Java PartRevision/DocumentRevision 的 lifecycle）
+        status_map = {"RELEASED": 1, "OBSOLETE": 2}
+        new_status = status_map.get(final_lcs)
+        if new_status is None:
+            # TODO: 当前仅处理 RELEASED / OBSOLETE，更复杂的 lifecycle 字符串映射后续扩展
+            return
+        # 更新零件 revision
+        db.execute(text(
+            "UPDATE partrevision SET status = :s "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws"
+        ), {"s": new_status, "wf_id": wf_id, "ws": ws})
+        # 更新文档 revision
+        db.execute(text(
+            "UPDATE documentrevision SET status = :s "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws"
+        ), {"s": new_status, "wf_id": wf_id, "ws": ws})
 
     def _relaunch_workflow(self, db: Session, ws: str,
                             wf_id: int, step: int, num: int) -> dict | None:

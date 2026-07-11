@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -207,20 +207,20 @@ def process_task(ws: str, task_id: str, body: dict, db: Session = Depends(get_db
                  current_user: Account = Depends(get_current_user)):
     wf_id, step, num = _parse_task_id(task_id)
     if wf_id is not None and step is not None:
-        holder = task_service.process_task(
+        task_service.process_task(
             db, ws, action=body.get("action", ""),
             comment=body.get("comment", ""),
             signature=body.get("signature", ""),
             user_login=current_user.login,
             workflow_id=wf_id, activity_step=step, task_num=num)
     else:
-        holder = task_service.process_task(
+        task_service.process_task(
             db, ws, task_id=int(num) if isinstance(num, int) else num,
             action=body.get("action", ""),
             comment=body.get("comment", ""),
             signature=body.get("signature", ""),
             user_login=current_user.login)
-    return holder
+    return Response(status_code=204)
 
 
 @router.get(f"{PREFIX}/tasks/{{login}}/documents", response_model=List[DocumentRevisionDTO])
