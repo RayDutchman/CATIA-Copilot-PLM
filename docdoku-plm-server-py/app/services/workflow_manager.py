@@ -193,12 +193,13 @@ class WorkflowService:
         return w
 
     def list_workspace_workflows(self, db: Session, ws: str) -> list:
+        """对齐 Java getWorkspaceWorkflowList：查 workspace_workflow 表返回 UUID id。"""
         from sqlalchemy import text
         rows = db.execute(text(
-            "SELECT w.* FROM workflow w "
-            "JOIN activity a ON w.id = a.workflow_id "
-            "JOIN task t ON a.workflow_id = w.id AND a.step = t.activity_step "
-            "WHERE t.worker_workspace_id = :ws GROUP BY w.id"
+            "SELECT ww.id, w.aborteddate, w.finallifecyclestate "
+            "FROM workspace_workflow ww "
+            "JOIN workflow w ON ww.workflow_id = w.id "
+            "WHERE ww.workspace_id = :ws"
         ), {"ws": ws}).fetchall()
         return rows
 
@@ -219,24 +220,66 @@ class WorkflowService:
                  "finalLifecycleState": r[2]} for r in rows]
 
     def get_aborted_workflow_instance(self, db: Session, ws: str,
-                                       workflow_id: int) -> dict:
-        """获取已中止工作流实例的任务信息。"""
+                                       workflow_id: int) -> list:
+        """对齐 Java getWorkflowAbortedWorkflowList：
+        按 workflow_id 定位持有者（document/part/workspace_workflow），
+        返回该持有者名下所有 aborteddate IS NOT NULL 的 workflow 列表。"""
         from sqlalchemy import text
-        row = db.execute(text(
-            "SELECT id, aborteddate, finallifecyclestate "
-            "FROM workflow WHERE id = :id AND aborteddate IS NOT NULL"
-        ), {"id": workflow_id}).first()
-        if not row:
-            raise WorkflowNotFoundException("WorkflowNotFoundException", str(workflow_id))
-        tasks = db.execute(text(
-            "SELECT t.* FROM task t WHERE t.workflow_id = :id"
-        ), {"id": workflow_id}).fetchall()
-        return {
-            "id": row[0],
-            "abortedDate": str(row[1]) if row[1] else None,
-            "finalLifecycleState": row[2],
-            "tasks": [self._task_row_to_dict(t, db) for t in tasks],
-        }
+
+        # 1) 检查是否为 document 的 workflow
+        dr = db.execute(text(
+            "SELECT workspace_id, documentmaster_id, version "
+            "FROM documentrevision WHERE workflow_id = :wid"
+        ), {"wid": workflow_id}).first()
+        if dr:
+            rows = db.execute(text(
+                "SELECT w.id, w.aborteddate, w.finallifecyclestate "
+                "FROM workflow w "
+                "JOIN document_aborted_workflow daw ON w.id = daw.workflow_id "
+                "WHERE daw.documentmaster_workspace_id = :ws "
+                "AND daw.documentmaster_id = :mid "
+                "AND daw.documentrevision_version = :v "
+                "AND w.aborteddate IS NOT NULL"
+            ), {"ws": dr[0], "mid": dr[1], "v": dr[2]}).fetchall()
+            return [{"id": r[0], "abortedDate": str(r[1]) if r[1] else None,
+                     "finalLifecycleState": r[2]} for r in rows]
+
+        # 2) 检查是否为 part 的 workflow
+        pr = db.execute(text(
+            "SELECT workspace_id, partmaster_partnumber, version "
+            "FROM partrevision WHERE workflow_id = :wid"
+        ), {"wid": workflow_id}).first()
+        if pr:
+            rows = db.execute(text(
+                "SELECT w.id, w.aborteddate, w.finallifecyclestate "
+                "FROM workflow w "
+                "JOIN part_aborted_workflow paw ON w.id = paw.workflow_id "
+                "WHERE paw.partmaster_workspace_id = :ws "
+                "AND paw.partmaster_partnumber = :pn "
+                "AND paw.partrevision_version = :v "
+                "AND w.aborteddate IS NOT NULL"
+            ), {"ws": pr[0], "pn": pr[1], "v": pr[2]}).fetchall()
+            return [{"id": r[0], "abortedDate": str(r[1]) if r[1] else None,
+                     "finalLifecycleState": r[2]} for r in rows]
+
+        # 3) 检查是否为 workspace_workflow 的 workflow
+        ww = db.execute(text(
+            "SELECT id, workspace_id FROM workspace_workflow WHERE workflow_id = :wid"
+        ), {"wid": workflow_id}).first()
+        if ww:
+            rows = db.execute(text(
+                "SELECT w.id, w.aborteddate, w.finallifecyclestate "
+                "FROM workflow w "
+                "JOIN workspace_aborted_workflow waw ON w.id = waw.workflow_id "
+                "WHERE waw.workspace_workflow_id = :wwid "
+                "AND waw.workspace_workflow_workspace_id = :ws "
+                "AND w.aborteddate IS NOT NULL"
+            ), {"wwid": ww[0], "ws": ww[1]}).fetchall()
+            return [{"id": r[0], "abortedDate": str(r[1]) if r[1] else None,
+                     "finalLifecycleState": r[2]} for r in rows]
+
+        # 找不到持有者返回空列表
+        return []
 
     # ========== workspace_workflow 实例化与管理 ==========
 
@@ -271,11 +314,10 @@ class WorkflowService:
         ).order_by(ActivityModel.step).all()
         if not ams:
             raise EntityNotFoundException("ActivityModelNotFoundException", model_id)
-        # 创建 workflow 实例
-        db.execute(text(
-            "INSERT INTO workflow (aborteddate, finallifecyclestate) VALUES (NULL, :fls)"
-        ), {"fls": wm.finalLifecycleState or ""})
-        wf_row = db.execute(text("SELECT currval('workflow_id_seq')")).first()
+        # 创建 workflow 实例（用 RETURNING id 避免 currval 并发风险）
+        wf_row = db.execute(text(
+            "INSERT INTO workflow (aborteddate, finallifecyclestate) VALUES (NULL, :fls) RETURNING id"
+        ), {"fls": wm.finalLifecycleState or ""}).fetchone()
         wf_id = wf_row[0]
         # 创建 activities 和 tasks，worker 创建时为 NULL（审批时才写入）
         created_tasks = []  # 记录创建了哪些 task，用于后续 TASK_USER/TASK_USERGROUP 写入
@@ -361,6 +403,10 @@ class WorkflowService:
         ), {"id": ww_id, "ws": ws, "wf_id": wf_id})
         db.commit()
         logger.info("Workflow %s instantiated in workspace %s", wf_id, ws)
+        # TODO: 缺少审批通知——对齐 Java WorkflowManagerBean.instantiateWorkflow L359
+        #   notifier.sendApproval(workspaceId, runningTasks, workspaceWorkflow)
+        #   当前 app/services/notifier.py 仅有索引通知方法，无 sendApproval。
+        #   需实现：遍历当前 runningTasks，向每个 task 的 worker(user) 发送审批邮件。
         return {"id": ww_id, "workspaceId": ws, "workflowId": wf_id}
 
     def get_workspace_workflow(self, db: Session, ws: str, ww_id: str) -> dict:
