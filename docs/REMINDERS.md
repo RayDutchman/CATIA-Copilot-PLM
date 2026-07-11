@@ -12,13 +12,14 @@
 
 > **修复进行中**，按 `docs/migration/audit/FIX-PLAN.md` 分 8 批（0~7）执行。分支 `fix/audit-remediation`。
 >
-> **✅ 批次 0 已完成（2026-07-11）**：回归测试门禁恢复。测试套件由已删除的 `Workspace_2` 整体重定向到 GD50 工作区。**pytest 基线：84 failed → 278 passed / 1 failed（--ignore=tests/test_vault.py）**。唯一残留 fail = `test_i18n_bypass`（part.py 3 处硬编码 HTTPException，真实代码问题，留待后续批次）。此为后续「无新增 fail」判定基线。
+> **✅ 批次 0 已完成（2026-07-11）**：回归测试门禁恢复。
+> **✅ 批次 1 已完成（2026-07-11）**：P0-a 列名必崩（effectivity + share 域 6 项 CRITICAL + 1 HIGH 全部修复）。
+> **✅ 批次 2 已完成（2026-07-11）**：P0-b 级联删除（重构 cascade_delete_workspace + B-4/D-9/W-2 补级联，消除 4 处危险单行 stub）。pytest 无新增 fail，在线 smoke 全绿。
 >
-> **✅ 批次 1 已完成（2026-07-11）**：P0-a 列名必崩（effectivity + share 域 6 项 CRITICAL + 1 HIGH 全部修复）。pytest 无新增 fail，在线 smoke 全绿。
->
-> 以下为待修的最高优先级 P0（已 information_schema 核实属实，运行时必崩）：
-> - [x] **B-1/B-2/B-3 effectivity 域完全不可用** → ✅ 批次 1 已修复（含 B-9 路由前缀、B-12 dtype 校验）
-> - [x] **X-1 share 端点每次 500** → ✅ 批次 1 已修复（含 X-2 认证顺序、X-3 uuid 混淆）
+> 以下为待修的最高优先级 P0：
+> - [x] **B-1/B-2/B-3 effectivity** → ✅ 批 1
+> - [x] **X-1/X-2/X-3 share** → ✅ 批 1
+> - [x] **B-4/W-1/W-2/W-3 级联删除/账户删除** → ✅ 批 2（含 D-9 模板级联）
 > - [ ] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表，属新发现）。→ 批次 3 修复
 > - [ ] **数据丢失/损坏类**：D-1(文档 checkout 丢 linkedDocs/attrs)、D-3(update_iteration 忽略 instanceAttributes)、PR-CRIT-1/2(产品配置写错表+ID 不关联)、B-4/W-1/W-2(级联删除孤儿)。
 > - [ ] **功能桩/权限类**：PR-CRIT-3/4/5、D-2/D-4、TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、X-2、W-3。

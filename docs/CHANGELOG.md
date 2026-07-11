@@ -6,6 +6,33 @@
 
 ---
 
+## 2026-07-11 — 审计修复批次 2：P0-b 级联删除（重构 + 级联补齐）
+
+> FIX-PLAN 批次 2。抽取 ~280 行级联删除为共享函数 + 补齐 3 处危险单行删除 stub。
+
+### refactor(workspace): extract cascade_delete_workspace to shared service
+
+- **新文件** `app/services/workspace_deletion.py`：`cascade_delete_workspace(db, ws)` — 完整 17 段级联（ES 索引→DB 全表→BinaryResource LIKE 前缀→vault 磁盘目录），对齐 Payara WorkspaceDAO.removeWorkspace
+- **W-1** `routers/admin.py`：delete_workspace 由单行 `DELETE FROM workspace` 改为调用 `cascade_delete_workspace`
+- **W-3** `services/workspace_manager.py`：delete_workspace 由单行 stub 改为调用 `cascade_delete_workspace`
+- **W-2** `routers/admin.py`：delete_account 补 11 表级联删除（organization_account/gcmaccount/passwordrecoveryrequest/providedaccount/workspaceusermembership/usergroup_user/role_user/tagusersubscription/iterationchangesubscription/statechangesubscription + workspace.admin_login NULL），含 session_replication_role=replica 安全策略
+
+### fix(baseline): cascade deletion (B-4 + B-8)
+
+- **B-4** `services/product_structure.py`：delete_baseline 补 7 表级联（baselinedpart→baselineddocument→substitutelink/optionallink/p2plink→partcollection/documentcollection）
+- **B-8**：删前查 productinstanceiteration 引用，有则抛 EntityConstraintException16
+
+### fix(template): cascade deletion (D-9)
+
+- **D-9** `services/document_manager.py`：delete_template 补级联（documentmastertemplate_binres→binaryresource+vault 文件→documentmastertemplate_attr→instanceattributetemplate→acl）
+
+### 验证
+
+- **pytest**：278 passed / 1 failed（--ignore=tests/test_vault.py），与批 0 基线一致，无新增 fail
+- **在线 smoke**：创建测试工作区→DELETE 级联→DB binaryresource/workspace 残留全 0，vault 目录已清理
+
+---
+
 ## 2026-07-11 — 审计修复批次 1：P0-a 列名必崩（effectivity + share）
 
 > FIX-PLAN 批次 1。effectivity 域完全不可用（ORM 伪列 + INSERT/manager 列名错）+ share 端点每次 500（expiredate 列名 + 公开共享权限顺序）。改动小、验证充分：pytest 无新增 fail，在线 smoke 全绿。
