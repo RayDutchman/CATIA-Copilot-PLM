@@ -24,7 +24,7 @@
 > - [x] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表）→ ✅ 批 3（深克隆 + 孤儿清理）
 > - [x] **D-1/D-3 文档 checkout/update 数据丢失** → ✅ 批 3。剩余数据丢失/损坏类：PR-CRIT-1/2(产品配置写错表+ID 不关联) → 批 4。
 > - [ ] **功能桩/权限类**：PR-CRIT-3/4/5、D-2/D-4、TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、X-2、W-3。
-> - [ ] **⚠️ 批 3 smoke 新发现（非本批范围）**：零件 `undo_checkout`（product_manager.py）删 partiteration 未先清 partiteration_attribute/usagelink 子表 → 对任何带属性/组件的零件 500（`fk_partiteration_attribute_iteration`）。文档 undo_checkout 可能同类。留待后续批次。
+> - [ ] **⚠️ 批 3 smoke 新发现（已对拍 Payara 确认属实，编入批 4）**：零件 `undo_checkout`（product_manager.py，P-14）+ 文档 `undo_checkout`（document_manager.py，D-14）用 `db.delete(last)` 删末迭代，但 SQLAlchemy 只清 secondary 关系，未清裸 SQL 层子表（partiteration_attribute/documentlink/pathdata_attr、documentiteration_attribute/documentlink/binres）。Java 靠 PartIteration/DocumentIteration 实体 orphanRemoval/CascadeType.ALL 级联，Python ORM 无对应子关系 → 对任何带属性/组件/链接的零件或文档 500（NO ACTION FK）。→ 批 4 Subagent G2 修复。
 >
 > HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
 

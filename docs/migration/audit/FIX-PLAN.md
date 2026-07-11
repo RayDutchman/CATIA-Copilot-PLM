@@ -28,7 +28,7 @@
 | **1** | P0-a 列名必崩 | 2 | 批 0 | pytest + 在线 smoke effectivity/share |
 | **2** | P0-b 级联删除（抽共享函数） | 1 + 主 agent 重构 | 批 1 | 删工作区后 DB 残留核零 |
 | **3** | P0-c 数据完整性（深拷贝/迭代） | 2 | 批 2 | checkout→update FK 无 500 |
-| **4** | P0-d 产品配置架构 | 1（+brainstorming） | 批 3 | 配置 CRUD 往返一致 |
+| **4** | P0-d 产品配置架构 + 迭代 undo 级联 | 2（+brainstorming） | 批 3 | 配置 CRUD 往返一致 + undocheckout 无 500 |
 | **5** | P1 语义 CRITICAL | 4 | 批 4 | 各端点行为对拍 Payara |
 | **6** | P2 HIGH 机械类（状态码/权限/DTO） | 4 | 批 5 | pytest + 抽样对拍 |
 | **7** | P3 configSpec / 缺失端点 | 2 | 批 6 | configSpec 分支对拍 |
@@ -151,8 +151,16 @@
 - [ ] **PR-CRIT-5** `product_instances.py:107-155` `update_instance`：路由补 `/{iteration}`，创建新迭代而非改末迭代，处理 instanceAttributes。
 - [ ] **PR-CRIT-4** `product_files.py:14-23` upload：写物理文件的同时创建 `BinaryResource` DB 行，返回 201+URL。
 
+### 文件包 PKG-iteration-undo → Subagent G2（与 Subagent G 文件不相交）
+**Files:** `app/services/product_manager.py`（`undo_checkout` 约 474-508）、`app/services/document_manager.py`（`undo_checkout` 约 650-679）
+
+> **背景（批 3 smoke 新发现，已主 agent 对拍 Payara 确认属实）**：零件/文档 `undo_checkout` 用 `db.delete(last)` 删末迭代，但 SQLAlchemy 只自动清理 secondary 关系（part 的 attached_files/geometries/components 关联行），**不清理**仅存在于裸 SQL 层的子表。Java `ProductManagerBean.undoCheckOutPart:404-408` 靠 `PartIteration` 实体的 `orphanRemoval=true`/`CascadeType.ALL`（instanceAttributes/instanceAttributeTemplates/linkedDocuments）级联删除全部子行；Python ORM 的 `PartIteration`/`DocumentIteration` 均无这些子关系。所有相关 FK 均为 NO ACTION → 删末迭代必 500。
+
+- [ ] **P-14**（CRITICAL）`product_manager.py:474-508` `undo_checkout`：`db.delete(last)` 前，按 FK 依赖顺序清理末迭代子表 + 孤儿深拷贝行。需删：`partiteration_attribute`（+孤儿 `instanceattribute`）、`partiteration_pathdata_attr`（+孤儿 `instanceattributetemplate`）、`partiteration_documentlink`（+孤儿 `documentlink`）、`partiteration_usagelink`（+孤儿 `partusagelink`/`partusagelink_cadinstance`/`cadinstance`——复用批 3 `__do_sync_components` 的孤儿清理逻辑，可抽为共享私有方法）、`partiteration_binres`/`partiteration_geometry`（对应 `BinaryResource` 已由现有 LIKE 删除覆盖）。DB 真值：`partiteration_attribute(workspace_id,partmaster_partnumber,partrevision_version,iteration,instanceattribute_id,attribute_order)`；FK `fk_partiteration_attribute_iteration` 现为 NO ACTION。验证：带属性+组件的 GD50 零件 checkout→undocheckout 无 500，子表残留全 0。
+- [ ] **D-14**（CRITICAL）`document_manager.py:650-679` `undo_checkout`：同理，`db.delete(last)` 前清理 `documentiteration_attribute`（+孤儿 `instanceattribute`）、`documentiteration_documentlink`（+孤儿 `documentlink`）、`documentiteration_binres`（BinaryResource 已由现有 LIKE 删除覆盖，但关联行需先删）。验证：带属性+链接的文档 checkout→undocheckout 无 500。
+
 ### 主 agent 批 4 收尾
-- [ ] 部署 + smoke：创建产品配置→读回 substitute/optional 一致（PR-CRIT-1/2）；产品实例文件上传后可下载（PR-CRIT-4）。
+- [ ] 部署 + smoke：创建产品配置→读回 substitute/optional 一致（PR-CRIT-1/2）；产品实例文件上传后可下载（PR-CRIT-4）；带属性+组件零件 checkout→undocheckout 无 500 且子表残留全 0（P-14）；带属性文档 checkout→undocheckout 无 500（D-14）。
 - [ ] pytest 无新增 fail。commit。更新文档。
 
 ---
@@ -250,8 +258,8 @@
 | routers/workspaces.py | | 主 | | | | N | |
 | services/workspace_deletion.py(新) | | 主 | | | | | |
 | services/product_structure.py | | C | | G | | | P |
-| services/document_manager.py | | D | F | | | | |
-| services/product_manager.py | | | E | | | | |
+| services/document_manager.py | | D | F | G2 | | | |
+| services/product_manager.py | | | E | G2 | | | |
 | models/configuration/product_configuration.py | | | | G | | | |
 | routers/product_configurations.py | | | | G | | | |
 | routers/product_instances.py | | | | G | | | |
@@ -274,7 +282,7 @@
 | services/products/path_*.py | | | | | | | P |
 | routers/product_baselines.py / document_baselines.py | | | | | | | Q |
 
-**每列校验**：批1(A,B 无交)、批2(主,C,D 无交)、批3(E,F 无交)、批4(G 独占)、批5(H,I,J,K 无交)、批6(L,M,N,O 无交)、批7(P,Q 无交，B-6 的 product_structure.py 部分并入 P)。✅ 全批次文件不相交。
+**每列校验**：批1(A,B 无交)、批2(主,C,D 无交)、批3(E,F 无交)、批4(G 与 G2 无交——G 改 product_structure/product_configuration/product_configurations/product_instances/product_files，G2 改 product_manager/document_manager)、批5(H,I,J,K 无交)、批6(L,M,N,O 无交)、批7(P,Q 无交，B-6 的 product_structure.py 部分并入 P)。✅ 全批次文件不相交。
 
 ---
 
