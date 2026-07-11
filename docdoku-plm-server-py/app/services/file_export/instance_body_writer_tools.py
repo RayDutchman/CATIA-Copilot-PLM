@@ -265,11 +265,13 @@ def collect_leaf_instances(
     parent_matrix: list[float],
     instance_ids: list[int],
     result: list[dict],
+    ps_filter=None,  # ProductStructureFilter，非 None 时按 filter 选迭代
 ) -> None:
     """递归遍历装配树，收集叶子零件实例。
 
     - 叶子节点（无子组件且有几何体）→ 调用 write_leaf_instance 输出
     - 装配节点 → 遍历每个 PartLink × CADInstance，递归处理子组件
+    - ps_filter 非 None 时，子件迭代选择由 filter 决定而非硬编码最大 iteration
     """
     from app.models.product.part_iteration import PartIteration
     from app.models.product.part_usage_link import PartUsageLink
@@ -292,6 +294,7 @@ def collect_leaf_instances(
                 _handle_child_component(
                     db, link, identity_matrix(),
                     instance_ids + [link_id], result,
+                    ps_filter=ps_filter,
                 )
             else:
                 for ci in cad_instances:
@@ -300,6 +303,7 @@ def collect_leaf_instances(
                     _handle_child_component(
                         db, link, combined,
                         instance_ids + [link_id], result,
+                        ps_filter=ps_filter,
                     )
 
         if geometries:
@@ -312,16 +316,30 @@ def _handle_child_component(
     combined_matrix: list[float],
     instance_ids: list[int],
     result: list[dict],
+    ps_filter=None,
 ) -> None:
-    """查找子组件的最新已签入迭代，递归收集。"""
+    """查找子组件迭代，递归收集。ps_filter 非 None 时按 filter 选迭代。"""
     from app.models.product.part_iteration import PartIteration
-    child_pi = db.query(PartIteration).filter(
-        PartIteration.workspace_id == link.component_workspace_id,
-        PartIteration.partmaster_partnumber == link.component_partnumber,
-    ).order_by(PartIteration.iteration.desc()).first()
+    from app.models.part import PartMaster
+
+    child_part_master = db.query(PartMaster).filter(
+        PartMaster.workspace_id == link.component_workspace_id,
+        PartMaster.number == link.component_partnumber,
+    ).first()
+    if not child_part_master:
+        return
+
+    if ps_filter:
+        filtered = ps_filter.filter_part_iterations(child_part_master)
+        child_pi = filtered[0] if filtered else None
+    else:
+        child_pi = db.query(PartIteration).filter(
+            PartIteration.workspace_id == link.component_workspace_id,
+            PartIteration.partmaster_partnumber == link.component_partnumber,
+        ).order_by(PartIteration.iteration.desc()).first()
 
     if child_pi:
-        collect_leaf_instances(db, child_pi, combined_matrix, instance_ids, result)
+        collect_leaf_instances(db, child_pi, combined_matrix, instance_ids, result, ps_filter=ps_filter)
 
 
 def write_leaf_instance(

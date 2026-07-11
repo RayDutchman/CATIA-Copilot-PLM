@@ -120,6 +120,7 @@ def _replace_instance_attributes(db: Session, ws: str, ci_id: str,
 def list_instances(ws: str, ci_id: str,
                    configSpec: Optional[str] = Query(None, alias="configSpec"),
                    path: Optional[str] = Query(None),
+                   diverge: bool = Query(False),
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     """产品实例列表。
@@ -133,6 +134,7 @@ def list_instances(ws: str, ci_id: str,
 
     # 3D 实例模式：对齐 Java ProductResource.getFilteredInstances
     from app.models.product.configuration_item import ConfigurationItem
+    from app.models.part import PartMaster
     ci = db.query(ConfigurationItem).filter(
         ConfigurationItem.workspace_id == ws,
         ConfigurationItem.id == ci_id,
@@ -140,11 +142,31 @@ def list_instances(ws: str, ci_id: str,
     if not ci or not ci.partmaster_partnumber:
         return []
 
-    # 获取 root part 的最新已签入迭代
-    root_pi = db.query(PartIteration).filter(
-        PartIteration.workspace_id == ws,
-        PartIteration.partmaster_partnumber == ci.partmaster_partnumber,
-    ).order_by(PartIteration.iteration.desc()).first()
+    # 解析 configSpec → PS filter
+    ps_filter = None
+    if configSpec.startswith("pi-"):
+        # pi- 应解析为该实例基线的 configSpec，当前退化为 latest
+        serial = configSpec[3:]
+        ps_filter = svc.parse_config_spec_str("latest", db=db, user_login=current_user.login, diverge=diverge)
+    else:
+        ps_filter = svc.parse_config_spec_str(configSpec, db=db, user_login=current_user.login, diverge=diverge)
+
+    # 选择 root part iteration
+    root_part_master = db.query(PartMaster).filter(
+        PartMaster.workspace_id == ws,
+        PartMaster.number == ci.partmaster_partnumber,
+    ).first()
+    if not root_part_master:
+        return []
+
+    if ps_filter:
+        filtered = ps_filter.filter_part_iterations(root_part_master)
+        root_pi = filtered[0] if filtered else None
+    else:
+        root_pi = db.query(PartIteration).filter(
+            PartIteration.workspace_id == ws,
+            PartIteration.partmaster_partnumber == ci.partmaster_partnumber,
+        ).order_by(PartIteration.iteration.desc()).first()
 
     if not root_pi:
         return []
@@ -160,15 +182,24 @@ def list_instances(ws: str, ci_id: str,
             link_id = int(segments[-1][1:])
             link = db.query(PartUsageLink).filter(PartUsageLink.id == link_id).first()
             if link:
-                child_pi = db.query(PartIteration).filter(
-                    PartIteration.workspace_id == link.component_workspace_id,
-                    PartIteration.partmaster_partnumber == link.component_partnumber,
-                ).order_by(PartIteration.iteration.desc()).first()
-                if child_pi:
-                    root_pi = child_pi
+                child_pm = db.query(PartMaster).filter(
+                    PartMaster.workspace_id == link.component_workspace_id,
+                    PartMaster.number == link.component_partnumber,
+                ).first()
+                if child_pm and ps_filter:
+                    child_filtered = ps_filter.filter_part_iterations(child_pm)
+                    if child_filtered:
+                        root_pi = child_filtered[0]
+                elif child_pm:
+                    child_pi = db.query(PartIteration).filter(
+                        PartIteration.workspace_id == link.component_workspace_id,
+                        PartIteration.partmaster_partnumber == link.component_partnumber,
+                    ).order_by(PartIteration.iteration.desc()).first()
+                    if child_pi:
+                        root_pi = child_pi
 
     result: list[dict] = []
-    collect_leaf_instances(db, root_pi, identity_matrix(), instance_ids, result)
+    collect_leaf_instances(db, root_pi, identity_matrix(), instance_ids, result, ps_filter=ps_filter)
     return result
 
 
@@ -180,6 +211,75 @@ def create_instance(ws: str, ci_id: str, body: dict,
     inst = svc.create_instance(db, ws, ci_id, body.get("serialNumber", ""),
                                 body.get("baselineId", 0), current_user.login)
     return {"serialNumber": inst.serialnumber}
+
+
+# 对齐 Java ProductResource.getInstancesForMultiplePath
+@router.post("/workspaces/{ws}/products/{ci_id}/instances/paths", status_code=200)
+@router.post("/workspaces/{ws}/products/{ci_id}/instances/paths/", status_code=200, include_in_schema=False)
+def instances_for_multiple_paths(ws: str, ci_id: str, body: dict,
+                                  current_user: Account = Depends(get_current_user),
+                                  db: Session = Depends(get_db)):
+    """按多路径批量收集 3D 实例数据（对齐 Java getInstancesForMultiplePath）。"""
+    from app.models.product.configuration_item import ConfigurationItem
+    from app.models.part import PartMaster, PartUsageLink
+
+    config_spec = body.get("configSpec", "")
+    paths = body.get("paths", [])
+    body_diverge = body.get("diverge", False)
+
+    ci = db.query(ConfigurationItem).filter(
+        ConfigurationItem.workspace_id == ws,
+        ConfigurationItem.id == ci_id,
+    ).first()
+    if not ci or not ci.partmaster_partnumber:
+        return []
+
+    ps_filter = None
+    if config_spec:
+        if config_spec.startswith("pi-"):
+            ps_filter = svc.parse_config_spec_str("latest", db=db, user_login=current_user.login, diverge=body_diverge)
+        else:
+            ps_filter = svc.parse_config_spec_str(config_spec, db=db, user_login=current_user.login, diverge=body_diverge)
+
+    root_part_master = db.query(PartMaster).filter(
+        PartMaster.workspace_id == ws,
+        PartMaster.number == ci.partmaster_partnumber,
+    ).first()
+
+    all_results: list[dict] = []
+    for p in (paths or []):
+        try:
+            decoded = svc.decode_path(db, ws, ci_id, p)
+            if not decoded:
+                continue
+            target_pn = decoded[-1]["number"]
+            target_pm = db.query(PartMaster).filter(
+                PartMaster.workspace_id == ws,
+                PartMaster.number == target_pn,
+            ).first()
+            if not target_pm:
+                continue
+            if ps_filter:
+                filtered = ps_filter.filter_part_iterations(target_pm)
+                root_pi = filtered[0] if filtered else None
+            else:
+                root_pi = db.query(PartIteration).filter(
+                    PartIteration.workspace_id == ws,
+                    PartIteration.partmaster_partnumber == target_pn,
+                ).order_by(PartIteration.iteration.desc()).first()
+            if not root_pi:
+                continue
+            instance_ids = [-1]
+            segments = [s for s in p.split('-') if s.startswith(('u', 's')) and s[1:].isdigit()]
+            for seg in segments:
+                instance_ids.append(int(seg[1:]))
+            result: list[dict] = []
+            collect_leaf_instances(db, root_pi, identity_matrix(), instance_ids, result, ps_filter=ps_filter)
+            all_results.extend(result)
+        except Exception:
+            # 跳过失败的 path，不整体 500
+            continue
+    return all_results
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}")

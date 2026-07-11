@@ -37,7 +37,7 @@ class PathToPathLinkService:
             "  ON cp.pathtopathlink_id = ppl.id "
             "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci"
         ), {"ws": ws, "ci": ci_id}).fetchall()
-        return [self._link_row_to_dict(r) for r in rows]
+        return [self._link_row_to_dict(r, db=db, ws=ws, ci_id=ci_id) for r in rows]
 
     def get_link_by_id(self, db: Session, link_id: int) -> Optional[dict]:
         """按 ID 加载单个 PathToPathLink。"""
@@ -58,7 +58,7 @@ class PathToPathLinkService:
             "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci "
             "  AND ppl.sourcepath = :src AND ppl.targetpath = :tgt"
         ), {"ws": ws, "ci": ci_id, "src": source, "tgt": target}).fetchall()
-        return [self._link_row_to_dict(r) for r in rows]
+        return [self._link_row_to_dict(r, db=db, ws=ws, ci_id=ci_id) for r in rows]
 
     # ─────────────────────────────────────────
     # 实例级查询
@@ -90,7 +90,7 @@ class PathToPathLinkService:
             "  AND pip.configurationitem_id = :ci "
             "  AND pip.prdinstancemaster_serialnumber = :sn"
         ), {"ws": ws, "ci": ci_id, "sn": sn}).fetchall()
-        return [self._link_row_to_dict(r) for r in rows]
+        return [self._link_row_to_dict(r, db=db, ws=ws, ci_id=ci_id) for r in rows]
 
     def get_links_from_source_and_target_for_instance(self, db: Session, ws: str,
                                                         ci_id: str, sn: str,
@@ -106,7 +106,7 @@ class PathToPathLinkService:
             "  AND pip.prdinstancemaster_serialnumber = :sn "
             "  AND ppl.sourcepath = :src AND ppl.targetpath = :tgt"
         ), {"ws": ws, "ci": ci_id, "sn": sn, "src": source, "tgt": target}).fetchall()
-        return [self._link_row_to_dict(r) for r in rows]
+        return [self._link_row_to_dict(r, db=db, ws=ws, ci_id=ci_id) for r in rows]
 
     def get_root_links_for_instance(self, db: Session, ws: str,
                                      ci_id: str, sn: str, link_type: str) -> list:
@@ -312,16 +312,33 @@ class PathToPathLinkService:
     # 辅助
     # ─────────────────────────────────────────
 
-    def _link_row_to_dict(self, row) -> dict:
-        """将 DB 行转换为 PathToPathLinkDTO dict（对齐 Java DTO 字段）。"""
+    def _link_row_to_dict(self, row, db=None, ws=None, ci_id=None) -> dict:
+        """将 DB 行转换为 PathToPathLinkDTO dict（对齐 Java DTO 字段）。
+        db/ws/ci_id 提供时解码 sourcePath/targetPath 为 LightPartLink 列表。
+        """
+        source_path = row[2]
+        target_path = row[3]
+        source_components = []
+        target_components = []
+        if db and ws and ci_id:
+            from app.services.product_structure import ProductStructureService
+            svc = ProductStructureService()
+            try:
+                source_components = svc.decode_path(db, ws, ci_id, source_path)
+            except Exception:
+                pass
+            try:
+                target_components = svc.decode_path(db, ws, ci_id, target_path)
+            except Exception:
+                pass
         return {
             "id": row[0],
             "type": row[1],
-            "sourcePath": row[2],
-            "targetPath": row[3],
+            "sourcePath": source_path,
+            "targetPath": target_path,
             "description": row[4],
-            "sourceComponents": [],
-            "targetComponents": [],
+            "sourceComponents": source_components,
+            "targetComponents": target_components,
         }
 
 

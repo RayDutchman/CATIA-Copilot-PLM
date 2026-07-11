@@ -15,6 +15,25 @@ class PathDataService:
     # 查询
     # ─────────────────────────────────────────
 
+    @staticmethod
+    def _infer_attr_dtype(attr: dict) -> str:
+        """根据属性值字段推断 JPA dtype 鉴别值（对齐 product_instances._infer_attr_dtype）。"""
+        if attr.get("dtype") or attr.get("typeName"):
+            return attr.get("dtype") or attr.get("typeName")
+        if attr.get("booleanValue") is not None:
+            return "InstanceBooleanAttribute"
+        if attr.get("dateValue") is not None:
+            return "InstanceDateAttribute"
+        if attr.get("numberValue") is not None:
+            return "InstanceNumberAttribute"
+        if attr.get("urlValue") is not None:
+            return "InstanceURLAttribute"
+        if attr.get("indexValue") is not None:
+            return "InstanceListOfValuesAttribute"
+        if attr.get("longTextValue") is not None:
+            return "InstanceLongTextAttribute"
+        return "InstanceTextAttribute"
+
     def get_path_data_masters(self, db: Session, ws: str, ci_id: str, sn: str) -> list:
         """获取产品实例下所有 PathDataMaster，含迭代列表。"""
         rows = db.execute(text(
@@ -337,16 +356,18 @@ class PathDataService:
 
         # 插入新属性
         for order, attr in enumerate(attrs):
+            dtype = self._infer_attr_dtype(attr)
             result = db.execute(text(
                 "INSERT INTO instanceattribute "
-                "(name, mandatory, locked, booleanvalue, datevalue, indexvalue, "
+                "(name, mandatory, locked, dtype, booleanvalue, datevalue, indexvalue, "
                 "numbervalue, textvalue, longtextvalue, urlvalue) "
-                "VALUES (:name, :mand, :locked, :bv, :dv, :iv, :nv, :tv, :ltv, :uv) "
+                "VALUES (:name, :mand, :locked, :dtype, :bv, :dv, :iv, :nv, :tv, :ltv, :uv) "
                 "RETURNING id"
             ), {
                 "name": attr.get("name", ""),
                 "mand": attr.get("mandatory", False),
                 "locked": attr.get("locked", False),
+                "dtype": dtype,
                 "bv": attr.get("booleanValue"),
                 "dv": attr.get("dateValue"),
                 "iv": attr.get("indexValue"),

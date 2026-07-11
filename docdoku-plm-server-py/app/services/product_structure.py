@@ -97,7 +97,7 @@ class ProductStructureService:
 
     @staticmethod
     def parse_config_spec_str(config_spec_str: str, db: Session = None,
-                               user_login: str = None):
+                               user_login: str = None, diverge: bool = False):
         """将 configSpec 字符串解析为 ProductStructureFilter 或 ProductConfigSpec 对象。
 
         对齐 Payara ProductManagerBean.getConfigSpec(configSpecType, workspaceId)：
@@ -113,17 +113,17 @@ class ProductStructureService:
         val = config_spec_str.strip().lower()
         if val == "latest":
             from app.services.configuration.filter.latest_checked_in_ps_filter import LatestCheckedInPSFilter
-            return LatestCheckedInPSFilter()
+            return LatestCheckedInPSFilter(diverge=diverge)
         if val == "released":
             from app.services.configuration.filter.latest_released_ps_filter import LatestReleasedPSFilter
-            return LatestReleasedPSFilter()
+            return LatestReleasedPSFilter(diverge=diverge)
         if val == "wip":
             from app.services.configuration.filter.wip_ps_filter import WIPPSFilter
-            return WIPPSFilter(user_login=user_login or "")
+            return WIPPSFilter(user_login=user_login or "", diverge=diverge)
         if val.startswith("pi-"):
             # 产品实例规格：暂用 wip fallback
             from app.services.configuration.filter.wip_ps_filter import WIPPSFilter
-            return WIPPSFilter(user_login=user_login or "")
+            return WIPPSFilter(user_login=user_login or "", diverge=diverge)
         # 尝试解析为基线 ID
         # 注意：PSFilterVisitor 需要 ProductStructureFilter（filter_part_iterations），
         # 而 ResolvedCollectionConfigSpec 继承 ProductConfigSpec（filter_part_iteration 单数），
@@ -139,16 +139,20 @@ class ProductStructureService:
         return None
 
     def filter_product_structure(self, db: Session, ws: str, ci_id: str,
-                                  config_spec=None, path=None, depth=None,
-                                  user_login: str = None, is_admin: bool = False):
+                                   config_spec=None, path=None, depth=None,
+                                   user_login: str = None, is_admin: bool = False,
+                                   link_type: str | None = None,
+                                   diverge: bool = False):
         """返回递归 ComponentDTO 列表。每节点含 24 字段 + components[] 递归。
 
         若提供 config_spec（字符串或 ProductStructureFilter/ProductConfigSpec 对象），
         则解析后使用 PSFilterVisitor 按配置规格遍历；否则走旧版全量遍历。
+        link_type 非空时按 P2P linkType 过滤结构（当前未实现，退化为普通遍历）。
         """
+        # linkType 过滤未实现，退化为普通遍历（无 P2P-linkType 过滤能力）
         # 若传入的是字符串，先解析为 filter 对象
         if isinstance(config_spec, str):
-            config_spec = self.parse_config_spec_str(config_spec, db=db, user_login=user_login)
+            config_spec = self.parse_config_spec_str(config_spec, db=db, user_login=user_login, diverge=diverge)
 
         ci = self.get_ci(db, ws, ci_id)
         root_pn = ci.partmaster_partnumber
@@ -532,7 +536,9 @@ class ProductStructureService:
                         desc: str, bl_type: int, user_login: str,
                         baselined_parts: list | None = None,
                         substitute_links: list | None = None,
-                        optional_usage_links: list | None = None):
+                        optional_usage_links: list | None = None,
+                        effective_date=None, effective_serial_number: str | None = None,
+                        effective_lot_id: str | None = None):
         ci = self.get_ci(db, ws, ci_id)
 
         # 零件可用性校验（对齐 Java ProductBaselineCreationConfigSpec + PSFilterVisitor）
@@ -566,6 +572,11 @@ class ProductStructureService:
                 ), {"ws": ws, "pn": bp.get("partNumber", ""),
                     "ver": bp.get("version", "A"), "iter": bp.get("iteration", 1),
                     "pcid": pc_id})
+        # 若未显式提供 baselined_parts 且 bl_type ∈ {2,3,4}，按 effectivity 自动选择迭代
+        if not baselined_parts and bl_type in (2, 3, 4):
+            self._fill_effectivity_baselined_parts(
+                db, ws, master, pc_id, bl_type,
+                effective_date, effective_serial_number, effective_lot_id)
         if substitute_links:
             for sl in substitute_links:
                 db.execute(text(
@@ -593,9 +604,13 @@ class ProductStructureService:
         对齐 Java ProductBaselineCreationConfigSpec + PSFilterVisitor：
         - LATEST(0)：每个零件必须有最后已签入迭代（lastCheckedInIteration）
         - RELEASED(1)：每个零件必须至少有一个发布版本
+        - EFFECTIVE_DATE/SERIAL/LOT(2/3/4)：跳过强校验（effectivity 数据可能缺失）
         不满足 → NotAllowedException49（零件号不含可用迭代）
         """
         from app.core.exceptions import NotAllowedException
+        # EFFECTIVE 类型跳过强校验——effectivity 关联表数据可能缺失，退化 LATEST
+        if bl_type in (2, 3, 4):
+            return
         visited = set()
         queue = [root_pm]
 
@@ -648,6 +663,81 @@ class ProductStructureService:
                             if child:
                                 queue.append(child)
 
+    def _fill_effectivity_baselined_parts(self, db: Session, ws: str,
+                                            root_pm, pc_id: int, bl_type: int,
+                                            effective_date, effective_serial_number,
+                                            effective_lot_id):
+        """BFS 遍历产品结构，按 effectivity 选择迭代写入 baselinedpart。
+        effectivity-based 选择为 best-effort，数据缺失时退化 LATEST（last checked-in iteration）。
+        """
+        visited = set()
+        queue = [root_pm]
+
+        while queue:
+            pm = queue.pop(0)
+            key = (pm.workspace_id, pm.number)
+            if key in visited:
+                continue
+            visited.add(key)
+
+            rev_version = None
+            iteration = None
+            # effectivity SQL 查询匹配 revision
+            if bl_type in (2, 3, 4):
+                sql = """
+                SELECT pre.partrevision_version FROM partrevision_effectivity pre
+                JOIN effectivity e ON e.id = pre.effectivity_id
+                WHERE pre.partmaster_workspace_id=:ws AND pre.partmaster_partnumber=:pn
+                AND (
+                    (:btype=2 AND e.startdate <= :edate AND (e.enddate IS NULL OR e.enddate >= :edate))
+                    OR (:btype=3 AND e.startnumber IS NOT NULL AND e.startnumber <= :eserial AND (e.endnumber IS NULL OR e.endnumber >= :eserial))
+                    OR (:btype=4 AND e.startlotid IS NOT NULL AND e.startlotid <= :elot AND (e.endlotid IS NULL OR e.endlotid >= :elot))
+                )
+                ORDER BY pre.partrevision_version DESC LIMIT 1
+                """
+                row = db.execute(text(sql), {
+                    "ws": ws, "pn": pm.number,
+                    "btype": bl_type,
+                    "edate": effective_date, "eserial": effective_serial_number or "",
+                    "elot": effective_lot_id or "",
+                }).first()
+                if row:
+                    rev_version = row[0]
+
+            if rev_version:
+                # 命中 effectivity 的版本
+                rev = db.query(PartRevision).filter(
+                    PartRevision.workspace_id == ws,
+                    PartRevision.partmaster_partnumber == pm.number,
+                    PartRevision.version == rev_version,
+                ).first()
+            else:
+                # 退化：取 last checked-in revision
+                rev = pm.last_revision
+                if rev and rev.checkout_user_login:
+                    rev = None  # 已签出无可用迭代
+
+            if rev:
+                last_it = rev.last_iteration
+                iteration = last_it.iteration if last_it else 1
+                # 写入 baselinedpart
+                db.execute(text(
+                    "INSERT INTO baselinedpart "
+                    "(target_workspace_id, target_partmaster_partnumber, "
+                    "target_partrevision_version, target_iteration, partcollection_id) "
+                    "VALUES (:ws, :pn, :ver, :iter, :pcid)"
+                ), {"ws": ws, "pn": pm.number, "ver": rev.version, "iter": iteration, "pcid": pc_id})
+
+                # 遍历子件
+                if last_it:
+                    for link in (last_it.components or []):
+                        child = db.query(PartMaster).filter(
+                            PartMaster.workspace_id == link.component_workspace_id,
+                            PartMaster.number == link.component_partnumber,
+                        ).first()
+                        if child:
+                            queue.append(child)
+
 
     def delete_baseline(self, db: Session, ws: str, bl_id: int):
         bl = db.query(ProductBaseline).filter(
@@ -683,6 +773,10 @@ class ProductStructureService:
             text("DELETE FROM productbaseline_p2plink WHERE productbaseline_id = :bid"),
             {"bid": bid},
         )
+        # 先删 productbaseline 行（flush 立即执行），解除其对 partcollection/documentcollection
+        # 的 FK 引用，否则后续删集合会违反 fk_productbaseline_partcollection_id（对齐 Payara 204）
+        db.delete(bl)
+        db.flush()
         if pc_id is not None:
             db.execute(
                 text("DELETE FROM partcollection WHERE id = :pc_id"),
@@ -693,7 +787,6 @@ class ProductStructureService:
                 text("DELETE FROM documentcollection WHERE id = :dc_id"),
                 {"dc_id": dc_id},
             )
-        db.delete(bl)
         db.commit()
 
     # ── Configuration ──

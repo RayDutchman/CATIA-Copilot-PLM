@@ -26,7 +26,7 @@ class LatestCheckedInPSFilter(ProductStructureFilter):
             return []
         nominal = path[-1]
         result = [nominal]
-        if self.diverge and nominal.substitutes:
+        if self.diverge and getattr(nominal, 'substitutes', None):
             for sub in nominal.substitutes:
                 result.append(sub)
         return result

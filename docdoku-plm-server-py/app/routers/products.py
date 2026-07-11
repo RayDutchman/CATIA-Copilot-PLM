@@ -1,5 +1,5 @@
 """产品端点路由（ConfigurationItem CRUD + 产品实例）。"""
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import text
@@ -141,6 +141,8 @@ def update_ci(ws: str, ci_id: str, body: dict,
 def filter_structure(ws: str, ci_id: str,
                      configSpec: str = Query(None), path: str = Query(None),
                      depth: int = Query(None),
+                     linkType: Optional[str] = Query(None),
+                     diverge: bool = Query(False),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     from app.services.factory.acl_factory import check_read_access
@@ -148,8 +150,9 @@ def filter_structure(ws: str, ci_id: str,
         "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
     ), {"l": current_user.login}).first() is not None
     result = svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth,
-                                           user_login=current_user.login,
-                                           is_admin=is_admin)
+                                            user_login=current_user.login,
+                                            is_admin=is_admin,
+                                            link_type=linkType, diverge=diverge)
     if not result:
         raise HTTPException(status_code=404, detail="Product structure not found for this configuration item")
     return result[0]
@@ -236,10 +239,32 @@ def get_product_instance(ws: str, sn: str,
         ProductInstanceIteration.workspace_id == ws,
         ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
     ).order_by(ProductInstanceIteration.iteration).all()
+    # 构造 acl（复用 product_configurations 中的 _build_acl 逻辑）
+    from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+    acl_data = None
+    if inst.acl_id:
+        acl = db.query(ACL).filter(ACL.id == inst.acl_id).first()
+        if acl:
+            user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == inst.acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == inst.acl_id).all()
+            _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+            acl_data = {
+                "userEntries": [
+                    {"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")}
+                    for e in user_entries
+                ],
+                "groupEntries": [
+                    {"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")}
+                    for e in group_entries
+                ],
+                "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
+                "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
+            }
     return {
         "serialNumber": inst.serialnumber,
         "configurationItemId": inst.configurationitem_id,
         "identifier": f"{ws}/{inst.configurationitem_id}-{inst.serialnumber}",
+        "acl": acl_data,
         "productInstanceIterations": [
             {
                 "iteration": it.iteration,
@@ -424,9 +449,7 @@ def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
         "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci "
         "AND ppl.sourcepath = :src AND ppl.targetpath = :tgt"
     ), {"ws": ws, "ci": pid, "src": source, "tgt": target}).fetchall()
-    return [{"id": r[0], "type": r[1], "description": r[2],
-             "sourceComponents": [], "targetComponents": []}
-            for r in rows]
+    return [_p2p_svc._link_row_to_dict(r, db=db, ws=ws, ci_id=pid) for r in rows]
 
 
 # ── Cascade ──
@@ -434,10 +457,22 @@ def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
 _part_svc = ProductService()
 
 
-def _collect_ci_parts(db: Session, ws: str, ci_id: str) -> list[PartRevision]:
-    """递归收集 CI 装配结构中的所有 PartRevision（去重）。CI 不存在时返回空列表。"""
+def _collect_ci_parts(db: Session, ws: str, ci_id: str,
+                       config_spec=None, path=None, user_login=None,
+                       diverge=False) -> list[PartRevision]:
+    """递归收集 CI 装配结构中的所有 PartRevision（去重）。CI 不存在时返回空列表。
+    支持按 configSpec 选择迭代，按 path 定位起始子树。
+    """
     ci = svc.get_ci(db, ws, ci_id)
     root_pn = ci.partmaster_partnumber
+
+    # 若提供 path（非空且非 -1），定位起始子树
+    if path and path != '-1':
+        decoded = svc.decode_path(db, ws, ci_id, path)
+        if decoded:
+            # 取最后一段的 number 作为遍历根
+            root_pn = decoded[-1]["number"]
+
     master = db.query(PartMaster).filter(
         PartMaster.workspace_id == ws,
         PartMaster.number == root_pn,
@@ -446,6 +481,11 @@ def _collect_ci_parts(db: Session, ws: str, ci_id: str) -> list[PartRevision]:
         return []
     seen: set[tuple] = set()
     collected: list[PartRevision] = []
+
+    # 解析 configSpec → PS filter
+    ps_filter = None
+    if config_spec:
+        ps_filter = svc.parse_config_spec_str(config_spec, db=db, user_login=user_login, diverge=diverge)
 
     def collect(rev: PartRevision):
         key = (rev.workspace_id, rev.partmaster_partnumber, rev.version)
@@ -456,23 +496,42 @@ def _collect_ci_parts(db: Session, ws: str, ci_id: str) -> list[PartRevision]:
         last_it = rev.last_iteration
         if last_it:
             for link in (last_it.components or []):
-                child = db.query(PartRevision).filter(
-                    PartRevision.workspace_id == link.component_workspace_id,
-                    PartRevision.partmaster_partnumber == link.component_partnumber,
-                ).order_by(PartRevision.version.desc()).first()
-                if child:
-                    collect(child)
+                child_master = db.query(PartMaster).filter(
+                    PartMaster.workspace_id == link.component_workspace_id,
+                    PartMaster.number == link.component_partnumber,
+                ).first()
+                if not child_master:
+                    continue
+                if ps_filter:
+                    # 用 filter 选择迭代而非硬编码 last_revision
+                    filtered = ps_filter.filter_part_iterations(child_master)
+                    child_rev = filtered[0].revision if filtered else None
+                else:
+                    child_rev = child_master.last_revision
+                if child_rev:
+                    collect(child_rev)
 
-    collect(master.last_revision)
+    # 选择根 revision
+    if ps_filter:
+        filtered = ps_filter.filter_part_iterations(master)
+        root_rev = filtered[0].revision if filtered else master.last_revision
+    else:
+        root_rev = master.last_revision
+    if root_rev:
+        collect(root_rev)
     return collected
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout/", include_in_schema=False)
 def cascade_checkout(ws: str, ci_id: str,
+                      configSpec: Optional[str] = Query(None, alias="configSpec"),
+                      path: Optional[str] = Query(None),
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
-    parts = _collect_ci_parts(db, ws, ci_id)
+    parts = _collect_ci_parts(db, ws, ci_id,
+                               config_spec=configSpec, path=path,
+                               user_login=current_user.login)
     checked_out = []
     errors = []
     for pr in parts:
@@ -490,9 +549,13 @@ def cascade_checkout(ws: str, ci_id: str,
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkin")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkin/", include_in_schema=False)
 def cascade_checkin(ws: str, ci_id: str,
+                     configSpec: Optional[str] = Query(None, alias="configSpec"),
+                     path: Optional[str] = Query(None),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    parts = _collect_ci_parts(db, ws, ci_id)
+    parts = _collect_ci_parts(db, ws, ci_id,
+                               config_spec=configSpec, path=path,
+                               user_login=current_user.login)
     checked_in = []
     errors = []
     for pr in parts:
@@ -511,9 +574,13 @@ def cascade_checkin(ws: str, ci_id: str,
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-undocheckout")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-undocheckout/", include_in_schema=False)
 def cascade_undocheckout(ws: str, ci_id: str,
+                          configSpec: Optional[str] = Query(None, alias="configSpec"),
+                          path: Optional[str] = Query(None),
                           current_user: Account = Depends(get_current_user),
                           db: Session = Depends(get_db)):
-    parts = _collect_ci_parts(db, ws, ci_id)
+    parts = _collect_ci_parts(db, ws, ci_id,
+                               config_spec=configSpec, path=path,
+                               user_login=current_user.login)
     undone = []
     errors = []
     for pr in parts:
@@ -538,6 +605,8 @@ def cascade_undocheckout(ws: str, ci_id: str,
 @router.get("/workspaces/{ws}/products/{ci_id}/paths/", include_in_schema=False)
 def ci_paths(ws: str, ci_id: str,
              search: str = Query(None),
+             configSpec: Optional[str] = Query(None, alias="configSpec"),
+             diverge: bool = Query(False),
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     """在装配结构中搜索路径（对齐 Java ProductResource.searchPaths）。"""
@@ -555,6 +624,11 @@ def ci_paths(ws: str, ci_id: str,
     )
     if root_master is None:
         return []
+
+    # 解析 configSpec → filter（用于选择迭代）
+    ps_filter = None
+    if configSpec:
+        ps_filter = svc.parse_config_spec_str(configSpec, db=db, user_login=current_user.login, diverge=diverge)
 
     try:
         pattern = re.compile(search) if search else None
@@ -575,10 +649,15 @@ def ci_paths(ws: str, ci_id: str,
 
         if not master.revisions:
             return
-        last_rev = master.revisions[-1]
-        if not last_rev.iterations:
+        if ps_filter:
+            filtered = ps_filter.filter_part_iterations(master)
+            last_it = filtered[0] if filtered else None
+        else:
+            last_rev = master.revisions[-1]
+            last_it = last_rev.iterations[-1] if last_rev and last_rev.iterations else None
+
+        if not last_it:
             return
-        last_it = last_rev.iterations[-1]
         for link in (last_it.components or []):
             child_master = (
                 db.query(PartMaster)
