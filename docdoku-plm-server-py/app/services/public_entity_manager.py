@@ -4,6 +4,7 @@
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.core.exceptions import FileNotFoundException
 
 
 class PublicEntityService:
@@ -62,7 +63,7 @@ class PublicEntityService:
         ), {"fn": full_name}).first()
         if row:
             return dict(row._mapping)
-        return {}
+        raise FileNotFoundException("FileNotFoundException", full_name)
 
 
 public_entity_service = PublicEntityService()

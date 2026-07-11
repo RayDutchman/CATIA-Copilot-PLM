@@ -27,7 +27,18 @@ class DocumentWorkflowService:
     def get_aborted_workflows(self, db: Session, ws: str, doc_id: str,
                                version: str) -> list:
         """获取文档修订版的所有已中止工作流。"""
-        return []
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT w.id, w.aborteddate, w.finallifecyclestate "
+            "FROM workflow w "
+            "JOIN document_aborted_workflow daw ON w.id = daw.workflow_id "
+            "WHERE daw.documentmaster_workspace_id = :ws "
+            "AND daw.documentmaster_id = :did "
+            "AND daw.documentrevision_version = :ver "
+            "AND w.aborteddate IS NOT NULL"
+        ), {"ws": ws, "did": doc_id, "ver": version}).fetchall()
+        return [{"id": r[0], "abortedDate": str(r[1]) if r[1] else None,
+                 "finalLifecycleState": r[2]} for r in rows]
 
     def approve_task_on_document(self, db: Session, ws: str, task_key: dict,
                                    doc_id: str, version: str,

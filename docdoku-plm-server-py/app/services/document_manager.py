@@ -1,5 +1,4 @@
 from datetime import datetime
-from fastapi import HTTPException
 from sqlalchemy import text as sql_text
 from app.models.document import (
     DocumentMaster, DocumentRevision, DocumentIteration,
@@ -10,6 +9,7 @@ from app.core.exceptions import (
     AccessRightException,
     EntityAlreadyExistsException, EntityConstraintException,
     NotAllowedException, EntityNotFoundException,
+    DocumentMasterTemplateNotFoundException,
     DocumentRevisionNotFoundException,
     FileAlreadyExistsException, FileNotFoundException,
     DocumentRevisionAlreadyExistsException, FolderNotFoundException,
@@ -953,7 +953,7 @@ class DocumentService:
             DocumentMasterTemplate.workspace_id == ws,
             DocumentMasterTemplate.id == template_id).first()
         if t is None:
-            raise HTTPException(404, "Template not found")
+            raise DocumentMasterTemplateNotFoundException("DocumentMasterTemplateNotFoundException", template_id)
         return t
 
     def create_template(self, db, ws, template_id, document_type, mask,

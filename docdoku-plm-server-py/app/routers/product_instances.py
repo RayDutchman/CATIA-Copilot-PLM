@@ -385,8 +385,6 @@ def instance_link_path_part(ws: str, ci_id: str, sn: str, path_part: str,
                               db: Session = Depends(get_db)):
     """从路径字符串解析末级 PartMaster 信息。"""
     decoded = svc.decode_path(db, ws, ci_id, path_part)
-    if not decoded:
-        return {}
     # 返回末级 link 的 component 信息
-    last = decoded[-1] if decoded else {}
+    last = decoded[-1]
     return last

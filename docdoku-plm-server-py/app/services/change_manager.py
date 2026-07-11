@@ -1,12 +1,13 @@
 from datetime import datetime
-from fastapi import HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AccessRightException, NotAllowedException, EntityConstraintException,
+    EntityNotFoundException,
     MilestoneNotFoundException, MilestoneAlreadyExistsException,
     ChangeIssueNotFoundException, ChangeRequestNotFoundException,
     ChangeOrderNotFoundException,
+    UserNotFoundException, WrongInputException,
 )
 from app.models.auth import Account
 from app.models.change import (
@@ -33,7 +34,7 @@ class ChangeService:
     def _cls(self, type_name: str):
         cls = TYPE_MAP.get(type_name)
         if cls is None:
-            raise HTTPException(400, f"Unknown change type: {type_name}")
+            raise WrongInputException("WrongInputException", type_name)
         return cls
 
     def list_items(self, db: Session, ws: str, type_name: str,
@@ -59,7 +60,7 @@ class ChangeService:
                 raise ChangeRequestNotFoundException("ChangeRequestNotFoundException", str(item_id))
             if cls is ChangeOrder:
                 raise ChangeOrderNotFoundException("ChangeOrderNotFoundException", str(item_id))
-            raise HTTPException(404, f"{cls.__name__} not found")
+            raise EntityNotFoundException("EntityNotFoundException", cls.__name__)
         return item
 
     def _check_assignee(self, db: Session, ws: str, assignee_login: str):
@@ -101,7 +102,7 @@ class ChangeService:
         if cls is ChangeIssue and body.get("initiator"):
             acc = db.query(Account).filter(Account.login == body["initiator"]).first()
             if not acc:
-                raise HTTPException(404, f"发起人 {body['initiator']} 不存在")
+                raise UserNotFoundException("UserNotFoundException", body["initiator"])
         if cls is Milestone:
             existing = db.query(Milestone).filter(
                 Milestone.workspace_id == ws,

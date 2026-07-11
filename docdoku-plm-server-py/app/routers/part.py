@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import PartIterationNotFoundException
 from app.models.auth import Account
 from app.models.part import SharedEntity
+from app.models.product.part_iteration import PartIteration
 from app.schemas.part import PartRevisionDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO, StatusDTO, SharedPartDTO, AclIdDTO
 from app.schemas.workflow import WorkflowAbortedDTO
 from app.services.product_manager import ProductService
@@ -18,6 +20,9 @@ from app.services.part_mapper import map_revision
 from app.services import converter
 from app.services.factory.acl_factory import apply_acl
 from app.services.workflow_manager import workflow_service
+from app.services.file_export.instance_body_writer_tools import (
+    identity_matrix, collect_leaf_instances,
+)
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductService()
@@ -433,7 +438,29 @@ def used_by_substitute(workspace_id: str, part_key: str,
 def get_instances(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
-    return []
+    """返回零件及其子装配的所有叶子实例（对齐 Java PartResource.getInstancesUnderPart）。
+
+    前端 InstancesManager 调用此端点获取 3D 场景数据。
+    每个叶子实例包含：矩阵、几何文件列表、包围盒、属性。
+    """
+    parts = part_key.rsplit("-", 1)
+    if len(parts) != 2:
+        raise HTTPException(400, "partKey 格式应为 {number}-{version}，如 GD50_Frame-A")
+    part_number, version = parts
+
+    pi = db.query(PartIteration).filter(
+        PartIteration.workspace_id == workspace_id,
+        PartIteration.partmaster_partnumber == part_number,
+        PartIteration.partrevision_version == version,
+    ).order_by(PartIteration.iteration.desc()).first()
+
+    if not pi:
+        raise PartIterationNotFoundException(
+            "PartIterationNotFoundException", workspace_id, part_number, version)
+
+    result: list[dict] = []
+    collect_leaf_instances(db, pi, identity_matrix(), [-1], result)
+    return result
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines",
@@ -443,7 +470,39 @@ def get_instances(workspace_id: str, part_key: str,
 def get_baselines(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
-    return []
+    number, version = _split_part_key(part_key)
+
+    from app.models.configuration.baselined_part import BaselinedPart
+    from app.models.configuration.product_baseline import ProductBaseline
+
+    subq = (
+        db.query(BaselinedPart.partcollection_id)
+        .filter(
+            BaselinedPart.target_workspace_id == workspace_id,
+            BaselinedPart.target_partmaster_partnumber == number,
+            BaselinedPart.target_partrevision_version == version,
+        )
+        .subquery()
+    )
+
+    baselines = (
+        db.query(ProductBaseline)
+        .filter(ProductBaseline.partcollection_id.in_(subq))
+        .order_by(ProductBaseline.name)
+        .all()
+    )
+
+    return [
+        {
+            "id": b.id,
+            "name": b.name,
+            "description": b.description,
+            "type": b.type,
+            "configurationItemId": b.configurationitem_id,
+            "creationDate": b.creation_date.isoformat() if b.creation_date else None,
+        }
+        for b in baselines
+    ]
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows",
@@ -465,7 +524,46 @@ def get_aborted_workflows(workspace_id: str, part_key: str,
 def used_by_product(workspace_id: str, part_key: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
-    return []
+    number, version = _split_part_key(part_key)
+
+    from app.models.configuration.baselined_part import BaselinedPart
+    from app.models.configuration.product_baseline import ProductBaseline
+    from app.models.configuration.product_instance_master import ProductInstanceMaster
+    from sqlalchemy import and_
+
+    results = (
+        db.query(ProductInstanceMaster)
+        .distinct()
+        .join(
+            ProductBaseline,
+            and_(
+                ProductBaseline.configurationitem_workspace_id == ProductInstanceMaster.workspace_id,
+                ProductBaseline.configurationitem_id == ProductInstanceMaster.configurationitem_id,
+            ),
+        )
+        .join(
+            BaselinedPart,
+            BaselinedPart.partcollection_id == ProductBaseline.partcollection_id,
+        )
+        .filter(
+            BaselinedPart.target_workspace_id == workspace_id,
+            BaselinedPart.target_partmaster_partnumber == number,
+            BaselinedPart.target_partrevision_version == version,
+        )
+        .order_by(ProductBaseline.configurationitem_id)
+        .all()
+    )
+
+    return [
+        {
+            "serialNumber": pim.serialnumber,
+            "configurationItemId": pim.configurationitem_id,
+            "workspaceId": pim.workspace_id,
+            "productInstanceIterations": None,
+            "acl": None,
+        }
+        for pim in results
+    ]
 
 
 @router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}",
@@ -475,7 +573,48 @@ def used_by_product(workspace_id: str, part_key: str,
 def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    return []
+    from app.models.configuration.baselined_part import BaselinedPart
+    from app.models.configuration.product_baseline import ProductBaseline
+
+    try:
+        bl_id = int(baseline_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="baseline_id 必须是整数")
+
+    baseline = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    if baseline.configurationitem_workspace_id != workspace_id:
+        raise HTTPException(status_code=403, detail="Baseline not in this workspace")
+
+    bp = (
+        db.query(BaselinedPart)
+        .filter(
+            BaselinedPart.partcollection_id == baseline.partcollection_id,
+            BaselinedPart.target_workspace_id == workspace_id,
+            BaselinedPart.target_partmaster_partnumber == pn,
+        )
+        .first()
+    )
+
+    if bp is None:
+        raise HTTPException(status_code=404, detail="Part not found in baseline")
+
+    pi = (
+        db.query(PartIteration)
+        .filter(
+            PartIteration.workspace_id == workspace_id,
+            PartIteration.partmaster_partnumber == pn,
+            PartIteration.partrevision_version == bp.target_partrevision_version,
+            PartIteration.iteration == bp.target_iteration,
+        )
+        .first()
+    )
+
+    if pi is None:
+        raise HTTPException(status_code=404, detail="Part iteration not found in database")
+
+    return [map_revision(pi.revision, db)]
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion",

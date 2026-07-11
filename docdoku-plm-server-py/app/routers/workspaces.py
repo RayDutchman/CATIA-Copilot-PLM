@@ -314,7 +314,59 @@ def delete_tag(ws: str, tag_id: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/tags/{tag_id}/documents/", include_in_schema=False)
 def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    return []
+    """按标签查询文档修订版（对齐 Java TagResource.getDocumentsWithGivenTagIdAndWorkspaceId）"""
+    from app.models.document.document_revision import DocumentRevision
+
+    rows = db.execute(text("""
+        SELECT DISTINCT dr.documentmaster_id, dr.version, dr.workspace_id,
+               dr.title, dr.location_completepath, dr.creationdate,
+               dr.checkoutuser_login, dr.checkoutdate
+        FROM documentrevision dr
+        JOIN documentrevision_tag drt
+          ON dr.workspace_id = drt.documentmaster_workspace_id
+         AND dr.documentmaster_id = drt.documentmaster_id
+         AND dr.version = drt.documentrevision_version
+        WHERE drt.tag_workspace_id = :ws
+          AND drt.tag_label = :tag
+    """), {"ws": ws, "tag": tag_id}).fetchall()
+
+    result = []
+    for row in rows:
+        last_it_row = db.execute(text("""
+            SELECT iteration, creationdate
+            FROM documentiteration
+            WHERE workspace_id = :ws
+              AND documentmaster_id = :did
+              AND documentrevision_version = :v
+            ORDER BY iteration DESC
+            LIMIT 1
+        """), {"ws": row.workspace_id, "did": row.documentmaster_id, "v": row.version}).first()
+
+        result.append({
+            "documentMasterId": row.documentmaster_id,
+            "version": row.version,
+            "workspaceId": row.workspace_id,
+            "title": row.title,
+            "path": row.location_completepath or "",
+            "checkOutUser": row.checkoutuser_login,
+            "checkOutDate": row.checkoutdate.isoformat() if row.checkoutdate else None,
+            "creationDate": row.creationdate.isoformat() if row.creationdate else None,
+            "documentIterations": [
+                {
+                    "iteration": last_it_row.iteration,
+                    "title": row.title,
+                    "creationDate": last_it_row.creationdate.isoformat() if last_it_row.creationdate else None,
+                }
+            ] if last_it_row else [],
+            "lastIteration": last_it_row.iteration if last_it_row else 0,
+            "tags": None,
+            "workflow": None,
+            "lifeCycleState": None,
+            "iterationSubscription": False,
+            "stateSubscription": False,
+        })
+
+    return result
 
 
 @router.get("/workspaces/{ws}/lov", response_model=Dict[str, List[LOVValueDTO]])
@@ -818,8 +870,29 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
     _del("DELETE FROM workspacebackoptions WHERE workspace_id=:ws", ws=ws)
     _del("DELETE FROM workspacefrontoptions WHERE workspace_id=:ws", ws=ws)
 
+    # ── 16b. BinaryResource DB 行 ──
+    # binaryresource 无 workspace 列，主键是 fullname 路径（前缀 "{ws}/"）。
+    # Payara 靠 PartIteration 的 nativeCADFile/attachedFiles/geometries JPA 级联（orphanRemoval）删除，
+    # Python 裸 SQL 无级联，须显式按前缀删除，否则残留 → 重建工作区后上传报 409 FileAlreadyExists。
+    # LIKE 转义对齐 WorkspaceDAO.removeWorkspace（_ → \_，% → \%）。
+    br_prefix = ws.replace("_", "\\_").replace("%", "\\%") + "/%"
+    _del("DELETE FROM binaryresource WHERE fullname LIKE :p ESCAPE '\\'", p=br_prefix)
+
     # ── 17. 工作区本身 ──
     db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
 
     db.execute(text("SET LOCAL session_replication_role='origin'"))
     db.commit()
+
+    # 删除 vault 磁盘文件夹（复刻 Payara storageManager.deleteWorkspaceFolder →
+    # FileUtils.deleteDirectory(vaultPath/workspaceId)）。DB 已提交即视为删除成功；
+    # 文件删除失败仅记录日志、不回滚 DB（对齐 Payara：文件层异常只发错误通知，不影响 DB 一致性）。
+    import shutil
+    import logging
+    try:
+        vault_dir = Path(settings.VAULT_PATH) / ws
+        if vault_dir.exists():
+            shutil.rmtree(vault_dir, ignore_errors=True)
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "删除工作区 %s 的 vault 文件夹失败（DB 已删除，不影响一致性）: %s", ws, e)

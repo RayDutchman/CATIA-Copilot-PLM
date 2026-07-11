@@ -11,7 +11,8 @@ from app.models.auth import Account
 from app.models.notification import ModificationNotification
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
-    EntityNotFoundException, PartUsageLinkNotFoundException,
+    EntityNotFoundException, PartMasterNotFoundException,
+    PartUsageLinkNotFoundException,
 )
 from app.services.factory.acl_factory import apply_acl
 
@@ -153,7 +154,9 @@ class ProductStructureService:
         root_pn = ci.partmaster_partnumber
         master = db.query(PartMaster).filter(
             PartMaster.workspace_id == ws, PartMaster.number == root_pn).first()
-        if master is None or not master.revisions:
+        if master is None:
+            raise PartMasterNotFoundException("PartMasterNotFoundException", root_pn)
+        if not master.revisions:
             return []
 
         if config_spec is not None:
@@ -460,7 +463,7 @@ class ProductStructureService:
         master = db.query(PartMaster).filter(
             PartMaster.workspace_id == ws, PartMaster.number == root_pn).first()
         if master is None:
-            return []
+            raise PartMasterNotFoundException("PartMasterNotFoundException", root_pn)
         segments = path_str.split("-")
         result = []
         for seg in segments:

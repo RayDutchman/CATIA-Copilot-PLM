@@ -151,7 +151,7 @@ def filter_structure(ws: str, ci_id: str,
                                            user_login=current_user.login,
                                            is_admin=is_admin)
     if not result:
-        return {}
+        raise HTTPException(status_code=404, detail="Product structure not found for this configuration item")
     return result[0]
 
 
@@ -272,10 +272,7 @@ def last_release(ws: str, ci_id: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """返回 CI 根零件的最新已发布版本。"""
-    try:
-        ci = svc.get_ci(db, ws, ci_id)
-    except HTTPException:
-        return []
+    ci = svc.get_ci(db, ws, ci_id)
     root_pn = ci.partmaster_partnumber
     rev = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
@@ -283,7 +280,7 @@ def last_release(ws: str, ci_id: str,
         PartRevision.status == 1,
     ).order_by(PartRevision.version.desc()).first()
     if rev is None:
-        return []
+        raise HTTPException(status_code=404, detail="No released revision for this configuration item")
     last_it = rev.last_iteration
     author_name = rev.part_master.author_login or ""
     pm_author = db.query(Account).filter(Account.login == rev.part_master.author_login).first()
@@ -325,10 +322,7 @@ def path_choices(ws: str, ci_id: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     """返回 CI 下已存在的路径数据列表。CI 不存在则返回空列表。"""
-    try:
-        ci = svc.get_ci(db, ws, ci_id)
-    except HTTPException:
-        return []
+    ci = svc.get_ci(db, ws, ci_id)
     # PathDataMasterNotFoundException: 等待 PathData 域实现后抛出
     try:
         rows = db.execute(text(
@@ -345,7 +339,7 @@ def path_choices(ws: str, ci_id: str,
         ), {"ws": ws, "ci": ci_id}).fetchall()
         return [{"id": r[1], "path": r[0]} for r in rows]
     except Exception:
-        return []
+        raise HTTPException(status_code=500, detail="Failed to retrieve path choices")
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/versions-choices")
@@ -354,10 +348,7 @@ def versions_choices(ws: str, ci_id: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
     """返回 CI 根零件的所有版本列表。CI 不存在则返回空列表。"""
-    try:
-        ci = svc.get_ci(db, ws, ci_id)
-    except HTTPException:
-        return []
+    ci = svc.get_ci(db, ws, ci_id)
     root_pn = ci.partmaster_partnumber
     revs = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
@@ -445,10 +436,7 @@ _part_svc = ProductService()
 
 def _collect_ci_parts(db: Session, ws: str, ci_id: str) -> list[PartRevision]:
     """递归收集 CI 装配结构中的所有 PartRevision（去重）。CI 不存在时返回空列表。"""
-    try:
-        ci = svc.get_ci(db, ws, ci_id)
-    except HTTPException:
-        return []
+    ci = svc.get_ci(db, ws, ci_id)
     root_pn = ci.partmaster_partnumber
     master = db.query(PartMaster).filter(
         PartMaster.workspace_id == ws,
@@ -552,7 +540,60 @@ def ci_paths(ws: str, ci_id: str,
              search: str = Query(None),
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
-    return []
+    """在装配结构中搜索路径（对齐 Java ProductResource.searchPaths）。"""
+    import re
+    from app.models.product import ConfigurationItem
+
+    ci = svc.get_ci(db, ws, ci_id)
+    root_master = (
+        db.query(PartMaster)
+        .filter(
+            PartMaster.workspace_id == ws,
+            PartMaster.number == ci.partmaster_partnumber,
+        )
+        .first()
+    )
+    if root_master is None:
+        return []
+
+    try:
+        pattern = re.compile(search) if search else None
+    except re.error:
+        pattern = re.compile(re.escape(search)) if search else None
+
+    collected: list[str] = []
+
+    def walk(master, path_parts: list[str]):
+        path_str = "-".join(path_parts)
+        if pattern is None or (
+            pattern.search(master.number or "")
+            or pattern.search(master.name or "")
+            or pattern.search(path_str)
+        ):
+            if path_str:
+                collected.append(path_str)
+
+        if not master.revisions:
+            return
+        last_rev = master.revisions[-1]
+        if not last_rev.iterations:
+            return
+        last_it = last_rev.iterations[-1]
+        for link in (last_it.components or []):
+            child_master = (
+                db.query(PartMaster)
+                .filter(
+                    PartMaster.workspace_id == ws,
+                    PartMaster.number == link.component_partnumber,
+                )
+                .first()
+            )
+            if child_master:
+                child_path = path_parts + [str(link.id)]
+                walk(child_master, child_path)
+
+    walk(root_master, [])
+    return [{"path": p} for p in collected]
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/document-links/{pn}-{pv}-{pi}/{config_spec}")
@@ -561,7 +602,96 @@ def ci_document_links(ws: str, ci_id: str,
                        pn: str, pv: str, pi: int, config_spec: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    return []
+    """获取零件迭代在指定基线中关联的文档（对齐 Java ProductResource.getDocumentLinksForGivenPartIteration）。"""
+    from app.models.configuration.product_baseline import ProductBaseline
+    from app.models.configuration.baselined_document import BaselinedDocument
+    from app.models.configuration.product_instance_iteration import ProductInstanceIteration
+    from app.models.document.document_iteration import DocumentIteration
+    from app.models.document.document_revision import DocumentRevision
+    from app.models.document.document_link import DocumentLink
+
+    # 1. 解析 config_spec → baseline
+    baseline = None
+    if config_spec.startswith("pi-"):
+        serial_number = config_spec[3:]
+        last_pii = db.query(ProductInstanceIteration).filter(
+            ProductInstanceIteration.workspace_id == ws,
+            ProductInstanceIteration.configurationitem_id == ci_id,
+            ProductInstanceIteration.prdinstancemaster_serialnumber == serial_number,
+        ).order_by(ProductInstanceIteration.iteration.desc()).first()
+        if last_pii and last_pii.productbaseline_id:
+            baseline = db.query(ProductBaseline).filter(
+                ProductBaseline.id == last_pii.productbaseline_id,
+            ).first()
+    else:
+        try:
+            bl_id = int(config_spec)
+            baseline = db.query(ProductBaseline).filter(
+                ProductBaseline.id == bl_id,
+            ).first()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid config_spec")
+
+    if baseline is None:
+        return []
+
+    # 2. 获取 baseline 的 DocumentCollection 中的 BaselinedDocuments
+    baselined_docs = db.query(BaselinedDocument).filter(
+        BaselinedDocument.documentcollection_id == baseline.documentcollection_id,
+    ).all() if baseline.documentcollection_id else []
+
+    if not baselined_docs:
+        return []
+
+    # 3. 获取 PartIteration 的 linked documents（通过 partiteration_documentlink 关联表）
+    pi_obj = db.query(PartIteration).filter(
+        PartIteration.workspace_id == ws,
+        PartIteration.partmaster_partnumber == pn,
+        PartIteration.partrevision_version == pv,
+        PartIteration.iteration == pi,
+    ).first()
+
+    if pi_obj is None:
+        return []
+
+    link_rows = db.execute(text("""
+        SELECT documentlink_id FROM partiteration_documentlink
+        WHERE workspace_id = :ws AND partmaster_partnumber = :pn
+          AND partrevision_version = :pv AND iteration = :pi
+    """), {"ws": ws, "pn": pn, "pv": pv, "pi": pi}).fetchall()
+
+    if not link_rows:
+        return []
+
+    doc_links = db.query(DocumentLink).filter(
+        DocumentLink.id.in_([r[0] for r in link_rows]),
+    ).all() if link_rows else []
+
+    # 4. 交叉匹配：BaselinedDocument targets × PartIteration document links
+    result = []
+    for bd in baselined_docs:
+        target_rev = db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == bd.target_workspace_id,
+            DocumentRevision.documentmaster_id == bd.target_documentmaster_id,
+            DocumentRevision.version == bd.target_docrevision_version,
+        ).first()
+        if target_rev is None:
+            continue
+
+        for dl in doc_links:
+            if (dl.target_workspace_id == bd.target_workspace_id
+                    and dl.target_documentmaster_id == bd.target_documentmaster_id
+                    and dl.target_docrevision_version == bd.target_docrevision_version):
+                result.append({
+                    "documentMasterId": bd.target_documentmaster_id,
+                    "version": bd.target_docrevision_version,
+                    "title": target_rev.title or "",
+                    "iteration": bd.target_iteration,
+                    "workspaceId": bd.target_workspace_id,
+                    "commentLink": dl.comment or "",
+                })
+
+    return result
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/document-links/{pn}/{config_spec}")
