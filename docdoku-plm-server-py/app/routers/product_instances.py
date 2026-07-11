@@ -375,7 +375,8 @@ def instance_p2p_link_types(ws: str, ci_id: str, sn: str,
                              current_user: Account = Depends(get_current_user),
                              db: Session = Depends(get_db)):
     """获取产品实例的所有 PathToPathLink 类型列表。"""
-    return path_to_path_service.get_link_types_for_instance(db, ws, ci_id, sn)
+    types = path_to_path_service.get_link_types_for_instance(db, ws, ci_id, sn)
+    return [{"type": t} for t in types]
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/instances/{sn}/path-to-path-links")

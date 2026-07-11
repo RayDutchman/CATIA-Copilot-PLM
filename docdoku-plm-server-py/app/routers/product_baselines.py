@@ -339,7 +339,8 @@ def baseline_path_to_path_links_types(ws: str, pid: str, bid: int,
                                        db: Session = Depends(get_db)):
     """获取产品基线的 PathToPathLink 类型列表。"""
     links = _query_path_to_path_links(db, ws, bid)
-    return list({lk["type"] for lk in links if lk.get("type")})
+    types = {lk["type"] for lk in links if lk.get("type")}
+    return [{"type": t} for t in types]
 
 
 @router.get("/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links/source/{source}/target/{target}")

@@ -405,7 +405,7 @@ def path_to_path_links_types(ws: str, pid: str,
         "JOIN configurationitem_p2plink cp ON cp.pathtopathlink_id = ppl.id "
         "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci"
     ), {"ws": ws, "ci": pid}).fetchall()
-    return [r[0] for r in rows if r[0]]
+    return [{"type": r[0]} for r in rows if r[0]]
 
 
 @router.get("/workspaces/{ws}/products/{pid}/path-to-path-links/source/{source:path}/target/{target:path}")

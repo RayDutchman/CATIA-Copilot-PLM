@@ -179,24 +179,47 @@ class ProductStructureService:
                                                   user_login, is_admin)]
 
     def _convert_visitor_component(self, db: Session, comp, ci_id,
-                                     user_login, is_admin):
-        """将 PSFilterVisitor 返回的 Component 转为递归 dict。"""
+                                     user_login, is_admin, parent_path=None):
+        """将 PSFilterVisitor 返回的 Component 转为递归 dict。
+
+        comp.path 是 PSFilterVisitor 构建的 PartUsageLink 列表（根节点为空列表）。
+        path 格式对齐 Java：根="ceshi"，子="ceshi-u4262"，孙="ceshi-u4262-u4271"。
+        partUsageLinkId 格式："u{link_id}"（根节点为 "u1"）。
+        """
         retained = comp.retained_iteration
         pm = comp.part_master
         rev = None
         if retained:
             rev = retained.revision
 
+        # 从 PSFilterVisitor 的 path 列表构建路径字符串
+        # VirtualRootLink（full_id="-1"）需跳过，对齐 Java createVirtualRootLink
+        if comp.path and getattr(comp.path[-1], 'full_id', None) != '-1':
+            usage_link = comp.path[-1]
+            path_str = f"{parent_path}-u{usage_link.id}" if parent_path else f"{ci_id}-u{usage_link.id}"
+            part_usage_link_id = f"u{usage_link.id}"
+        else:
+            path_str = parent_path if parent_path else ci_id
+            part_usage_link_id = None
+
+        # virtual/substitute: 从 path 末位 link 判断
+        is_virtual = False
+        is_substitute = False
+        if comp.path:
+            usage_link = comp.path[-1]
+            is_virtual = getattr(usage_link, 'is_virtual', False)
+            is_substitute = getattr(usage_link, 'is_substitute', False)
+
         result = {
             "number": pm.number,
             "name": pm.name or "",
             "version": rev.version if rev else (pm.last_revision.version if pm.revisions else "A"),
             "iteration": retained.iteration if retained else 0,
-            "path": ci_id,
-            "amount": 1.0,
-            "unit": None,
-            "optional": False,
-            "partUsageLinkId": "u1",
+            "path": path_str,
+            "amount": float(comp.path[-1].amount) if comp.path and hasattr(comp.path[-1], 'amount') and comp.path[-1].amount else 1.0,
+            "unit": comp.path[-1].unit if comp.path else None,
+            "optional": bool(comp.path[-1].optional) if comp.path else False,
+            "partUsageLinkId": part_usage_link_id,
             "description": rev.description if rev else "",
             "standardPart": pm.standard_part or False,
             "assembly": bool(retained and retained.components) if retained else False,
@@ -207,9 +230,10 @@ class ProductStructureService:
             "checkOutUser": None,
             "checkOutDate": None,
             "lastIterationNumber": rev.last_iteration_number if rev else 0,
-            "virtual": False,
-            "substitute": False,
-            "partUsageLinkReferenceDescription": None,
+            "virtual": is_virtual,
+            "substitute": is_substitute,
+            "partUsageLinkReferenceDescription": (comp.path[-1].reference_description
+                                                   if comp.path else None),
             "hasPathData": self._check_has_path_data_from_link_path(
                 db, comp.path, comp.part_master.workspace_id if comp.part_master else ""
             ),
@@ -223,7 +247,8 @@ class ProductStructureService:
         }
         for child in comp.components:
             child_dict = self._convert_visitor_component(db, child, ci_id,
-                                                           user_login, is_admin)
+                                                           user_login, is_admin,
+                                                           parent_path=path_str)
             result["components"].append(child_dict)
         return result
 

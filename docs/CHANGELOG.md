@@ -32,10 +32,9 @@
 
 ### fix(py-3d): 产品配置页面 3D 查看修复
 
-- **症状**：产品配置页面 `product-structure/index.html` 3D 可视化空白，InstancesManager 请求 `/products/{ci_id}/instances?configSpec=wip` 返回空数组
-- **根因**：`product_instances.py:37` 只返回 ProductInstanceMaster 序列号列表，未处理 `configSpec` 查询参数（Java `ProductResource.getFilteredInstances` 在 configSpec 存在时返回 3D 实例数据）
-- **修复**：`list_instances` 增加 configSpec 分支——查 CI → root part → 最新已签入 PartIteration → `collect_leaf_instances()` 递归收集叶子实例；复用 `instance_body_writer_tools.py`
-- **验证**：`GET /products/ceshi/instances?configSpec=wip` → 9 instances 正确矩阵
+- `product_instances.py` list_instances 增加 configSpec 分支，复用 collect_leaf_instances
+- `product_structure.py` _convert_visitor_component 修复 path/partUsageLinkId（从硬编码改为 PSFilterVisitor path 列表构建，跳过 VirtualRootLink）
+- `products.py`/`product_instances.py`/`product_baselines.py` path-to-path-links-types 返回格式修复 `[str]→[{"type":str}]`
 
 ### 删除工作区遗漏修复（back-py）
 
