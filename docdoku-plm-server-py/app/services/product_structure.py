@@ -716,24 +716,33 @@ class ProductStructureService:
             acl_id=acl_id,
             creation_date=datetime.utcnow())
         db.add(cfg); db.flush()
+
+        def _normalize_path(p) -> str | None:
+            """将元素统一为路径字符串（兼容历史上可能的 dict 入参）"""
+            if isinstance(p, str):
+                return p
+            if isinstance(p, dict):
+                return p.get("fullPath") or p.get("path")
+            return None
+
         if substitute_links:
             for sl in substitute_links:
-                db.execute(text(
-                    "INSERT INTO partsubstitutelink "
-                    "(component_workspace_id, component_partnumber, "
-                    "substitute_workspace_id, substitute_partnumber) "
-                    "VALUES (:cws, :cpn, :sws, :spn)"
-                ), {"cws": ws, "cpn": sl.get("partNumber", ""),
-                    "sws": ws, "spn": sl.get("substitutePartNumber", "")})
+                path = _normalize_path(sl)
+                if path:
+                    db.execute(text(
+                        "INSERT INTO prdcfg_substitutelink "
+                        "(productbaseline_id, substitutelinks) "
+                        "VALUES (:cid, :path)"
+                    ), {"cid": cfg.id, "path": path})
         if optional_usage_links:
             for ol in optional_usage_links:
-                db.execute(text(
-                    "UPDATE partusagelink SET optional = true "
-                    "WHERE component_workspace_id = :ws "
-                    "AND component_partnumber = :pn "
-                    "AND component_partversion = :ver"
-                ), {"ws": ws, "pn": ol.get("partNumber", ""),
-                    "ver": ol.get("version", "A")})
+                path = _normalize_path(ol)
+                if path:
+                    db.execute(text(
+                        "INSERT INTO prdcfg_optionallink "
+                        "(productbaseline_id, optionalusagelinks) "
+                        "VALUES (:cid, :path)"
+                    ), {"cid": cfg.id, "path": path})
         db.commit(); db.refresh(cfg)
         return cfg
 
@@ -749,6 +758,13 @@ class ProductStructureService:
             ProductConfiguration.id == cfg_id).first()
         if cfg is None:
             raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
+        # 先清理 prdcfg_* 关联表（FK 均为 NO ACTION，需手动删除），再删配置本体
+        db.execute(text(
+            "DELETE FROM prdcfg_substitutelink WHERE productbaseline_id = :cid"
+        ), {"cid": cfg_id})
+        db.execute(text(
+            "DELETE FROM prdcfg_optionallink WHERE productbaseline_id = :cid"
+        ), {"cid": cfg_id})
         db.delete(cfg); db.commit()
 
     # ── Instance ──

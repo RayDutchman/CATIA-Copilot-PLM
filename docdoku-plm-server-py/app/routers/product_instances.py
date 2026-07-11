@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
+    EntityNotFoundException,
     ProductInstanceIterationNotFoundException,
     ProductInstanceMasterNotFoundException,
 )
@@ -35,6 +36,83 @@ def _get_user(db: Session, login: str, ws: str) -> dict:
         "language": acc.language if acc else None,
         "workspaceId": ws,
     }
+
+
+def _infer_attr_dtype(attr: dict) -> str:
+    """根据属性值字段推断 JPA dtype 鉴别值"""
+    if attr.get("dtype") or attr.get("typeName"):
+        return attr.get("dtype") or attr.get("typeName")
+    if attr.get("booleanValue") is not None:
+        return "InstanceBooleanAttribute"
+    if attr.get("dateValue") is not None:
+        return "InstanceDateAttribute"
+    if attr.get("numberValue") is not None:
+        return "InstanceNumberAttribute"
+    if attr.get("urlValue") is not None:
+        return "InstanceURLAttribute"
+    if attr.get("indexValue") is not None:
+        return "InstanceListOfValuesAttribute"
+    if attr.get("longTextValue") is not None:
+        return "InstanceLongTextAttribute"
+    return "InstanceTextAttribute"
+
+
+def _replace_instance_attributes(db: Session, ws: str, ci_id: str,
+                                  sn: str, iteration: int, attrs: list) -> None:
+    """全量替换指定迭代的实例属性（对齐 Java 就地更新模式）"""
+    # 查旧属性 ID
+    old_ids = [
+        row[0] for row in db.execute(sql_text(
+            "SELECT instanceattribute_id FROM prdinstiteration_attribute "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": iteration}).fetchall()
+    ]
+    # 清除旧关联
+    db.execute(sql_text(
+        "DELETE FROM prdinstiteration_attribute "
+        "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+        "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
+    ), {"ws": ws, "ci": ci_id, "sn": sn, "it": iteration})
+    # 删除孤儿 InstanceAttribute
+    for oid in old_ids:
+        still_ref = db.execute(sql_text(
+            "SELECT 1 FROM prdinstiteration_attribute "
+            "WHERE instanceattribute_id=:id LIMIT 1"
+        ), {"id": oid}).first()
+        if still_ref:
+            continue
+        db.execute(sql_text("DELETE FROM instanceattribute WHERE id=:id"), {"id": oid})
+    # 插入新属性
+    for order, attr in enumerate(attrs):
+        dtype = _infer_attr_dtype(attr)
+        result = db.execute(sql_text(
+            "INSERT INTO instanceattribute (name, mandatory, locked, dtype, "
+            "booleanvalue, datevalue, indexvalue, numbervalue, "
+            "textvalue, longtextvalue, urlvalue) "
+            "VALUES (:name, :mand, :locked, :dtype, "
+            ":bv, :dv, :iv, :nv, :tv, :ltv, :uv) RETURNING id"
+        ), {
+            "name": attr.get("name", ""),
+            "mand": attr.get("mandatory", False),
+            "locked": attr.get("locked", False),
+            "dtype": dtype,
+            "bv": attr.get("booleanValue"),
+            "dv": attr.get("dateValue"),
+            "iv": attr.get("indexValue"),
+            "nv": attr.get("numberValue"),
+            "tv": attr.get("textValue"),
+            "ltv": attr.get("longTextValue"),
+            "uv": attr.get("urlValue"),
+        })
+        attr_id = result.fetchone()[0]
+        db.execute(sql_text(
+            "INSERT INTO prdinstiteration_attribute "
+            "(prdinstancemaster_serialnumber, configurationitem_id, "
+            "workspace_id, iteration, instanceattribute_id, attribute_order) "
+            "VALUES (:sn, :ci, :ws, :it, :aid, :ord)"
+        ), {"sn": sn, "ci": ci_id, "ws": ws, "it": iteration,
+            "aid": attr_id, "ord": order})
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/instances")
@@ -106,9 +184,12 @@ def create_instance(ws: str, ci_id: str, body: dict,
 
 @router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}")
 @router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/", include_in_schema=False)
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations/{iteration}")
+@router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/iterations/{iteration}/", include_in_schema=False)
 def update_instance(ws: str, ci_id: str, sn: str, body: dict,
                     current_user: Account = Depends(get_current_user),
-                    db: Session = Depends(get_db)):
+                    db: Session = Depends(get_db),
+                    iteration: int = None):
     from app.models.product import ProductInstanceMaster, ProductInstanceIteration
     inst = db.query(ProductInstanceMaster).filter(
         ProductInstanceMaster.workspace_id == ws,
@@ -117,25 +198,47 @@ def update_instance(ws: str, ci_id: str, sn: str, body: dict,
     ).first()
     if not inst:
         raise ProductInstanceMasterNotFoundException("ProductInstanceMasterNotFoundException", sn)
-    last_it = db.query(ProductInstanceIteration).filter(
-        ProductInstanceIteration.workspace_id == ws,
-        ProductInstanceIteration.configurationitem_id == ci_id,
-        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
-    ).order_by(ProductInstanceIteration.iteration.desc()).first()
-    if last_it and "description" in body:
-        last_it.iteration_note = body["description"]
-    if "linkedDocuments" in body and last_it:
+
+    # 定位目标迭代
+    if iteration is not None:
+        target_it = db.query(ProductInstanceIteration).filter(
+            ProductInstanceIteration.workspace_id == ws,
+            ProductInstanceIteration.configurationitem_id == ci_id,
+            ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+            ProductInstanceIteration.iteration == iteration,
+        ).first()
+        if not target_it:
+            raise ProductInstanceIterationNotFoundException(
+                "ProductInstanceIterationNotFoundException", sn, str(iteration))
+    else:
+        target_it = db.query(ProductInstanceIteration).filter(
+            ProductInstanceIteration.workspace_id == ws,
+            ProductInstanceIteration.configurationitem_id == ci_id,
+            ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+        ).order_by(ProductInstanceIteration.iteration.desc()).first()
+
+    if target_it and "description" in body:
+        target_it.iteration_note = body["description"]
+    if target_it and "iterationNote" in body:
+        target_it.iteration_note = body["iterationNote"]
+
+    # 全量替换实例属性
+    if "instanceAttributes" in body and target_it:
+        _replace_instance_attributes(
+            db, ws, ci_id, sn, target_it.iteration, body["instanceAttributes"])
+
+    # 更新关联文档
+    if "linkedDocuments" in body and target_it:
         db.execute(sql_text(
             "DELETE FROM prdinstiteration_documentlink "
             "WHERE workspace_id=:ws AND configurationitem_id=:ci "
             "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration})
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": target_it.iteration})
         for dl in body["linkedDocuments"]:
             dm_id = dl.get("documentMasterId", "")
             ver = dl.get("version", "")
             if not dm_id:
                 continue
-            # 先建 documentlink 中间记录（同 pathdata/partiteration 模式）
             result = db.execute(sql_text(
                 "INSERT INTO documentlink "
                 "(target_documentmaster_id, target_docrevision_version, "
@@ -144,13 +247,12 @@ def update_instance(ws: str, ci_id: str, sn: str, body: dict,
             ), {"dm": dm_id, "ver": ver, "tws": ws,
                 "comment": dl.get("comment", dl.get("commentLink", "")) or ""})
             dl_id = result.fetchone()[0]
-            # 关联到 productinstanceiteration
             db.execute(sql_text(
                 "INSERT INTO prdinstiteration_documentlink "
                 "(workspace_id, configurationitem_id, prdinstancemaster_serialnumber, "
                 "iteration, documentlink_id) "
                 "VALUES (:ws, :ci, :sn, :it, :dlid)"
-            ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration, "dlid": dl_id})
+            ), {"ws": ws, "ci": ci_id, "sn": sn, "it": target_it.iteration, "dlid": dl_id})
     db.commit()
     return {"serialNumber": inst.serialnumber}
 
@@ -252,8 +354,60 @@ def update_instance_acl(ws: str, ci_id: str, sn: str, body: dict,
 @router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/rebase", status_code=204)
 def rebase_instance(ws: str, ci_id: str, sn: str,
                     body: dict = None,
-                    current_user: Account = Depends(get_current_user)):
+                    current_user: Account = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """产品实例换基线（对齐 Java ProductInstanceManagerBean.rebaseProductInstance）。
+
+    简化实现：仅创建新迭代 + 关联新 baseline + 继承 iterationNote，
+    未深拷贝 pathData / documentCollection / partCollection。
+    """
     from fastapi.responses import Response
+    from datetime import datetime as _dt
+    from app.models.product import ProductInstanceMaster, ProductInstanceIteration
+
+    # 解析新基线 ID
+    baseline_id = body.get("id") if body else None
+    if not baseline_id:
+        raise HTTPException(400, "Missing baseline id in request body")
+
+    # 校验实例存在
+    inst = db.query(ProductInstanceMaster).filter(
+        ProductInstanceMaster.workspace_id == ws,
+        ProductInstanceMaster.configurationitem_id == ci_id,
+        ProductInstanceMaster.serialnumber == sn,
+    ).first()
+    if not inst:
+        raise ProductInstanceMasterNotFoundException(
+            "ProductInstanceMasterNotFoundException", sn)
+
+    # 查末迭代
+    last_it = db.query(ProductInstanceIteration).filter(
+        ProductInstanceIteration.workspace_id == ws,
+        ProductInstanceIteration.configurationitem_id == ci_id,
+        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+    ).order_by(ProductInstanceIteration.iteration.desc()).first()
+
+    # 校验新基线存在
+    bl_exists = db.execute(sql_text(
+        "SELECT 1 FROM productbaseline WHERE id=:bid"
+    ), {"bid": baseline_id}).first()
+    if not bl_exists:
+        raise EntityNotFoundException("BaselineNotFoundException", str(baseline_id))
+
+    next_it = (last_it.iteration + 1) if last_it else 1
+    new_iteration = ProductInstanceIteration(
+        workspace_id=ws,
+        configurationitem_id=ci_id,
+        prdinstancemaster_serialnumber=sn,
+        iteration=next_it,
+        productbaseline_id=baseline_id,
+        author_workspace_id=ws,
+        author_login=current_user.login,
+        creation_date=_dt.utcnow(),
+        iteration_note=last_it.iteration_note if last_it else "",
+    )
+    db.add(new_iteration)
+    db.commit()
     return Response(status_code=204)
 
 

@@ -1,6 +1,7 @@
 """产品实例文件端点（ProductInstanceBinaryResource）。"""
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import Response
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -18,9 +19,50 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
            current_user: Account = Depends(get_current_user),
            db: Session = Depends(get_db)):
     data = upload.file.read()
-    path = vault_svc._vault_root() / ws / "products" / ci_id / "instances" / sn / "iterations" / str(it) / upload.filename
+    filename = upload.filename or "unnamed"
+    now = datetime.now(timezone.utc)
+    content_length = len(data)
+
+    # 写物理文件（保持与 download 一致）
+    path = vault_svc._vault_root() / ws / "products" / ci_id / "instances" / sn / "iterations" / str(it) / filename
     vault_svc.write_file(path, data)
-    return {"status": "uploaded"}
+
+    # 构建 fullname（对齐物理路径，保证后续查询一致）
+    fullname = f"{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{filename}"
+
+    # 创建或更新 BinaryResource 行
+    existing = db.execute(text(
+        "SELECT fullname FROM binaryresource WHERE fullname=:fn"
+    ), {"fn": fullname}).first()
+    if existing:
+        db.execute(text(
+            "UPDATE binaryresource SET contentlength=:len, lastmodified=:now "
+            "WHERE fullname=:fn"
+        ), {"len": content_length, "now": now, "fn": fullname})
+    else:
+        db.execute(text(
+            "INSERT INTO binaryresource (fullname, contentlength, lastmodified) "
+            "VALUES (:fn, :len, :now)"
+        ), {"fn": fullname, "len": content_length, "now": now})
+
+    # 插入关联表（先查重避免重复）
+    dup = db.execute(text(
+        "SELECT 1 FROM prdinstiteration_binres "
+        "WHERE prdinstancemaster_serialnumber=:sn "
+        "AND configurationitem_id=:ci AND workspace_id=:ws "
+        "AND iteration=:it AND attachedfile_fullname=:fn "
+        "LIMIT 1"
+    ), {"sn": sn, "ci": ci_id, "ws": ws, "it": it, "fn": fullname}).first()
+    if not dup:
+        db.execute(text(
+            "INSERT INTO prdinstiteration_binres "
+            "(prdinstancemaster_serialnumber, configurationitem_id, workspace_id, "
+            "iteration, attachedfile_fullname) "
+            "VALUES (:sn, :ci, :ws, :it, :fn)"
+        ), {"sn": sn, "ci": ci_id, "ws": ws, "it": it, "fn": fullname})
+
+    db.commit()
+    return {"fullName": fullname, "name": filename}
 
 
 @router.get("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{fn}")
