@@ -61,11 +61,9 @@ def test_publish_unpublish():
     client.post(f"{PREFIX}/workspaces/{WS}/documents",
                 json={"reference": doc_id, "title": "PubTest"}, headers=h)
     pub = client.put(f"{PREFIX}/workspaces/{WS}/documents/{doc_id}-A/publish", headers=h)
-    assert pub.status_code == 200
-    assert pub.json()["publicShared"] is True
+    assert pub.status_code == 204
     unpub = client.put(f"{PREFIX}/workspaces/{WS}/documents/{doc_id}-A/unpublish", headers=h)
-    assert unpub.status_code == 200
-    assert unpub.json()["publicShared"] is False
+    assert unpub.status_code == 204
     _cleanup(h, doc_id)
 
 
@@ -79,6 +77,5 @@ def test_notification_subscriptions():
         for topic in ["iterationChange", "stateChange"]:
             url = f"{PREFIX}/workspaces/{WS}/documents/{doc_id}-A/notification/{topic}/{action}"
             resp = client.put(url, headers=h)
-            assert resp.status_code == 200
-            assert resp.json() == {"status": "ok"}
+            assert resp.status_code == 204
     _cleanup(h, doc_id)

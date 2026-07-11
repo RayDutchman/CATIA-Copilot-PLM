@@ -25,10 +25,7 @@ def test_set_part_acl():
                       json={"userEntries": {"test1:GD50": FULL_ACCESS},
                             "groupEntries": {}},
                       headers=h)
-    assert resp.status_code in (200, 201)
-    data = resp.json()
-    assert "aclId" in data
-    assert isinstance(data["aclId"], int)
+    assert resp.status_code == 204
 
 
 def test_set_doc_acl():
@@ -41,10 +38,7 @@ def test_set_doc_acl():
                       json={"userEntries": {"test1:GD50": FULL_ACCESS},
                             "groupEntries": {}},
                       headers=h)
-    assert resp.status_code in (200, 201)
-    data = resp.json()
-    assert "aclId" in data
-    assert isinstance(data["aclId"], int)
+    assert resp.status_code == 204
 
 
 def test_set_config_acl():

@@ -44,5 +44,5 @@ def test_recover_missing_fields():
 
 def test_recover_unknown_user():
     """POST /auth/recover 用户不存在返回 404。"""
-    resp = client.post(f"{PREFIX}/auth/recover", json={"login": "nobody", "password": "x"})
+    resp = client.post(f"{PREFIX}/auth/recover", json={"login": "nobody", "newPassword": "x"})
     assert resp.status_code == 404
