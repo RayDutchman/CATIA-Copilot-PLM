@@ -23,11 +23,12 @@ class NotificationService:
         return n
 
     def list_for_user(self, db: Session, ws: str, login: str) -> list:
-        rows = db.execute(text(
-            "SELECT * FROM modificationnotification "
-            "WHERE impacted_workspace_id = :ws AND acknowledged = false"
-        ), {"ws": ws}).fetchall()
-        return [self._to_dict(r) for r in rows]
+        """列出用户未读通知，按 ackauthor_login 过滤以避免跨用户泄漏。"""
+        return db.query(ModificationNotification).filter(
+            ModificationNotification.impacted_workspace_id == ws,
+            ModificationNotification.acknowledged == False,
+            ModificationNotification.ackauthor_login == login,
+        ).all()
 
     # ========== Tag 订阅管理（P1 stubs） ==========
 

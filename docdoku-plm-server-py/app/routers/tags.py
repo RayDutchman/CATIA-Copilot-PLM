@@ -58,26 +58,27 @@ def create_tag(
     return {"id": label, "label": label, "workspaceId": workspace_id}
 
 
-@router.post("/workspaces/{workspace_id}/tags/multiple", status_code=201)
-@router.post("/workspaces/{workspace_id}/tags/multiple/", status_code=201, include_in_schema=False)
+@router.post("/workspaces/{workspace_id}/tags/multiple", status_code=204)
+@router.post("/workspaces/{workspace_id}/tags/multiple/", status_code=204, include_in_schema=False)
 def create_tags(
     workspace_id: str,
-    body: list = Body(...),
+    body: dict = Body(...),
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """批量创建标签。"""
-    created = []
-    for item in body:
+    """批量创建标签（对齐 Java TagResource.createTags：TagListDTO{tags:[TagDTO]} → 204）。"""
+    items = body.get("tags", []) if isinstance(body, dict) else (body or [])
+    for item in items:
         label = item.get("label", item.get("id", "")) if isinstance(item, dict) else str(item)
+        if not label:
+            continue
         existing = db.query(Tag).filter(
             Tag.workspace_id == workspace_id, Tag.label == label
         ).first()
         if existing is None:
             db.add(Tag(workspace_id=workspace_id, label=label))
-            created.append(label)
     db.commit()
-    return [{"id": lbl, "label": lbl, "workspaceId": workspace_id} for lbl in created]
+    return Response(status_code=204)
 
 
 @router.delete("/workspaces/{workspace_id}/tags/{tag_id}", status_code=204)
@@ -88,12 +89,28 @@ def delete_tag(
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """删除标签。"""
-    tag = db.query(Tag).filter(
-        Tag.workspace_id == workspace_id, Tag.label == tag_id
-    ).first()
-    if tag is not None:
-        db.delete(tag)
+    """删除标签（先清关联表再删 tag，避免 FK 约束错误）。"""
+    db.execute(text("DELETE FROM documentrevision_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    db.execute(text("DELETE FROM partrevision_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    db.execute(text("DELETE FROM changeissue_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    db.execute(text("DELETE FROM changeorder_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    db.execute(text("DELETE FROM changerequest_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    db.execute(text("DELETE FROM tagusersubscription WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    db.execute(text("DELETE FROM tagusergroupsubscription WHERE tag_label=:label AND tag_workspace_id=:ws"),
+               {"label": tag_id, "ws": workspace_id})
+    # 用裸 SQL 删 tag 行，避免 ORM M:N secondary（part_revision_tags 等）在 flush 时
+    # 重新同步已加载的关联集合、把刚删的关联行重新 INSERT 回去导致 FK 冲突
+    result = db.execute(
+        text("DELETE FROM tag WHERE label=:label AND workspace_id=:ws"),
+        {"label": tag_id, "ws": workspace_id},
+    )
+    if result.rowcount:
         db.commit()
     return Response(status_code=204)
 

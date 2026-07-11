@@ -80,6 +80,15 @@ def _build_notification_dict(n, db: Session) -> dict:
     return result
 
 
+@router.get(f"{PREFIX}/notifications", response_model=List[dict])
+@router.get(f"{PREFIX}/notifications/", include_in_schema=False)
+def list_notifications(ws: str, db: Session = Depends(get_db),
+                       current_user: Account = Depends(get_current_user)):
+    """获取当前用户未读通知列表。"""
+    notifications = notification_service.list_for_user(db, ws, current_user.login)
+    return [_build_notification_dict(n, db) for n in notifications]
+
+
 @router.put(f"{PREFIX}/notifications/{{notification_id}}", response_model=ModificationNotificationDTO)
 @router.put(f"{PREFIX}/notifications/{{notification_id}}/", include_in_schema=False)
 def acknowledge_notification(ws: str, notification_id: int, body: dict = Body(...),

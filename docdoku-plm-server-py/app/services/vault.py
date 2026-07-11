@@ -19,6 +19,18 @@ def part_nativecad_path(
     )
 
 
+def part_geometry_path(
+    workspace_id: str, part_number: str, version: str,
+    iteration: int, quality: str
+) -> Path:
+    """几何体 GLB 文件路径。quality 为 LOD 等级名（如 "LOW"/"HIGH"/数字等），自动加 .glb 后缀与 geometry/ 子目录。"""
+    return (
+        _vault_root() / workspace_id / "parts"
+        / part_number / version / str(iteration)
+        / "geometry" / f"{quality}.glb"
+    )
+
+
 def part_attached_path(
     workspace_id: str, part_number: str, version: str,
     iteration: int, filename: str

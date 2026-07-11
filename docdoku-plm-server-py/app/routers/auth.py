@@ -113,7 +113,7 @@ def execute_recover(body: dict, db: Session = Depends(get_db)):
     """执行密码恢复。支持 token 模式和直接密码模式。"""
     token = body.get("recoveryToken") or body.get("uuid") or body.get("token")
     login = body.get("login", "")
-    new_password = body.get("password", "")
+    new_password = body.get("newPassword", "")
     if token:
         from sqlalchemy import text
         row = db.execute(text(
