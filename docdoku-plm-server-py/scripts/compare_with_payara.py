@@ -1,7 +1,7 @@
 """与 Payara 对拍：同一操作对比 FastAPI(:8000) 与 Payara(:8001) 响应。
 
 用法: python scripts/compare_with_payara.py <path> [--login test1] [--password password]
-示例: python scripts/compare_with_payara.py /workspaces/Workspace_2/parts/Assem1-A
+示例: python scripts/compare_with_payara.py /workspaces/GD50/parts/Assem1-A
 """
 import sys
 import json

@@ -20,7 +20,7 @@ PY_PORT = 8000
 FA_PORT = 8005
 PY_BASE = f"http://localhost:{PY_PORT}/docdoku-plm-server-rest/api"
 FA_BASE = f"http://localhost:{FA_PORT}/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 TAG = str(uuid.uuid4()).replace("-", "")[:10]
 
 seed = {
@@ -194,7 +194,7 @@ def stages():
             ("GET", f"/workspaces/{WS}/documents/doc_revs", None, "链接用修订"),
             ("GET", f"/workspaces/{WS}/document-templates", None, "文档模板"),
             ("GET", f"/workspaces/{WS}/folders", None, "文件夹列表"),
-            ("GET", f"/workspaces/{WS}/folders/Workspace_2/documents", None, "根文档"),
+            ("GET", f"/workspaces/{WS}/folders/GD50/documents", None, "根文档"),
             ("GET", f"/workspaces/{WS}/document-baselines", None, "基线列表"),
             ("GET", f"/workspaces/{WS}/document-baselines/3", None, "基线详情"),
             ("GET", f"/workspaces/{WS}/document-baselines/3-light", None, "基线轻量"),

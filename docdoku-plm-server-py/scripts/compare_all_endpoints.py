@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 FA = "http://localhost:8009"
 PY = "http://localhost:8005"
 API = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 LOGIN = "test1"
 
 # ── 登录 ──
@@ -228,8 +228,8 @@ A(E("GET", f"/workspaces/{WS}/document-templates", "dt-templates"))
 
 # ━━ Folders ━━
 A(E("GET", f"/workspaces/{WS}/folders", "folders"))
-A(E("GET", f"/workspaces/{WS}/folders/Workspace_2/documents", "folder-root-docs"))
-A(E("GET", f"/workspaces/{WS}/folders/Workspace_2/SeedFolder/folders", "folder-sub"))
+A(E("GET", f"/workspaces/{WS}/folders/GD50/documents", "folder-root-docs"))
+A(E("GET", f"/workspaces/{WS}/folders/GD50/SeedFolder/folders", "folder-sub"))
 
 # ━━ Products (CI) ━━
 A(E("GET", f"/workspaces/{WS}/products", "products"))

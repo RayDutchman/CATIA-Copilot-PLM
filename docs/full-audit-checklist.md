@@ -106,7 +106,7 @@ Java 多处 `@Asynchronous`（如 `deleteWorkspace`）。Python 一般做成同�
 Java `*Resource.java` 有但 Python 缺（pathdata / path-to-path / import / query 执行引擎 / filter configSpec 解析）。用 Java 端点数 vs Python 端点数做 diff。
 
 ### 18. 只有数据存在才暴露的 bug
-空表时 SQL/序列化都不报错，有真实数据才 500（Workspace_2 有基线数据才暴露）。**审计必须在有真实数据的工作区（如 Workspace_2）跑，不能只看空库。**
+空表时 SQL/序列化都不报错，有真实数据才 500（GD50 有基线数据才暴露）。**审计必须在有真实数据的工作区（如 GD50）跑，不能只看空库。**
 
 ### 19. tracker.csv 状态列不可信
 tracker.csv 是**文件级映射**，只标 Python 对应文件是否存在。多处标"已完成"实为空壳/桩（`workspace_manager` stub、importer stub、query POST）。**审计要实际核对代码，不信 CSV 的"已完成"。**
@@ -147,7 +147,7 @@ conversion 回调用用户 JWT，长转换后可能过期。审计 service-to-se
 ### 运行时 / 冒烟验证
 - **import 冒烟**：`venv/bin/python -c "import app.main"` —— 快速抓 schema forward-ref / 语法 / 导入错误。
 - **schema 单测**：`venv/bin/python -c "from app.schemas... import X; X.model_validate({...})"`。
-- **在线冒烟（curl）**：`BASE=http://localhost:8009/docdoku-plm-server-rest/api`；`POST /auth/login {"login":"test1","password":"password"}`（密码就是 `password`），**JWT 在响应头 `jwt`**；常用 `WS=Workspace_2`。
+- **在线冒烟（curl）**：`BASE=http://localhost:8009/docdoku-plm-server-rest/api`；`POST /auth/login {"login":"test1","password":"password"}`（密码就是 `password`），**JWT 在响应头 `jwt`**；常用 `WS=GD50`。
 - **健康检查**：`GET .../api/health` → 200。
 - **Payara 对照 diff**（最硬验证）：Payara 直连 `:8001`、或 front Port 85（`:8005`）；FastAPI 直连 `:8009`——同一请求对比两边响应 JSON。
 - **抓 traceback**：`docker logs --tail N docdoku-plm-docker-back-py-1`（500 真实堆栈，定位 `/app/app/...:行号`）；`/dev/errors` 端点（ErrorCollectorMiddleware 内存记录所有 4xx/5xx 的 req/res/user）。

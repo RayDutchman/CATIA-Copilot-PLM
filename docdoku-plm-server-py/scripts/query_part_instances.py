@@ -7,7 +7,7 @@
     python3 query_part_instances.py <workspace_id> <part_number>
 
 示例：
-    python3 query_part_instances.py Workspace_2 Assem1
+    python3 query_part_instances.py GD50 Assem1
 
 可选环境变量：
     PLM_BASE_URL   服务地址，默认 http://localhost:8001/docdoku-plm-server-rest/api

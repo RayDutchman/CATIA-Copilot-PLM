@@ -109,8 +109,8 @@
 | 数据库名 | `docdokuplm` |
 | 账号 | `changeit` / `changeit`（超级用户，供 back-py、adminer、MCP 直连） |
 | 职责 | 存储全部业务数据：用户账号、工作区、零件/文档/版本/迭代、装配关系、工作流、查询、导入记录等 |
-| 数据卷 | `db-volume`（Docker named volume，72 MiB） |
-| 当前大小 | 72 MiB（含 2656 零件的 Workspace_2 + GD50 空工作区） |
+| 数据卷 | `db-volume`（Docker named volume） |
+
 
 ---
 

@@ -15,7 +15,7 @@ from urllib.error import HTTPError
 FA = "http://localhost:8009"
 PY = "http://localhost:8005"
 API = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 PREFIX = f"{API}/workspaces/{WS}"
 
 _TS = str(int(time.time()))[-6:]

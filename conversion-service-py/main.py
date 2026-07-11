@@ -65,9 +65,9 @@ def get_virtual_path(full_name: str) -> str:
       vault_path + "/" + Tools.unAccent(fullName)
 
     full_name 示例：
-      "Workspace_2/parts/Outer Plate 2010/A/2/nativecad/Outer Plate 2010.stp"
+      "GD50/parts/Outer Plate 2010/A/2/nativecad/Outer Plate 2010.stp"
     返回：
-      "/data/vault/Workspace_2/parts/Outer Plate 2010/A/2/nativecad/Outer Plate 2010.stp"
+      "/data/vault/GD50/parts/Outer Plate 2010/A/2/nativecad/Outer Plate 2010.stp"
     """
     return VAULT_PATH + "/" + unaccent(full_name)
 

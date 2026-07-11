@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 API = "http://localhost:8009/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 TIMESTAMP = datetime.now().strftime("%Y%m%d-%H%M%S")
 PREFIX = f"SEED-{TIMESTAMP}-"
 SEED_PREFIX = "SEED-"  # 用于清理所有旧 SEED 数据

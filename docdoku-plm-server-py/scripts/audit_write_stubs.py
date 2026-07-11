@@ -4,7 +4,7 @@ import json, sys, uuid
 import requests
 
 PY = "http://localhost:8000/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 TAG = str(uuid.uuid4())[:6]
 
 def _token():
