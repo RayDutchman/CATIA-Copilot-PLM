@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core import i18n
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 client = TestClient(app)
 
 def _token():

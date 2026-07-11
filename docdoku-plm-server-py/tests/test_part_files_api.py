@@ -5,7 +5,7 @@ from app.main import app
 from app.core.database import SessionLocal
 
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 client = TestClient(app)
 
 

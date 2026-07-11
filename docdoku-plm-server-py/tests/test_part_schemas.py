@@ -41,11 +41,11 @@ def test_geometry_uri_format(db):
     from app.services.part_mapper import map_revision
     from app.services.product_manager import ProductService
     svc = ProductService()
-    pr = svc.get_revision(db, "Workspace_2", "Differential Axle 2010", "A")
+    pr = svc.get_revision(db, "GD50", "Differential Axle 2010", "A")
     dto = map_revision(pr, db)
     it1 = next(i for i in dto.partIterations if i.iteration == 1)
     assert it1.geometryFileURI is not None
-    assert it1.geometryFileURI.startswith("/api/files/Workspace_2/parts/")
+    assert it1.geometryFileURI.startswith("/api/files/GD50/parts/")
     assert it1.geometryFileURI.endswith(".glb")
 
 
@@ -53,7 +53,7 @@ def test_user_dto_has_name_email_language(db):
     from app.services.part_mapper import map_revision
     from app.services.product_manager import ProductService
     svc = ProductService()
-    pr = svc.get_revision(db, "Workspace_2", "Differential Axle 2010", "A")
+    pr = svc.get_revision(db, "GD50", "Differential Axle 2010", "A")
     dto = map_revision(pr, db)
     assert dto.author.name is not None
     assert dto.author.email is not None

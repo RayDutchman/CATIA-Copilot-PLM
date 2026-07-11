@@ -3,7 +3,7 @@ from app.services import binary_storage
 from app.services.product_manager import ProductService
 from app.models.part import BinaryResource
 
-WS = "Workspace_2"
+WS = "GD50"
 svc = ProductService()
 
 

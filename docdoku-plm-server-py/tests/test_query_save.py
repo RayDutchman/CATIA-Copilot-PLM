@@ -24,7 +24,7 @@ def test_save_query_writes_rule_tree_and_selects(db):
         "contexts": [],
     }
     # 用测试用工作区 和用户 e（userdata 中已存在的外键）
-    qid = _save_query(db, "测试用工作区", "e", body)
+    qid = _save_query(db, "测试工作区", "e", body)
     db.commit()  # RollbackSession: flush 不真正提交，但同一事务内可读
     assert isinstance(qid, int) and qid > 0
     row = db.execute(text("SELECT name, queryrule_id FROM query WHERE id=:q"),

@@ -8,8 +8,8 @@ def _make_id(suffix: str = "") -> str:
     return f"imp-test-{suffix}-{datetime.utcnow().timestamp()}"[:50]
 
 
-WS = "Workspace_2"
-USER = "SEED-20260705-215045-alice"
+WS = "GD50"
+USER = "test1"
 
 
 class TestCreateAndGet:

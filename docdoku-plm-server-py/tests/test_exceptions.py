@@ -96,5 +96,5 @@ def test_language_middleware_sets_state():
     """无有效 token 时 user_language 应为 None（兜底 en），请求不应崩溃。"""
     from app.main import app
     client = TestClient(app, raise_server_exceptions=False)
-    resp = client.get("/docdoku-plm-server-rest/api/workspaces/Workspace_2/parts/count")
+    resp = client.get("/docdoku-plm-server-rest/api/workspaces/GD50/parts/count")
     assert resp.status_code in (401, 200)

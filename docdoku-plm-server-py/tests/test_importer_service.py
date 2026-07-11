@@ -14,7 +14,7 @@ import pytest
 from pathlib import Path
 from sqlalchemy import text
 
-WS = "Workspace_2"
+WS = "GD50"
 USER = "SEED-20260705-215045-alice"
 
 
@@ -118,14 +118,14 @@ class TestWriteIterationAttributes:
             MergedAttribute, TOKEN_TO_DTYPE, TOKEN_TO_VALUECOL,
         )
 
-        # 动态查找 seed 中 Workspace_2 的一个零件迭代（避免硬编码）
+        # 动态查找 seed 中 GD50 的一个零件迭代（避免硬编码）
         row = db.execute(text(
             "SELECT partmaster_partnumber, partrevision_version, iteration "
             "FROM partiteration WHERE workspace_id=:ws LIMIT 1"
         ), {"ws": WS}).fetchone()
 
         if row is None:
-            pytest.skip("Workspace_2 中无 seed 迭代，跳过写入测试")
+            pytest.skip("GD50 中无 seed 迭代，跳过写入测试")
 
         pn = row.partmaster_partnumber
         ver = row.partrevision_version

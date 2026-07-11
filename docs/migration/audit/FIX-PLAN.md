@@ -39,18 +39,16 @@
 
 ## 批次 0：种子/测试工作区恢复（主 agent 独做，无 subagent）
 
-**Why first:** effectivity/baseline/workflow/change 等域在 GD50 无数据，改完无法运行时验证。必须先让 `seed_test_data.py` 可重建测试工作区、pytest 回绿，才有回归门禁。
+**Why first:** effectivity/baseline/workflow/change 等域在 GD50 无数据，改完无法运行时验证。必须先让 pytest 回绿，才有回归门禁。
 
-**Files:**
-- Modify: `scripts/seed_test_data.py`（`WS="Workspace_2"`，第 26 行）
-- 只读参考：`tests/conftest.py`、各 `tests/test_*.py` 的 `WS` 常量
+> **✅ 已完成（2026-07-11）。方案调整**：原计划重建 `Workspace_2`；经用户决策改为**将测试套件整体重定向到已有真实数据的 GD50 工作区**（test1 为其 admin），不重建 Workspace_2、不跑 seed 脚本。仅改测试代码 + 修测试数据（DB），不动项目代码。
 
-- [ ] **Step 1:** 读 `scripts/seed_test_data.py` 全文，确认它是否创建 workspace 本身（`POST /workspaces`）还是假设已存在。
-- [ ] **Step 2:** 若不创建，补建 Workspace_2 的逻辑（`POST /docdoku-plm-server-rest/api/workspaces` body `{"id":"Workspace_2","description":"seed","folderLocked":false}`，用 test1 JWT）。
-- [ ] **Step 3:** 运行种子脚本重建 Workspace_2 + 账户 + 零件 + P5 数据。
-- [ ] **Step 4:** `cd docdoku-plm-server-py && source venv/bin/activate && pytest -q --ignore=tests/test_vault.py` → 记录通过数，应显著回升至 ~272 passed。
-- [ ] **Step 5:** 记录**批次 0 后的稳定 pytest 基线数字**（后续批次以此为准判定「无新增 fail」）。
-- [ ] **Step 6:** commit：`chore: restore Workspace_2 seed data for regression gating`
+- [x] **Step 1:** 读 `scripts/seed_test_data.py` 全文——确认它不创建 workspace 本身。（方案调整后未使用该脚本）
+- [x] **Step 2（调整）:** 全量替换 33 个 `tests/test_*.py` 的 `WS="Workspace_2"`/硬编码 → `GD50`；`test_parts_error_paths` 组件件改 `GD50_Frame-A`；`test_import_record` USER→`test1`；`test_query_save` workspace→`测试工作区`；conversion 写文件测试隔离到 `temp_vault`。
+- [x] **Step 3（调整）:** DB 测试数据修复——补 `folder` GD50 根记录、test1@GD50 membership `readonly`→false、重建 `测试工作区`+用户 e。
+- [x] **Step 4:** `pytest -q --ignore=tests/test_vault.py` → **278 passed / 1 failed**（超 ~272 目标）。
+- [x] **Step 5:** 批次 0 后稳定基线 = **278 passed / 1 known-fail（test_i18n_bypass，part.py 硬编码 HTTPException，属代码问题）**。后续批次以此判定「无新增 fail」。
+- [x] **Step 6:** commit：`test: retarget regression suite to GD50 workspace`
 
 > ⚠️ `test_vault.py` 收集错误（缺 `part_geometry_path`）在批次 6 的 X-6 修复；批次 0~5 用 `--ignore=tests/test_vault.py` 跑。
 

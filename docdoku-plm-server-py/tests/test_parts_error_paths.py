@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 client = TestClient(app, raise_server_exceptions=False)
 
 
@@ -17,7 +17,7 @@ def test_delete_part_used_as_component_returns_403_zh():
     token = _token()
     resp = client.request(
         "DELETE",
-        f"{PREFIX}/workspaces/{WS}/parts/Differential Axle 2010-A",
+        f"{PREFIX}/workspaces/{WS}/parts/GD50_Frame-A",
         headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
     assert resp.text == "您无法删除在装配体中用作组件的零件"

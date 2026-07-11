@@ -17,4 +17,4 @@ def test_list_workspaces():
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
-    assert any(w["id"] == "Workspace_2" for w in data)
+    assert any(w["id"] == "GD50" for w in data)

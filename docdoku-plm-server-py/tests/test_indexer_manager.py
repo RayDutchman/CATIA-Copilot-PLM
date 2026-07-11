@@ -6,7 +6,7 @@ from app.models.part import PartRevision
 from app.models.document import DocumentRevision
 from sqlalchemy.orm import joinedload
 
-WS = "Workspace_2"
+WS = "GD50"
 
 
 @pytest.fixture

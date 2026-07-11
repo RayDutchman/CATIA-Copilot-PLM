@@ -6,6 +6,37 @@
 
 ---
 
+## 2026-07-11 — 审计修复批次 0：回归测试门禁恢复（GD50 工作区）
+
+> FIX-PLAN 批次 0。原测试套件目标工作区 `Workspace_2` 已从 DB 删除（仅剩 GD50），导致 84 个 pytest 失败无回归门禁。计划原方案是重建 Workspace_2；经用户决策改为**将测试套件整体重定向到已有真实数据的 GD50 工作区**（test1 为其 admin）。**仅改测试代码 + 修测试数据，不动项目代码。**
+
+### test: 回归套件重定向到 GD50 工作区
+
+- 全量替换 33 个 `tests/test_*.py` 中的 `WS = "Workspace_2"` / 硬编码 `Workspace_2` → `GD50`
+- `test_parts_error_paths.py`：删组件依赖测试改用 GD50 真实被引用件 `GD50_Frame-A`（原 `Differential Axle 2010` 在 GD50 未被用作组件）
+- `test_import_record.py`：`USER` 由不存在的 `SEED-20260705-215045-alice` 改为 `test1`
+- `test_query_save.py`：workspace 由 `测试用工作区` 改为已重建的 `测试工作区`（用户 e 的 userdata 归属）
+- conversion 写文件测试隔离到 `temp_vault` fixture（commit 772e359，避免写 root 属主的真实 vault）
+
+### chore: 测试数据修复（DB 手动）
+
+- 补 `folder` 表 GD50 根记录（`completepath='GD50', parentfolder_completepath=NULL`）——解 document/folder/acl FK 约束
+- `workspaceusermembership` 中 test1@GD50 的 `readonly` 由 NULL 改 false——解 change DELETE 403
+- 重建 `测试工作区` + 用户 `e`（用户操作）
+
+### 结果
+
+- **pytest 基线：84 failed → 278 passed / 1 failed（--ignore=tests/test_vault.py）**，超计划 ~272 目标
+- 唯一残留 fail：`test_i18n_bypass`（扫出 `app/routers/part.py` 3 处硬编码 HTTPException）——真实项目代码问题，本批不动代码，列为已知 fail
+- 此为后续批次 1~7「无新增 fail」判定基线
+
+### docs: REMINDERS 维护
+
+- Decimation 标记 ✅ 已修好；删除过期「pytest 10 failures」条
+- 新增 vault 目录属主（back-py 容器 root/uid 0 写入）问题及修复命令记录
+
+---
+
 ## 2026-07-11 — FastAPI 迁移全量审计（8 域，仅报告不修复）
 
 > 以 `docs/full-audit-checklist.md` 22 条要点为准绳，编排 8 个 explore subagent 分 2 波逐端点对照 Java 源码 + DB information_schema 真值核实，产出结构化审计报告。**本次仅审计，不含代码修复。**

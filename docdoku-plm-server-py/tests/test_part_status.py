@@ -9,7 +9,7 @@ from app.models.part import (
 )
 
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 client = TestClient(app)
 
 

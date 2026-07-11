@@ -3,7 +3,7 @@ from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 
 
 def _token():

@@ -10,7 +10,11 @@
 
 ### 🔴 全量审计发现（2026-07-11，见 docs/migration/audit/00-index.md，共 26 CRITICAL）
 
-> **仅出审计报告，尚未修复。** 修复须逐条确认后另开任务。以下为最高优先级 P0（已 information_schema 核实属实，运行时必崩）：
+> **修复进行中**，按 `docs/migration/audit/FIX-PLAN.md` 分 8 批（0~7）执行。分支 `fix/audit-remediation`。
+>
+> **✅ 批次 0 已完成（2026-07-11）**：回归测试门禁恢复。测试套件由已删除的 `Workspace_2` 整体重定向到 GD50 工作区。**pytest 基线：84 failed → 278 passed / 1 failed（--ignore=tests/test_vault.py）**。唯一残留 fail = `test_i18n_bypass`（part.py 3 处硬编码 HTTPException，真实代码问题，留待后续批次）。此为后续「无新增 fail」判定基线。
+>
+> 以下为待修的最高优先级 P0（已 information_schema 核实属实，运行时必崩）：
 > - [ ] **B-1/B-2/B-3 effectivity 域完全不可用**：ORM 伪列(startlot/endlot/creationdate/type_effectivity) + INSERT partrevision_effectivity 用 workspace_id(应 partmaster_workspace_id) + effectivity_manager WHERE workspace_id(表无此列)。⚠️ Bug #5 当时只修了 GET SELECT，写路径未修。
 > - [ ] **X-1 share 端点每次 500**：`share.py:80` SELECT `expire_date`（DB 实为 `expiredate`），`/shared/{uuid}/documents|parts` 全崩。
 > - [ ] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表，属新发现）。
@@ -59,8 +63,8 @@
 
 - **CATIA 原生格式不支持转换** — 需预先导出 STEP/STL
 - **back 容器 JVM 参数需两次重启** — Payara 特性
-- **Conversion service Decimation 持续失败** — 不影响 GLB 生成
-- **pytest 10 failures** — 种子数据脚本权限问题导致（非代码 bug）
+- **~~Conversion service Decimation 持续失败~~** — ✅ 已修好（2026-07-11 以 LOD 三级生成替代减面）
+- **vault 目录属主问题** — back-py 容器以 root（uid 0）身份运行，往 `docdoku-plm-docker/data/vault` 写新文件/子目录时，落到 host 上属主为 `root:root`，host 用户 chenweibo（uid 1000）无写权限。真实上传/转换回调后新建的 `{ws}/parts/...` 目录会变回 root 属主。**测试已用 `temp_vault` fixture 隔离**（写临时目录，不碰真实 vault），故不影响 pytest；但若手动在 host 侧操作真实 vault 遇到 `Permission denied`，用 `docker exec docdoku-plm-docker-back-py-1 chown -R 1000:1000 /var/lib/docdoku/vault/{ws}` 修属主。
 
 ---
 

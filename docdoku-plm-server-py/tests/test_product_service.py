@@ -5,7 +5,7 @@ from app.core.exceptions import EntityNotFoundException, PartMasterNotFoundExcep
 from app.schemas.part import PartCreationDTO
 
 
-WS = "Workspace_2"  # 数据库中实际存在的 workspace
+WS = "GD50"  # 数据库中实际存在的 workspace
 
 
 def test_list_revisions_returns_list(db):

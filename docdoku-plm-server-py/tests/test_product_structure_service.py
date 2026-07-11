@@ -1,6 +1,6 @@
 from app.services.product_structure import ProductStructureService
 from app.core.exceptions import EntityAlreadyExistsException
-WS = "Workspace_2"
+WS = "GD50"
 svc = ProductStructureService()
 
 

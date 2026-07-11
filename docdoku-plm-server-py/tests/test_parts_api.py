@@ -5,11 +5,11 @@ from app.main import app
 
 client = TestClient(app)
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"  # 数据库中实际存在的 workspace
+WS = "GD50"  # 数据库中实际存在的 workspace
 
 
 def get_token():
-    """用 test1 登录（Workspace_2 成员，admin 不是该 workspace 成员）。"""
+    """用 test1 登录（GD50 成员，admin 不是该 workspace 成员）。"""
     resp = client.post(f"{PREFIX}/auth/login",
                        json={"login": "test1", "password": "password"})
     return resp.headers["jwt"]

@@ -220,7 +220,7 @@ class TestWouldChange:
 class TestResolveLovIndex:
     """resolve_lov_index 测试（需 db fixture）。"""
 
-    WS = "Workspace_2"  # 使用已有的 workspace，满足 lov FK
+    WS = "GD50"  # 使用已有的 workspace，满足 lov FK
     LOV_NAME = "Colors_T2"
 
     @pytest.fixture(autouse=True)
@@ -251,7 +251,7 @@ class TestResolveLovIndex:
 class TestMergeLov:
     """LOV 合并测试（需 db fixture）。"""
 
-    WS = "Workspace_2"
+    WS = "GD50"
     LOV_NAME = "Colors_T2"
 
     @pytest.fixture(autouse=True)

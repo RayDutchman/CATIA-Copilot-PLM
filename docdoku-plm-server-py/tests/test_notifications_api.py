@@ -22,7 +22,7 @@ def test_acknowledge_notification():
         if not row:
             return
         nid = row[0]
-        resp = client.put(f"{PREFIX}/workspaces/Workspace_2/notifications/{nid}",
+        resp = client.put(f"{PREFIX}/workspaces/GD50/notifications/{nid}",
                           json={"ackComment": "test"},
                           headers={"Authorization": f"Bearer {_token()}"})
         assert resp.status_code == 200

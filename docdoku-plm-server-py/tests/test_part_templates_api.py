@@ -5,7 +5,7 @@ from app.models.part import PartMaster
 from sqlalchemy import text
 
 PREFIX = "/docdoku-plm-server-rest/api"
-WS = "Workspace_2"
+WS = "GD50"
 client = TestClient(app)
 
 
