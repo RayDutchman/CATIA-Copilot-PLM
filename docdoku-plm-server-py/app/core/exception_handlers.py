@@ -6,6 +6,7 @@ from app.core.exceptions import (
     EntityAlreadyExistsException, CreationException,
     WorkspaceNotEnabledException, PlatformHealthException,
     AccountNotFoundException,
+    WrongInputException,
     BaselineNotFoundException,
     ChangeIssueNotFoundException,
     ChangeOrderNotFoundException,
@@ -97,6 +98,8 @@ def _status_for(exc: ApplicationException) -> int:
         return 404
     if isinstance(exc, EntityAlreadyExistsException):
         return 409
+    if isinstance(exc, WrongInputException):
+        return 400
     if isinstance(exc, CreationException):
         return 500
     if isinstance(exc, PlatformHealthException):

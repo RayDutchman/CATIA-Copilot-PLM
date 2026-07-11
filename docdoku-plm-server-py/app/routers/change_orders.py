@@ -73,7 +73,12 @@ def update_order(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    return _item_to_dict(svc.update_item(db, ws, "order", item_id, body), db, current_user)
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    return _item_to_dict(svc.update_item(db, ws, "order", item_id, body,
+                                          user_login=current_user.login,
+                                          is_admin=is_admin), db, current_user)
 
 
 @router.delete("/workspaces/{ws}/changes/orders/{item_id}", status_code=204)
@@ -135,8 +140,12 @@ def set_order_affected_documents(ws: str, item_id: int, body: dict,
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
-                            "changeorder_affected_document", "changeorder_id")
+                            "changeorder_affected_document", "changeorder_id",
+                            user_login=current_user.login, is_admin=is_admin)
     it = svc.get_by_id(db, ChangeOrder, ws, item_id)
     return _item_to_dict(it, db, current_user)
 
@@ -148,8 +157,12 @@ def set_order_affected_parts(ws: str, item_id: int, body: dict,
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
-                        "changeorder_affected_part", "changeorder_id")
+                        "changeorder_affected_part", "changeorder_id",
+                        user_login=current_user.login, is_admin=is_admin)
     it = svc.get_by_id(db, ChangeOrder, ws, item_id)
     return _item_to_dict(it, db, current_user)
 

@@ -1,5 +1,5 @@
 """变更模块共享工具函数—— _item_to_dict, _get_acl_dict, _get_user_name 等。"""
-from typing import Optional
+from typing import Optional, Sequence
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.models.auth import Account
@@ -38,7 +38,7 @@ def _get_acl_dict(db: Session, acl_id: int | None) -> dict | None:
         "userEntries": [{"key": r.principal_login, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")} for r in user_rows],
         "groupEntries": [{"key": r.principal_id, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")} for r in group_rows],
         "userEntriesMap": {r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN") for r in user_rows},
-        "userGroupEntriesMap": {},
+        "userGroupEntriesMap": {r.principal_id: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN") for r in group_rows},
     }
 
 
@@ -168,7 +168,18 @@ def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Acc
     return data
 
 
-def _set_affected_parts(db, ws, item_id, parts_data, table_name, id_column):
+def _set_affected_parts(db: Session, ws: str, item_id: int,
+                        parts_data: Sequence[dict], table_name: str, id_column: str,
+                        user_login: str | None = None, is_admin: bool = False):
+    # 对齐 Java ChangeManagerBean: checkChangeItemWriteAccess 检查 ACL 写权限
+    if user_login:
+        item_table = id_column.replace("_id", "")
+        acl_id = db.scalar(sql_text(
+            f"SELECT acl_id FROM {item_table} WHERE id = :iid"
+        ), {"iid": item_id})
+        has_access = check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws)
+        if not has_access:
+            raise AccessRightException("AccessRightException", user_login)
     db.execute(sql_text(f"DELETE FROM {table_name} WHERE {id_column}=:iid"),
                {"iid": item_id})
     for part_data in parts_data:
@@ -176,15 +187,35 @@ def _set_affected_parts(db, ws, item_id, parts_data, table_name, id_column):
         parts_split = part_key.rsplit("-", 1)
         pn = parts_split[0] if len(parts_split) == 2 else part_key
         ver = parts_split[1] if len(parts_split) == 2 else "A"
+        # 对齐 Java PartIterationKey：body 传入实际 iteration，而非恒为 1
+        iteration = part_data.get("iteration")
+        if iteration is None:
+            iteration = db.scalar(sql_text(
+                "SELECT MAX(iteration) FROM partiteration "
+                "WHERE partmaster_partnumber = :pn "
+                "AND partrevision_version = :ver "
+                "AND workspace_id = :ws"
+            ), {"pn": pn, "ver": ver, "ws": ws}) or 1
         db.execute(sql_text(
             f"INSERT INTO {table_name} ({id_column}, partmaster_workspace_id, "
             f"partmaster_partnumber, partrevision_version, iteration) "
-            f"VALUES (:iid, :ws, :pn, :ver, 1)"
-        ), {"iid": item_id, "ws": ws, "pn": pn, "ver": ver})
+            f"VALUES (:iid, :ws, :pn, :ver, :iter)"
+        ), {"iid": item_id, "ws": ws, "pn": pn, "ver": ver, "iter": iteration})
     db.commit()
 
 
-def _set_affected_documents(db, ws, item_id, docs_data, table_name, id_column):
+def _set_affected_documents(db: Session, ws: str, item_id: int,
+                            docs_data: Sequence[dict], table_name: str, id_column: str,
+                            user_login: str | None = None, is_admin: bool = False):
+    # 对齐 Java ChangeManagerBean: checkChangeItemWriteAccess 检查 ACL 写权限
+    if user_login:
+        item_table = id_column.replace("_id", "")
+        acl_id = db.scalar(sql_text(
+            f"SELECT acl_id FROM {item_table} WHERE id = :iid"
+        ), {"iid": item_id})
+        has_access = check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws)
+        if not has_access:
+            raise AccessRightException("AccessRightException", user_login)
     db.execute(sql_text(f"DELETE FROM {table_name} WHERE {id_column}=:iid"),
                {"iid": item_id})
     for doc_data in docs_data:

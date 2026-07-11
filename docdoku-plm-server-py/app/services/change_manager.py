@@ -149,6 +149,12 @@ class ChangeService:
         acl_id = getattr(item, "acl_id", None)
         if not check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws):
             raise AccessRightException("AccessRightException", user_login)
+
+        # 对齐 Java updateChangeIssue/updateChangeRequest/updateChangeOrder:
+        # 仅应用白名单可变字段（description, priority, category, assignee, milestone_id），
+        # 对 name/id/author/initiator 等非白名单字段【静默忽略】——因 Java REST 层
+        # 接收完整 DTO 但只提取 description/priority/assignee/category，且前端 save 会带
+        # author/initiator，抛错会破坏前端编辑弹框。故此处不抛异常，只忽略。
         for key, val in body.items():
             if key == "assignee" and isinstance(val, dict):
                 assignee_login = val.get("login")
@@ -156,8 +162,23 @@ class ChangeService:
                 item.assignee_login = assignee_login
             elif key == "dueDate":
                 item.due_date = val
-            elif hasattr(item, key):
+            elif key == "milestone_id" and cls in (ChangeRequest, ChangeOrder):
+                # 对齐 Java: milestone 必须存在
+                ms = db.query(Milestone).filter(
+                    Milestone.id == val,
+                    Milestone.workspace_id == ws,
+                ).first()
+                if not ms:
+                    raise MilestoneNotFoundException(
+                        "MilestoneNotFoundException", str(val))
                 setattr(item, key, val)
+            elif key in ("description", "priority", "category"):
+                setattr(item, key, val)
+            # Milestone 额外支持 title（非 change item 的标准字段）
+            elif cls is Milestone and key in ("title",):
+                setattr(item, key, val)
+            # 其余字段（name/id/author/author_login/workspace_id/creation_date/
+            # acl/tags/initiator 及未知字段）静默忽略，对齐 Java DTO 提取行为
         db.commit()
         db.refresh(item)
         return item
