@@ -120,24 +120,26 @@ def _save_material_as_attached(db: Session, ws: str, pn: str, ver: str,
 
 
 def _to_cad_instance(pos: PositionDTO) -> CADInstance:
-    """将 PositionDTO 转为 CADInstance 模型（矩阵模式）。"""
+    """将 PositionDTO 转为 CADInstance 模型。有旋转矩阵用 MATRIX，否则 ANGLE(rx=ry=rz=0)。"""
     rm = pos.rotationmatrix
     t = pos.translation or [0, 0, 0]
-    if rm and len(rm) == 3 and len(rm[0]) == 3:
+    v00 = rm[0][0] if rm and len(rm) > 0 and len(rm[0]) > 0 else None
+    if rm and len(rm) == 3 and len(rm[0]) == 3 and v00 is not None:
         return CADInstance(
             rotation_type="MATRIX",
             tx=t[0] if len(t) > 0 else 0,
             ty=t[1] if len(t) > 1 else 0,
             tz=t[2] if len(t) > 2 else 0,
-            m00=rm[0][0], m01=rm[0][1], m02=rm[0][2],
-            m10=rm[1][0], m11=rm[1][1], m12=rm[1][2],
-            m20=rm[2][0], m21=rm[2][1], m22=rm[2][2],
+            m00=rm[0][0] or 0, m01=rm[0][1] or 0, m02=rm[0][2] or 0,
+            m10=rm[1][0] or 0, m11=rm[1][1] or 0, m12=rm[1][2] or 0,
+            m20=rm[2][0] or 0, m21=rm[2][1] or 0, m22=rm[2][2] or 0,
         )
     return CADInstance(
         rotation_type="ANGLE",
         tx=t[0] if len(t) > 0 else 0,
         ty=t[1] if len(t) > 1 else 0,
         tz=t[2] if len(t) > 2 else 0,
+        rx=0, ry=0, rz=0,
     )
 
 
