@@ -68,3 +68,15 @@
 | LOW | 1 | X-13 |
 
 整体：端点骨架完成，中间件接线正确，WebSocket 修复到位。但 share 模块 2 个 CRITICAL（SQL 列名错 + 公开共享权限逻辑错）导致端点不可用，conversion 回调鉴权有架构缺陷。修复 CRITICAL+HIGH 共 5 项后此域基本可用。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 6）
+
+- ✅ **X-5**（HIGH）delete tag：先清 5 张 *_tag 关联表 + tagusersubscription/tagusergroupsubscription（主 agent 补 2 张订阅表），再裸 SQL 删 tag 行（避免 ORM M:N secondary 重新 INSERT 导致 FK 冲突）。**主 agent 关键发现**：真正生效的 delete_tag 在 workspaces.py（重复路由遮蔽 tags.py），已移除重复路由使 tags.py 生效。
+- ✅ **X-7**（MED）notifications.py 新增 GET 列表端点。
+- ✅ **X-8**（MED）auth recover：`password` → `newPassword`。
+- ✅ **X-9**（MED）create_tags(/multiple) → 204，body 改 TagListDTO `{tags:[...]}`。
+- ✅ **X-12**（MED）notification_manager.list_for_user 补 `ackauthor_login == login` 过滤。
+- ✅ **X-6**（MED）vault.py 补 part_geometry_path（test_vault 现可收集通过）。**主 agent 回退** subagent 对 converter/binary_storage 的路径改动（其 `geometry/{quality}.glb` 与生产扁平 UUID 存储不符，会破坏 3D 预览）。
+- ⏳ 未纳入：X-4（回调 JWT，架构性）、X-10（SNS）、X-11（OAuth）、X-13（LOW）。

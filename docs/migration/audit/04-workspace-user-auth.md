@@ -85,3 +85,16 @@
 | 已排除 | 3 | UPDATE error×3 |
 
 整体：workspaces.py 级联删除已完整修复(~140表)，tag subscription 对齐良好。**3 个 CRITICAL 必修**：admin.py 删 ws 无级联(W-1)、admin.py 删账户不完整(W-2)、workspace_manager.py delete_workspace 单行 stub(W-3)。加 GCM 空桩(W-4)、add_user 参数错位(W-7)、enabled 策略(W-6)。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 6）
+
+- ✅ **W-4**（HIGH）put_gcm/delete_gcm 实现 gcmaccount 幂等写/删 + 204。
+- ✅ **W-5**（HIGH）remove_user_from_workspace 补 workspaceusermembership + workspaceusergroupmembership 清理，usergroupmapping 限本 ws 组。
+- ✅ **W-6**（HIGH）create_workspace 按 platformoptions.workspacecreationstrategy(1=ADMIN_VALIDATION) 设 enabled=false + is_valid_name 命名校验。
+- ✅ **W-7**（HIGH）add_user group 改 Query(None) 参数。
+- ✅ **W-9/W-11**（MED）delete_group 补 aclusergroupentry 检查 + 先删 workspaceusergroupmembership。
+- ✅ **W-14**（MED）删除 organization_manager 2 个死代码方法（写不存在的 account.organization_name 列）。
+- ✅ **主 agent**：移除 workspaces.py 与 tags.py 重复的 5 个 tag 路由（原遮蔽 tags.py 使 X-5/X-9 成死代码）。
+- ⏳ 未纳入：W-8/W-10/W-12/W-13（MED）、W-15/W-16/W-17（LOW）。

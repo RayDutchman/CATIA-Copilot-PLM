@@ -6,7 +6,62 @@
 
 ---
 
-## 2026-07-12 — fix: FIX-PLAN 批次 5（P1 语义 CRITICAL，workflow/task/change/query）
+## 2026-07-12 — fix: FIX-PLAN 批次 6（P2 HIGH/MEDIUM 机械类，状态码/权限/DTO/级联）
+
+> FIX-PLAN 批次 6。4 并行 subagent（L parts / M documents / N workspace / O crosscutting，文件不相交）。主 agent code review 发现并修复 2 处 subagent 隐患（X-6 破坏 3D 预览、workspaces.py 重复 tag 路由使 X-5/X-9 成死代码），并顺带清零 test_i18n_bypass 已知 fail。
+
+### fix(parts): retryConversion/newVersion/204/写权限/query-export（P-2~P-8, Q-3, Q-5）
+
+- **P-2** `part.py` retry_conversion：补 nativeCADFile 存在性检查（无→400），复用 `kafka_producer.send_conversion_order` 实发转换，返回 204（原仅标 pending 返回 200）。
+- **P-3** new_version：接受 body，透传 description（service 仅支持此字段；workflow/acl/roleMapping 需改 product_manager.py，留待后续），返回 204。
+- **P-4** publish/unpublish/acl：返回 204（原 200+body）。
+- **P-5** publish/unpublish：补 `check_write_access` 写权限检查。
+- **P-6/Q-5** `parts.py` post_queries（无 ws 前缀）：无法推断 workspace 时抛 `WrongInputException`→400（原 `{"id":0}` 假成功）。
+- **Q-3** query-export：GET 改 POST 接完整 QueryDTO body（复用 run_part_query + filter_pbs/merge_rows + build_query_result_rows）；新增 `GET /parts/queries/{queryId}/format/{export}` 导出已存查询。
+- **P-7** `part_mapper.py`：modificationnotification JOIN partmaster 补 `workspace_id` 条件，防跨 ws 同号误匹配。
+- **P-8** `parts.py` search ES fallback：`except Exception` 收窄为 `(ESConnectionError, ESConnectionTimeout)`。
+
+### fix(documents): 文件端点/字段透传/204/share/role_mapping/模板属性（D-2~D-8,D-11,D-13）
+
+- **D-2** 补文档迭代文件 rename(PUT)/remove(DELETE) 端点（document.py）+ 模板文件 rename/remove（document_template_files.py），full_name 对齐 Java `{ws}/documents/{id}/{ver}/{iter}/{file}`。
+- **D-4** create_document：透传 description/templateId/workflowModelId/acl/roleMapping。
+- **D-5** acl/publish/unpublish/subscribe/unsubscribe 7 端点返回 204。
+- **D-6** 新增 POST /share 创建分享链接（SharedEntity dtype=SharedDocument）。
+- **D-7** new_version：连线 user_role_mapping/group_role_mapping 传 service（原静默丢弃）。
+- **D-8** `document_templates.py` update：实现 attributeTemplates 持久化（DELETE+INSERT instanceattributetemplate + documentmastertemplate_attr）。
+- **D-11** publish/unpublish 补 `check_write_access`。**D-13** 删 folders.py 重复路由装饰器。
+
+### fix(workspace): GCM/级联/enabled 策略/group 参数/删组 ACL/死代码（W-4~W-7,W-9,W-11,W-14）
+
+- **W-4** `accounts.py` put_gcm/delete_gcm：实现 gcmaccount 幂等写/删，返回 204（原空桩）。
+- **W-5** `user_manager.py` remove_user_from_workspace：补 workspaceusermembership + workspaceusergroupmembership 清理，usergroupmapping 删除限定本 ws 的组。
+- **W-6** `workspaces.py` create_workspace：按 `platformoptions.workspacecreationstrategy`（1=ADMIN_VALIDATION）设 enabled=false，补 `is_valid_name` 命名校验。
+- **W-7** `workspace_memberships.py` add_user：group 改为 `Query(None)` 查询参数（对齐 Java `@QueryParam`）。
+- **W-9/W-11** delete_group：补 aclusergroupentry ACL 约束检查 + 先删 workspaceusergroupmembership。
+- **W-14** `organization_manager.py`：删除 2 个死代码方法（写不存在的 account.organization_name 列，零调用者）。
+
+### fix(crosscutting): tag 级联/204/notification/recover/vault（X-5~X-9,X-12）
+
+- **X-5** delete tag：先清 documentrevision_tag/partrevision_tag/changeissue_tag/changeorder_tag/changerequest_tag + tagusersubscription/tagusergroupsubscription（主 agent 补 2 张订阅表），再**用裸 SQL 删 tag 行**（避免 ORM M:N secondary `part_revision_tags` 在 flush 时重新 INSERT 关联行导致 FK 冲突）。
+- **X-7** `notifications.py`：新增 GET 通知列表端点（暴露 notification_manager.list_for_user）。
+- **X-8** `auth.py` execute_recover：`body.get("password")` → `newPassword`。
+- **X-9** create_tags（/tags/multiple）：返回 204，body 改 TagListDTO `{tags:[...]}` 对齐 Java。
+- **X-12** `notification_manager.py` list_for_user：补 `ackauthor_login == login` 过滤，消除跨用户隐私泄漏。
+- **X-6** `vault.py`：补 `part_geometry_path` 符号（使 test_vault 可收集）。**主 agent 回退** subagent 对 converter.py/binary_storage.py 的路径改动 —— 其改为 `geometry/{quality}.glb` 与生产实际的扁平 UUID 存储（`{ws}/parts/{pn}/{ver}/{iter}/{uuid}.glb`，已核 vault 磁盘 + binaryresource.fullname）不符，会破坏所有存量零件的 3D 预览。仅保留 vault 辅助函数满足测试收集。
+
+### 主 agent 关键修复（跨文件冲突/隐患）
+
+- **重复 tag 路由**：发现 `workspaces.py` 存在与 `tags.py` 完全重复的 tag 路由（GET/POST/POST-multiple/DELETE/GET documents），因 workspaces.router 先 include 而**遮蔽** tags.py → O 的 X-5/X-9 修复成死代码。移除 workspaces.py 5 个重复路由，tags.py 成为唯一 owner；修正 tags.py `/multiple` body 形状为 TagListDTO。
+- **i18n 清零**：修复 parts.py 新引入的 2 处 + part.py 原有 3 处（588/607/621）硬编码 detail，改用 WrongInputException/BaselineNotFoundException/PartMasterNotFoundException/PartIterationNotFoundException。`test_i18n_bypass` 由长期 known-fail 转为 **通过**。
+- **回归测试对齐**：更新 test_acl_endpoints（acl→204）、test_documents_api（publish/notification→204）、test_auth_complete（recover→newPassword）4 处至批 6 契约。
+
+### 验证
+
+- `pytest -q`（**移除 `--ignore=tests/test_vault.py`**）= **282 passed / 1 skipped / 0 failed**（test_vault 3 项现可收集通过，i18n known-fail 消除）。
+- 在线 smoke（FastAPI :8009，test1）：tag multiple→204 & delete 被引用 tag→204 且级联清零；GCM put/del→204+DB 核实；part publish/unpublish→204；doc publish/unpublish/subscribe→204；doc POST share→201+uuid；GET notifications→200；post_queries 无 ws→400；baseline filter 非整数→400。
+
+---
+
 
 > FIX-PLAN 批次 5。4 并行 subagent（H workflow / I task / J change / K query，文件不相交）。主 agent code review 发现并修复 2 处 subagent 隐患（Q-1 数据丢失、CH-2 破坏前端），并补齐 CH-5 接线与 WrongInputException 状态码。
 

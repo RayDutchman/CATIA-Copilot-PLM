@@ -81,3 +81,10 @@
 - ✅ **Q-11**（LOW）：`_pr_leaf` fallback 加 `_PR_VALID_COLS` 白名单，非白名单返回 `1=1` 防 500。
 - ⏳ **留批 6**：Q-3（query-export 改 POST+补导出已存查询，涉及 parts.py，避免与其它 parts.py 修改并行冲突）。
 - ⏳ **未纳入**：Q-4（导入桩）、Q-5/P-6（批 6）、Q-7~Q-10/Q-12（MEDIUM/LOW）。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 6）
+
+- ✅ **Q-3**（CRITICAL）`parts.py` query-export：GET 改 POST 接完整 QueryDTO body（run_part_query + filter_pbs/merge_rows + build_query_result_rows，支持 json/xls）；新增 `GET /parts/queries/{queryId}/format/{export}` 导出已保存查询（加载 query/query_selects/query_order_by/query_grouped_by/contexts/queryrule）。
+- ✅ **Q-5/P-6**（HIGH/MED）post_queries 无 ws → WrongInputException 400。

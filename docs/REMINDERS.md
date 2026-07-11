@@ -18,6 +18,7 @@
 > **✅ 批次 3 已完成（2026-07-12）**：P0-c 数据完整性（P-1 零件 checkout 深克隆 PartUsageLink+cadinstance + 连带修 __do_sync_components 孤儿清理；PR-MED-2 rotationType 推断；D-1 文档 checkout 深拷贝 links/attrs+flush；D-3 update_iteration instanceAttributes 替换+校验；D-12 target_workspace_id；D-10 list_folders 只返直接子）。pytest 无新增 fail，在线 smoke 全绿。
 > **✅ 批次 4 已完成（2026-07-12）**：P0-d 产品配置架构 + 迭代 undo 级联。brainstorming 定 ProductConfiguration 独立实体方案（方案A）；PR-CRIT-1 create_config 写正确 prdcfg_* 表+delete_config 对称清理；PR-CRIT-2 验证为误报；PR-CRIT-3 rebase 真实实现；PR-CRIT-5 update_instance 补 /{iteration} 就地改（Java 真值）；PR-CRIT-4 upload 建 BinaryResource；P-14/D-14 undo_checkout 级联清子表+抽 _delete_orphan_usage_links 共享方法。pytest 278 passed/1 known-fail，smoke 全绿（Assem1/D14TEST checkout→undocheckout HTTP 200 精确回基线零残留）。
 > **✅ 批次 5 已完成（2026-07-12）**：P1 语义 CRITICAL（workflow/task/change/query，4 并行 subagent）。WF-1~4（aborted-list 按持有者查+RETURNING id）、TASK-1/2（完成时更新 revision.status + 204）、CH-1/2/4/5（groupEntriesMap 填充 + 真实 iteration + update 白名单静默忽略 + ACL 写检查接线）、Q-1/2/11（他人签出隐藏末迭代 + 动态 author 列 + fallback 白名单）。**主 agent code review 修 2 处 subagent 隐患**：① Q-1 `iterations.pop()` 因 delete-orphan 级联会在 save=true commit 时真删末迭代 → 加 `db.expunge`（对齐 Java em.detach）；② CH-2 subagent 版对 name/author/initiator 抛 WrongInputException 会破坏前端 save（前端 PUT 带 author+initiator）→ 改为静默忽略（对拍 Java ChangeIssuesResource + change_issue_edition.js）。补 WrongInputException→400 映射。pytest 278 passed/1 known-fail，smoke 全绿。
+> **✅ 批次 6 已完成（2026-07-12）**：P2 HIGH/MEDIUM 机械类（parts/documents/workspace/crosscutting，4 并行 subagent）。P-2~P-8+Q-3/Q-5、D-2~D-8/D-11/D-13、W-4~W-7/W-9/W-11/W-14、X-5~X-9/X-12。**主 agent 修 2 处 subagent 隐患**：① X-6 subagent 把 converter/binary_storage 的 GLB 路径改成 `geometry/{quality}.glb`，与生产扁平 UUID 存储不符会破坏所有存量零件 3D 预览 → 回退这两文件，仅保留 vault.part_geometry_path 辅助函数（供 test_vault 收集）；② 发现 workspaces.py 有与 tags.py **完全重复的 tag 路由**（先 include 而遮蔽 tags.py，使 O 的 X-5/X-9 成死代码）→ 移除 workspaces.py 5 个重复路由，tags.py 成唯一 owner，delete tag 改裸 SQL 避免 ORM M:N 重新 INSERT 关联行。**顺带清零 test_i18n_bypass 长期 known-fail**（part.py 3 处 + parts.py 2 处硬编码 detail 改 i18n 异常类）。pytest（移除 test_vault ignore）= **282 passed / 1 skipped / 0 failed**，smoke 全绿。
 >
 > 以下为待修的最高优先级 P0：
 > - [x] **B-1/B-2/B-3 effectivity** → ✅ 批 1
@@ -28,7 +29,7 @@
 > - [x] **PR-CRIT-1/2/3/4/5 产品配置架构 + 实例 rebase/update/upload** → ✅ 批 4（PR-CRIT-2 验证为误报）
 > - [x] **P-14/D-14 undo_checkout 级联** → ✅ 批 4
 > - [x] **批 5 P1 语义 CRITICAL** → ✅ 批 5：WF-1（aborted-list 语义）、TASK-1（审批完成更新 lifecycle）、CH-1（ACL groupEntriesMap 空）、Q-1（他人签出隐藏末迭代）、Q-2（author.* 硬编码 name）全部修复；连带 WF-2/3/4、TASK-2、CH-2/4/5、Q-11。
-> - [ ] **功能桩/权限类（批 6 起）**：Q-3（query-export POST）、D-2/D-4（缺端点/字段）、状态码 204 批量、configSpec 分支（批 7）等。剩余 HIGH/MEDIUM/LOW。
+> - [ ] **功能桩/权限类（批 6 起）**：~~Q-3（query-export POST）、D-2/D-4（缺端点/字段）、状态码 204 批量~~ → ✅ 批 6 完成（parts/documents/workspace/crosscutting 全部 HIGH/MEDIUM 机械类）；**剩批 7**：configSpec 分支（PR-HIGH-1~5/PR-MED）、B-5/B-6/B-7/B-15/B-10 基线类型/快照校验。剩余 LOW。
 > - [x] **🆕 批 4 smoke 新发现（独立预存 bug）→ ✅ 已修复（2026-07-12）**：文档删除端点 `delete_revision` 的全局孤儿清理 SQL 未排除 `prdinstiteration_attribute`/`pathdataiteration_attribute`，存在产品实例属性时删文档触发 FK 500。已对拍 Payara（`DocumentIteration` orphanRemoval+CascadeType.ALL 精确级联）后改为**精确删除本 revision 自己的 instanceattribute/documentlink**（逐 id 无其它引用才删）+ 补 LOV 子值 `attribute_namevalue` 清理；documentlink 同款全局 bug 一并修。commit 8457305。
 >
 > HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
@@ -75,6 +76,7 @@
 - **back 容器 JVM 参数需两次重启** — Payara 特性
 - **~~Conversion service Decimation 持续失败~~** — ✅ 已修好（2026-07-11 以 LOD 三级生成替代减面）
 - **vault 目录属主问题** — back-py 容器以 root（uid 0）身份运行，往 `docdoku-plm-docker/data/vault` 写新文件/子目录时，落到 host 上属主为 `root:root`，host 用户 chenweibo（uid 1000）无写权限。真实上传/转换回调后新建的 `{ws}/parts/...` 目录会变回 root 属主。**测试已用 `temp_vault` fixture 隔离**（写临时目录，不碰真实 vault），故不影响 pytest；但若手动在 host 侧操作真实 vault 遇到 `Permission denied`，用 `docker exec docdoku-plm-docker-back-py-1 chown -R 1000:1000 /var/lib/docdoku/vault/{ws}` 修属主。
+- **ssl-proxy(:8000) 未代理无 ws 前缀路由（2026-07-12 发现）** — `POST /parts/queries`（无 `/workspaces/{ws}` 前缀版）在 FastAPI（直连 :8009）存在且正常返回 400，但经 nginx ssl-proxy(:8000) 返回 502「No backend configured for this path」。属**反向代理路由配置**问题（nginx location 未覆盖该路径），非应用 bug。前端实际使用带 ws 前缀的 `POST /workspaces/{ws}/parts/queries`（正常）。如需暴露无前缀版，需在 ssl-proxy 的 nginx conf 补 location。低优先级。
 
 ---
 

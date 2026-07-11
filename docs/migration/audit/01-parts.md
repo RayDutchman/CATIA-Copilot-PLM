@@ -84,3 +84,17 @@
 | LOW | 3 | P-10(排除)、P-11、P-12 |
 
 整体评分 6.5/10：核心 CRUD 可用，checkout→update_components 深拷贝(P-1)、retryConversion(P-2)、newVersion body(P-3) 有功能性缺口。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 6）
+
+- ✅ **P-2**（HIGH）retry_conversion：补 nativeCADFile 检查（无→400）+ `send_conversion_order` 实发 Kafka + 204。
+- ✅ **P-3**（HIGH）new_version：接 body、透传 description（service 仅支持此字段，workflow/acl/roleMapping 需改 product_manager.py 留后续）+ 204。
+- ✅ **P-4**（MED）publish/unpublish/acl → 204。
+- ✅ **P-5**（MED）publish/unpublish → 补 check_write_access。
+- ✅ **P-6/Q-5**（MED）post_queries 无 ws → WrongInputException 400。
+- ✅ **P-7**（MED）part_mapper modificationnotification JOIN 补 workspace_id。
+- ✅ **P-8**（MED）search ES fallback except 收窄为连接/超时异常。
+- ✅ **Q-3**（CRITICAL，见 07 报告）query-export 改 POST + 新增导出已存查询端点。
+- ✅ **顺带**：filter_by_baseline 3 处硬编码 detail 改 i18n 异常（WrongInput/BaselineNotFound/PartMaster/PartIterationNotFound），test_i18n_bypass 转绿。

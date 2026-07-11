@@ -115,3 +115,16 @@
 | LOW | 1 | D-13 |
 
 整体：覆盖约 35/39 端点(90%)，核心 CRUD/checkout/release/newVersion 基本对齐。风险：checkout 深拷贝遗漏(D-1)、update_iteration 缺 instanceAttributes(D-3)、4 文件端点缺失(D-2)。优先 D-1/D-2/D-3。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 6）
+
+- ✅ **D-2**（CRITICAL）补文档迭代文件 rename(PUT)/remove(DELETE) + 模板文件 rename/remove 共 4 端点，full_name 对齐 Java。
+- ✅ **D-4**（CRITICAL）create_document 透传 description/templateId/workflowModelId/acl/roleMapping。
+- ✅ **D-5**（HIGH）acl/publish/unpublish/subscribe/unsubscribe 7 端点 → 204。
+- ✅ **D-6**（HIGH）新增 POST /share（SharedDocument）。
+- ✅ **D-7**（HIGH）new_version 连线 user_role_mapping/group_role_mapping。
+- ✅ **D-8**（HIGH）模板 update 实现 attributeTemplates 持久化（instanceattributetemplate + documentmastertemplate_attr）。
+- ✅ **D-11**（MED）publish/unpublish 补 check_write_access。
+- ✅ **D-13**（LOW）删 folders.py 重复路由装饰器。
