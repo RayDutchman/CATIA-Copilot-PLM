@@ -654,7 +654,47 @@ class ProductStructureService:
             ProductBaseline.id == bl_id).first()
         if bl is None:
             raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
-        db.delete(bl); db.commit()
+        ref = db.execute(
+            text("SELECT 1 FROM productinstanceiteration WHERE productbaseline_id = :bid"),
+            {"bid": bl_id},
+        ).first()
+        if ref is not None:
+            raise EntityConstraintException("EntityConstraintException16")
+        pc_id = bl.partcollection_id
+        dc_id = bl.documentcollection_id
+        bid = bl.id
+        db.execute(
+            text("DELETE FROM baselinedpart WHERE partcollection_id = :pc_id"),
+            {"pc_id": pc_id},
+        )
+        db.execute(
+            text("DELETE FROM baselineddocument WHERE documentcollection_id = :dc_id"),
+            {"dc_id": dc_id},
+        )
+        db.execute(
+            text("DELETE FROM productbaseline_substitutelink WHERE productbaseline_id = :bid"),
+            {"bid": bid},
+        )
+        db.execute(
+            text("DELETE FROM productbaseline_optionallink WHERE productbaseline_id = :bid"),
+            {"bid": bid},
+        )
+        db.execute(
+            text("DELETE FROM productbaseline_p2plink WHERE productbaseline_id = :bid"),
+            {"bid": bid},
+        )
+        if pc_id is not None:
+            db.execute(
+                text("DELETE FROM partcollection WHERE id = :pc_id"),
+                {"pc_id": pc_id},
+            )
+        if dc_id is not None:
+            db.execute(
+                text("DELETE FROM documentcollection WHERE id = :dc_id"),
+                {"dc_id": dc_id},
+            )
+        db.delete(bl)
+        db.commit()
 
     # ── Configuration ──
 
