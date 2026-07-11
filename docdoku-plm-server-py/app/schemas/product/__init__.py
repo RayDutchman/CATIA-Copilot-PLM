@@ -24,7 +24,7 @@ class ProductBaselineDetailDTO(BaseModel):
     model_config = ConfigDict(extra='forbid')
     id: Optional[int] = None
     name: Optional[str] = None
-    type: Optional[int] = None
+    type: Optional[str] = None
     configurationItemId: Optional[str] = None
     creationDate: Optional[str] = None
     description: Optional[str] = None

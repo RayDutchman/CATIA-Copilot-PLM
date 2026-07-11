@@ -10,7 +10,7 @@ class DocumentBaselineDTO(BaseModel):
     id: Optional[int] = None
     name: Optional[str] = None
     description: Optional[str] = None
-    type: Optional[int] = None
+    type: Optional[str] = None
     creationDate: Optional[str] = None
     author: Optional[UserDTO] = None
     baselinedDocuments: List[BaselinedDocumentDTO] = []

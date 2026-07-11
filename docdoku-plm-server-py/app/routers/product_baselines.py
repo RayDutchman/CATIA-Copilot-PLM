@@ -17,6 +17,16 @@ svc = ProductStructureService()
 
 _TYPE_MAP = {"LATEST": 0, "RELEASED": 1, "EFFECTIVE_DATE": 2,
              "EFFECTIVE_SERIAL_NUMBER": 3, "EFFECTIVE_LOT_ID": 4}
+# 输出端：int ordinal → Payara ProductBaselineType 枚举名（对齐 JSON-B enum 序列化，前端按字符串判断）
+_TYPE_NAME = {0: "LATEST", 1: "RELEASED", 2: "EFFECTIVE_DATE",
+              3: "EFFECTIVE_SERIAL_NUMBER", 4: "EFFECTIVE_LOT_ID"}
+
+
+def _type_name(t):
+    """基线 type 整数 → Payara 枚举名字符串。"""
+    if t is None:
+        return None
+    return _TYPE_NAME.get(t, "LATEST")
 
 
 def _parse_iso_date(val):
@@ -52,7 +62,7 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
     return {
         "id": b.id,
         "name": b.name,
-        "type": b.type,
+        "type": _type_name(b.type),
         "configurationItemId": b.configurationitem_id,
         "author": _get_user(db, b.author_login or "", ws),
         "creationDate": b.creation_date.isoformat() + "Z" if b.creation_date else None,
@@ -75,7 +85,7 @@ def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
     return {
         "id": bl.id,
         "name": bl.name,
-        "type": bl.type,
+        "type": _type_name(bl.type),
         "configurationItemId": bl.configurationitem_id,
         "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
         "description": bl.description or "",
@@ -408,7 +418,7 @@ def get_baseline_by_id(ws: str, bl_id: int,
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
     if light:
         return {
-            "id": bl.id, "name": bl.name, "type": bl.type,
+            "id": bl.id, "name": bl.name, "type": _type_name(bl.type),
             "configurationItemId": bl.configurationitem_id,
             "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
             "description": bl.description or "",
