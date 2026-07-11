@@ -684,13 +684,24 @@ class ProductService:
             db.flush()
             # 处理 CAD 实例
             for cad_dto in (comp_dto.cadInstances or []):
+                # 对齐 Java: matrix 数组 → 独立 m00~m22 字段
+                mat = cad_dto.matrix or []
+                m00 = cad_dto.m00 if cad_dto.m00 is not None else (mat[0] if len(mat) > 0 else None)
+                m01 = cad_dto.m01 if cad_dto.m01 is not None else (mat[1] if len(mat) > 1 else None)
+                m02 = cad_dto.m02 if cad_dto.m02 is not None else (mat[2] if len(mat) > 2 else None)
+                m10 = cad_dto.m10 if cad_dto.m10 is not None else (mat[3] if len(mat) > 3 else None)
+                m11 = cad_dto.m11 if cad_dto.m11 is not None else (mat[4] if len(mat) > 4 else None)
+                m12 = cad_dto.m12 if cad_dto.m12 is not None else (mat[5] if len(mat) > 5 else None)
+                m20 = cad_dto.m20 if cad_dto.m20 is not None else (mat[6] if len(mat) > 6 else None)
+                m21 = cad_dto.m21 if cad_dto.m21 is not None else (mat[7] if len(mat) > 7 else None)
+                m22 = cad_dto.m22 if cad_dto.m22 is not None else (mat[8] if len(mat) > 8 else None)
                 cad = CADInstance(
                     rotation_type=cad_dto.rotationType,
                     rx=cad_dto.rx, ry=cad_dto.ry, rz=cad_dto.rz,
                     tx=cad_dto.tx, ty=cad_dto.ty, tz=cad_dto.tz,
-                    m00=cad_dto.m00, m01=cad_dto.m01, m02=cad_dto.m02,
-                    m10=cad_dto.m10, m11=cad_dto.m11, m12=cad_dto.m12,
-                    m20=cad_dto.m20, m21=cad_dto.m21, m22=cad_dto.m22,
+                    m00=m00, m01=m01, m02=m02,
+                    m10=m10, m11=m11, m12=m12,
+                    m20=m20, m21=m21, m22=m22,
                 )
                 db.add(cad)
                 db.flush()
