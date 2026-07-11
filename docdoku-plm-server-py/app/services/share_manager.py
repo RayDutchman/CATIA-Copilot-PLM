@@ -12,7 +12,7 @@ class ShareService:
     def find_shared_entity(self, db: Session, uuid: str) -> dict:
         """通过 UUID 查找共享实体。"""
         row = db.execute(text(
-            "SELECT se.* FROM sharedentity se WHERE se.password = :uuid"
+            "SELECT se.* FROM sharedentity se WHERE se.uuid = :uuid"
         ), {"uuid": uuid}).first()
         if not row:
             from app.core.exceptions import EntityNotFoundException
@@ -22,7 +22,7 @@ class ShareService:
     def delete_shared_entity_if_expired(self, db: Session, uuid: str) -> bool:
         """删除已过期的共享链接。"""
         row = db.execute(text(
-            "SELECT expire FROM sharedentity WHERE password = :uuid"
+            "SELECT expiredate FROM sharedentity WHERE uuid = :uuid"
         ), {"uuid": uuid}).first()
         if not row:
             return False
@@ -32,7 +32,7 @@ class ShareService:
             if expire > datetime.utcnow():
                 return False  # 未过期
         db.execute(text(
-            "DELETE FROM sharedentity WHERE password = :uuid"
+            "DELETE FROM sharedentity WHERE uuid = :uuid"
         ), {"uuid": uuid})
         db.commit()
         return True

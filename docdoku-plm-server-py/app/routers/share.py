@@ -77,7 +77,7 @@ def _check_workspace_member(db: Session, login: str, ws: str):
 
 def _get_shared_entity(uuid: str, password: str | None, db: Session):
     entity = db.execute(text(
-        "SELECT uuid, dtype, entity_workspace_id, password, expire_date, "
+        "SELECT uuid, dtype, entity_workspace_id, password, expiredate, "
         "partmaster_partnumber, partrevision_version, "
         "documentmaster_id, documentrevision_version "
         "FROM sharedentity WHERE uuid = :uuid"
@@ -94,9 +94,9 @@ def _get_shared_entity(uuid: str, password: str | None, db: Session):
                 headers={"Reason-Phrase": "password-protected"},
             )
 
-    if entity.expire_date is not None:
+    if entity.expiredate is not None:
         now = datetime.now(timezone.utc)
-        expire = entity.expire_date.replace(tzinfo=timezone.utc) if entity.expire_date.tzinfo is None else entity.expire_date
+        expire = entity.expiredate.replace(tzinfo=timezone.utc) if entity.expiredate.tzinfo is None else entity.expiredate
         if expire < now:
             db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
             db.commit()
@@ -203,9 +203,6 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
     public_shared=True 时可公开访问；
     public_shared=False 时若已认证可正常访问，否则返回 403。
     """
-    if login is not None:
-        _check_workspace_member(db, login, ws)
-
     doc = db.query(DocumentRevision).filter(
         DocumentRevision.workspace_id == ws,
         DocumentRevision.documentmaster_id == doc_id,
@@ -215,8 +212,10 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
     if not doc:
         raise EntityNotFoundException("DocumentRevisionNotFoundException", doc_id, ver)
 
-    if not doc.public_shared and login is None:
-        raise NotAllowedException("NotAllowedException5")
+    if not doc.public_shared:
+        if login is None:
+            raise NotAllowedException("NotAllowedException5")
+        _check_workspace_member(db, login, ws)
 
     response.headers["entity-token"] = create_entity_token(ws, login or "")
     return {
@@ -242,9 +241,6 @@ def get_public_shared_part(ws: str, pn: str, ver: str,
     public_shared=True 时可公开访问；
     public_shared=False 时若已认证可正常访问，否则返回 403。
     """
-    if login is not None:
-        _check_workspace_member(db, login, ws)
-
     part = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
         PartRevision.partmaster_partnumber == pn,
@@ -254,8 +250,10 @@ def get_public_shared_part(ws: str, pn: str, ver: str,
     if not part:
         raise PartRevisionNotFoundException("PartRevisionNotFoundException", pn, ver)
 
-    if not part.public_shared and login is None:
-        raise NotAllowedException("NotAllowedException5")
+    if not part.public_shared:
+        if login is None:
+            raise NotAllowedException("NotAllowedException5")
+        _check_workspace_member(db, login, ws)
 
     response.headers["entity-token"] = create_entity_token(ws, login or "")
     return {
