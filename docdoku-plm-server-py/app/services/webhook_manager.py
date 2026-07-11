@@ -58,26 +58,50 @@ class WebhookService:
     def configure_simple_webhook(self, db: Session, ws: str,
                                   webhook_id: int, method: str, uri: str,
                                   authorization: str = "") -> dict:
-        db.execute(text(
-            "INSERT INTO simplewebhookapp (webhook_id, method, uri, authorization) "
-            "VALUES (:wid, :m, :u, :a) "
-            "ON CONFLICT (webhook_id) DO UPDATE SET method = :m2, uri = :u2, authorization = :a2"
-        ), {"wid": webhook_id, "m": method, "u": uri, "a": authorization,
-            "m2": method, "u2": uri, "a2": authorization})
+        # webhookapp 单表继承，dtype 判别符 = 'SimpleWebhookApp'；webhook.webhookapp_id 关联
+        wh = db.execute(text(
+            "SELECT webhookapp_id FROM webhook WHERE id = :id AND workspace_id = :ws"
+        ), {"id": webhook_id, "ws": ws}).first()
+        app_id = wh[0] if wh else None
+        if app_id:
+            db.execute(text(
+                "UPDATE webhookapp SET dtype = 'SimpleWebhookApp', method = :m, "
+                "uri = :u, auth = :a WHERE id = :aid"
+            ), {"m": method, "u": uri, "a": authorization, "aid": app_id})
+        else:
+            result = db.execute(text(
+                "INSERT INTO webhookapp (dtype, method, uri, auth) "
+                "VALUES ('SimpleWebhookApp', :m, :u, :a) RETURNING id"
+            ), {"m": method, "u": uri, "a": authorization})
+            app_id = result.fetchone()[0]
+            db.execute(text(
+                "UPDATE webhook SET webhookapp_id = :aid WHERE id = :id AND workspace_id = :ws"
+            ), {"aid": app_id, "id": webhook_id, "ws": ws})
         db.commit()
         return {"type": "simple", "webhookId": webhook_id, "method": method, "uri": uri}
 
     def configure_sns_webhook(self, db: Session, ws: str,
                                webhook_id: int, topic_arn: str, region: str,
                                aws_account: str, aws_secret: str) -> dict:
-        db.execute(text(
-            "INSERT INTO snswebhookapp (webhook_id, topicarn, region, awsaccount, awssecret) "
-            "VALUES (:wid, :ta, :r, :aa, :as) "
-            "ON CONFLICT (webhook_id) DO UPDATE SET "
-            "topicarn = :ta2, region = :r2, awsaccount = :aa2, awssecret = :as2"
-        ), {"wid": webhook_id, "ta": topic_arn, "r": region,
-            "aa": aws_account, "as": aws_secret,
-            "ta2": topic_arn, "r2": region, "aa2": aws_account, "as2": aws_secret})
+        wh = db.execute(text(
+            "SELECT webhookapp_id FROM webhook WHERE id = :id AND workspace_id = :ws"
+        ), {"id": webhook_id, "ws": ws}).first()
+        app_id = wh[0] if wh else None
+        if app_id:
+            db.execute(text(
+                "UPDATE webhookapp SET dtype = 'SNSWebhookApp', topicarn = :ta, region = :r, "
+                "awsaccount = :aa, awssecret = :asec WHERE id = :aid"
+            ), {"ta": topic_arn, "r": region, "aa": aws_account,
+                "asec": aws_secret, "aid": app_id})
+        else:
+            result = db.execute(text(
+                "INSERT INTO webhookapp (dtype, topicarn, region, awsaccount, awssecret) "
+                "VALUES ('SNSWebhookApp', :ta, :r, :aa, :asec) RETURNING id"
+            ), {"ta": topic_arn, "r": region, "aa": aws_account, "asec": aws_secret})
+            app_id = result.fetchone()[0]
+            db.execute(text(
+                "UPDATE webhook SET webhookapp_id = :aid WHERE id = :id AND workspace_id = :ws"
+            ), {"aid": app_id, "id": webhook_id, "ws": ws})
         db.commit()
         return {"type": "sns", "webhookId": webhook_id, "topicArn": topic_arn, "region": region}
 

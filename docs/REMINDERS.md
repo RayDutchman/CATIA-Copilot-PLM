@@ -54,6 +54,14 @@
 
 ## 已解决（近期）
 
+- [x] **2026-07-11 SQL 列名/表名批量修复 + DTO 缺字段修复（back-py）**:
+  - 修复 `validate_sql_columns.py` 报的 34 处 raw SQL 错误（14 文件）：attributes/document/product_instances/products/tasks/cascade_action/instance_body_writer/notification/subscription/part_notification/organization/product_manager/part_workflow/webhook；均先经 information_schema 核实真实列名/表名
+  - 修复 3 个 CRITICAL DTO 缺字段（ConversionResultDTO.partIterationKey / UserDTO.membership / WorkspaceWorkflowCreationDTO.workflow），消除 422
+  - docker cp 部署 back-py + 重启，启动无导入错误
+  - ⚠️ 遗留：validate_sql_columns.py 3 处 `UPDATE SET` 误报（正则误匹配 `ON CONFLICT DO UPDATE SET`）+ 14 处自增 id NOT NULL 误报，建议后续改进脚本正则
+  - ⚠️ validate_dto_fields.py 2 处 CRITICAL（PathDataIterationCreationDTO.partLinksList / ProductBaselineCreationDTO.author）为脚本把请求 CreationDTO 误映射到响应 DTO，缺字段属响应侧，非真实 422，未处理
+
+
 - [x] **2026-07-10 工作区删除 500 + WebSocket 403 修复**（分支 feat/py-query-execution-engine）:
   - 删除工作区：手写级联补全（对齐 WorkspaceDAO.removeWorkspace，replica 模式关 FK 触发器），保留 account/credential/usergroupmapping，仅删 userdata；对 Workspace_2 真实数据非破坏性验证残留引用全 0
   - WebSocket：路由路径 `/docdoku-plm-server-rest/ws` + 补 `WebSocket` 注解（原 FastAPI 误判 websocket 为必填 query 参数），握手 101 + AUTH_OK

@@ -28,15 +28,17 @@ class PartWorkflowService:
 
     def get_aborted_workflows(self, db: Session, ws: str, part_number: str,
                                version: str) -> list:
-        """获取零件修订版的所有已中止工作流。"""
+        """获取零件修订版的所有已中止工作流（part_aborted_workflow 关联表）。"""
         from sqlalchemy import text
         rows = db.execute(text(
-            "SELECT w.* FROM workflow w "
-            "JOIN partrevision aborted_wf ON w.id = ANY(aborted_wf.abortedworkflows) "
-            "Actually let me check the schema..."
-        )).fetchall()
-        # 简化：从 abortedworkflows 数组字段查询
-        return []
+            "SELECT w.id, w.finallifecyclestate, w.aborteddate FROM workflow w "
+            "JOIN part_aborted_workflow paw ON paw.workflow_id = w.id "
+            "WHERE paw.partmaster_workspace_id = :ws "
+            "AND paw.partmaster_partnumber = :pn "
+            "AND paw.partrevision_version = :ver"
+        ), {"ws": ws, "pn": part_number, "ver": version}).fetchall()
+        return [{"id": r[0], "finalLifeCycleState": r[1],
+                 "abortedDate": str(r[2]) if r[2] else None} for r in rows]
 
     def approve_task_on_part(self, db: Session, ws: str, task_key: dict,
                               part_number: str, version: str,

@@ -12,20 +12,34 @@ from app.models.auth import Account
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
+# InstanceAttribute 单表继承的 dtype 判别符 → InstanceAttributeType 枚举
+# 对齐 Java InstanceAttributeDozerConverter 的 instanceof 映射
+_DTYPE_TO_ATTR_TYPE = {
+    "InstanceBooleanAttribute": "BOOLEAN",
+    "InstanceTextAttribute": "TEXT",
+    "InstanceNumberAttribute": "NUMBER",
+    "InstanceDateAttribute": "DATE",
+    "InstanceURLAttribute": "URL",
+    "InstanceListOfValuesAttribute": "LOV",
+    "InstanceLongTextAttribute": "LONG_TEXT",
+    "InstancePartNumberAttribute": "PART_NUMBER",
+}
+
 
 def _filter_attributes(rows) -> list[dict]:
-    """按 (name, attributeType) 去重，剥离 value/mandatory/locked。"""
+    """按 (attributeType, name) 去重，只返回属性定义（对齐 Java filterAttributes 清空 value/mandatory/locked/lovName）。"""
     seen: set[str] = set()
     result = []
     for row in rows:
-        key = f"{row.name}|{row.attributetype}"
+        attribute_type = _DTYPE_TO_ATTR_TYPE.get(row.dtype)
+        key = f"{attribute_type}|{row.name}"
         if key in seen:
             continue
         seen.add(key)
         result.append({
             "name": row.name,
-            "attributeType": row.attributetype,
-            "lovName": row.lov_name,
+            "attributeType": attribute_type,
+            "lovName": None,
         })
     return result
 
@@ -40,9 +54,9 @@ def get_part_iterations_attributes(
     """获取工作空间中所有零件迭代版本上的实例属性（去重后只返回属性定义）。"""
     rows = db.execute(text(
         """
-        SELECT DISTINCT ia.name, ia.dtype, ia.attributetype, ia.lov_name
+        SELECT DISTINCT ia.name, ia.dtype
         FROM instanceattribute ia
-        JOIN partiteration_attr pia ON pia.instanceattribute_id = ia.id
+        JOIN partiteration_attribute pia ON pia.instanceattribute_id = ia.id
         JOIN partiteration pi ON (
             pi.workspace_id = pia.workspace_id
             AND pi.partmaster_partnumber = pia.partmaster_partnumber
@@ -66,17 +80,11 @@ def get_path_data_attributes(
     """获取工作空间中所有路径数据（PathData）上的实例属性（去重后只返回属性定义）。"""
     rows = db.execute(text(
         """
-        SELECT DISTINCT ia.name, ia.dtype, ia.attributetype, ia.lov_name
+        SELECT DISTINCT ia.name, ia.dtype
         FROM instanceattribute ia
-        JOIN pathdataiteration_attr pdia ON pdia.instanceattribute_id = ia.id
-        JOIN pathdataiteration pdi ON (
-            pdi.workspace_id = pdia.workspace_id
-            AND pdi.configurationitem_id = pdia.configurationitem_id
-            AND pdi.serialnumber = pdia.serialnumber
-            AND pdi.pathdatamaster_id = pdia.pathdatamaster_id
-            AND pdi.iteration = pdia.iteration
-        )
-        WHERE pdi.workspace_id = :ws
+        JOIN pathdataiteration_attribute pdia ON pdia.instanceattribute_id = ia.id
+        JOIN prdinstiteration_pathdatamstr pipm ON pipm.pathdatamaster_id = pdia.pathdatamaster_id
+        WHERE pipm.workspace_id = :ws
         ORDER BY ia.name
         """
     ), {"ws": workspace_id}).fetchall()

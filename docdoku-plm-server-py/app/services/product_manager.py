@@ -277,24 +277,21 @@ class ProductService:
         # 创建工作流：用 instantiate_workflow 创建完整 Workflow/Activity/Task 对象图
         if body.workflow_model_id:
             from app.services.workflow_manager import workflow_service
+            # 将 role_mapping 列表转为 instantiate_workflow 期望的 dict 格式
+            # （instantiate_workflow 内部写 task_user / task_usergroup，无 workflow_usergroup 表）
+            role_map = {}
+            for rm in (body.role_mapping or []):
+                role_name = rm.get("roleName", "")
+                if not role_name:
+                    continue
+                role_map[role_name] = {
+                    "users": rm.get("userLogins", []) or [],
+                    "groups": rm.get("groupIds", []) or [],
+                }
             result = workflow_service.instantiate_workflow(
-                db, workspace_id, body.workflow_model_id, role_mapping={})
+                db, workspace_id, body.workflow_model_id, role_mapping=role_map)
             wf_id = result["workflowId"]
             revision.workflow_id = wf_id
-            # 写入 role mapping（workflow_usergroup 记录）
-            if body.role_mapping:
-                for rm in body.role_mapping:
-                    role_name = rm.get("roleName", "")
-                    for user_login in rm.get("userLogins", []) or []:
-                        db.execute(sql_text(
-                            "INSERT INTO workflow_usergroup (workflow_id, rolename, userlogin) "
-                            "VALUES (:wf, :role, :login)"
-                        ), {"wf": wf_id, "role": role_name, "login": user_login})
-                    for group_id in rm.get("groupIds", []) or []:
-                        db.execute(sql_text(
-                            "INSERT INTO workflow_usergroup (workflow_id, rolename, groupid) "
-                            "VALUES (:wf, :role, :gid)"
-                        ), {"wf": wf_id, "role": role_name, "gid": group_id})
         # 创建首个 PartIteration（iteration=1）
         iteration = PartIteration(
             workspace_id=workspace_id,

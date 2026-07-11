@@ -6,7 +6,41 @@
 
 ---
 
-## 2026-07-11 — Conversion Service Python 化收尾 + LOD 生成
+## 2026-07-11 — SQL 列名/表名批量修复 + DTO 缺字段修复（back-py）
+
+> 由 `scripts/validate_sql_columns.py` + `scripts/validate_dto_fields.py` 扫描驱动。全部 docker cp 部署 back-py 并重启，启动无导入错误。
+
+### fix(py-sql): 34 处 raw SQL 列名/表名错误（14 文件）
+
+原始扫描报告的 31 处（12 文件）+ DELETE/UPDATE 存在性检查新发现的 3 处真实错误全部修复。所有列名/表名均先经 `information_schema` 核实。
+
+- `routers/attributes.py`：`instanceattribute` 无 `attributetype`/`lov_name`（那是 `instanceattributetemplate` 的列）→ 改用 `dtype` 判别符映射到 `InstanceAttributeType`（对齐 Java `InstanceAttributeDozerConverter` 的 instanceof），`lovName` 按 Java `filterAttributes` 置空；连接表更正 `partiteration_attr`→`partiteration_attribute`、`pathdataiteration_attr`→`pathdataiteration_attribute`，path-data 经 `prdinstiteration_pathdatamstr` 过滤工作区
+- `routers/document.py`：inverse-product-instances-link 重写——`prdinstiteration` 表不存在→`productinstanceiteration`，用 `prdinstiteration_documentlink` 真实列（prdinstancemaster_serialnumber/configurationitem_id/iteration）；inverse-path-data-link 用 `pathdataiteration_documentlink`+`pathdatamaster`（`pathdata`/`pathdataiteration.id` 均不存在）
+- `routers/product_instances.py`：`productinstanceiteration_documentlink` 表不存在→`prdinstiteration_documentlink`（DELETE/INSERT/SELECT 三处）；INSERT 改为先建 `documentlink` 中间记录再关联（对齐 pathdata/partiteration 模式）
+- `routers/products.py`：`prdinstiteration_pathdatamstr.iteration`→`prdinstanceiteration_iteration`
+- `routers/tasks.py`：`checkout_user_login`→`checkoutuser_login`（documentrevision + partrevision）
+- `services/cascade_action_manager.py`：`partrevision.creation_date`→`creationdate`
+- `services/file_export/instance_body_writer_tools.py`：`partusagelink` 无 `component_partversion`（usage link 关联的是 partmaster 非版本）→ 移除该过滤条件
+- `services/notification_manager.py`：`tagsubscription` 表不存在→`tagusersubscription`；`event` 字符串模型→真实 `oniterationchange`/`onstatechange` 布尔列 + `tag_workspace_id`
+- `services/listeners/subscription_manager.py`：`tagsubscription`→`tagusersubscription`+`tagusergroupsubscription`（删标签）；`subscription`→`statechangesubscription`+`iterationchangesubscription`（删用户，对齐 Java `removeAllSubscriptions`）；`tagusersubscription.user_login`→`subscriber_login`；`tagusergroupsubscription.group_id`→`subscriber_id`
+- `services/listeners/part_notification_manager.py`：`notification` 表不存在→`modificationnotification`，`target_*`→`impacted_*`（对齐 Java `ModificationNotification.removeAllOnPartRevision/Iteration`）
+- `services/organization_manager.py`：`account.organization_name` 不存在→经 `organization_account` 连接表关联
+- `services/product_manager.py`：`workflow_usergroup` 表不存在→删除冗余 INSERT，改为把 role_mapping 传入 `instantiate_workflow`（内部正确写 `task_user`/`task_usergroup`）
+- `services/products/part_workflow_manager.py`：`get_aborted_workflows` 原 SQL 含英文占位文本恒返回空→用 `part_aborted_workflow` 关联表正确查询
+- `services/webhook_manager.py`：`simplewebhookapp`/`snswebhookapp` 表不存在→单表 `webhookapp`（`dtype` 判别 SimpleWebhookApp/SNSWebhookApp）+ `webhook.webhookapp_id` FK 关联
+
+> 剩余 3 处 `❌ UPDATE SET → 表不存在` 为验证脚本误报（正则把 `ON CONFLICT DO UPDATE SET` 的 SET 当表名），14 处 `⚠️ 缺 NOT NULL 列 id` 为自增主键误报，均非真实 bug。
+
+### fix(py-dto): 3 个 CRITICAL DTO 缺字段（`extra='forbid'` → 422）
+
+- `ConversionResultDTO`（conversion_result.py）：补 `partIterationKey`（Java `PartIterationKey`）
+- `UserDTO`（part/user.py）：补 `membership`（Java `WorkspaceMembership`）
+- `WorkspaceWorkflowCreationDTO`：补 `workflow`
+
+> 均以 `Optional[dict] = None` 宽松接收。验证脚本另报 2 处（`PathDataIterationCreationDTO.partLinksList`、`ProductBaselineCreationDTO.author`）经核实为脚本把 Python **请求 CreationDTO** 误映射到 Java **响应 DTO** 所致（缺字段属于响应侧），非真实 422，未处理。
+
+---
+
 
 - refactor(conversion): conversion-service-py 接管构建，docker-compose.yml 改为本地 build
 - feat(conversion): LOD 生成——deflection 三级精度（0.05/0.30/1.00），失败降级为单 LOD

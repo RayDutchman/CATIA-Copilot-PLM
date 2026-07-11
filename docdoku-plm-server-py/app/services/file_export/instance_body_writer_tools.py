@@ -167,11 +167,9 @@ def _write_assembly_leaf(db: Session, component: dict, instance_ids: list[int],
                 "JOIN usage_link_cadinstances ulc ON ulc.cadinstance_id = ci.id "
                 "JOIN partusagelink pul ON pul.id = ulc.usage_link_id "
                 "WHERE pul.component_workspace_id = :ws "
-                "AND pul.component_partnumber = :pn "
-                "AND pul.component_partversion = :ver"
+                "AND pul.component_partnumber = :pn"
             ),
-            {"ws": component.get("workspace_id", ""), "pn": pn,
-             "ver": component.get("version", "")},
+            {"ws": component.get("workspace_id", ""), "pn": pn},
         ).fetchall()
         cad_instances = [dict(r._mapping) for r in cad_rows]
 

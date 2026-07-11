@@ -38,7 +38,7 @@ class CascadeActionService:
                     "  AND piul.partmaster_partnumber = :pn "
                     "  AND piul.partrevision_version = :pv "
                     "  AND piul.iteration = :it "
-                    "ORDER BY pr2.creation_date DESC"
+                    "ORDER BY pr2.creationdate DESC"
                 ), {"ws": c_ws, "pn": c_pn, "pv": c_pv, "it": last_it.iteration}).fetchall()
                 for row in rows:
                     key = f"{row[0]}-{row[2]}"

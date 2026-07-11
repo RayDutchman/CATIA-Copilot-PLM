@@ -12,3 +12,4 @@ class ConversionResultDTO(BaseModel):
     errorOutput: Optional[str] = None
     componentPositionMap: Optional[dict[str, list[PositionDTO]]] = None
     materials: Optional[list[str]] = None
+    partIterationKey: Optional[dict] = None

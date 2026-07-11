@@ -11,3 +11,4 @@ class UserDTO(BaseModel):
     email: Optional[str] = None
     language: Optional[str] = None
     workspaceId: Optional[str] = None
+    membership: Optional[dict] = None

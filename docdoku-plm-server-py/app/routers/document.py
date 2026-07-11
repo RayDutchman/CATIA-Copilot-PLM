@@ -431,44 +431,29 @@ def inverse_product_link(ws: str, doc_key: str, iteration: int,
                          current_user: Account = Depends(get_current_user)):
     doc_id, ver = _split_doc_key(doc_key)
     rows = db.execute(sql_text(
-        "SELECT DISTINCT pii.workspace_id, pii.serialnumber, "
-        "pii.instanceiteration, pii.ci_updatebranchid "
+        "SELECT DISTINCT pidl.workspace_id, pidl.prdinstancemaster_serialnumber, "
+        "pidl.configurationitem_id, pidl.iteration, "
+        "pii.iterationnote, pii.creationdate, pii.author_login, pii.author_workspace_id "
         "FROM prdinstiteration_documentlink pidl "
         "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
-        "JOIN prdinstiteration pii ON "
-        "pii.workspace_id=pidl.workspace_id AND pii.serialnumber=pidl.productinstanceserial "
-        "AND pii.instanceiteration=pidl.productinstance_iteration "
-        "AND pii.ci_updatebranchid=pidl.ci_updatebranchid "
+        "LEFT JOIN productinstanceiteration pii ON "
+        "pii.workspace_id=pidl.workspace_id AND pii.configurationitem_id=pidl.configurationitem_id "
+        "AND pii.prdinstancemaster_serialnumber=pidl.prdinstancemaster_serialnumber "
+        "AND pii.iteration=pidl.iteration "
         "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
         "AND dl.target_docrevision_version=:ver"
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
     result = []
     for r in rows:
-        # 查询产品实例主数据
-        pinst = db.execute(sql_text(
-            "SELECT pi.id, pi.serialnumber, pi.productmaster_id, "
-            "pii.instanceiteration, pii.iterationnote, pii.creationdate, "
-            "pii.author_login, pii.author_workspace_id "
-            "FROM productinstance pi "
-            "JOIN prdinstiteration pii ON pi.id=pii.productinstance_id "
-            "AND pii.instanceiteration=:iter AND pii.ci_updatebranchid=:br "
-            "WHERE pi.workspace_id=:ws AND pi.serialnumber=:sn"
-        ), {"ws": r[0], "sn": r[1], "iter": r[2], "br": r[3]}).fetchone()
-        if pinst:
-            result.append({
-                "id": pinst[0], "serialNumber": pinst[1],
-                "productMasterId": pinst[2],
-                "instanceIteration": pinst[3],
-                "iterationNote": pinst[4] or "",
-                "creationDate": str(pinst[5]) if pinst[5] else None,
-                "author": _get_user_info(db, pinst[6], pinst[7] or ws),
-                "workspaceId": r[0],
-            })
-        else:
-            result.append({
-                "workspaceId": r[0], "serialNumber": r[1],
-                "instanceIteration": r[2], "ciUpdateBranchId": r[3],
-            })
+        result.append({
+            "workspaceId": r[0],
+            "serialNumber": r[1],
+            "configurationItemId": r[2],
+            "instanceIteration": r[3],
+            "iterationNote": r[4] or "",
+            "creationDate": str(r[5]) if r[5] else None,
+            "author": _get_user_info(db, r[6], r[7] or ws) if r[6] else None,
+        })
     return result
 
 
@@ -479,22 +464,18 @@ def inverse_path_link(ws: str, doc_key: str, iteration: int,
                       current_user: Account = Depends(get_current_user)):
     doc_id, ver = _split_doc_key(doc_key)
     rows = db.execute(sql_text(
-        "SELECT DISTINCT pd.id AS path_data_id, pd.path, pdi.workspace_id, "
-        "pdi.productconfig_master_id, pdi.iteration "
+        "SELECT DISTINCT pdm.id AS path_data_id, pdm.path "
         "FROM pathdataiteration_documentlink pdl "
         "JOIN documentlink dl ON pdl.documentlink_id = dl.id "
-        "JOIN pathdataiteration pdi ON "
-        "pdi.workspace_id=pdl.workspace_id AND pdi.id=pdl.pathdataiteration_id "
-        "JOIN pathdata pd ON pd.id = pdi.pathdata_id "
+        "JOIN pathdatamaster pdm ON pdm.id = pdl.pathdatamaster_id "
         "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
         "AND dl.target_docrevision_version=:ver"
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
     result = []
     for r in rows:
         result.append({
-            "pathDataId": r[0], "path": r[1],
-            "workspaceId": r[2], "productConfigMasterId": r[3],
-            "iteration": r[4],
+            "id": r[0],
+            "path": r[1],
         })
     return result
 

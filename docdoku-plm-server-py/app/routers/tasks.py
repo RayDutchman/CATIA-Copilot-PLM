@@ -159,7 +159,7 @@ def _verify_downloaded(db: Session, ws: str, task_id: str, user_login: str):
         wf_id, step = t_info[0], t_info[1]
     # 检查文档
     doc = db.execute(text(
-        "SELECT dr.documentmaster_id, dr.version, dr.checkout_user_login "
+        "SELECT dr.documentmaster_id, dr.version, dr.checkoutuser_login "
         "FROM documentrevision dr "
         "WHERE dr.workflow_id = :wf_id AND dr.workspace_id = :ws LIMIT 1"
     ), {"wf_id": wf_id, "ws": ws}).first()
@@ -169,7 +169,7 @@ def _verify_downloaded(db: Session, ws: str, task_id: str, user_login: str):
         raise NotAllowedException("NotAllowedException42")
     # 检查零件
     part = db.execute(text(
-        "SELECT pr.partmaster_partnumber, pr.version, pr.checkout_user_login "
+        "SELECT pr.partmaster_partnumber, pr.version, pr.checkoutuser_login "
         "FROM partrevision pr "
         "WHERE pr.workflow_id = :wf_id AND pr.workspace_id = :ws LIMIT 1"
     ), {"wf_id": wf_id, "ws": ws}).first()

@@ -70,23 +70,31 @@ def update_instance(ws: str, ci_id: str, sn: str, body: dict,
         last_it.iteration_note = body["description"]
     if "linkedDocuments" in body and last_it:
         db.execute(sql_text(
-            "DELETE FROM productinstanceiteration_documentlink "
+            "DELETE FROM prdinstiteration_documentlink "
             "WHERE workspace_id=:ws AND configurationitem_id=:ci "
             "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
         ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration})
         for dl in body["linkedDocuments"]:
             dm_id = dl.get("documentMasterId", "")
             ver = dl.get("version", "")
-            iter_num = dl.get("iteration", 1)
+            if not dm_id:
+                continue
+            # 先建 documentlink 中间记录（同 pathdata/partiteration 模式）
+            result = db.execute(sql_text(
+                "INSERT INTO documentlink "
+                "(target_documentmaster_id, target_docrevision_version, "
+                "target_workspace_id, commentdata) "
+                "VALUES (:dm, :ver, :tws, :comment) RETURNING id"
+            ), {"dm": dm_id, "ver": ver, "tws": ws,
+                "comment": dl.get("comment", dl.get("commentLink", "")) or ""})
+            dl_id = result.fetchone()[0]
+            # 关联到 productinstanceiteration
             db.execute(sql_text(
-                "INSERT INTO productinstanceiteration_documentlink "
+                "INSERT INTO prdinstiteration_documentlink "
                 "(workspace_id, configurationitem_id, prdinstancemaster_serialnumber, "
-                "iteration, target_workspace_id, target_documentmaster_id, "
-                "target_docrevision_version, target_iteration, commentdata) "
-                "VALUES (:ws, :ci, :sn, :it, :tws, :dm, :ver, :iter, :comment)"
-            ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration,
-                "tws": ws, "dm": dm_id, "ver": ver, "iter": iter_num,
-                "comment": dl.get("comment", "")})
+                "iteration, documentlink_id) "
+                "VALUES (:ws, :ci, :sn, :it, :dlid)"
+            ), {"ws": ws, "ci": ci_id, "sn": sn, "it": last_it.iteration, "dlid": dl_id})
     db.commit()
     return {"serialNumber": inst.serialnumber}
 
@@ -132,7 +140,7 @@ def get_instance_iteration(ws: str, ci_id: str, sn: str, it: int,
     doc_rows = db.execute(sql_text(
         "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
         "dl.target_docrevision_version, dl.commentdata "
-        "FROM productinstanceiteration_documentlink pidl "
+        "FROM prdinstiteration_documentlink pidl "
         "JOIN documentlink dl ON dl.id = pidl.documentlink_id "
         "WHERE pidl.workspace_id=:ws AND pidl.configurationitem_id=:ci "
         "AND pidl.prdinstancemaster_serialnumber=:sn AND pidl.iteration=:it"

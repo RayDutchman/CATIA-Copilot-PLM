@@ -337,7 +337,7 @@ def path_choices(ws: str, ci_id: str,
             "JOIN productinstanceiteration pii ON pii.workspace_id = pipd.workspace_id "
             "AND pii.configurationitem_id = pipd.configurationitem_id "
             "AND pii.prdinstancemaster_serialnumber = pipd.prdinstancemaster_serialnumber "
-            "AND pii.iteration = pipd.iteration "
+            "AND pii.iteration = pipd.prdinstanceiteration_iteration "
             "JOIN productinstancemaster pim ON pim.workspace_id = pii.workspace_id "
             "AND pim.configurationitem_id = pii.configurationitem_id "
             "AND pim.serialnumber = pii.prdinstancemaster_serialnumber "

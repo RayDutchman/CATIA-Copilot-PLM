@@ -33,47 +33,58 @@ class NotificationService:
 
     def subscribe_to_tag_event(self, db: Session, ws: str, tag_label: str,
                                 user_login: str, event: str):
-        """订阅标签变更事件（stub）。"""
+        """订阅标签变更事件。event 含 'STATE' → onstatechange，否则 oniterationchange。"""
+        on_state = "STATE" in (event or "").upper()
+        on_iter = not on_state
         existing = db.execute(text(
-            "SELECT 1 FROM tagsubscription "
-            "WHERE tag_label = :t AND workspace_id = :ws "
-            "AND subscriber_login = :l AND event = :e"
-        ), {"t": tag_label, "ws": ws, "l": user_login, "e": event}).first()
+            "SELECT oniterationchange, onstatechange FROM tagusersubscription "
+            "WHERE tag_label = :t AND tag_workspace_id = :ws "
+            "AND subscriber_login = :l AND subscriber_workspace_id = :ws"
+        ), {"t": tag_label, "ws": ws, "l": user_login}).first()
         if existing:
-            return
-        db.execute(text(
-            "INSERT INTO tagsubscription "
-            "(tag_label, workspace_id, subscriber_login, subscriber_workspace_id, event) "
-            "VALUES (:t, :ws, :l, :ws2, :e)"
-        ), {"t": tag_label, "ws": ws, "l": user_login, "ws2": ws, "e": event})
+            db.execute(text(
+                "UPDATE tagusersubscription SET oniterationchange = :oi, onstatechange = :os "
+                "WHERE tag_label = :t AND tag_workspace_id = :ws "
+                "AND subscriber_login = :l AND subscriber_workspace_id = :ws"
+            ), {"t": tag_label, "ws": ws, "l": user_login,
+                "oi": on_iter or existing[0], "os": on_state or existing[1]})
+        else:
+            db.execute(text(
+                "INSERT INTO tagusersubscription "
+                "(tag_label, tag_workspace_id, subscriber_login, subscriber_workspace_id, "
+                "oniterationchange, onstatechange) "
+                "VALUES (:t, :ws, :l, :ws, :oi, :os)"
+            ), {"t": tag_label, "ws": ws, "l": user_login, "oi": on_iter, "os": on_state})
         db.commit()
 
     def unsubscribe_from_tag_event(self, db: Session, ws: str, tag_label: str,
                                     user_login: str, event: str):
-        """取消标签变更事件订阅（stub）。"""
+        """取消标签变更事件订阅。"""
         db.execute(text(
-            "DELETE FROM tagsubscription "
-            "WHERE tag_label = :t AND workspace_id = :ws "
-            "AND subscriber_login = :l AND event = :e"
-        ), {"t": tag_label, "ws": ws, "l": user_login, "e": event})
+            "DELETE FROM tagusersubscription "
+            "WHERE tag_label = :t AND tag_workspace_id = :ws "
+            "AND subscriber_login = :l AND subscriber_workspace_id = :ws"
+        ), {"t": tag_label, "ws": ws, "l": user_login})
         db.commit()
 
     def list_tag_subscriptions(self, db: Session, ws: str, user_login: str) -> list:
-        """列出用户的标签订阅（stub）。"""
+        """列出用户的标签订阅。"""
         rows = db.execute(text(
-            "SELECT tag_label, event FROM tagsubscription "
-            "WHERE workspace_id = :ws AND subscriber_login = :l"
+            "SELECT tag_label, oniterationchange, onstatechange FROM tagusersubscription "
+            "WHERE tag_workspace_id = :ws AND subscriber_login = :l"
         ), {"ws": ws, "l": user_login}).fetchall()
-        return [{"tag": r[0], "event": r[1], "workspaceId": ws} for r in rows]
+        return [{"tag": r[0], "onIterationChange": r[1], "onStateChange": r[2],
+                 "workspaceId": ws} for r in rows]
 
     def list_tag_subscriptions_for_tag(self, db: Session, ws: str,
                                         tag_label: str) -> list:
-        """列出指定标签的所有订阅者（stub）。"""
+        """列出指定标签的所有订阅者。"""
         rows = db.execute(text(
-            "SELECT subscriber_login, event FROM tagsubscription "
-            "WHERE workspace_id = :ws AND tag_label = :t"
+            "SELECT subscriber_login, oniterationchange, onstatechange FROM tagusersubscription "
+            "WHERE tag_workspace_id = :ws AND tag_label = :t"
         ), {"ws": ws, "t": tag_label}).fetchall()
-        return [{"login": r[0], "event": r[1], "workspaceId": ws} for r in rows]
+        return [{"login": r[0], "onIterationChange": r[1], "onStateChange": r[2],
+                 "workspaceId": ws} for r in rows]
 
     def _to_dict(self, row) -> dict:
         cols = row._mapping.keys() if hasattr(row, "_mapping") else []

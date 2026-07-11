@@ -12,8 +12,8 @@ class OrganizationService:
     def get_organization_of_account(self, db: Session, login: str) -> dict:
         row = db.execute(text(
             "SELECT o.* FROM organization o "
-            "JOIN account a ON a.organization_name = o.name "
-            "WHERE a.login = :l"
+            "JOIN organization_account oa ON oa.organization_name = o.name "
+            "WHERE oa.account_login = :l"
         ), {"l": login}).first()
         if not row:
             from app.core.exceptions import EntityNotFoundException

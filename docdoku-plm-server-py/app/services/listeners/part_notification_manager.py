@@ -13,10 +13,10 @@ class PartNotificationManager:
         """零件迭代删除时清理关联通知。"""
         from sqlalchemy import text
         db.execute(text(
-            "DELETE FROM notification WHERE target_workspace_id = :ws "
-            "AND target_partmaster_partnumber = :pn "
-            "AND target_partrevision_version = :ver "
-            "AND target_iteration = :iter"
+            "DELETE FROM modificationnotification WHERE impacted_workspace_id = :ws "
+            "AND impacted_partmaster_partnumber = :pn "
+            "AND impacted_partrevision_version = :ver "
+            "AND impacted_iteration = :iter"
         ), {"ws": ws, "pn": part_number, "ver": version, "iter": iteration})
         db.commit()
 
@@ -25,9 +25,9 @@ class PartNotificationManager:
         """零件修订版删除时清理关联通知。"""
         from sqlalchemy import text
         db.execute(text(
-            "DELETE FROM notification WHERE target_workspace_id = :ws "
-            "AND target_partmaster_partnumber = :pn "
-            "AND target_partrevision_version = :ver"
+            "DELETE FROM modificationnotification WHERE impacted_workspace_id = :ws "
+            "AND impacted_partmaster_partnumber = :pn "
+            "AND impacted_partrevision_version = :ver"
         ), {"ws": ws, "pn": part_number, "ver": version})
         db.commit()
 

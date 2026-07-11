@@ -10,6 +10,7 @@ class WorkspaceWorkflowCreationDTO(BaseModel):
     id: Optional[str] = None
     workflowModelId: Optional[str] = None
     roleMapping: List["RoleMappingDTO"] = []
+    workflow: Optional[dict] = None
 
 
 from app.schemas.role_mapping import RoleMappingDTO  # noqa: E402

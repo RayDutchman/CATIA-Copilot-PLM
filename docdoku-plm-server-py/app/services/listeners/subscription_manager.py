@@ -9,23 +9,30 @@ class SubscriptionManager:
     """订阅事件管理器。"""
 
     def on_remove_tag(self, db: Session, ws: str, tag_label: str):
-        """标签删除时清理关联订阅。"""
+        """标签删除时清理关联订阅（用户 + 用户组，对齐 Java removeAllTagSubscriptions(Tag)）。"""
         from sqlalchemy import text
         db.execute(text(
-            "DELETE FROM tagsubscription WHERE tag_label = :l AND tag_workspace_id = :ws"
+            "DELETE FROM tagusersubscription WHERE tag_label = :l AND tag_workspace_id = :ws"
+        ), {"l": tag_label, "ws": ws})
+        db.execute(text(
+            "DELETE FROM tagusergroupsubscription WHERE tag_label = :l AND tag_workspace_id = :ws"
         ), {"l": tag_label, "ws": ws})
         db.commit()
 
     def on_remove_user(self, db: Session, ws: str, user_login: str):
-        """用户删除时清理其所有订阅。"""
+        """用户删除时清理其所有订阅（文档状态/迭代订阅 + 标签订阅）。"""
         from sqlalchemy import text
         db.execute(text(
-            "DELETE FROM subscription WHERE subscriber_login = :l "
+            "DELETE FROM statechangesubscription WHERE subscriber_login = :l "
             "AND subscriber_workspace_id = :ws"
         ), {"l": user_login, "ws": ws})
         db.execute(text(
-            "DELETE FROM tagusersubscription WHERE user_login = :l "
-            "AND user_workspace_id = :ws"
+            "DELETE FROM iterationchangesubscription WHERE subscriber_login = :l "
+            "AND subscriber_workspace_id = :ws"
+        ), {"l": user_login, "ws": ws})
+        db.execute(text(
+            "DELETE FROM tagusersubscription WHERE subscriber_login = :l "
+            "AND subscriber_workspace_id = :ws"
         ), {"l": user_login, "ws": ws})
         db.commit()
 
@@ -33,8 +40,9 @@ class SubscriptionManager:
         """用户组删除时清理关联订阅。"""
         from sqlalchemy import text
         db.execute(text(
-            "DELETE FROM tagusergroupsubscription WHERE group_id = :g "
-        ), {"g": group_name})
+            "DELETE FROM tagusergroupsubscription WHERE subscriber_id = :g "
+            "AND subscriber_workspace_id = :ws"
+        ), {"g": group_name, "ws": ws})
         db.commit()
 
     def on_tag_item(self, db: Session, ws: str, tag_label: str,
