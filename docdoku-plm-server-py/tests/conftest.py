@@ -38,12 +38,15 @@ def db():
 
 @pytest.fixture(scope="session")
 def temp_vault():
-    """临时 vault 目录，替代真实 vault 路径，测试结束后自动清理。"""
+    """临时 vault + conversions 目录，替代真实路径，测试结束后自动清理。"""
     d = tempfile.mkdtemp(prefix="test-vault-")
-    old = _config.settings.VAULT_PATH
+    old_vault = _config.settings.VAULT_PATH
+    old_conv = _config.settings.CONVERSIONS_PATH
     _config.settings.VAULT_PATH = d
+    _config.settings.CONVERSIONS_PATH = d
     yield d
-    _config.settings.VAULT_PATH = old
+    _config.settings.VAULT_PATH = old_vault
+    _config.settings.CONVERSIONS_PATH = old_conv
     shutil.rmtree(d, ignore_errors=True)
 
 

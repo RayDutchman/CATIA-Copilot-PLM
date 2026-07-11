@@ -14,7 +14,7 @@ from app.models.part import (
 from app.core.config import settings
 from app.services import vault
 
-WS = "Workspace_2"
+WS = "GD50"
 svc = ProductService()
 
 
@@ -82,7 +82,7 @@ def test_callback_error_marks_failed(db):
     svc.delete_revision(db, WS, num, "A", "test1")
 
 
-def test_callback_success_writes_glb(db):
+def test_callback_success_writes_glb(db, temp_vault):
     num = "P1BCV-OK-1"
     _make_part_with_conversion(db, num)
     temp_dir = str(uuid.uuid4())
@@ -120,7 +120,7 @@ def test_callback_success_writes_glb(db):
     svc.delete_revision(db, WS, num, "A", "test1")
 
 
-def test_callback_multi_lod_saves_all(db):
+def test_callback_multi_lod_saves_all(db, temp_vault):
     """Fix 3: 多 LOD 都保存，且 quality 正确写入 BinaryResource。"""
     num = "P1BCV-MLOD-1"
     _make_part_with_conversion(db, num)
@@ -156,7 +156,7 @@ def test_callback_multi_lod_saves_all(db):
     svc.delete_revision(db, WS, num, "A", "test1")
 
 
-def test_callback_materials_saved_as_attached(db):
+def test_callback_materials_saved_as_attached(db, temp_vault):
     """Fix 4: 材质文件保存为附件。"""
     num = "P1BCV-MATL-1"
     _make_part_with_conversion(db, num)
@@ -190,7 +190,7 @@ def test_callback_materials_saved_as_attached(db):
     svc.delete_revision(db, WS, num, "A", "test1")
 
 
-def test_sync_assembly_creates_cad_instances(db):
+def test_sync_assembly_creates_cad_instances(db, temp_vault):
     """Fix 1: 装配位置同步 — 创建 PartUsageLink + CADInstance。"""
     num_parent = "P1BCV-ASM-P1"
     num_child = "P1BCV-ASM-C1"
@@ -338,7 +338,7 @@ def test_sync_assembly_creates_cad_instances(db):
     svc.delete_revision(db, WS, num_child, "A", "test1")
 
 
-def test_find_master_by_cad_filename(db):
+def test_find_master_by_cad_filename(db, temp_vault):
     """验证 find_part_master_by_cad_filename 能通过 CAD 文件名找到 PartMaster。"""
     num = "P1BCV-FIND-1"
     cad_file = f"{num}.stp"
