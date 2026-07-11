@@ -15,7 +15,7 @@ class ProductBaselineSummaryDTO(BaseModel):
     creationDate: Optional[str] = None
     description: Optional[str] = None
     hasObsoletePartRevisions: bool = False
-    configurationItemLatestRevision: Optional[ConfigurationItemLatestRevisionDTO] = None
+    configurationItemLatestRevision: Optional[str] = None
     baselinedParts: List[BaselinedPartDTO] = []
     substituteLinks: List[dict] = []
     optionalUsageLinks: List[dict] = []

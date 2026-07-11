@@ -119,36 +119,97 @@ def create_doc_baseline(ws: str, body: dict,
                         db: Session = Depends(get_db)):
     now = datetime.utcnow()
     baselined_docs = body.get("baselinedDocuments", [])
-    if not baselined_docs:
-        raise HTTPException(400, "No baselinedDocuments provided")
+
+    raw_type = body.get("type", 0)
+    if isinstance(raw_type, str):
+        _TYPE_REVERSE = {"LATEST": 0, "RELEASED": 1}
+        bl_type = _TYPE_REVERSE.get(raw_type.upper(), 0)
+    else:
+        bl_type = raw_type
+
+    seen = set()
+    accepted = []
+    for doc in baselined_docs:
+        dm_id = doc["documentMasterId"]
+        version = doc.get("version", "A")
+        key = (dm_id, version)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        rev = db.execute(sql_text(
+            "SELECT status, checkoutuser_login FROM documentrevision "
+            "WHERE documentmaster_id=:dm AND workspace_id=:ws AND version=:ver"
+        ), {"dm": dm_id, "ws": ws, "ver": version}).fetchone()
+        if not rev:
+            continue
+
+        status, checkout_login = rev[0], rev[1]
+
+        if bl_type == 1:  # RELEASED
+            if status not in (1, 2):
+                continue
+            last_iter = db.execute(sql_text(
+                "SELECT MAX(iteration) FROM documentiteration "
+                "WHERE documentmaster_id=:dm AND workspace_id=:ws "
+                "AND documentrevision_version=:ver"
+            ), {"dm": dm_id, "ws": ws, "ver": version}).scalar()
+            if not last_iter:
+                continue
+            iteration = last_iter
+        else:  # LATEST (0)
+            last_iter = db.execute(sql_text(
+                "SELECT MAX(iteration) FROM documentiteration "
+                "WHERE documentmaster_id=:dm AND workspace_id=:ws "
+                "AND documentrevision_version=:ver"
+            ), {"dm": dm_id, "ws": ws, "ver": version}).scalar()
+            if not last_iter:
+                continue
+            if checkout_login:
+                iteration = last_iter - 1
+            else:
+                iteration = last_iter
+            if iteration < 1:
+                continue
+
+        accepted.append((dm_id, version, iteration))
+
+    if not accepted:
+        from app.core.exceptions import NotAllowedException
+        raise NotAllowedException("NotAllowedException66")
+
     result = db.execute(sql_text(
         "INSERT INTO documentcollection (creationdate, author_workspace_id, author_login) "
         "VALUES (:now, :ws, :login) RETURNING id"
     ), {"now": now, "ws": ws, "login": current_user.login})
     collection_id = result.fetchone()[0]
+
     result = db.execute(sql_text(
         "INSERT INTO documentbaseline (creationdate, description, name, type, "
         "author_workspace_id, author_login, documentcollection_id) "
         "VALUES (:now, :desc, :name, :type, :ws, :login, :col_id) RETURNING id"
     ), {
         "now": now, "desc": body.get("description", ""),
-        "name": body.get("name", ""), "type": body.get("type", 0),
+        "name": body.get("name", ""), "type": bl_type,
         "ws": ws, "login": current_user.login, "col_id": collection_id
     })
     baseline_id = result.fetchone()[0]
-    for doc in baselined_docs:
+
+    for dm_id, version, iteration in accepted:
         db.execute(sql_text(
             "INSERT INTO baselineddocument (target_iteration, documentcollection_id, "
             "target_documentmaster_id, target_docrevision_version, target_workspace_id) "
             "VALUES (:iter, :col_id, :dm_id, :ver, :ws)"
         ), {
-            "iter": doc.get("iteration", 1),
+            "iter": iteration,
             "col_id": collection_id,
-            "dm_id": doc["documentMasterId"],
-            "ver": doc.get("version", "A"),
+            "dm_id": dm_id,
+            "ver": version,
             "ws": ws
         })
+
     db.commit()
+
     docs = db.execute(sql_text(
         "SELECT bd.target_documentmaster_id, bd.target_docrevision_version, bd.target_iteration "
         "FROM baselineddocument bd WHERE bd.documentcollection_id = :cid "
@@ -157,7 +218,7 @@ def create_doc_baseline(ws: str, body: dict,
     return {
         "id": baseline_id, "name": body.get("name", ""),
         "description": body.get("description", ""),
-        "type": _baseline_type_name(body.get("type", 0)),
+        "type": _baseline_type_name(bl_type),
         "creationDate": now.isoformat() + "Z",
         "author": {"login": current_user.login, "name": current_user.name or current_user.login, "workspaceId": ws},
         "baselinedDocuments": [

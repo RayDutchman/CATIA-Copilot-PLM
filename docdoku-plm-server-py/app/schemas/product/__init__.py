@@ -26,10 +26,11 @@ class ProductBaselineDetailDTO(BaseModel):
     name: Optional[str] = None
     type: Optional[int] = None
     configurationItemId: Optional[str] = None
-    configurationItemWorkspaceId: Optional[str] = None
     creationDate: Optional[str] = None
     description: Optional[str] = None
     author: Optional[UserDTO] = None
+    hasObsoletePartRevisions: bool = False
+    configurationItemLatestRevision: Optional[str] = None
     baselinedParts: List[BaselinedPartDTO] = []
     substituteLinks: List[dict] = []
     optionalUsageLinks: List[dict] = []

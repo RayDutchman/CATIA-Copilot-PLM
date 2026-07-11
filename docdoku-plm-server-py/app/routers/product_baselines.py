@@ -1,4 +1,5 @@
 """产品基线（ProductBaseline）端点路由。"""
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text as sql_text
@@ -14,9 +15,22 @@ from app.schemas.product import ProductBaselineSummaryDTO, ProductBaselineDetail
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductStructureService()
 
+_TYPE_MAP = {"LATEST": 0, "RELEASED": 1, "EFFECTIVE_DATE": 2,
+             "EFFECTIVE_SERIAL_NUMBER": 3, "EFFECTIVE_LOT_ID": 4}
 
-def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
-    """查询 CI 的根零件最新版本信息。"""
+
+def _parse_iso_date(val):
+    """ISO 字符串 → datetime，解析失败返回 None。"""
+    if isinstance(val, str):
+        try:
+            return datetime.fromisoformat(val.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+    return val
+
+
+def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> str | None:
+    """查询 CI 根零件的最新版本号（对齐 Payara getDesignItem().getLastRevision().getVersion()，返回版本字符串）。"""
     ci = db.query(ConfigurationItem).filter(
         ConfigurationItem.workspace_id == ws,
         ConfigurationItem.id == ci_id,
@@ -26,14 +40,10 @@ def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> dict | None:
     rev = db.query(PartRevision).filter(
         PartRevision.workspace_id == ws,
         PartRevision.partmaster_partnumber == ci.partmaster_partnumber,
-    ).order_by(PartRevision.creation_date.desc()).first()
+    ).order_by(PartRevision.version.desc()).first()
     if not rev:
         return None
-    return {
-        "partNumber": ci.partmaster_partnumber,
-        "version": rev.version,
-        "status": rev.status,
-    }
+    return rev.version
 
 
 def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
@@ -67,10 +77,11 @@ def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
         "name": bl.name,
         "type": bl.type,
         "configurationItemId": bl.configurationitem_id,
-        "configurationItemWorkspaceId": ws,
         "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
         "description": bl.description or "",
         "author": _get_user(db, bl.author_login or "", ws),
+        "hasObsoletePartRevisions": _has_obsolete_parts(db, bl.partcollection_id),
+        "configurationItemLatestRevision": _ci_latest_revision(db, ws, bl.configurationitem_id),
         "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
         "substituteLinks": _query_substitute_links(db, ws, bl.partcollection_id),
         "optionalUsageLinks": _query_optional_links(db, ws, bl.partcollection_id),
@@ -100,16 +111,24 @@ def create_workspace_baseline(ws: str, body: dict,
                               db: Session = Depends(get_db)):
     """workspace 级创建基线，CI ID 从请求体获取（对应 Java POST /workspaces/{ws}/product-baselines）。"""
     ci_id = body.get("configurationItemId", "")
-    bl_type = body.get("type", 0)
-    if isinstance(bl_type, str):
-        bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    raw_type = body.get("type", 0)
+    if isinstance(raw_type, str):
+        bl_type = _TYPE_MAP.get(raw_type.upper(), 0)
+    else:
+        bl_type = raw_type
+    eff_date = _parse_iso_date(body.get("effectiveDate"))
+    eff_serial = body.get("effectiveSerialNumber")
+    eff_lot = body.get("effectiveLotId")
     if dryRun:
         return {"id": -1, "name": body.get("name", ""), "dryRun": True}
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
                                current_user.login, body.get("baselinedParts"),
                                body.get("substituteLinks"),
-                               body.get("optionalUsageLinks"))
+                               body.get("optionalUsageLinks"),
+                               effective_date=eff_date,
+                               effective_serial_number=eff_serial,
+                               effective_lot_id=eff_lot)
     return _bl_summary_dict(bl, db)
 
 
@@ -127,16 +146,24 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
                               dryRun: bool = Query(False),
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
-    bl_type = body.get("type", 0)
-    if isinstance(bl_type, str):
-        bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    raw_type = body.get("type", 0)
+    if isinstance(raw_type, str):
+        bl_type = _TYPE_MAP.get(raw_type.upper(), 0)
+    else:
+        bl_type = raw_type
+    eff_date = _parse_iso_date(body.get("effectiveDate"))
+    eff_serial = body.get("effectiveSerialNumber")
+    eff_lot = body.get("effectiveLotId")
     if dryRun:
         return {"id": -1, "name": body.get("name", ""), "dryRun": True}
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
                                current_user.login, body.get("baselinedParts"),
                                body.get("substituteLinks"),
-                               body.get("optionalUsageLinks"))
+                               body.get("optionalUsageLinks"),
+                               effective_date=eff_date,
+                               effective_serial_number=eff_serial,
+                               effective_lot_id=eff_lot)
     return _bl_summary_dict(bl, db)
 
 
@@ -308,16 +335,24 @@ def create_baseline(ws: str, ci_id: str, body: dict,
                     dryRun: bool = Query(False),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
-    bl_type = body.get("type", 0)
-    if isinstance(bl_type, str):
-        bl_type = 0 if bl_type.upper() == "LATEST" else 1
+    raw_type = body.get("type", 0)
+    if isinstance(raw_type, str):
+        bl_type = _TYPE_MAP.get(raw_type.upper(), 0)
+    else:
+        bl_type = raw_type
+    eff_date = _parse_iso_date(body.get("effectiveDate"))
+    eff_serial = body.get("effectiveSerialNumber")
+    eff_lot = body.get("effectiveLotId")
     if dryRun:
         return {"id": -1, "name": body.get("name", ""), "dryRun": True}
     bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
                                body.get("description", ""), bl_type,
                                current_user.login, body.get("baselinedParts"),
                                body.get("substituteLinks"),
-                               body.get("optionalUsageLinks"))
+                               body.get("optionalUsageLinks"),
+                               effective_date=eff_date,
+                               effective_serial_number=eff_serial,
+                               effective_lot_id=eff_lot)
     return _bl_summary_dict(bl, db)
 
 
