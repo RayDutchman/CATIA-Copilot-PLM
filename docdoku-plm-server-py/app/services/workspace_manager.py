@@ -4,6 +4,7 @@
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.services.workspace_deletion import cascade_delete_workspace
 
 
 def _normalize_column(col: str) -> str:
@@ -53,15 +54,8 @@ class WorkspaceService:
                 "enabled": True}
 
     def delete_workspace(self, db: Session, ws: str) -> None:
-        # 删除 ES 索引
-        try:
-            from app.services.indexer_manager import indexer_manager
-            indexer_manager.delete_index(ws)
-        except Exception:
-            pass
-
-        db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
-        db.commit()
+        """完整级联删除工作区（对齐 WorkspaceDAO.removeWorkspace）。"""
+        cascade_delete_workspace(db, ws)
 
     def update_workspace(self, db: Session, ws: str,
                           description: str = None,

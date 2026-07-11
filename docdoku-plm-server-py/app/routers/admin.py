@@ -13,6 +13,7 @@ from app.schemas.admin import (
     AdminAccountDTO, DiskUsageDTO, WorkspaceDTO,
     PlatformOptionsDTO, IndexStatusDTO,
 )
+from app.services.workspace_deletion import cascade_delete_workspace
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -135,10 +136,37 @@ def delete_account(login: str, db: Session = Depends(get_db),
     if not existing:
         raise EntityNotFoundException("AccountNotFoundException", login)
 
+    # 关 FK 触发器，安全清理所有引用 account.login 的关联表
+    db.execute(text("SET LOCAL session_replication_role='replica'"))
+
+    # 组织和 GCM
+    db.execute(text("DELETE FROM organization_account WHERE account_login = :login"), {"login": login})
+    db.execute(text("DELETE FROM gcmaccount WHERE account_login = :login"), {"login": login})
+    # 密码恢复请求 / OAuth
+    db.execute(text("DELETE FROM passwordrecoveryrequest WHERE login = :login"), {"login": login})
+    db.execute(text("DELETE FROM providedaccount WHERE login = :login"), {"login": login})
+    # 工作区成员 + 用户组用户
+    db.execute(text("DELETE FROM workspaceusermembership WHERE member_login = :login"), {"login": login})
+    db.execute(text("DELETE FROM usergroup_user WHERE user_login = :login"), {"login": login})
+    # 角色
+    db.execute(text("DELETE FROM role_user WHERE user_login = :login"), {"login": login})
+    # 标签订阅
+    db.execute(text("DELETE FROM tagusersubscription WHERE subscriber_login = :login"), {"login": login})
+    # 迭代/状态变更订阅
+    db.execute(text("DELETE FROM iterationchangesubscription WHERE subscriber_login = :login"), {"login": login})
+    db.execute(text("DELETE FROM statechangesubscription WHERE subscriber_login = :login"), {"login": login})
+    # 工作区管理权——由该用户管理的 workspace 置空 admin_login
+    db.execute(text("UPDATE workspace SET admin_login = NULL WHERE admin_login = :login"), {"login": login})
+    # 凭据
     db.execute(text("DELETE FROM credential WHERE login = :login"), {"login": login})
+    # userdata
     db.execute(text("DELETE FROM userdata WHERE login = :login"), {"login": login})
+    # 用户组映射
     db.execute(text("DELETE FROM usergroupmapping WHERE login = :login"), {"login": login})
+    # 账号本身
     db.execute(text("DELETE FROM account WHERE login = :login"), {"login": login})
+
+    db.execute(text("SET LOCAL session_replication_role='origin'"))
     db.commit()
 
 
@@ -213,8 +241,7 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
     ), {"id": ws}).fetchone()
     if not existing:
         raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-    db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
-    db.commit()
+    cascade_delete_workspace(db, ws)
 
 
 # ============ Platform Options ============
