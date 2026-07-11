@@ -6,7 +6,18 @@
 
 ---
 
-## 2026-07-12 — 审计修复批次 4：P0-d 产品配置架构 + 迭代 undo 级联
+## 2026-07-12 — fix: 文档删除端点精确孤儿清理（对齐 Payara，批 4 后续）
+
+> 批 4 smoke 暴露的独立预存 bug。派 subagent 核实结论 + 对拍 Java 后确认修复方向。
+
+### fix(document): precise per-revision orphan cleanup in delete_revision
+
+- **根因**：`services/document_manager.py` `delete_revision` 删文档后做**全库全局**孤儿清理：`DELETE FROM instanceattribute WHERE id NOT IN (documentiteration_attribute) AND id NOT IN (partiteration_attribute)`。`instanceattribute.id` 实际被 **5 张表** FK 引用（全 NO ACTION）：documentiteration_attribute、partiteration_attribute、**prdinstiteration_attribute**、**pathdataiteration_attribute**、**attribute_namevalue**（LOV 子值反向）。只排除 2 张 → 库中存在产品实例属性/路径数据属性时删文档触发 `fk_prdinstiteration_attribute_instanceattribute_id` FK 500。documentlink 同款全局 NOT-IN bug（被 4 张迭代表引用）。
+- **Payara 对齐核实**：`DocumentManagerBean.deleteDocumentRevision:1226` → `DocumentRevisionDAO.removeRevision:155-171` → 逐迭代 `documentDAO.removeDoc → em.remove(pDoc)`；`DocumentIteration.java:104-116` 的 instanceAttributes 为 `@OneToMany(orphanRemoval=true, cascade=ALL)`，JPA **只级联删该迭代实体图内自己的**属性（精确删除，非全局）；LOV 子值经 `InstanceListOfValuesAttribute.java:43-51` `@ElementCollection(attribute_namevalue)` 随属性自动删。
+- **修复**（方案B，与 Java 语义对齐）：改为精确删除——收集本 revision 各迭代的 instanceattribute_id/documentlink_id → 删关联行 → 逐 id 检查无其它迭代引用才删本体；删 instanceattribute 前先删 LOV 子值 `attribute_namevalue`。彻底消除对 prdinstiteration_attribute/pathdataiteration_attribute 的误伤，补上 attribute_namevalue 清理。
+- **验证**：seed 一条产品实例属性（原 500 触发条件）+ 建带 text/LOV 属性+链接的文档 DELTEST → `DELETE` **HTTP 204**（原 500）；DB 核文档自身属性(7506/7507)+LOV namevalue+documentlink 已清，产品实例属性(7505)+关联**完整保留**。pytest 278 passed / 1 known-fail，无新增。
+
+---
 
 > FIX-PLAN 批次 4。先 brainstorming 定 ProductConfiguration ID 方案（方案A：保持独立实体），再 2 并行 subagent（G: 产品配置/实例文件包；G2: undo_checkout 级联）。主 agent 复核 Java 源码纠正 2 处审计误诊。
 

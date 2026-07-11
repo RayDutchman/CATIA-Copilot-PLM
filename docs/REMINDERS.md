@@ -27,7 +27,7 @@
 > - [x] **PR-CRIT-1/2/3/4/5 产品配置架构 + 实例 rebase/update/upload** → ✅ 批 4（PR-CRIT-2 验证为误报）
 > - [x] **P-14/D-14 undo_checkout 级联** → ✅ 批 4
 > - [ ] **功能桩/权限类（批 5 起）**：TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、WF-1、D-2/D-4 等。
-> - [ ] **🆕 批 4 smoke 新发现（独立预存 bug，非本批范围）**：文档删除端点的全局孤儿清理 SQL `DELETE FROM instanceattribute WHERE id NOT IN (SELECT ... documentiteration_attribute) AND id NOT IN (SELECT ... partiteration_attribute)` **未排除 `prdinstiteration_attribute`（产品实例属性）**，当库中存在产品实例属性时删文档触发 `fk_prdinstiteration_attribute_instanceattribute_id` FK 500。修复：该 NOT IN 子句补 `AND id NOT IN (SELECT instanceattribute_id FROM prdinstiteration_attribute)`（还有 pathdataiteration_attribute 等其它引用表也需一并核实）。定位在 document 删除服务/端点。
+> - [x] **🆕 批 4 smoke 新发现（独立预存 bug）→ ✅ 已修复（2026-07-12）**：文档删除端点 `delete_revision` 的全局孤儿清理 SQL 未排除 `prdinstiteration_attribute`/`pathdataiteration_attribute`，存在产品实例属性时删文档触发 FK 500。已对拍 Payara（`DocumentIteration` orphanRemoval+CascadeType.ALL 精确级联）后改为**精确删除本 revision 自己的 instanceattribute/documentlink**（逐 id 无其它引用才删）+ 补 LOV 子值 `attribute_namevalue` 清理；documentlink 同款全局 bug 一并修。commit 8457305。
 >
 > HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
 

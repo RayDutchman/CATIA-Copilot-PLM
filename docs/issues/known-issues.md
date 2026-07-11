@@ -569,4 +569,17 @@
 
 ---
 
-*最后更新：2026-07-11*
+### [BUG-49] 删除文档 revision 的全局孤儿清理漏引用表 → 存在产品实例属性时 FK 500
+
+- **文件：** `docdoku-plm-server-py/app/services/document_manager.py`（`delete_revision`）
+- **根本原因：**
+  删文档 revision 后做**全库全局**孤儿清理：`DELETE FROM instanceattribute WHERE id NOT IN (SELECT ... documentiteration_attribute) AND id NOT IN (SELECT ... partiteration_attribute)`。而 `instanceattribute.id` 实际被 **5 张表** FK 引用（全 `NO ACTION`）：`documentiteration_attribute`、`partiteration_attribute`、`prdinstiteration_attribute`、`pathdataiteration_attribute`、`attribute_namevalue`（LOV 子值反向 FK）。只排除前 2 张 → 当库中存在产品实例属性（`prdinstiteration_attribute` 有行）或路径数据属性时，删文档触发 `fk_prdinstiteration_attribute_instanceattribute_id`（或 pathdata/namevalue）FK 500。`documentlink` 同款全局 NOT-IN bug（被 4 张迭代表引用）。
+- **影响：** 库中一旦有产品实例/路径数据属性，删任意文档（含无属性文档，因清理是全局的）即 500。批 4 smoke 暴露。
+- **Payara 比对：** `DocumentManagerBean.deleteDocumentRevision:1226` → `DocumentRevisionDAO.removeRevision:155-171` → 逐迭代 `documentDAO.removeDoc → em.remove(pDoc)`；`DocumentIteration.java:104-116` 的 `instanceAttributes` 为 `@OneToMany(orphanRemoval=true, cascade=ALL)`，JPA **只级联删该迭代实体图内自己拥有的**属性（精确删除，非全局）；LOV 子值经 `InstanceListOfValuesAttribute.java:43-51` 的 `@ElementCollection(attribute_namevalue)` 随属性自动删。Python 的全局 NOT-IN 从设计上就偏离 Java 语义。
+- **修复状态：** `已修复`（2026-07-12）
+- **修复方案（方案B，与 Payara 语义对齐）：** 改为**精确删除**——收集本 revision 各迭代的 `instanceattribute_id`/`documentlink_id` → 删关联行 → 逐 id 检查无其它迭代仍引用才删本体；删 `instanceattribute` 前先删 LOV 子值 `attribute_namevalue`。彻底消除对 `prdinstiteration_attribute`/`pathdataiteration_attribute` 的误伤，并补上 `attribute_namevalue` 清理。`documentlink` 同法精确删除。
+- **验证：** seed 一条产品实例属性（原 500 触发条件）+ 建带 text/LOV 属性+链接的文档 → `DELETE` **HTTP 204**（原 500）；DB 核文档自身属性+LOV namevalue+documentlink 已清，产品实例属性+关联**完整保留**。pytest 278 passed / 1 known-fail，无新增。commit 8457305。
+
+---
+
+*最后更新：2026-07-12*
