@@ -486,7 +486,8 @@ def update_iteration(ws: str, doc_key: str, doc_iter: int, body: dict,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    rev = svc.update_iteration(db, ws, doc_id, ver, doc_iter, body)
+    rev = svc.update_iteration(db, ws, doc_id, ver, doc_iter, body,
+                               user_login=current_user.login)
     # 返回该迭代的 dict，不是整个 revision
     target_it = next((it for it in rev.iterations if it.iteration == doc_iter), None)
     if target_it is None:

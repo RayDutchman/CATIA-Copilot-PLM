@@ -381,14 +381,22 @@ class DocumentService:
             creation_date=now, author_workspace_id=ws,
             author_login=user_login)
         db.add(new_it)
+        # 先 flush 新迭代行，确保后续 _copy_* 的裸 SQL INSERT 能满足外键（session autoflush=False）
+        db.flush()
         pr.checkout_user_login = user_login
         pr.checkout_user_workspace_id = ws
         pr.check_out_date = now
-        # 复制上一迭代的 attached_files 到新迭代
+        # 复制上一迭代的 attached_files / linkedDocuments / instanceAttributes 到新迭代（深拷贝，对齐 Java checkOutDocument:942-956）
         if previous_iteration:
             self._copy_attached_files(db, ws, doc_id, ver,
                                       previous_iteration.iteration,
                                       new_it.iteration)
+            self._copy_linked_documents(db, ws, doc_id, ver,
+                                        previous_iteration.iteration,
+                                        ver, new_it.iteration)
+            self._copy_instance_attributes(db, ws, doc_id, ver,
+                                           previous_iteration.iteration,
+                                           ver, new_it.iteration)
         db.commit(); db.refresh(pr)
         return pr
 
@@ -603,6 +611,24 @@ class DocumentService:
             ), {"ws": ws, "did": doc_id, "ver": dst_ver,
                 "iter": dst_iter, "aid": attr_id, "order": row[12] or 0})
 
+    def _infer_doc_attr_dtype(self, attr: dict) -> str:
+        """根据属性值字段推断 instanceattribute 的 JPA dtype 鉴别值。"""
+        if attr.get("typeName"):
+            return attr["typeName"]
+        if attr.get("dtype"):
+            return attr["dtype"]
+        if attr.get("booleanValue") is not None:
+            return "InstanceBooleanAttribute"
+        if attr.get("dateValue") is not None:
+            return "InstanceDateAttribute"
+        if attr.get("numberValue") is not None:
+            return "InstanceNumberAttribute"
+        if attr.get("urlValue") is not None:
+            return "InstanceURLAttribute"
+        if attr.get("longTextValue") is not None:
+            return "InstanceLongTextAttribute"
+        return "InstanceTextAttribute"
+
     def checkin(self, db, ws, doc_id, ver, user_login):
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
@@ -669,7 +695,7 @@ class DocumentService:
         db.commit(); db.refresh(pr)
         return pr
 
-    def update_iteration(self, db, ws, doc_id, ver, iteration, data):
+    def update_iteration(self, db, ws, doc_id, ver, iteration, data, user_login=None):
         """更新文档迭代的 revisionNote、linkedDocuments 等字段。"""
         di = db.query(DocumentIteration).filter(
             DocumentIteration.workspace_id == ws,
@@ -680,6 +706,12 @@ class DocumentService:
         if not di:
             raise EntityNotFoundException("DocumentIterationNotFoundException",
                                           doc_id, ver, str(iteration))
+        if user_login is not None:
+            pr = self.get_revision(db, ws, doc_id, ver)
+            if pr.checkout_user_login != user_login:
+                raise NotAllowedException("NotAllowedException25")
+            if iteration != pr.last_iteration_number:
+                raise NotAllowedException("NotAllowedException25")
         if data.get("revisionNote"):
             di.revisionnote = data["revisionNote"]
         linked_docs = data.get("linkedDocuments")
@@ -701,7 +733,7 @@ class DocumentService:
                     "comment": ld.get("commentLink", ""),
                     "dm": ld.get("documentMasterId", ""),
                     "drv": ld.get("version", "A"),
-                    "tws": ws,
+                    "tws": ld.get("workspaceId", ws),
                 })
                 link_id = result.fetchone()[0]
                 db.execute(sql_text(
@@ -711,6 +743,53 @@ class DocumentService:
                     "VALUES (:ws, :did, :ver, :iter, :lid)"
                 ), {"ws": ws, "did": doc_id, "ver": ver, "iter": iteration, "lid": link_id})
             di.modification_date = di_modification_date
+        instance_attrs = data.get("instanceAttributes")
+        if instance_attrs is not None:
+            # 查旧属性 id
+            old_attr_ids = [r[0] for r in db.execute(sql_text(
+                "SELECT instanceattribute_id FROM documentiteration_attribute "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:iter"
+            ), {"ws": ws, "did": doc_id, "ver": ver, "iter": iteration}).fetchall()]
+            # 删旧关联
+            db.execute(sql_text(
+                "DELETE FROM documentiteration_attribute "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:iter"
+            ), {"ws": ws, "did": doc_id, "ver": ver, "iter": iteration})
+            # 删孤儿 instanceattribute
+            for oid in old_attr_ids:
+                still = db.execute(sql_text(
+                    "SELECT 1 FROM documentiteration_attribute WHERE instanceattribute_id=:id LIMIT 1"
+                ), {"id": oid}).first()
+                if not still:
+                    db.execute(sql_text("DELETE FROM instanceattribute WHERE id=:id"), {"id": oid})
+            # 插入新属性
+            for order, attr in enumerate(instance_attrs):
+                dtype = self._infer_doc_attr_dtype(attr)
+                result = db.execute(sql_text(
+                    "INSERT INTO instanceattribute "
+                    "(dtype, name, mandatory, locked, "
+                    "booleanvalue, datevalue, indexvalue, numbervalue, "
+                    "textvalue, longtextvalue, urlvalue) "
+                    "VALUES (:dtype, :name, :mand, :locked, "
+                    ":bv, :dv, :iv, :nv, :tv, :ltv, :uv) RETURNING id"
+                ), {
+                    "dtype": dtype, "name": attr.get("name", ""),
+                    "mand": attr.get("mandatory", False), "locked": attr.get("locked", False),
+                    "bv": attr.get("booleanValue"), "dv": attr.get("dateValue"),
+                    "iv": attr.get("indexValue"), "nv": attr.get("numberValue"),
+                    "tv": attr.get("textValue"), "ltv": attr.get("longTextValue"),
+                    "uv": attr.get("urlValue"),
+                })
+                new_id = result.fetchone()[0]
+                db.execute(sql_text(
+                    "INSERT INTO documentiteration_attribute "
+                    "(workspace_id, documentmaster_id, documentrevision_version, "
+                    "iteration, instanceattribute_id, attribute_order) "
+                    "VALUES (:ws, :did, :ver, :iter, :aid, :order)"
+                ), {"ws": ws, "did": doc_id, "ver": ver, "iter": iteration,
+                    "aid": new_id, "order": order})
         db.commit()
         return di.revision
 
@@ -898,9 +977,9 @@ class DocumentService:
         if parent_path:
             return db.query(Folder).filter(
                 Folder.parentfolder_completepath == parent_path).all()
-        # 返回该 workspace 下所有子文件夹（匹配 Payara 行为）
+        # 只返回工作区根的直接子文件夹（对齐 Java getRootFolders）
         return db.query(Folder).filter(
-            Folder.completepath.startswith(f"{ws}/"),
+            Folder.parentfolder_completepath == ws,
         ).order_by(Folder.completepath).all()
 
     def rename_folder(self, db, completepath, new_name):
