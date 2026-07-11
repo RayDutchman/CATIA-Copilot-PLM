@@ -269,29 +269,52 @@ class DocumentService:
             "AND documentrevision_version=:ver"),
             {"ws": ws, "did": doc_id, "ver": ver})
 
-        # 清理文档迭代的文档链接（对齐 Java removeRevision → documentDAO.removeDoc 级联）
+        # 清理文档迭代的文档链接（对齐 Java removeRevision → documentDAO.removeDoc 的
+        # DocumentIteration.linkedDocuments orphanRemoval 级联：仅删本 revision 迭代拥有的
+        # documentlink，逐个 id 精确删除，不做全局清理——documentlink.id 被 4 张迭代表引用
+        # 全部 NO ACTION，全局 NOT IN 会误删其它实体的链接）
+        old_dl_ids = [r[0] for r in db.execute(text(
+            "SELECT documentlink_id FROM documentiteration_documentlink "
+            "WHERE workspace_id=:ws AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver}).fetchall()]
         db.execute(text(
             "DELETE FROM documentiteration_documentlink "
             "WHERE workspace_id=:ws "
             "AND documentmaster_id=:did "
             "AND documentrevision_version=:ver"),
             {"ws": ws, "did": doc_id, "ver": ver})
-        db.execute(text(
-            "DELETE FROM documentlink WHERE id NOT IN "
-            "(SELECT documentlink_id FROM documentiteration_documentlink)"))
+        for dl_id in old_dl_ids:
+            still = db.execute(text(
+                "SELECT 1 FROM documentiteration_documentlink WHERE documentlink_id=:id LIMIT 1"
+            ), {"id": dl_id}).first()
+            if not still:
+                db.execute(text("DELETE FROM documentlink WHERE id=:id"), {"id": dl_id})
 
-        # 清理文档迭代的属性（对齐 Java removeRevision → documentDAO.removeDoc 级联）
+        # 清理文档迭代的属性（对齐 Java DocumentIteration.instanceAttributes 的
+        # orphanRemoval+CascadeType.ALL 级联：仅删本 revision 迭代拥有的 instanceattribute，
+        # 逐个 id 精确删除——instanceattribute.id 被 5 张表引用全部 NO ACTION，全局 NOT IN
+        # 会漏 prdinstiteration_attribute/pathdataiteration_attribute 导致 FK 500，
+        # 且需先删 LOV 子值 attribute_namevalue）
+        old_attr_ids = [r[0] for r in db.execute(text(
+            "SELECT instanceattribute_id FROM documentiteration_attribute "
+            "WHERE workspace_id=:ws AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"),
+            {"ws": ws, "did": doc_id, "ver": ver}).fetchall()]
         db.execute(text(
             "DELETE FROM documentiteration_attribute "
             "WHERE workspace_id=:ws "
             "AND documentmaster_id=:did "
             "AND documentrevision_version=:ver"),
             {"ws": ws, "did": doc_id, "ver": ver})
-        db.execute(text(
-            "DELETE FROM instanceattribute WHERE id NOT IN "
-            "(SELECT instanceattribute_id FROM documentiteration_attribute) "
-            "AND id NOT IN "
-            "(SELECT instanceattribute_id FROM partiteration_attribute)"))
+        for attr_id in old_attr_ids:
+            still = db.execute(text(
+                "SELECT 1 FROM documentiteration_attribute WHERE instanceattribute_id=:id LIMIT 1"
+            ), {"id": attr_id}).first()
+            if not still:
+                # 先删 LOV 子值（InstanceListOfValuesAttribute.items → attribute_namevalue）
+                db.execute(text("DELETE FROM attribute_namevalue WHERE attribute_id=:id"), {"id": attr_id})
+                db.execute(text("DELETE FROM instanceattribute WHERE id=:id"), {"id": attr_id})
 
         # 清理关联表
         db.execute(text(
