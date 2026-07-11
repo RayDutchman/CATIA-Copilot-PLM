@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-07-11 — FastAPI 迁移全量审计（8 域，仅报告不修复）
+
+> 以 `docs/full-audit-checklist.md` 22 条要点为准绳，编排 8 个 explore subagent 分 2 波逐端点对照 Java 源码 + DB information_schema 真值核实，产出结构化审计报告。**本次仅审计，不含代码修复。**
+
+### docs(audit): 新增 docs/migration/audit/ 审计报告目录
+
+- `00-index.md` 总报告：8 域合计 **26 CRITICAL / 30 HIGH / 47 MEDIUM / 16 LOW**（去重后约 118 独立问题）
+- `00-machine-scan.md` 机器扫描基线；`01`~`08` 八份域报告（parts/products/documents/workspace-user-auth/baselines-effectivity/workflow-change-tasks/query-importer/crosscutting）
+- **主 agent 已用 information_schema + 读源码二次核实 4 个"运行时必崩"型 CRITICAL，全部属实**：
+  - B-1 `models/product/effectivity.py:18-20` ORM `startlot/endlot/creationdate/type_effectivity` 伪列（DB 实为 startlotid/endlotid，无后两列）
+  - B-2 `routers/effectivity.py:139` INSERT partrevision_effectivity 用 `workspace_id`（DB 实为 partmaster_workspace_id）
+  - B-3 `services/effectivity_manager.py:15,98` effectivity 表 `WHERE workspace_id`（无此列）
+  - X-1 `routers/share.py:80` SELECT sharedentity `expire_date`（DB 实为 expiredate，端点每次 500）
+- **发现两处与既有"已修复"记录矛盾/新增回归面**：
+  - effectivities：Bug #5 当时仅修 GET SELECT，写路径（ORM/INSERT/manager）列名仍错（B-1/B-2/B-3）
+  - 深拷贝：2026-07-11 修的是 instanceattribute FK，P-1 新发现 **PartUsageLink** 组件链 checkout 仍浅拷贝复用 component_id → 更新子件 FK 500（不同表）
+- checklist 要点#5（dtype 写入不一致）经核实 `_sync_instance_attributes` 已写 dtype，**已解决**
+
+### docs(audit): 新增 FIX-PLAN.md 分批修复实施计划
+
+- `docs/migration/audit/FIX-PLAN.md`：8 批次（批 0 种子恢复建门禁 → 批 7 configSpec），每批一个会话粒度
+- 核心编排：subagent 认领**互不重叠的文件包**（附录 A 全局文件所有权矩阵证明全批次不相交），只写不验证/不 commit；pytest+脚本验证、部署、commit 由主 agent 每批统一处理
+- P0-b 级联删除抽取 `workspaces.py` 内联逻辑为共享函数 `workspace_deletion.cascade_delete_workspace`（跨文件重构由主 agent 亲做）
+
 ## 2026-07-11 — 3D 预览修复 + Conversion Service 收尾 + 删除工作区遗漏修复
 
 > 3D 预览三根因修复，conversion LOD 生成部署，工作区删除 file 级联补全。instances 辅助函数移入 instance_body_writer_tools.py。产品级 3D 查看修复（产品配置页面）。

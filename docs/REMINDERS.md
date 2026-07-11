@@ -8,6 +8,17 @@
 
 > 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限修复合集，并**新增 Query 自定义查询执行引擎 + Importer 属性导入域（分支 feat/py-query-execution-engine）**。**剩余功能域**：① WebSocket /ws 403 修复；② 种子脚本修复（解阻 10 个 pytest 失败）。本文件只保留**跨领域非迁移**待办。
 
+### 🔴 全量审计发现（2026-07-11，见 docs/migration/audit/00-index.md，共 26 CRITICAL）
+
+> **仅出审计报告，尚未修复。** 修复须逐条确认后另开任务。以下为最高优先级 P0（已 information_schema 核实属实，运行时必崩）：
+> - [ ] **B-1/B-2/B-3 effectivity 域完全不可用**：ORM 伪列(startlot/endlot/creationdate/type_effectivity) + INSERT partrevision_effectivity 用 workspace_id(应 partmaster_workspace_id) + effectivity_manager WHERE workspace_id(表无此列)。⚠️ Bug #5 当时只修了 GET SELECT，写路径未修。
+> - [ ] **X-1 share 端点每次 500**：`share.py:80` SELECT `expire_date`（DB 实为 `expiredate`），`/shared/{uuid}/documents|parts` 全崩。
+> - [ ] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表，属新发现）。
+> - [ ] **数据丢失/损坏类**：D-1(文档 checkout 丢 linkedDocs/attrs)、D-3(update_iteration 忽略 instanceAttributes)、PR-CRIT-1/2(产品配置写错表+ID 不关联)、B-4/W-1/W-2(级联删除孤儿)。
+> - [ ] **功能桩/权限类**：PR-CRIT-3/4/5、D-2/D-4、TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、X-2、W-3。
+>
+> HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
+
 ### 高优先级
 
 - [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — 多对多表已接入
@@ -33,7 +44,7 @@
 | 2 | ~~创建基线 TypeError + 校验缺失~~ | ✅ Fixed | BFS 校验 + response 补 author |
 | 3 | 通知设置不持久化 | ⏳ 待确认 | API 实现正确，可能是前端权限问题 |
 | 4 | Payara JPA 缓存 8000/8005 权限互相不可见 | ⏳ 已知 | EclipseLink L2 缓存架构问题 |
-| 5 | ~~effectivities 500~~ | ✅ Fixed | pre.workspace_id→pre.partmaster_workspace_id |
+| 5 | ~~effectivities 500~~ ⚠️ **仅 GET 修复** | ⏳ 写路径仍崩 | GET SELECT 已修(pre.partmaster_workspace_id)；但 INSERT/ORM/manager 列名仍错，见审计 B-1/B-2/B-3 |
 | 6 | ~~用户列表显示 login 而非姓名~~ | ✅ Fixed | tasks/doc_baselines/product_structure 全量补 Account.name |
 | 7 | ~~零件创建 422 (camelCase)~~ | ✅ Fixed | PartCreationDTO 补 Field alias |
 | 8 | ~~零件列表"显示全部" 422~~ | ✅ Fixed | length ge=1→ge=0 对齐 Payara pMaxResults==0 |
