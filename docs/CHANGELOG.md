@@ -6,6 +6,31 @@
 
 ---
 
+## 2026-07-11 — 审计修复批次 1：P0-a 列名必崩（effectivity + share）
+
+> FIX-PLAN 批次 1。effectivity 域完全不可用（ORM 伪列 + INSERT/manager 列名错）+ share 端点每次 500（expiredate 列名 + 公开共享权限顺序）。改动小、验证充分：pytest 无新增 fail，在线 smoke 全绿。
+
+### fix(effectivity): correct ORM/SQL column names and workspace scoping
+
+- **B-1** `models/product/effectivity.py`：ORM 列修正 startlot→startlotid、endlot→endlotid，删除 creation_date/type_effectivity 伪列
+- **B-2** `routers/effectivity.py` + `services/effectivity_manager.py`：INSERT partrevision_effectivity workspace_id→partmaster_workspace_id
+- **B-3** `services/effectivity_manager.py`：get/delete_effectivity 移除不存在的 WHERE workspace_id，改经 partrevision_effectivity EXISTS 验证归属；`_effectivity_to_dto` ORM 分支改用 `vars(eff)` 取 Python 属性名
+- **B-9** `routers/effectivity.py`：GET/PUT `/effectivities/{id}` 补 `/workspaces/{ws}` 前缀
+- **B-12** `routers/effectivity.py`：create_effectivity 补 dtype 必填字段校验（SERIAL→startNumber、DATE→startDate、LOT→startLotId 非空，否则 CreationException）
+
+### fix(share): correct sharedentity column name and public-share auth order
+
+- **X-1** `routers/share.py`：expire_date→expiredate（DB sharedentity 列名），`/shared/{uuid}/documents|parts` 不再 500
+- **X-2** `routers/share.py`：公开共享端点 get_public_shared_document/part 先验 public_shared 再验成员身份（对齐 Java SharedResource 先公开后认证），非成员可访问公开资源
+- **X-3** `services/share_manager.py`：uuid/password 混淆修正（WHERE se.password→se.uuid，expire→expiredate）
+
+### 验证结果
+
+- **pytest**：278 passed / 1 failed（--ignore=tests/test_vault.py），与批 0 基线一致，无新增 fail
+- **在线 smoke**：effectivity CRUD 往返全通（创建 201→GET→DELETE 204→GET 404 确认删除）；dtype 校验抛 CreationException；shared 端点不再 500（正确返回 404 Not Found）
+
+---
+
 ## 2026-07-11 — 审计修复批次 0：回归测试门禁恢复（GD50 工作区）
 
 > FIX-PLAN 批次 0。原测试套件目标工作区 `Workspace_2` 已从 DB 删除（仅剩 GD50），导致 84 个 pytest 失败无回归门禁。计划原方案是重建 Workspace_2；经用户决策改为**将测试套件整体重定向到已有真实数据的 GD50 工作区**（test1 为其 admin）。**仅改测试代码 + 修测试数据，不动项目代码。**

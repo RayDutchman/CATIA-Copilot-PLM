@@ -14,10 +14,12 @@
 >
 > **✅ 批次 0 已完成（2026-07-11）**：回归测试门禁恢复。测试套件由已删除的 `Workspace_2` 整体重定向到 GD50 工作区。**pytest 基线：84 failed → 278 passed / 1 failed（--ignore=tests/test_vault.py）**。唯一残留 fail = `test_i18n_bypass`（part.py 3 处硬编码 HTTPException，真实代码问题，留待后续批次）。此为后续「无新增 fail」判定基线。
 >
+> **✅ 批次 1 已完成（2026-07-11）**：P0-a 列名必崩（effectivity + share 域 6 项 CRITICAL + 1 HIGH 全部修复）。pytest 无新增 fail，在线 smoke 全绿。
+>
 > 以下为待修的最高优先级 P0（已 information_schema 核实属实，运行时必崩）：
-> - [ ] **B-1/B-2/B-3 effectivity 域完全不可用**：ORM 伪列(startlot/endlot/creationdate/type_effectivity) + INSERT partrevision_effectivity 用 workspace_id(应 partmaster_workspace_id) + effectivity_manager WHERE workspace_id(表无此列)。⚠️ Bug #5 当时只修了 GET SELECT，写路径未修。
-> - [ ] **X-1 share 端点每次 500**：`share.py:80` SELECT `expire_date`（DB 实为 `expiredate`），`/shared/{uuid}/documents|parts` 全崩。
-> - [ ] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表，属新发现）。
+> - [x] **B-1/B-2/B-3 effectivity 域完全不可用** → ✅ 批次 1 已修复（含 B-9 路由前缀、B-12 dtype 校验）
+> - [x] **X-1 share 端点每次 500** → ✅ 批次 1 已修复（含 X-2 认证顺序、X-3 uuid 混淆）
+> - [ ] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表，属新发现）。→ 批次 3 修复
 > - [ ] **数据丢失/损坏类**：D-1(文档 checkout 丢 linkedDocs/attrs)、D-3(update_iteration 忽略 instanceAttributes)、PR-CRIT-1/2(产品配置写错表+ID 不关联)、B-4/W-1/W-2(级联删除孤儿)。
 > - [ ] **功能桩/权限类**：PR-CRIT-3/4/5、D-2/D-4、TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、X-2、W-3。
 >
@@ -48,7 +50,7 @@
 | 2 | ~~创建基线 TypeError + 校验缺失~~ | ✅ Fixed | BFS 校验 + response 补 author |
 | 3 | 通知设置不持久化 | ⏳ 待确认 | API 实现正确，可能是前端权限问题 |
 | 4 | Payara JPA 缓存 8000/8005 权限互相不可见 | ⏳ 已知 | EclipseLink L2 缓存架构问题 |
-| 5 | ~~effectivities 500~~ ⚠️ **仅 GET 修复** | ⏳ 写路径仍崩 | GET SELECT 已修(pre.partmaster_workspace_id)；但 INSERT/ORM/manager 列名仍错，见审计 B-1/B-2/B-3 |
+| 5 | ~~effectivities 500~~ | ✅ Fixed | GET + 写路径全部修复（批 1：B-1/B-2/B-3/B-9/B-12） |
 | 6 | ~~用户列表显示 login 而非姓名~~ | ✅ Fixed | tasks/doc_baselines/product_structure 全量补 Account.name |
 | 7 | ~~零件创建 422 (camelCase)~~ | ✅ Fixed | PartCreationDTO 补 Field alias |
 | 8 | ~~零件列表"显示全部" 422~~ | ✅ Fixed | length ge=1→ge=0 对齐 Payara pMaxResults==0 |
