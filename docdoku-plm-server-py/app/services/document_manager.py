@@ -976,8 +976,50 @@ class DocumentService:
         return t
 
     def delete_template(self, db, ws, template_id):
+        from pathlib import Path
+        from app.core.config import settings
+
         t = self.get_template(db, ws, template_id)
-        db.delete(t); db.commit()
+
+        br_rows = db.execute(sql_text(
+            "SELECT attachedfile_fullname FROM documentmastertemplate_binres "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id}).fetchall()
+        for (fullname,) in br_rows:
+            db.execute(sql_text("DELETE FROM binaryresource WHERE fullname=:fn"),
+                       {"fn": fullname})
+            file_path = Path(settings.VAULT_PATH) / fullname
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                except OSError:
+                    pass
+
+        db.execute(sql_text(
+            "DELETE FROM documentmastertemplate_binres "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id})
+
+        iat_rows = db.execute(sql_text(
+            "SELECT instanceattributetemplate_id FROM documentmastertemplate_attr "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id}).fetchall()
+
+        db.execute(sql_text(
+            "DELETE FROM documentmastertemplate_attr "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id})
+
+        for (iat_id,) in iat_rows:
+            db.execute(sql_text("DELETE FROM instanceattributetemplate WHERE id=:id"),
+                       {"id": iat_id})
+
+        if t.acl_id is not None:
+            db.execute(sql_text("DELETE FROM acl WHERE id=:acl_id"),
+                       {"acl_id": t.acl_id})
+
+        db.delete(t)
+        db.commit()
 
     def save_file(self, db, ws, doc_id, ver, iteration, filename, data,
                   user_login=None):
