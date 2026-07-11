@@ -666,8 +666,54 @@ class ProductService:
                 part_iteration_usagelink.c.iteration == iteration.iteration,
             )
         )
-        # 删除孤儿 PartUsageLink（关联表 partusagelink_cadinstance 会自动级联清理）
+        # 删除孤儿 PartUsageLink：所有 FK 均为 NO ACTION（无级联），
+        # 必须先按依赖顺序清理关联表 + 各自的 cadinstance/substitute 行，再删 partusagelink。
         if old_link_ids:
+            from sqlalchemy import text
+            # 1. 收集将成孤儿的 cadinstance id（经 partusagelink_cadinstance 关联）
+            orphan_cad_ids = [
+                r[0] for r in db.execute(text(
+                    "SELECT cadinstance_id FROM partusagelink_cadinstance "
+                    "WHERE partusagelink_id = ANY(:ids)"
+                ), {"ids": old_link_ids}).fetchall()
+            ]
+            # 2. 收集将成孤儿的 substitute link id（经 pusagelink_psubstitutelink 关联）
+            orphan_sub_ids = [
+                r[0] for r in db.execute(text(
+                    "SELECT partsubstitute_id FROM pusagelink_psubstitutelink "
+                    "WHERE partusagelink_id = ANY(:ids)"
+                ), {"ids": old_link_ids}).fetchall()
+            ]
+            # 3. 收集 substitute link 关联的 cadinstance id
+            orphan_sub_cad_ids = []
+            if orphan_sub_ids:
+                orphan_sub_cad_ids = [
+                    r[0] for r in db.execute(text(
+                        "SELECT cadinstance_id FROM partsubstitutelink_cadinstance "
+                        "WHERE partsubstitutelink_id = ANY(:ids)"
+                    ), {"ids": orphan_sub_ids}).fetchall()
+                ]
+            # 4. 按依赖顺序删除关联表
+            db.execute(text(
+                "DELETE FROM partusagelink_cadinstance WHERE partusagelink_id = ANY(:ids)"
+            ), {"ids": old_link_ids})
+            db.execute(text(
+                "DELETE FROM pusagelink_psubstitutelink WHERE partusagelink_id = ANY(:ids)"
+            ), {"ids": old_link_ids})
+            if orphan_sub_ids:
+                db.execute(text(
+                    "DELETE FROM partsubstitutelink_cadinstance WHERE partsubstitutelink_id = ANY(:ids)"
+                ), {"ids": orphan_sub_ids})
+                db.execute(text(
+                    "DELETE FROM partsubstitutelink WHERE id = ANY(:ids)"
+                ), {"ids": orphan_sub_ids})
+            # 5. 删除孤儿 cadinstance 行（substitute 与 usage 两批）
+            all_orphan_cad = orphan_cad_ids + orphan_sub_cad_ids
+            if all_orphan_cad:
+                db.execute(text(
+                    "DELETE FROM cadinstance WHERE id = ANY(:ids)"
+                ), {"ids": all_orphan_cad})
+            # 6. 最后删除孤儿 PartUsageLink
             db.query(PartUsageLink).filter(
                 PartUsageLink.id.in_(old_link_ids)
             ).delete(synchronize_session=False)
@@ -702,8 +748,12 @@ class ProductService:
                 m20 = cad_dto.m20 if cad_dto.m20 is not None else (mat[6] if len(mat) > 6 else None)
                 m21 = cad_dto.m21 if cad_dto.m21 is not None else (mat[7] if len(mat) > 7 else None)
                 m22 = cad_dto.m22 if cad_dto.m22 is not None else (mat[8] if len(mat) > 8 else None)
+                # 推断 rotation_type：DTO 未提供时，有矩阵值走 MATRIX，否则 ANGLE（对齐 Java RotationType 兜底）
+                rot_type = cad_dto.rotationType
+                if rot_type is None:
+                    rot_type = "MATRIX" if m00 is not None else "ANGLE"
                 cad = CADInstance(
-                    rotation_type=cad_dto.rotationType,
+                    rotation_type=rot_type,
                     rx=cad_dto.rx, ry=cad_dto.ry, rz=cad_dto.rz,
                     tx=cad_dto.tx, ty=cad_dto.ty, tz=cad_dto.tz,
                     m00=m00, m01=m01, m02=m02,
@@ -1280,7 +1330,9 @@ class ProductService:
                 geometry_fullname=new_full,
             ))
 
-        # 复制子件链接关联（纯关系，不需 BinaryResource 复制）
+        # 复制子件链接关联：深克隆 PartUsageLink + CADInstance，
+        # 避免新迭代复用旧 component_id，后续更新 DELETE partusagelink 时 FK 违反
+        from sqlalchemy import text
         for row in db.execute(
             part_iteration_usagelink.select().where(
                 part_iteration_usagelink.c.workspace_id == ws,
@@ -1289,10 +1341,42 @@ class ProductService:
                 part_iteration_usagelink.c.iteration == from_iter,
             )
         ).fetchall():
+            old_pul_id = row.component_id
+            # 深克隆 partusagelink 行
+            new_pul = db.execute(text(
+                "INSERT INTO partusagelink "
+                "(amount, commentdata, optional, referencedescription, unit, "
+                "component_partnumber, component_workspace_id) "
+                "SELECT amount, commentdata, optional, referencedescription, unit, "
+                "component_partnumber, component_workspace_id "
+                "FROM partusagelink WHERE id = :old_id RETURNING id"
+            ), {"old_id": old_pul_id}).fetchone()
+            new_pul_id = new_pul[0]
+            # 深克隆关联的 cadinstance 行，重建 partusagelink_cadinstance 关联
+            for ci_row in db.execute(text(
+                "SELECT cadinstance_id, cadinstance_order "
+                "FROM partusagelink_cadinstance WHERE partusagelink_id = :pid "
+                "ORDER BY cadinstance_order"
+            ), {"pid": old_pul_id}).fetchall():
+                new_cad = db.execute(text(
+                    "INSERT INTO cadinstance "
+                    "(rotationtype, rx, ry, rz, tx, ty, tz, "
+                    "m00, m01, m02, m10, m11, m12, m20, m21, m22) "
+                    "SELECT rotationtype, rx, ry, rz, tx, ty, tz, "
+                    "m00, m01, m02, m10, m11, m12, m20, m21, m22 "
+                    "FROM cadinstance WHERE id = :old_id RETURNING id"
+                ), {"old_id": ci_row.cadinstance_id}).fetchone()
+                new_cad_id = new_cad[0]
+                db.execute(text(
+                    "INSERT INTO partusagelink_cadinstance "
+                    "(partusagelink_id, cadinstance_id, cadinstance_order) "
+                    "VALUES (:pul_id, :cad_id, :ord)"
+                ), {"pul_id": new_pul_id, "cad_id": new_cad_id,
+                    "ord": ci_row.cadinstance_order})
             db.execute(part_iteration_usagelink.insert().values(
                 workspace_id=ws, partmaster_partnumber=pn,
                 partrevision_version=ver, iteration=to_iter,
-                component_id=row.component_id,
+                component_id=new_pul_id,
                 component_order=row.component_order,
             ))
 
