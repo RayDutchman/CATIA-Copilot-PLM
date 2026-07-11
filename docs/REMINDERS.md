@@ -16,15 +16,18 @@
 > **✅ 批次 1 已完成（2026-07-11）**：P0-a 列名必崩（effectivity + share 域 6 项 CRITICAL + 1 HIGH 全部修复）。
 > **✅ 批次 2 已完成（2026-07-11）**：P0-b 级联删除（重构 cascade_delete_workspace + B-4/D-9/W-2 补级联，消除 4 处危险单行 stub）。pytest 无新增 fail，在线 smoke 全绿。
 > **✅ 批次 3 已完成（2026-07-12）**：P0-c 数据完整性（P-1 零件 checkout 深克隆 PartUsageLink+cadinstance + 连带修 __do_sync_components 孤儿清理；PR-MED-2 rotationType 推断；D-1 文档 checkout 深拷贝 links/attrs+flush；D-3 update_iteration instanceAttributes 替换+校验；D-12 target_workspace_id；D-10 list_folders 只返直接子）。pytest 无新增 fail，在线 smoke 全绿。
+> **✅ 批次 4 已完成（2026-07-12）**：P0-d 产品配置架构 + 迭代 undo 级联。brainstorming 定 ProductConfiguration 独立实体方案（方案A）；PR-CRIT-1 create_config 写正确 prdcfg_* 表+delete_config 对称清理；PR-CRIT-2 验证为误报；PR-CRIT-3 rebase 真实实现；PR-CRIT-5 update_instance 补 /{iteration} 就地改（Java 真值）；PR-CRIT-4 upload 建 BinaryResource；P-14/D-14 undo_checkout 级联清子表+抽 _delete_orphan_usage_links 共享方法。pytest 278 passed/1 known-fail，smoke 全绿（Assem1/D14TEST checkout→undocheckout HTTP 200 精确回基线零残留）。
 >
 > 以下为待修的最高优先级 P0：
 > - [x] **B-1/B-2/B-3 effectivity** → ✅ 批 1
 > - [x] **X-1/X-2/X-3 share** → ✅ 批 1
 > - [x] **B-4/W-1/W-2/W-3 级联删除/账户删除** → ✅ 批 2（含 D-9 模板级联）
 > - [x] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表）→ ✅ 批 3（深克隆 + 孤儿清理）
-> - [x] **D-1/D-3 文档 checkout/update 数据丢失** → ✅ 批 3。剩余数据丢失/损坏类：PR-CRIT-1/2(产品配置写错表+ID 不关联) → 批 4。
-> - [ ] **功能桩/权限类**：PR-CRIT-3/4/5、D-2/D-4、TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、X-2、W-3。
-> - [ ] **⚠️ 批 3 smoke 新发现（已对拍 Payara 确认属实，编入批 4）**：零件 `undo_checkout`（product_manager.py，P-14）+ 文档 `undo_checkout`（document_manager.py，D-14）用 `db.delete(last)` 删末迭代，但 SQLAlchemy 只清 secondary 关系，未清裸 SQL 层子表（partiteration_attribute/documentlink/pathdata_attr、documentiteration_attribute/documentlink/binres）。Java 靠 PartIteration/DocumentIteration 实体 orphanRemoval/CascadeType.ALL 级联，Python ORM 无对应子关系 → 对任何带属性/组件/链接的零件或文档 500（NO ACTION FK）。→ 批 4 Subagent G2 修复。
+> - [x] **D-1/D-3 文档 checkout/update 数据丢失** → ✅ 批 3。
+> - [x] **PR-CRIT-1/2/3/4/5 产品配置架构 + 实例 rebase/update/upload** → ✅ 批 4（PR-CRIT-2 验证为误报）
+> - [x] **P-14/D-14 undo_checkout 级联** → ✅ 批 4
+> - [ ] **功能桩/权限类（批 5 起）**：TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、WF-1、D-2/D-4 等。
+> - [ ] **🆕 批 4 smoke 新发现（独立预存 bug，非本批范围）**：文档删除端点的全局孤儿清理 SQL `DELETE FROM instanceattribute WHERE id NOT IN (SELECT ... documentiteration_attribute) AND id NOT IN (SELECT ... partiteration_attribute)` **未排除 `prdinstiteration_attribute`（产品实例属性）**，当库中存在产品实例属性时删文档触发 `fk_prdinstiteration_attribute_instanceattribute_id` FK 500。修复：该 NOT IN 子句补 `AND id NOT IN (SELECT instanceattribute_id FROM prdinstiteration_attribute)`（还有 pathdataiteration_attribute 等其它引用表也需一并核实）。定位在 document 删除服务/端点。
 >
 > HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
 

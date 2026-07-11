@@ -6,7 +6,42 @@
 
 ---
 
-## 2026-07-12 — 审计修复批次 3：P0-c 数据完整性（checkout/update 深拷贝）
+## 2026-07-12 — 审计修复批次 4：P0-d 产品配置架构 + 迭代 undo 级联
+
+> FIX-PLAN 批次 4。先 brainstorming 定 ProductConfiguration ID 方案（方案A：保持独立实体），再 2 并行 subagent（G: 产品配置/实例文件包；G2: undo_checkout 级联）。主 agent 复核 Java 源码纠正 2 处审计误诊。
+
+### 决策记录：ProductConfiguration ID 方案（brainstorming）
+
+- **方案A（采纳）**：ProductConfiguration 保持独立实体（对齐 Java `core/configuration/ProductConfiguration.java` 独立 `@Entity` + `GenerationType.IDENTITY`），不做 joined inheritance、不回填 productbaseline。
+- **三重佐证**：① Java 源码；② DB `information_schema`：`productconfiguration` 独立 `productconfiguration_id_seq`，FK `fk_prdcfg_substitutelink/optionallink_productbaseline_id` 的 `productbaseline_id` 列（命名误导）实际引用 `productconfiguration.id`；③ Python 模型 id + 读取路径已用 config.id。
+- **纠正审计误诊**：**PR-CRIT-2 为误报**（读写主键已一致）；**PR-CRIT-5** Java `updateProductInstance` 实为「就地改指定迭代」非「创建新迭代」，按 Java 真值修。
+
+### fix(product): product configuration persistence + instance rebase/update/upload (PR-CRIT-1~5)
+
+- **PR-CRIT-1** `services/product_structure.py` `create_config`：substitute/optional 改写路径字符串到 `prdcfg_substitutelink`/`prdcfg_optionallink`（keyed by `config.id`），停止误写 `partsubstitutelink` + `UPDATE partusagelink SET optional`、停止把路径当 dict。并补 `delete_config` 先清 prdcfg_* 关联行（FK NO ACTION）恢复写/删对称
+- **PR-CRIT-3** `routers/product_instances.py` `rebase_instance`：从空 204 桩改为真实实现（校验 baseline 存在 → 创建 iteration+1 + 关联新 baseline + 继承 iterationNote）；简化未深拷贝 collections/pathData
+- **PR-CRIT-5** `update_instance`：新增 `PUT .../instances/{sn}/iterations/{iteration}` 路由，按 iteration 号就地更新目标迭代的 note/instanceAttributes/linkedDocuments（对齐 Java）；新增 `_infer_attr_dtype`/`_replace_instance_attributes` helper（全量替换+孤儿清理）
+- **PR-CRIT-4** `routers/product_files.py` upload：写物理文件同时 INSERT/UPDATE `binaryresource` 行 + `prdinstiteration_binres` 关联（先查重），返回 201+fullName，可标准下载
+
+### fix(checkout): cascade-clean iteration child tables in undo_checkout (P-14, D-14)
+
+- **P-14** `services/product_manager.py` `undo_checkout`：`db.delete(last)` 前按 FK 依赖顺序清理末迭代子表——`partiteration_attribute`(+孤儿 instanceattribute)、`partiteration_pathdata_attr`(+孤儿 instanceattributetemplate)、`partiteration_documentlink`(+孤儿 documentlink)、`partiteration_partusagelink`(+孤儿 PartUsageLink 深链)、`partiteration_binres`/`partiteration_geometry`。修复带属性/组件的零件 undocheckout 必 500（NO ACTION FK）
+- **重构** 抽取 `_delete_orphan_usage_links(db, old_link_ids)` 共享私有方法（从批 3 `__do_sync_components` 提取，行为不变），undo_checkout 与 sync_components 复用
+- **D-14** `services/document_manager.py` `undo_checkout`：同理清理 `documentiteration_attribute`(+孤儿 instanceattribute)、`documentiteration_documentlink`(+孤儿 documentlink)、`documentiteration_binres`
+
+### 验证
+
+- **pytest**：278 passed / 1 failed（test_i18n_bypass 已知 batch-0 fail），与批 0 基线一致，无新增 fail
+- **在线 smoke（test1 JWT，GD50）**：
+  - PR-CRIT-1/2：`POST products/ceshi/configurations` 带 substituteLinks/optionalUsageLinks 路径字符串 → DB `prdcfg_*` 正确写入 keyed by config.id → GET 读回完全一致；delete_config 清关联后 204
+  - PR-CRIT-4：`POST files/.../SMOKE-SN-B4/iterations/1` 上传 → binaryresource + prdinstiteration_binres 建行 → GET 下载 200 内容一致
+  - PR-CRIT-5：`PUT .../instances/SMOKE-SN-B4/iterations/1` 带 instanceAttributes → note 更新、属性 dtype 正确(Text/Number)、二次替换孤儿清理干净
+  - PR-CRIT-3：rebase 缺 id → 400、不存在 baseline → 404 BaselineNotFound
+  - **P-14**：Assem1 checkout→iter2 深克隆(ul17→34/pul41→58/cad62→96)→undocheckout **HTTP 200** 精确回到基线(ul17/pul41/cad62/checkout 清空)，零残留
+  - **D-14**：新建 D14TEST 加属性+链接→checkin→checkout iter2(attrs2→4/links1→2/ia2→4)→undocheckout **HTTP 200** 精确回到基线(attrs2/links1/ia2)，零残留
+- **注**：smoke 暴露文档删除端点全局孤儿清理 `DELETE instanceattribute WHERE id NOT IN (documentiteration_attribute) AND NOT IN (partiteration_attribute)` 未计入 `prdinstiteration_attribute`，属独立预存 bug（非本批范围），已记入 REMINDERS
+
+---
 
 > FIX-PLAN 批次 3。修复零件/文档 checkout 与 update_iteration 的浅拷贝/漏拷贝导致的数据丢失与 FK 500。2 并行 subagent（product_manager.py / document_manager.py 文件不相交）+ 主 agent 连线 router 与修连带 bug。
 

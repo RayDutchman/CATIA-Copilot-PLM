@@ -10,6 +10,7 @@
 - Java 对照：`ProductConfigurationsResource.java:179-198` → ProductBaselineManagerBean.createProductConfiguration
 - 证据：Python 把 substitute_links 写 `partsubstitutelink`、optional 写 `UPDATE partusagelink SET optional=true`。Java 正确写 `prdcfg_substitutelink(productbaseline_id, substitutelinks)` / `prdcfg_optionallink(productbaseline_id, optionalusagelinks)`（存路径字符串）。DB 已核实两表结构。
 - 结论与建议：配置的替代链/可选链永久丢失。重写为写 prdcfg_* 表、用路径字符串。
+- **✅ 已修复（2026-07-12，批 4）**：`create_config` 改写路径字符串到 `prdcfg_substitutelink`/`prdcfg_optionallink`（keyed by config.id）；并补 `delete_config` 清 prdcfg_* 关联行（FK NO ACTION）。smoke 往返一致。
 
 ## 问题 PR-CRIT-2
 - 严重级：CRITICAL
@@ -18,6 +19,7 @@
 - Java 对照：`ProductConfiguration extends ProductBaseline`（JPA joined inheritance 共享 id）
 - 证据：Python ProductConfiguration 有独立自增 id，未继承 ProductBaseline.id；读取用 `prdcfg_substitutelink.productbaseline_id = config.id`，但该 FK 指向 productbaseline.id 而非 productconfiguration.id。两 SERIAL 独立自增，仅偶然重叠可用。
 - 结论与建议：改 joined inheritance 或创建配置时同步写 productbaseline 回填 FK。与 PR-CRIT-1 叠加。
+- **⚠️ 已复核为误报（2026-07-12，批 4 brainstorming）**：Java `ProductConfiguration` 是**独立 `@Entity`**（非 `extends ProductBaseline`），有自己的 `GenerationType.IDENTITY` id。DB `information_schema` 证实 `prdcfg_substitutelink/optionallink.productbaseline_id`（命名误导）FK **实际指向 `productconfiguration.id`**，且 `productconfiguration` 有独立 `productconfiguration_id_seq`。Python 模型 id 与读取路径均已用 config.id。**读写主键本就一致，无需改动**。
 
 ## 问题 PR-CRIT-3
 - 严重级：CRITICAL
@@ -26,6 +28,7 @@
 - Java 对照：`ProductInstancesResource.java:448-458` → rebaseProductInstance
 - 证据：Python `return Response(status_code=204)` 完全无操作。Java 创建新 ProductInstanceIteration 并关联基线。
 - 结论与建议：实现完整 rebase 逻辑。
+- **✅ 已修复（2026-07-12，批 4）**：`rebase_instance` 校验 baseline 存在→创建 iteration+1 + 关联新 baseline + 继承 iterationNote，去掉空 204 桩。简化实现未深拷贝 collections/pathData（已注释标注）。
 
 ## 问题 PR-CRIT-4
 - 严重级：CRITICAL
@@ -34,6 +37,7 @@
 - Java 对照：`ProductInstanceBinaryResource.java:102-134` → saveFileInProductInstance
 - 证据：Python 只写物理文件不注册 BinaryResource DB 行。Java 创建 BinaryResource + 写 vault + 返回 201+URL。
 - 结论与建议：文件上传后无 DB 记录，无法经标准 binary resource 下载/删除。需创建 BinaryResource 行。
+- **✅ 已修复（2026-07-12，批 4）**：upload 写物理文件同时 INSERT/UPDATE `binaryresource` + `prdinstiteration_binres` 关联，返回 201+fullName。smoke 上传→下载一致。
 
 ## 问题 PR-CRIT-5
 - 严重级：CRITICAL
@@ -42,6 +46,7 @@
 - Java 对照：`ProductInstancesResource.java:197-243` URL 含 `/{iteration}`
 - 证据：Python URL 缺 `/{iteration}`，直接改末迭代不创建新迭代，且未处理 instanceAttributes。Java 按 iteration 创建新迭代（含属性/文档链接/基线引用）。
 - 结论与建议：修复路由 + 补 InstanceAttribute 处理。
+- **✅ 已修复（2026-07-12，批 4）**：补 `PUT .../instances/{sn}/iterations/{iteration}` 路由，就地更新目标迭代 note/instanceAttributes/linkedDocuments。**注**：复核 Java `updateProductInstance` 实为「就地改指定迭代」非「创建新迭代」，本报告原述有误，已按 Java 真值实现。
 
 ## 问题 PR-HIGH-1 ~ PR-HIGH-5
 - **PR-HIGH-1** (要点#11+#17)：`product_structure.py:141-144` filter_product_structure 缺 linkType 参数，无 filterProductStructureOnLinkType；diverge 接受但未使用。Java ProductResource.java:250。

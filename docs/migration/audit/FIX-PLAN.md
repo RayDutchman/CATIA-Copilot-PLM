@@ -140,28 +140,31 @@
 
 **PR-CRIT-1/2 强耦合（写错表 + ID 不关联），须一次性重构。先 brainstorming 定 ID 方案。**
 
-- [ ] **主 agent Step 0**：加载 `brainstorming` skill，与用户确定 `ProductConfiguration` 与 `ProductBaseline` 的 ID 关系方案（joined inheritance vs 创建时同步写 productbaseline 回填 FK）。产出决策记录。
+- [x] **主 agent Step 0（已完成 2026-07-12，brainstorming）**：决策 = **方案A：保持 ProductConfiguration 为独立实体**（对齐 Java），不做 joined inheritance、不回填 productbaseline。
+  > **决策记录（三重佐证）**：① Java `core/configuration/ProductConfiguration.java:47-51` 是**独立 `@Entity`**（非 `extends ProductBaseline`），有自己的 `@GeneratedValue(IDENTITY) int id`；② DB `information_schema`：`productconfiguration` 有独立 `productconfiguration_id_seq`；FK `fk_prdcfg_substitutelink_productbaseline_id`/`fk_prdcfg_optionallink_productbaseline_id` 的 `productbaseline_id` 列（命名误导）实际**引用 `productconfiguration.id`**；③ Python `product_configuration.py` 模型 id 已映射该 seq，读取路径 `_config_substitute_paths`/`_optional_paths`（`WHERE productbaseline_id=:config.id`）**已正确**。
+  > **结论**：**PR-CRIT-2 为审计误报**（读写主键已一致），降级为「验证读写一致」的空操作。真正 bug 仅 **PR-CRIT-1**（`create_config` 写错表 + 把路径字符串当 dict）。
+  > **PR-CRIT-5 修正**：研究 Java `ProductInstanceManagerBean.updateProductInstance:332-384` 确认它**就地改指定迭代（URL 含 `/{iteration}`），不创建新迭代**；audit/FIX-PLAN 原述「创建新迭代」有误，按 Java 真值修（补 `/{iteration}` 路由 + 就地改该迭代的 iterationNote/instanceAttributes/linkedDocuments）。
 
 ### 文件包 PKG-product-config → Subagent G
 **Files:** `app/services/product_structure.py`（`create_config` 约 679-697）、`app/models/configuration/product_configuration.py`、`app/routers/product_configurations.py`、`app/routers/product_instances.py`、`app/routers/product_files.py`
 
-- [ ] **PR-CRIT-1** `create_config`：substitute/optional 改写 `prdcfg_substitutelink(productbaseline_id, substitutelinks)` / `prdcfg_optionallink(productbaseline_id, optionalusagelinks)`（路径字符串），停止写 partsubstitutelink / `UPDATE partusagelink SET optional`。
-- [ ] **PR-CRIT-2** 按 Step 0 决策修 `product_configuration.py` 模型 + `product_configurations.py:63-78` 读取，使写入与读取主键一致。
-- [ ] **PR-CRIT-3** `product_instances.py:252-257` `rebase_instance`：实现真实 rebase（创建新 ProductInstanceIteration + 关联基线），去掉空 `Response(204)` 桩。
-- [ ] **PR-CRIT-5** `product_instances.py:107-155` `update_instance`：路由补 `/{iteration}`，创建新迭代而非改末迭代，处理 instanceAttributes。
-- [ ] **PR-CRIT-4** `product_files.py:14-23` upload：写物理文件的同时创建 `BinaryResource` DB 行，返回 201+URL。
+- [x] **PR-CRIT-1** `create_config`：substitute/optional 改写 `prdcfg_substitutelink(productbaseline_id, substitutelinks)` / `prdcfg_optionallink(productbaseline_id, optionalusagelinks)`（路径字符串），停止写 partsubstitutelink / `UPDATE partusagelink SET optional`。✅ 同时补 `delete_config` 清理 prdcfg_* 关联行（FK NO ACTION），恢复写/删对称。
+- [x] **PR-CRIT-2** 按 Step 0 决策修 `product_configuration.py` 模型 + `product_configurations.py:63-78` 读取，使写入与读取主键一致。✅ **验证为误报**：模型 id 已映射 productconfiguration_id_seq、读写均用 config.id，FK 实际指向 productconfiguration.id，无需改动。
+- [x] **PR-CRIT-3** `product_instances.py:252-257` `rebase_instance`：实现真实 rebase（创建新 ProductInstanceIteration + 关联基线），去掉空 `Response(204)` 桩。✅ 简化实现（新迭代+新 baseline+继承 note），未深拷贝 collections/pathData。
+- [x] **PR-CRIT-5** `product_instances.py:107-155` `update_instance`：路由补 `/{iteration}`，就地改指定迭代（**Java 真值：非创建新迭代**），处理 instanceAttributes。
+- [x] **PR-CRIT-4** `product_files.py:14-23` upload：写物理文件的同时创建 `BinaryResource` DB 行 + `prdinstiteration_binres` 关联，返回 201+fullName。
 
 ### 文件包 PKG-iteration-undo → Subagent G2（与 Subagent G 文件不相交）
 **Files:** `app/services/product_manager.py`（`undo_checkout` 约 474-508）、`app/services/document_manager.py`（`undo_checkout` 约 650-679）
 
 > **背景（批 3 smoke 新发现，已主 agent 对拍 Payara 确认属实）**：零件/文档 `undo_checkout` 用 `db.delete(last)` 删末迭代，但 SQLAlchemy 只自动清理 secondary 关系（part 的 attached_files/geometries/components 关联行），**不清理**仅存在于裸 SQL 层的子表。Java `ProductManagerBean.undoCheckOutPart:404-408` 靠 `PartIteration` 实体的 `orphanRemoval=true`/`CascadeType.ALL`（instanceAttributes/instanceAttributeTemplates/linkedDocuments）级联删除全部子行；Python ORM 的 `PartIteration`/`DocumentIteration` 均无这些子关系。所有相关 FK 均为 NO ACTION → 删末迭代必 500。
 
-- [ ] **P-14**（CRITICAL）`product_manager.py:474-508` `undo_checkout`：`db.delete(last)` 前，按 FK 依赖顺序清理末迭代子表 + 孤儿深拷贝行。需删：`partiteration_attribute`（+孤儿 `instanceattribute`）、`partiteration_pathdata_attr`（+孤儿 `instanceattributetemplate`）、`partiteration_documentlink`（+孤儿 `documentlink`）、`partiteration_usagelink`（+孤儿 `partusagelink`/`partusagelink_cadinstance`/`cadinstance`——复用批 3 `__do_sync_components` 的孤儿清理逻辑，可抽为共享私有方法）、`partiteration_binres`/`partiteration_geometry`（对应 `BinaryResource` 已由现有 LIKE 删除覆盖）。DB 真值：`partiteration_attribute(workspace_id,partmaster_partnumber,partrevision_version,iteration,instanceattribute_id,attribute_order)`；FK `fk_partiteration_attribute_iteration` 现为 NO ACTION。验证：带属性+组件的 GD50 零件 checkout→undocheckout 无 500，子表残留全 0。
-- [ ] **D-14**（CRITICAL）`document_manager.py:650-679` `undo_checkout`：同理，`db.delete(last)` 前清理 `documentiteration_attribute`（+孤儿 `instanceattribute`）、`documentiteration_documentlink`（+孤儿 `documentlink`）、`documentiteration_binres`（BinaryResource 已由现有 LIKE 删除覆盖，但关联行需先删）。验证：带属性+链接的文档 checkout→undocheckout 无 500。
+- [x] **P-14**（CRITICAL）`product_manager.py:474-508` `undo_checkout`：`db.delete(last)` 前，按 FK 依赖顺序清理末迭代子表 + 孤儿深拷贝行。需删：`partiteration_attribute`（+孤儿 `instanceattribute`）、`partiteration_pathdata_attr`（+孤儿 `instanceattributetemplate`）、`partiteration_documentlink`（+孤儿 `documentlink`）、`partiteration_usagelink`（+孤儿 `partusagelink`/`partusagelink_cadinstance`/`cadinstance`——复用批 3 `__do_sync_components` 的孤儿清理逻辑，可抽为共享私有方法）、`partiteration_binres`/`partiteration_geometry`（对应 `BinaryResource` 已由现有 LIKE 删除覆盖）。DB 真值：`partiteration_attribute(workspace_id,partmaster_partnumber,partrevision_version,iteration,instanceattribute_id,attribute_order)`；FK `fk_partiteration_attribute_iteration` 现为 NO ACTION。验证：带属性+组件的 GD50 零件 checkout→undocheckout 无 500，子表残留全 0。✅ 抽取 `_delete_orphan_usage_links` 共享方法；smoke（Assem1）checkout→iter2(ul34/pul58/cad96)→undocheckout HTTP 200 精确回到基线(ul17/pul41/cad62)。
+- [x] **D-14**（CRITICAL）`document_manager.py:650-679` `undo_checkout`：同理，`db.delete(last)` 前清理 `documentiteration_attribute`（+孤儿 `instanceattribute`）、`documentiteration_documentlink`（+孤儿 `documentlink`）、`documentiteration_binres`（BinaryResource 已由现有 LIKE 删除覆盖，但关联行需先删）。验证：带属性+链接的文档 checkout→undocheckout 无 500。✅ smoke（D14TEST）checkin→checkout iter2(attrs4/links2/ia4)→undocheckout HTTP 200 精确回到基线(attrs2/links1/ia2)。
 
 ### 主 agent 批 4 收尾
-- [ ] 部署 + smoke：创建产品配置→读回 substitute/optional 一致（PR-CRIT-1/2）；产品实例文件上传后可下载（PR-CRIT-4）；带属性+组件零件 checkout→undocheckout 无 500 且子表残留全 0（P-14）；带属性文档 checkout→undocheckout 无 500（D-14）。
-- [ ] pytest 无新增 fail。commit。更新文档。
+- [x] 部署 + smoke：创建产品配置→读回 substitute/optional 一致（PR-CRIT-1/2）；产品实例文件上传后可下载（PR-CRIT-4）；带属性+组件零件 checkout→undocheckout 无 500 且子表残留全 0（P-14）；带属性文档 checkout→undocheckout 无 500（D-14）。
+- [x] pytest 无新增 fail（278 passed / 1 known-fail test_i18n_bypass）。commit。更新文档。
 
 ---
 
