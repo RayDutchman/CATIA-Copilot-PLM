@@ -8,9 +8,9 @@
 
 ## 2026-07-11 — 3D 预览修复 + Conversion Service 收尾 + 删除工作区遗漏修复
 
-> 3D 预览三根因修复，conversion LOD 生成部署，工作区删除 file 级联补全。instances 辅助函数移入 instance_body_writer_tools.py。
+> 3D 预览三根因修复，conversion LOD 生成部署，工作区删除 file 级联补全。instances 辅助函数移入 instance_body_writer_tools.py。产品级 3D 查看修复（产品配置页面）。
 
-### fix(py-3d): 修复 3D 预览三根因
+### fix(py-3d): 修复产品级 3D 实例端点
 
 - **症状**：GD50 工作区 11 个零件（GLB 文件存在、转换成功）在前端均无法 3D 预览。
 - **根因 1**（`app/routers/part.py:436`）：`GET parts/{part_key}/instances` 硬编码 `return []`（stub）→ 前端 InstancesManager 拿不到任何实例数据→装配体 iframe 无渲染
@@ -29,6 +29,13 @@
 - `docker-compose.yml` conversion 改为本地 build（`context: ../conversion-service-py`）
 - `docdoku-plm-conversion-service/DEPRECATED.md` 废弃标注
 - 容器重建部署，LOD 代码验证通过
+
+### fix(py-3d): 产品配置页面 3D 查看修复
+
+- **症状**：产品配置页面 `product-structure/index.html` 3D 可视化空白，InstancesManager 请求 `/products/{ci_id}/instances?configSpec=wip` 返回空数组
+- **根因**：`product_instances.py:37` 只返回 ProductInstanceMaster 序列号列表，未处理 `configSpec` 查询参数（Java `ProductResource.getFilteredInstances` 在 configSpec 存在时返回 3D 实例数据）
+- **修复**：`list_instances` 增加 configSpec 分支——查 CI → root part → 最新已签入 PartIteration → `collect_leaf_instances()` 递归收集叶子实例；复用 `instance_body_writer_tools.py`
+- **验证**：`GET /products/ceshi/instances?configSpec=wip` → 9 instances 正确矩阵
 
 ### 删除工作区遗漏修复（back-py）
 

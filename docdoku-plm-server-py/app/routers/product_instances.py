@@ -1,6 +1,10 @@
-"""产品实例端点（ProductInstancesResource）。"""
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+"""产品实例端点（ProductInstancesResource）。
+
+GET /products/{ci_id}/instances?configSpec=wip → 3D 实例数据（对齐 Java ProductResource.getFilteredInstances）
+GET /products/{ci_id}/instances            → 产品实例序列号列表（对齐 Java ProductResource.getInstances）
+"""
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -10,7 +14,11 @@ from app.core.exceptions import (
     ProductInstanceMasterNotFoundException,
 )
 from app.models.auth import Account
+from app.models.product.part_iteration import PartIteration
 from app.services.product_structure import ProductStructureService
+from app.services.file_export.instance_body_writer_tools import (
+    identity_matrix, collect_leaf_instances,
+)
 from app.schemas.product import ProductInstanceDTO, ProductInstanceIterationDTO
 
 router = APIRouter()
@@ -29,13 +37,43 @@ def _get_user(db: Session, login: str, ws: str) -> dict:
     }
 
 
-@router.get("/workspaces/{ws}/products/{ci_id}/instances", response_model=List[ProductInstanceDTO])
+@router.get("/workspaces/{ws}/products/{ci_id}/instances")
 @router.get("/workspaces/{ws}/products/{ci_id}/instances/", include_in_schema=False)
 def list_instances(ws: str, ci_id: str,
+                   configSpec: Optional[str] = Query(None, alias="configSpec"),
+                   path: Optional[str] = Query(None),
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
-    return [{"serialNumber": i.serialnumber, "configurationItemId": i.configurationitem_id}
-            for i in svc.list_instances(db, ws, ci_id)]
+    """产品实例列表。
+
+    无 configSpec → 返回 ProductInstanceMaster 序列号列表（产品实例管理）。
+    有 configSpec → 返回 3D 实例数据（矩阵 + files + bbox），对齐 Java getFilteredInstances。
+    """
+    if not configSpec:
+        return [{"serialNumber": i.serialnumber, "configurationItemId": i.configurationitem_id}
+                for i in svc.list_instances(db, ws, ci_id)]
+
+    # 3D 实例模式：对齐 Java ProductResource.getFilteredInstances
+    from app.models.product.configuration_item import ConfigurationItem
+    ci = db.query(ConfigurationItem).filter(
+        ConfigurationItem.workspace_id == ws,
+        ConfigurationItem.id == ci_id,
+    ).first()
+    if not ci or not ci.partmaster_partnumber:
+        return []
+
+    # 获取 root part 的最新已签入迭代
+    root_pi = db.query(PartIteration).filter(
+        PartIteration.workspace_id == ws,
+        PartIteration.partmaster_partnumber == ci.partmaster_partnumber,
+    ).order_by(PartIteration.iteration.desc()).first()
+
+    if not root_pi:
+        return []
+
+    result: list[dict] = []
+    collect_leaf_instances(db, root_pi, identity_matrix(), [-1], result)
+    return result
 
 
 @router.post("/workspaces/{ws}/products/{ci_id}/instances", status_code=201)
