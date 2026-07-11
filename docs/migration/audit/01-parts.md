@@ -10,6 +10,7 @@
 - Java 对照：`ProductManagerBean.java:522`（`new ArrayList<>(...)` 浅拷贝，但 JPA 不级联删 M:N 目标）
 - 证据：`_copy_iteration_files` 在 checkout 复制时，`part_iteration_usagelink` 直接复用同一 `component_id`（PartUsageLink 主键）。而 `__do_sync_components` 替换组件时会 `DELETE PartUsageLink WHERE id IN (old_link_ids)`。旧迭代仍引用同一 `component_id` → FK 违反（`partiteration_partusagelink.component_id → partusagelink.id`，RESTRICT）→ 500。
 - 结论与建议：`_copy_iteration_files` 须深克隆 PartUsageLink（INSERT 新行、新建 component_id），或 `_sync_components` 移除对 PartUsageLink 的删除。**需主 agent 复核 FK 实际约束**。
+- **✅ 已修复（2026-07-12，批次 3）**：`_copy_iteration_files` 对每条 PartUsageLink 深克隆（INSERT...SELECT...RETURNING 新 id + 深克隆关联 cadinstance + 重建 partusagelink_cadinstance）。同时修复连带 bug——`__do_sync_components` 删孤儿 PartUsageLink 前未清理 `partusagelink_cadinstance`/`pusagelink_psubstitutelink`/`partsubstitutelink_cadinstance`/`partsubstitutelink`/孤儿 cadinstance（原注释误称自动级联，实际 FK 全为 NO ACTION）。在线 smoke：Assem1 checkout→update iter2 HTTP 200（原 500），iter1 17 links 不受影响。
 
 ## 问题 P-2
 - 严重级：HIGH

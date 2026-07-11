@@ -15,14 +15,16 @@
 > **✅ 批次 0 已完成（2026-07-11）**：回归测试门禁恢复。
 > **✅ 批次 1 已完成（2026-07-11）**：P0-a 列名必崩（effectivity + share 域 6 项 CRITICAL + 1 HIGH 全部修复）。
 > **✅ 批次 2 已完成（2026-07-11）**：P0-b 级联删除（重构 cascade_delete_workspace + B-4/D-9/W-2 补级联，消除 4 处危险单行 stub）。pytest 无新增 fail，在线 smoke 全绿。
+> **✅ 批次 3 已完成（2026-07-12）**：P0-c 数据完整性（P-1 零件 checkout 深克隆 PartUsageLink+cadinstance + 连带修 __do_sync_components 孤儿清理；PR-MED-2 rotationType 推断；D-1 文档 checkout 深拷贝 links/attrs+flush；D-3 update_iteration instanceAttributes 替换+校验；D-12 target_workspace_id；D-10 list_folders 只返直接子）。pytest 无新增 fail，在线 smoke 全绿。
 >
 > 以下为待修的最高优先级 P0：
 > - [x] **B-1/B-2/B-3 effectivity** → ✅ 批 1
 > - [x] **X-1/X-2/X-3 share** → ✅ 批 1
 > - [x] **B-4/W-1/W-2/W-3 级联删除/账户删除** → ✅ 批 2（含 D-9 模板级联）
-> - [ ] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表，属新发现）。→ 批次 3 修复
-> - [ ] **数据丢失/损坏类**：D-1(文档 checkout 丢 linkedDocs/attrs)、D-3(update_iteration 忽略 instanceAttributes)、PR-CRIT-1/2(产品配置写错表+ID 不关联)、B-4/W-1/W-2(级联删除孤儿)。
+> - [x] **P-1 PartUsageLink 浅拷贝**：checkout 复用 component_id，更新子件 FK 500（与已修的 instanceattribute FK 是不同表）→ ✅ 批 3（深克隆 + 孤儿清理）
+> - [x] **D-1/D-3 文档 checkout/update 数据丢失** → ✅ 批 3。剩余数据丢失/损坏类：PR-CRIT-1/2(产品配置写错表+ID 不关联) → 批 4。
 > - [ ] **功能桩/权限类**：PR-CRIT-3/4/5、D-2/D-4、TASK-1(审批不更新 lifecycle)、CH-1(ACL groupEntriesMap 空)、Q-1/Q-2/Q-3、X-2、W-3。
+> - [ ] **⚠️ 批 3 smoke 新发现（非本批范围）**：零件 `undo_checkout`（product_manager.py）删 partiteration 未先清 partiteration_attribute/usagelink 子表 → 对任何带属性/组件的零件 500（`fk_partiteration_attribute_iteration`）。文档 undo_checkout 可能同类。留待后续批次。
 >
 > HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
 

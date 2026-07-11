@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-07-12 — 审计修复批次 3：P0-c 数据完整性（checkout/update 深拷贝）
+
+> FIX-PLAN 批次 3。修复零件/文档 checkout 与 update_iteration 的浅拷贝/漏拷贝导致的数据丢失与 FK 500。2 并行 subagent（product_manager.py / document_manager.py 文件不相交）+ 主 agent 连线 router 与修连带 bug。
+
+### fix(product): deep-clone PartUsageLink on checkout + orphan cleanup (P-1, PR-MED-2)
+
+- **P-1** `services/product_manager.py` `_copy_iteration_files`：checkout 复制 `part_iteration_usagelink` 时，对每条 PartUsageLink **深克隆**（`INSERT ... SELECT ... RETURNING id` 新建 partusagelink + 深克隆关联 cadinstance + 重建 partusagelink_cadinstance），新迭代使用新 component_id，不再与旧迭代共享行。修复此前 checkout→改子件时 `DELETE partusagelink` 触发 `fk_partiteration_partusagelink_component_id` FK 违反 500
+- **连带修复** `__do_sync_components` 孤儿 PartUsageLink 删除：原注释误称「partusagelink_cadinstance 会自动级联」，实际 FK 均为 NO ACTION。改为按依赖顺序清理 `partusagelink_cadinstance`→`pusagelink_psubstitutelink`→`partsubstitutelink_cadinstance`→`partsubstitutelink`→孤儿 `cadinstance`→`partusagelink`
+- **PR-MED-2** `__do_sync_components`：写 cadInstance 时 `rotationType` 为 None 则按有 m00→`MATRIX`、否则→`ANGLE` 推断（对齐 Java RotationType 兜底；注意枚举实为 ANGLE 非 ANGULAR）
+
+### fix(document): checkout/update deep-copy + validation (D-1, D-3, D-12, D-10)
+
+- **D-1** `services/document_manager.py` `checkout`：新迭代补 `_copy_linked_documents` + `_copy_instance_attributes` 深拷贝（对齐 `DocumentManagerBean.java:942-956`）；并补 `db.flush()`（session autoflush=False，裸 SQL INSERT 前须先落地新迭代行，否则 `fk_documentiteration_attribute_iteration` 500）
+- **D-3** `update_iteration`：补 instanceAttributes 全量替换（DELETE 旧关联+孤儿 → INSERT 新属性带 dtype 鉴别）；新增可选 `user_login` 参数 + checkout 用户/末迭代身份校验（不符抛 `NotAllowedException25`，对齐 `DocumentManagerBean.java:1385`）；新增 `_infer_doc_attr_dtype` 辅助方法。`routers/document.py` 已连线传 `current_user.login`
+- **D-12** `update_iteration` 写 documentlink：`target_workspace_id` 由恒当前 ws 改为 `ld.get("workspaceId", ws)`，支持跨 ws 链接
+- **D-10** `list_folders`：无 parent_path 时改为 `parentfolder_completepath == ws` 只返回工作区根的直接子文件夹（对齐 Java getRootFolders），不再返回深层嵌套
+
+### 验证
+
+- **pytest**：278 passed / 1 failed（test_i18n_bypass 已知 batch-0 fail），与批 0 基线一致，无新增 fail
+- **在线 smoke（test1 JWT，GD50）**：
+  - P-1：Assem1 checkout→iter2 深克隆 17 条 usagelink（与 iter1 无 id 重叠）→update iter2 组件 HTTP 200（原 500），iter1 保持 17 links 不受影响；PR-MED-2 新 cadinstance rotationtype 推断为 MATRIX。测试后手工 SQL 还原 Assem1 至原始单迭代状态
+  - D-3：新建文档 update iter1 带 instanceAttributes → DB 持久化，dtype 正确（Text/Number）
+  - D-1：checkin→checkout iter2 → 属性深拷贝为独立行（id 7491/7492 vs 7488/7489），值保留
+  - D-10：`GET /workspaces/GD50/folders` 仅返回直接子 `GD50/测试新建文件夹`
+- **注**：smoke 暴露 `undo_checkout`（零件）删 partiteration 未清 partiteration_attribute 子表的独立 FK 500 bug，非本批范围（FIX-PLAN 未列），留待后续批次
+
+---
+
 ## 2026-07-11 — 审计修复批次 2：P0-b 级联删除（重构 + 级联补齐）
 
 > FIX-PLAN 批次 2。抽取 ~280 行级联删除为共享函数 + 补齐 3 处危险单行删除 stub。

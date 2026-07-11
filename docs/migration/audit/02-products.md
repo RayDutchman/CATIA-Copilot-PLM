@@ -52,7 +52,7 @@
 
 ## 问题 PR-MED-1 ~ PR-MED-5
 - **PR-MED-1** (要点#5)：`path_data_service.py:340-358` `_sync_path_data_attributes` INSERT 漏 dtype → 读回全退化 TEXT（product_structure.py:432 fallback）。对比 product_manager.py:806 正确写 dtype。
-- **PR-MED-2** (要点#8)：`product_manager.py:694-713` cadInstances 写入 rotation_type 可能 None；当前 Python 读取端有 fallback 但 rotationType 空+matrix 非空会走错分支。建议写入端推断 rotation_type。
+- **PR-MED-2** (要点#8)：`product_manager.py:694-713` cadInstances 写入 rotation_type 可能 None；当前 Python 读取端有 fallback 但 rotationType 空+matrix 非空会走错分支。建议写入端推断 rotation_type。**✅ 已修复（2026-07-12，批次 3）**：`__do_sync_components` 写入端 rotationType 为 None 时按有 m00→"MATRIX"、否则→"ANGLE" 推断（Java 枚举实为 ANGLE 非 ANGULAR）。smoke 验证新 cadinstance rotationtype=MATRIX。
 - **PR-MED-3** (要点#17)：缺 `POST /{ciId}/instances`（PathListDTO 批量多路径）、缺 layers 子资源。Java ProductResource.java:497-543 / :360-363。
 - **PR-MED-4** (要点#2)：`products.py:226-253` get_product_instance 返回缺 acl 字段。Java ProductInstanceMasterDTO 有 acl。
 - **PR-MED-5** (要点#3+#14)：`products.py:41-47` `_p2p_svc_lazy` `except Exception: return []` 吞异常。

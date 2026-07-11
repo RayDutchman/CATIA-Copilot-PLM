@@ -10,6 +10,7 @@
 - Java 对照：`DocumentManagerBean.java:905-960`（checkOutDocument，942-956 克隆 linkedDocuments+instanceAttributes）
 - 证据：Python checkout 只 `_copy_attached_files`，缺 `_copy_linked_documents` 和 `_copy_instance_attributes`。
 - 结论与建议：新迭代丢失 linkedDocuments/instanceAttributes，数据丢失。补两个拷贝调用。
+- **✅ 已修复（2026-07-12，批次 3）**：checkout 补 `_copy_linked_documents` + `_copy_instance_attributes` 深拷贝，并补 `db.flush()`（session autoflush=False，裸 SQL INSERT 前须先落地新迭代行）。smoke：checkin→checkout iter2 属性深拷贝为独立行、值保留。
 
 ## 问题 D-2
 - 严重级：CRITICAL
@@ -26,6 +27,7 @@
 - Java 对照：`DocumentResource.java:305-345` + `DocumentManagerBean.java:1379-1426`
 - 证据：Python 只处理 revisionNote+linkedDocuments，**忽略 instanceAttributes**，且不检查 checkout 用户+末迭代身份（Java 行 1385 检查）。
 - 结论与建议：补 instanceAttributes 全量替换；加 checkout 用户/末迭代校验。
+- **✅ 已修复（2026-07-12，批次 3）**：`update_iteration` 补 instanceAttributes 全量替换（DELETE 旧关联+孤儿→INSERT 带 dtype 鉴别，新增 `_infer_doc_attr_dtype`），新增可选 `user_login` 参数做 checkout 用户+末迭代校验（不符抛 NotAllowedException25），router 已连线传 `current_user.login`。smoke：iter1 update 属性持久化，dtype 正确。
 
 ## 问题 D-4
 - 严重级：CRITICAL
@@ -81,6 +83,7 @@
 - Java 对照：`FolderResource.java:171-176`（getRootFolders 只返回直接子节点）
 - 证据：Python 无 parent_path 时返回所有 `ws/` 前缀 folder（含深层嵌套），子文件夹污染根列表。
 - 结论与建议：只查 parentfolder_completepath = workspaceId 的直接子。
+- **✅ 已修复（2026-07-12，批次 3）**：`list_folders` 无 parent_path 时改为 `parentfolder_completepath == ws`。smoke：`GET /workspaces/GD50/folders` 仅返回直接子 `GD50/测试新建文件夹`。
 
 ## 问题 D-11
 - 严重级：MEDIUM
@@ -95,6 +98,7 @@
 - 位置：`app/services/document_manager.py:696-700`（update_iteration 写 documentlink）
 - 证据：`target_workspace_id` 恒设为当前 ws，未从 body 提取。跨 ws 链接文档时错误。
 - 结论与建议：从 ld.get("workspaceId") 提取。
+- **✅ 已修复（2026-07-12，批次 3）**：`update_iteration` 写 documentlink 改为 `ld.get("workspaceId", ws)`。
 
 ## 问题 D-13（LOW）
 - `app/routers/folders.py:45-48` 重复路由装饰器，删除即可。

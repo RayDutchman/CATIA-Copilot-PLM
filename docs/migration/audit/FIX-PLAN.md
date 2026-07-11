@@ -61,26 +61,26 @@
 ### 文件包 PKG-effectivity → Subagent A
 **Files:** `app/models/product/effectivity.py`、`app/routers/effectivity.py`、`app/services/effectivity_manager.py`
 
-- [ ] **B-1** `models/product/effectivity.py:13-20`：删除伪列 `creation_date=Column("creationdate")`、`type_effectivity=Column("type_effectivity")`；`start_lot=Column("startlot")`→`Column("startlotid")`、`end_lot=Column("endlot")`→`Column("endlotid")`。DB 真值列：`id,dtype,description,name,configurationitem_id,configurationitem_workspace_id,enddate,startdate,endlotid,startlotid,endnumber,startnumber`。
-- [ ] **B-2** `routers/effectivity.py:139-142`：INSERT 列 `workspace_id`→`partmaster_workspace_id`（DB 表 partrevision_effectivity 列为 `partmaster_workspace_id,partmaster_partnumber,partrevision_version,effectivity_id`）。
-- [ ] **B-3** `services/effectivity_manager.py:15-16,98-100`：`get_effectivity`/`delete_effectivity` 移除 `AND workspace_id=:ws`（effectivity 表无此列）；改为经 `partrevision_effectivity` 关联表验证归属：`... WHERE id=:id AND EXISTS(SELECT 1 FROM partrevision_effectivity pre WHERE pre.effectivity_id=:id AND pre.partmaster_workspace_id=:ws)`。
-- [ ] **B-9**（顺带）`routers/effectivity.py:164,179`：`/effectivities/{id}` 补 `/workspaces/{ws}` 前缀 → `/workspaces/{workspace_id}/effectivities/{id}`，函数签名加 `workspace_id: str`。
-- [ ] **B-12**（顺带）`create_effectivity`：按 dtype 补必填校验（SERIAL→startnumber、DATE→startdate、LOT→startlotid 非空，否则 `raise CreationException`）。
+- [x] **B-1** `models/product/effectivity.py:13-20`：删除伪列 `creation_date=Column("creationdate")`、`type_effectivity=Column("type_effectivity")`；`start_lot=Column("startlot")`→`Column("startlotid")`、`end_lot=Column("endlot")`→`Column("endlotid")`。DB 真值列：`id,dtype,description,name,configurationitem_id,configurationitem_workspace_id,enddate,startdate,endlotid,startlotid,endnumber,startnumber`。
+- [x] **B-2** `routers/effectivity.py:139-142`：INSERT 列 `workspace_id`→`partmaster_workspace_id`（DB 表 partrevision_effectivity 列为 `partmaster_workspace_id,partmaster_partnumber,partrevision_version,effectivity_id`）。
+- [x] **B-3** `services/effectivity_manager.py:15-16,98-100`：`get_effectivity`/`delete_effectivity` 移除 `AND workspace_id=:ws`（effectivity 表无此列）；改为经 `partrevision_effectivity` 关联表验证归属：`... WHERE id=:id AND EXISTS(SELECT 1 FROM partrevision_effectivity pre WHERE pre.effectivity_id=:id AND pre.partmaster_workspace_id=:ws)`。
+- [x] **B-9**（顺带）`routers/effectivity.py:164,179`：`/effectivities/{id}` 补 `/workspaces/{ws}` 前缀 → `/workspaces/{workspace_id}/effectivities/{id}`，函数签名加 `workspace_id: str`。
+- [x] **B-12**（顺带）`create_effectivity`：按 dtype 补必填校验（SERIAL→startnumber、DATE→startdate、LOT→startlotid 非空，否则 `raise CreationException`）。
 
 ### 文件包 PKG-share → Subagent B
 **Files:** `app/routers/share.py`、`app/services/share_manager.py`
 
-- [ ] **X-1** `routers/share.py:80`：SELECT 列 `expire_date`→`expiredate`（DB sharedentity 列含 `expiredate`）。
-- [ ] **X-2** `routers/share.py:206-207,245-246`：将 `_check_workspace_member` 移到 `public_shared` 检查之后——仅当 `not doc.public_shared and login is not None` 时才校验成员身份（对齐 Java 先公开后认证）。
-- [ ] **X-3** `services/share_manager.py:15,26`：`WHERE se.password=:uuid`→`WHERE se.uuid=:uuid`；`SELECT expire`→`SELECT expiredate`。
+- [x] **X-1** `routers/share.py:80`：SELECT 列 `expire_date`→`expiredate`（DB sharedentity 列含 `expiredate`）。
+- [x] **X-2** `routers/share.py:206-207,245-246`：将 `_check_workspace_member` 移到 `public_shared` 检查之后——仅当 `not doc.public_shared and login is not None` 时才校验成员身份（对齐 Java 先公开后认证）。
+- [x] **X-3** `services/share_manager.py:15,26`：`WHERE se.password=:uuid`→`WHERE se.uuid=:uuid`；`SELECT expire`→`SELECT expiredate`。
 
 ### 主 agent 批 1 收尾
-- [ ] 逐包 code review（diff 对照上面规格 + DB 真值）。
-- [ ] 部署 back-py。
-- [ ] 在线 smoke（test1 JWT）：`GET /workspaces/GD50/effectivities/1`（不再 500，返回 404 或数据）；创建/删除 effectivity 往返；`GET /shared/<任一uuid>/documents`（不再因列名 500）。
-- [ ] `pytest -q --ignore=tests/test_vault.py` = 批 0 基线（无新增 fail）。
-- [ ] commit：`fix(effectivity): correct ORM/SQL column names and workspace scoping (B-1~B-3,B-9,B-12)` + `fix(share): correct sharedentity column name and public-share auth order (X-1~X-3)`
-- [ ] 更新 CHANGELOG/REMINDERS（勾除 B-1/B-2/B-3/X-1，修正 Bug #5 状态）。
+- [x] 逐包 code review（diff 对照上面规格 + DB 真值）。
+- [x] 部署 back-py。
+- [x] 在线 smoke（test1 JWT）：`GET /workspaces/GD50/effectivities/1`（不再 500，返回 404 或数据）；创建/删除 effectivity 往返；`GET /shared/<任一uuid>/documents`（不再因列名 500）。
+- [x] `pytest -q --ignore=tests/test_vault.py` = 批 0 基线（无新增 fail）。
+- [x] commit：`fix(effectivity): correct ORM/SQL column names and workspace scoping (B-1~B-3,B-9,B-12)` + `fix(share): correct sharedentity column name and public-share auth order (X-1~X-3)`
+- [x] 更新 CHANGELOG/REMINDERS（勾除 B-1/B-2/B-3/X-1，修正 Bug #5 状态）。
 
 ---
 
@@ -89,28 +89,28 @@
 **核心：抽取 `workspaces.py:610-893` 内联的完整级联删除为单一共享函数，消除 admin.py/workspace_manager.py 的危险单行 stub。** 抽取属跨文件重构，**由主 agent 亲自做**；独立的 baseline/模板级联派 1 个 subagent。
 
 ### 主 agent 亲做（重构，不派 subagent）
-- [ ] **重构** 新建 `app/services/workspace_deletion.py`，函数 `cascade_delete_workspace(db, ws)`：把 `routers/workspaces.py` 的 `delete_workspace` 内联级联体（`SET LOCAL session_replication_role='replica'` + 全部 `_del(...)` + 末尾 `DELETE FROM binaryresource WHERE fullname LIKE '{ws}/%' ESCAPE '\'` + `shutil.rmtree(VAULT_PATH/ws)`）整体迁入。
-- [ ] **W-1** `routers/admin.py:208-217`：`delete_workspace` 改为调用 `cascade_delete_workspace(db, ws)`。
-- [ ] **W-3** `services/workspace_manager.py:55-64`：`delete_workspace` 改为调用 `cascade_delete_workspace(db, ws)`（消除单行 stub）。
-- [ ] `routers/workspaces.py:610` 的端点也改调 `cascade_delete_workspace`（DRY，去重内联体）。
-- [ ] **W-2** `routers/admin.py:138-143`：`delete_account` 补级联，删 account 前按序清理 `organization_account/gcmaccount/passwordrecoveryrequest/providedaccount/workspaceusermembership/workspaceusergroupmembership/role_user/tagusersubscription` + 处理 `workspace.admin_login` 引用（先逐表 information_schema 核实列名）。
+- [x] **重构** 新建 `app/services/workspace_deletion.py`，函数 `cascade_delete_workspace(db, ws)`：把 `routers/workspaces.py` 的 `delete_workspace` 内联级联体（`SET LOCAL session_replication_role='replica'` + 全部 `_del(...)` + 末尾 `DELETE FROM binaryresource WHERE fullname LIKE '{ws}/%' ESCAPE '\'` + `shutil.rmtree(VAULT_PATH/ws)`）整体迁入。
+- [x] **W-1** `routers/admin.py:208-217`：`delete_workspace` 改为调用 `cascade_delete_workspace(db, ws)`。
+- [x] **W-3** `services/workspace_manager.py:55-64`：`delete_workspace` 改为调用 `cascade_delete_workspace(db, ws)`（消除单行 stub）。
+- [x] `routers/workspaces.py:610` 的端点也改调 `cascade_delete_workspace`（DRY，去重内联体）。
+- [x] **W-2** `routers/admin.py:138-143`：`delete_account` 补级联，删 account 前按序清理 `organization_account/gcmaccount/passwordrecoveryrequest/providedaccount/workspaceusermembership/workspaceusergroupmembership/role_user/tagusersubscription` + 处理 `workspace.admin_login` 引用（先逐表 information_schema 核实列名）。
 
 ### 文件包 PKG-baseline-cascade → Subagent C（与上面 admin/workspace 文件不相交）
 **Files:** `app/services/product_structure.py`（仅 `delete_baseline`，约 652-657）
 
-- [ ] **B-4**：`delete_baseline` 补级联，参照 `workspaces.py:753-756` 顺序删 `baselinedpart`→`baselineddocument`→`productbaseline_substitutelink`/`optionallink`/`p2plink`→`partcollection`/`documentcollection`→`productbaseline`；删前查 `productinstanceiteration WHERE productbaseline_id=:bid`，有引用抛 `EntityConstraintException("EntityConstraintException16")`（含 B-8）。
+- [x] **B-4**：`delete_baseline` 补级联，参照 `workspaces.py:753-756` 顺序删 `baselinedpart`→`baselineddocument`→`productbaseline_substitutelink`/`optionallink`/`p2plink`→`partcollection`/`documentcollection`→`productbaseline`；删前查 `productinstanceiteration WHERE productbaseline_id=:bid`，有引用抛 `EntityConstraintException("EntityConstraintException16")`（含 B-8）。
 
 ### 文件包 PKG-doctemplate-cascade → Subagent D（文件不相交）
 **Files:** `app/services/document_manager.py`（仅 `delete_template`，约 978-980）
 
-- [ ] **D-9**：`delete_template` 补级联删 `documentmastertemplate_binres`/`BinaryResource`+vault/`documentmastertemplate_attr`/`instanceattributetemplate`/`acl` 关联（逐表 information_schema 核实）。
+- [x] **D-9**：`delete_template` 补级联删 `documentmastertemplate_binres`/`BinaryResource`+vault/`documentmastertemplate_attr`/`instanceattributetemplate`/`acl` 关联（逐表 information_schema 核实）。
 
 > ⚠️ **批内文件不相交校验**：主 agent 改 admin.py/workspace_manager.py/workspaces.py/新建 workspace_deletion.py；Subagent C 改 product_structure.py；Subagent D 改 document_manager.py。三方无交集 ✓。（product_structure.py 的 PR-CRIT-1、document_manager.py 的 D-1/D-3 留到后续批次，不在本批并行触碰。）
 
 ### 主 agent 批 2 收尾
-- [ ] 部署 + smoke：建临时工作区→塞数据→`DELETE /admin/workspaces/{ws}`→DB 核 `binaryresource WHERE fullname LIKE 'ws/%'`、各子表残留全 0；vault 目录已删。
-- [ ] `pytest` 无新增 fail。
-- [ ] commit（分 refactor + 各 fix）。更新 CHANGELOG/REMINDERS。
+- [x] 部署 + smoke：建临时工作区→塞数据→`DELETE /admin/workspaces/{ws}`→DB 核 `binaryresource WHERE fullname LIKE 'ws/%'`、各子表残留全 0；vault 目录已删。
+- [x] `pytest` 无新增 fail。
+- [x] commit（分 refactor + 各 fix）。更新 CHANGELOG/REMINDERS。
 
 ---
 
@@ -119,20 +119,20 @@
 ### 文件包 PKG-product_manager → Subagent E
 **Files:** `app/services/product_manager.py`
 
-- [ ] **P-1** `_copy_iteration_files`（约 1283-1297）：checkout 复制 `part_iteration_usagelink` 时，对每条 PartUsageLink **深克隆**（`INSERT INTO partusagelink(...) SELECT ... RETURNING id` 建新 component_id，再写关联表引用新 id），而非复用旧 `component_id`。验证 `__do_sync_components`（约 670-673）删旧 link 时不再触发 `partiteration_partusagelink.component_id` FK 冲突。**注意与 2026-07-11 已修的 instanceattribute 深拷贝是不同表，勿混淆。**
-- [ ] **PR-MED-2**（顺带）`__do_sync_components`（约 694-713）：写 cadInstance 时若 `rotation_type` 为 None，按有 m00→`MATRIX`、有 rx→`ANGULAR` 推断。
+- [x] **P-1** `_copy_iteration_files`（约 1283-1297）：checkout 复制 `part_iteration_usagelink` 时，对每条 PartUsageLink **深克隆**（`INSERT INTO partusagelink(...) SELECT ... RETURNING id` 建新 component_id，再写关联表引用新 id），而非复用旧 `component_id`。验证 `__do_sync_components`（约 670-673）删旧 link 时不再触发 `partiteration_partusagelink.component_id` FK 冲突。**注意与 2026-07-11 已修的 instanceattribute 深拷贝是不同表，勿混淆。** ✅ 同时修复了 `__do_sync_components` 孤儿 PartUsageLink 删除未清理 `partusagelink_cadinstance`/`pusagelink_psubstitutelink`/`cadinstance` 的连带 FK bug（原注释误称自动级联）。
+- [x] **PR-MED-2**（顺带）`__do_sync_components`（约 694-713）：写 cadInstance 时若 `rotation_type` 为 None，按有 m00→`MATRIX`、否则→`ANGLE` 推断（注意 Java 枚举实为 `ANGLE` 非 `ANGULAR`）。
 
 ### 文件包 PKG-document_manager → Subagent F（与 product_manager.py 不相交）
 **Files:** `app/services/document_manager.py`
 
-- [ ] **D-1** `checkout`（约 366-393）：新迭代补 `_copy_linked_documents` + `_copy_instance_attributes`（对齐 `DocumentManagerBean.java:942-956`，深拷贝，勿共享行）。
-- [ ] **D-3** `update_iteration`（约 672-715）：补 instanceAttributes 全量替换（DELETE+INSERT，模式同 linkedDocuments）；加 checkout 用户 + 末迭代身份校验（对齐 `DocumentManagerBean.java:1385`）。
-- [ ] **D-12**（顺带，约 696-700）：写 documentlink 的 `target_workspace_id` 从 `ld.get("workspaceId")` 取，非恒当前 ws。
-- [ ] **D-10**（顺带）`list_folders`（约 897-904）：无 parent_path 时只返回 `parentfolder_completepath = workspaceId` 的直接子。
+- [x] **D-1** `checkout`（约 366-393）：新迭代补 `_copy_linked_documents` + `_copy_instance_attributes`（对齐 `DocumentManagerBean.java:942-956`，深拷贝，勿共享行）。✅ 并补 `db.flush()`（session autoflush=False，裸 SQL INSERT 前须先落地新迭代行）。
+- [x] **D-3** `update_iteration`（约 672-715）：补 instanceAttributes 全量替换（DELETE+INSERT，模式同 linkedDocuments）；加 checkout 用户 + 末迭代身份校验（对齐 `DocumentManagerBean.java:1385`）。新增 `user_login` 可选参数，router `document.py` 侧已连线传 `current_user.login`。
+- [x] **D-12**（顺带，约 696-700）：写 documentlink 的 `target_workspace_id` 从 `ld.get("workspaceId")` 取，非恒当前 ws。
+- [x] **D-10**（顺带）`list_folders`（约 897-904）：无 parent_path 时只返回 `parentfolder_completepath = workspaceId` 的直接子。
 
 ### 主 agent 批 3 收尾
-- [ ] 部署 + smoke：GD50 零件 checkout→改子件→checkin 无 500（P-1）；文档 checkout 后 linkedDocs/attrs 保留（D-1）；update_iteration 属性生效（D-3）。
-- [ ] `pytest` 无新增 fail。commit。更新文档。
+- [x] 部署 + smoke：GD50 零件 checkout→改子件→checkin 无 500（P-1）；文档 checkout 后 linkedDocs/attrs 保留（D-1）；update_iteration 属性生效（D-3）。
+- [x] `pytest` 无新增 fail（278 passed / 1 known-fail test_i18n_bypass）。commit。更新文档。
 
 ---
 
