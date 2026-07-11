@@ -855,12 +855,7 @@ def delete_workspace(ws: str, db: Session = Depends(get_db),
     _del("DELETE FROM acluserentry WHERE principal_workspace_id=:ws", ws=ws)
     _del("DELETE FROM aclusergroupentry WHERE principal_workspace_id=:ws", ws=ws)
     _del("DELETE FROM usergroup_user WHERE usergroup_id_workspace_id=:ws OR user_workspace_id=:ws", ws=ws)
-    users = db.execute(text("SELECT login FROM userdata WHERE workspace_id=:ws"), {"ws": ws}).fetchall()
     _del("DELETE FROM userdata WHERE workspace_id=:ws", ws=ws)
-    for (login,) in users:
-        remaining = db.execute(text("SELECT COUNT(*) FROM userdata WHERE login=:l"), {"l": login}).scalar()
-        if remaining == 0:
-            db.execute(text("DELETE FROM usergroupmapping WHERE login=:l"), {"l": login})
     _del("DELETE FROM workspaceusermembership WHERE workspace_id=:ws", ws=ws)
     _del("DELETE FROM workspaceusergroupmembership WHERE workspace_id=:ws", ws=ws)
     _del("DELETE FROM usergroup WHERE workspace_id=:ws", ws=ws)
