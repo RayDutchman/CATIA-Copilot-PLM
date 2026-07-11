@@ -483,6 +483,92 @@ class ProductService:
         last = pr.last_iteration
         if last and last.check_in_date is None:
             last_iter_num = last.iteration
+            # 清理 join 表 + 孤儿行，避免 db.delete(last) 时 FK 约束冲突
+            # （Java 靠 JPA orphanRemoval 级联，Python 需手动清理裸 SQL 层的 join 表）
+            ws_p, pn_p, ver_p, it = workspace_id, number, version, last_iter_num
+            from sqlalchemy import text as _undo_text
+
+            # 1. partiteration_attribute + 孤儿 instanceattribute
+            old_attr_ids = [r[0] for r in db.execute(_undo_text(
+                "SELECT instanceattribute_id FROM partiteration_attribute "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it}).fetchall()]
+            db.execute(_undo_text(
+                "DELETE FROM partiteration_attribute "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it})
+            for oid in old_attr_ids:
+                still = db.execute(_undo_text(
+                    "SELECT 1 FROM partiteration_attribute WHERE instanceattribute_id=:id LIMIT 1"
+                ), {"id": oid}).first()
+                if not still:
+                    db.execute(_undo_text("DELETE FROM instanceattribute WHERE id=:id"), {"id": oid})
+
+            # 2. partiteration_pathdata_attr + 孤儿 instanceattributetemplate
+            old_tmpl_ids = [r[0] for r in db.execute(_undo_text(
+                "SELECT instanceattribute_template_id FROM partiteration_pathdata_attr "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it}).fetchall()]
+            db.execute(_undo_text(
+                "DELETE FROM partiteration_pathdata_attr "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it})
+            for tid in old_tmpl_ids:
+                still = db.execute(_undo_text(
+                    "SELECT 1 FROM partiteration_pathdata_attr "
+                    "WHERE instanceattribute_template_id=:id LIMIT 1"
+                ), {"id": tid}).first()
+                if not still:
+                    db.execute(_undo_text("DELETE FROM instanceattributetemplate WHERE id=:id"), {"id": tid})
+
+            # 3. partiteration_documentlink + 孤儿 documentlink
+            old_dl_ids = [r[0] for r in db.execute(_undo_text(
+                "SELECT documentlink_id FROM partiteration_documentlink "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it}).fetchall()]
+            db.execute(_undo_text(
+                "DELETE FROM partiteration_documentlink "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it})
+            for did in old_dl_ids:
+                still = db.execute(_undo_text(
+                    "SELECT 1 FROM partiteration_documentlink WHERE documentlink_id=:id LIMIT 1"
+                ), {"id": did}).first()
+                if not still:
+                    db.execute(_undo_text("DELETE FROM documentlink WHERE id=:id"), {"id": did})
+
+            # 4. partiteration_partusagelink + 孤儿 PartUsageLink 深链
+            old_link_ids = [r[0] for r in db.execute(_undo_text(
+                "SELECT component_id FROM partiteration_partusagelink "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it}).fetchall()]
+            db.execute(_undo_text(
+                "DELETE FROM partiteration_partusagelink "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it})
+            if old_link_ids:
+                self._delete_orphan_usage_links(db, old_link_ids)
+
+            # 5. partiteration_binres + partiteration_geometry（join 表先行）
+            db.execute(_undo_text(
+                "DELETE FROM partiteration_binres "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it})
+            db.execute(_undo_text(
+                "DELETE FROM partiteration_geometry "
+                "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                "AND partrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws_p, "pn": pn_p, "ver": ver_p, "it": it})
+
             db.delete(last)
             db.flush()
             # 删除 BinaryResource 行（属于已删除迭代）
@@ -669,54 +755,7 @@ class ProductService:
         # 删除孤儿 PartUsageLink：所有 FK 均为 NO ACTION（无级联），
         # 必须先按依赖顺序清理关联表 + 各自的 cadinstance/substitute 行，再删 partusagelink。
         if old_link_ids:
-            from sqlalchemy import text
-            # 1. 收集将成孤儿的 cadinstance id（经 partusagelink_cadinstance 关联）
-            orphan_cad_ids = [
-                r[0] for r in db.execute(text(
-                    "SELECT cadinstance_id FROM partusagelink_cadinstance "
-                    "WHERE partusagelink_id = ANY(:ids)"
-                ), {"ids": old_link_ids}).fetchall()
-            ]
-            # 2. 收集将成孤儿的 substitute link id（经 pusagelink_psubstitutelink 关联）
-            orphan_sub_ids = [
-                r[0] for r in db.execute(text(
-                    "SELECT partsubstitute_id FROM pusagelink_psubstitutelink "
-                    "WHERE partusagelink_id = ANY(:ids)"
-                ), {"ids": old_link_ids}).fetchall()
-            ]
-            # 3. 收集 substitute link 关联的 cadinstance id
-            orphan_sub_cad_ids = []
-            if orphan_sub_ids:
-                orphan_sub_cad_ids = [
-                    r[0] for r in db.execute(text(
-                        "SELECT cadinstance_id FROM partsubstitutelink_cadinstance "
-                        "WHERE partsubstitutelink_id = ANY(:ids)"
-                    ), {"ids": orphan_sub_ids}).fetchall()
-                ]
-            # 4. 按依赖顺序删除关联表
-            db.execute(text(
-                "DELETE FROM partusagelink_cadinstance WHERE partusagelink_id = ANY(:ids)"
-            ), {"ids": old_link_ids})
-            db.execute(text(
-                "DELETE FROM pusagelink_psubstitutelink WHERE partusagelink_id = ANY(:ids)"
-            ), {"ids": old_link_ids})
-            if orphan_sub_ids:
-                db.execute(text(
-                    "DELETE FROM partsubstitutelink_cadinstance WHERE partsubstitutelink_id = ANY(:ids)"
-                ), {"ids": orphan_sub_ids})
-                db.execute(text(
-                    "DELETE FROM partsubstitutelink WHERE id = ANY(:ids)"
-                ), {"ids": orphan_sub_ids})
-            # 5. 删除孤儿 cadinstance 行（substitute 与 usage 两批）
-            all_orphan_cad = orphan_cad_ids + orphan_sub_cad_ids
-            if all_orphan_cad:
-                db.execute(text(
-                    "DELETE FROM cadinstance WHERE id = ANY(:ids)"
-                ), {"ids": all_orphan_cad})
-            # 6. 最后删除孤儿 PartUsageLink
-            db.query(PartUsageLink).filter(
-                PartUsageLink.id.in_(old_link_ids)
-            ).delete(synchronize_session=False)
+            self._delete_orphan_usage_links(db, old_link_ids)
         for order, comp_dto in enumerate(components_dto):
             comp_number = comp_dto.component.number if comp_dto.component else None
             if not comp_number:
@@ -779,6 +818,61 @@ class ProductService:
                     component_order=order,
                 )
             )
+
+    def _delete_orphan_usage_links(self, db: Session, old_link_ids: list) -> None:
+        """删除孤儿 PartUsageLink 深链（undo_checkout 与 sync_components 共用）。
+
+        所有 FK 均为 NO ACTION（无级联），必须按依赖顺序清理关联表
+        + 各自的 cadinstance/substitute 行，最后再删 partusagelink。
+        """
+        from sqlalchemy import text
+        # 1. 收集将成孤儿的 cadinstance id（经 partusagelink_cadinstance 关联）
+        orphan_cad_ids = [
+            r[0] for r in db.execute(text(
+                "SELECT cadinstance_id FROM partusagelink_cadinstance "
+                "WHERE partusagelink_id = ANY(:ids)"
+            ), {"ids": old_link_ids}).fetchall()
+        ]
+        # 2. 收集将成孤儿的 substitute link id（经 pusagelink_psubstitutelink 关联）
+        orphan_sub_ids = [
+            r[0] for r in db.execute(text(
+                "SELECT partsubstitute_id FROM pusagelink_psubstitutelink "
+                "WHERE partusagelink_id = ANY(:ids)"
+            ), {"ids": old_link_ids}).fetchall()
+        ]
+        # 3. 收集 substitute link 关联的 cadinstance id
+        orphan_sub_cad_ids = []
+        if orphan_sub_ids:
+            orphan_sub_cad_ids = [
+                r[0] for r in db.execute(text(
+                    "SELECT cadinstance_id FROM partsubstitutelink_cadinstance "
+                    "WHERE partsubstitutelink_id = ANY(:ids)"
+                ), {"ids": orphan_sub_ids}).fetchall()
+            ]
+        # 4. 按依赖顺序删除关联表
+        db.execute(text(
+            "DELETE FROM partusagelink_cadinstance WHERE partusagelink_id = ANY(:ids)"
+        ), {"ids": old_link_ids})
+        db.execute(text(
+            "DELETE FROM pusagelink_psubstitutelink WHERE partusagelink_id = ANY(:ids)"
+        ), {"ids": old_link_ids})
+        if orphan_sub_ids:
+            db.execute(text(
+                "DELETE FROM partsubstitutelink_cadinstance WHERE partsubstitutelink_id = ANY(:ids)"
+            ), {"ids": orphan_sub_ids})
+            db.execute(text(
+                "DELETE FROM partsubstitutelink WHERE id = ANY(:ids)"
+            ), {"ids": orphan_sub_ids})
+        # 5. 删除孤儿 cadinstance 行（substitute 与 usage 两批）
+        all_orphan_cad = orphan_cad_ids + orphan_sub_cad_ids
+        if all_orphan_cad:
+            db.execute(text(
+                "DELETE FROM cadinstance WHERE id = ANY(:ids)"
+            ), {"ids": all_orphan_cad})
+        # 6. 最后删除孤儿 PartUsageLink
+        db.query(PartUsageLink).filter(
+            PartUsageLink.id.in_(old_link_ids)
+        ).delete(synchronize_session=False)
 
     def _sync_linked_documents(self, db: Session, iteration: PartIteration,
                                 linked_docs: list) -> None:

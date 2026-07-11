@@ -656,6 +656,53 @@ class DocumentService:
         last = pr.last_iteration
         if last and last.check_in_date is None:
             last_iter_num = last.iteration
+            # 清理 join 表 + 孤儿行，避免 db.delete(last) 时 FK 约束冲突
+            # （Java 靠 JPA orphanRemoval 级联，Python 需手动清理裸 SQL 层的 join 表）
+            did, rev, it = doc_id, ver, last_iter_num
+
+            # 1. documentiteration_attribute + 孤儿 instanceattribute
+            old_attr_ids = [r[0] for r in db.execute(sql_text(
+                "SELECT instanceattribute_id FROM documentiteration_attribute "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws, "did": did, "ver": rev, "it": it}).fetchall()]
+            db.execute(sql_text(
+                "DELETE FROM documentiteration_attribute "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws, "did": did, "ver": rev, "it": it})
+            for oid in old_attr_ids:
+                still = db.execute(sql_text(
+                    "SELECT 1 FROM documentiteration_attribute WHERE instanceattribute_id=:id LIMIT 1"
+                ), {"id": oid}).first()
+                if not still:
+                    db.execute(sql_text("DELETE FROM instanceattribute WHERE id=:id"), {"id": oid})
+
+            # 2. documentiteration_documentlink + 孤儿 documentlink
+            old_dl_ids = [r[0] for r in db.execute(sql_text(
+                "SELECT documentlink_id FROM documentiteration_documentlink "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws, "did": did, "ver": rev, "it": it}).fetchall()]
+            db.execute(sql_text(
+                "DELETE FROM documentiteration_documentlink "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws, "did": did, "ver": rev, "it": it})
+            for dl_id in old_dl_ids:
+                still = db.execute(sql_text(
+                    "SELECT 1 FROM documentiteration_documentlink WHERE documentlink_id=:id LIMIT 1"
+                ), {"id": dl_id}).first()
+                if not still:
+                    db.execute(sql_text("DELETE FROM documentlink WHERE id=:id"), {"id": dl_id})
+
+            # 3. documentiteration_binres（join 表先行，BinaryResource 由后续 LIKE 删除覆盖）
+            db.execute(sql_text(
+                "DELETE FROM documentiteration_binres "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:it"
+            ), {"ws": ws, "did": did, "ver": rev, "it": it})
+
             db.delete(last)
             db.flush()
             # 删除 BinaryResource 行（属于已删除迭代）
