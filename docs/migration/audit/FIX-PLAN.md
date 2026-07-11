@@ -172,33 +172,33 @@
 
 ### PKG-workflow → Subagent H
 **Files:** `app/routers/workflow.py`、`app/services/workflow_manager.py`
-- [ ] **WF-1** `workflow.py:60-65`：aborted-workflow-list 改为按 workflowId 查持有者→返回持有者 aborted 列表（对齐 `WorkflowManagerBean.java:387-419`）。
-- [ ] **WF-2** `workflow.py:68-74`：list_wwf 返回 `workspace_workflow.*`（UUID id）而非 `workflow.*`。
-- [ ] **WF-3** `workflow_manager.py:275`：`currval` 改 `INSERT ... RETURNING id`。
-- [ ] **WF-4** `workflow_manager.py:260-364`：补 notifier.sendApproval 通知（若 notifier 已有接口）。
+- [x] **WF-1** `workflow.py:60-65`：aborted-workflow-list 改为按 workflowId 查持有者→返回持有者 aborted 列表（对齐 `WorkflowManagerBean.java:387-419`）。✅ 实修在 `workflow_manager.get_aborted_workflow_instance`，经 document/part/workspace_aborted_workflow 关联表；列名 information_schema 核实。
+- [x] **WF-2** `workflow.py:68-74`：list_wwf 返回 `workspace_workflow.*`（UUID id）而非 `workflow.*`。
+- [x] **WF-3** `workflow_manager.py:275`：`currval` 改 `INSERT ... RETURNING id`。
+- [x] **WF-4** `workflow_manager.py:260-364`：补 notifier.sendApproval 通知（若 notifier 已有接口）。✅ notifier 无 sendApproval 接口，留 TODO 说明（受文件约束不新建）。
 
 ### PKG-task → Subagent I
 **Files:** `app/services/task_manager.py`、`app/routers/tasks.py`
-- [ ] **TASK-1** `task_manager.py:171-271` `process_task`：工作流完成时更新持有者（文档/零件）`lifeCycleState`（对齐 Java 各 WorkflowManagerBean）。
-- [ ] **TASK-2** `tasks.py:204-223`：process_task 返回 204（如需对齐 Payara，见决策项）。
+- [x] **TASK-1** `task_manager.py:171-271` `process_task`：工作流完成时更新持有者（文档/零件）`lifeCycleState`（对齐 Java 各 WorkflowManagerBean）。✅ `_apply_final_lifecycle_state` 按 {RELEASED:1,OBSOLETE:2} 更新 partrevision/documentrevision.status。
+- [x] **TASK-2** `tasks.py:204-223`：process_task 返回 204。
 
 ### PKG-change → Subagent J
 **Files:** `app/routers/change_common.py`、`app/services/change_manager.py`
-- [ ] **CH-1** `change_common.py:35-41`：`_get_acl_dict` 填充 `userGroupEntriesMap`（group_id→permission）。
-- [ ] **CH-4** `change_common.py:179-183`：`_set_affected_parts` iteration 从 body 取，不硬编码 1。
-- [ ] **CH-2** `change_manager.py:141-163`：`update_item` 加白名单，排除 name/id/author_login。
-- [ ] **CH-5** `change_common.py:171-184`：`_set_affected_*` 补 ACL 写权限检查。
+- [x] **CH-1** `change_common.py:35-41`：`_get_acl_dict` 填充 `userGroupEntriesMap`（group_id→permission）。
+- [x] **CH-4** `change_common.py:179-183`：`_set_affected_parts` iteration 从 body 取，不硬编码 1（无则查 partiteration MAX）。
+- [x] **CH-2** `change_manager.py:141-163`：`update_item` 加白名单。✅ 主 agent 纠正：改为白名单+**静默忽略**非白名单字段（Java DTO 只提取 4 字段、前端 PUT 带 author+initiator，抛错会破坏前端 save），非「排除报错」；补 WrongInputException→400。
+- [x] **CH-5** `change_common.py:171-184`：`_set_affected_*` 补 ACL 写权限检查。✅ 主 agent 接线 issue/order/request 的 update + affected-parts/documents 路由传 user_login/is_admin（原 update 恒 403，是相对 Payara 偏差，接线后对齐 `checkChangeItemWriteAccess`）。
 
 ### PKG-query → Subagent K
 **Files:** `app/services/query_executor.py`、`app/schemas/query_result.py`
-- [ ] **Q-1** `query_executor.py:312-345`：`run_part_query` 补 checkout-by-another-user 隐藏末迭代。
-- [ ] **Q-2** `query_executor.py:214`：author.* 分支改 `_cmp(f"acc.{sub}", ...)` + `_safe_ident(sub)`，支持 email/language。
-- [ ] **Q-11**（顺带）`query_executor.py:181`：`_pr_leaf` fallback 加安全列名白名单，非白名单返回 `1=1`。
+- [x] **Q-1** `query_executor.py:312-345`：`run_part_query` 补 checkout-by-another-user 隐藏末迭代。✅ 主 agent 修数据丢失隐患：delete-orphan 级联下 pop 会在 save=true commit 时真删迭代 → 加 `db.expunge`（对齐 em.detach）+ 预加载 part_master。
+- [x] **Q-2** `query_executor.py:214`：author.* 分支改 `_cmp(f"acc.{sub}", ...)` + `_safe_ident(sub)`，支持 email/language。
+- [x] **Q-11**（顺带）`query_executor.py:181`：`_pr_leaf` fallback 加安全列名白名单，非白名单返回 `1=1`。
 
 > Q-3（导出端点，涉及 `routers/parts.py`）留到批 6，避免与其它 parts.py 修改并行冲突。
 
 ### 主 agent 批 5 收尾
-- [ ] 部署 + 对拍 Payara（各端点行为）。pytest 无新增 fail。commit（分域）。更新文档。
+- [x] 部署 + 对拍 Payara（各端点行为）。pytest 无新增 fail。commit（分域）。更新文档。
 
 ---
 

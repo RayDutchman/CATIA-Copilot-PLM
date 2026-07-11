@@ -83,3 +83,17 @@
 | LOW | 2 | WF-8、WF-9 |
 
 整体：CRUD 骨架已实现约 60-70% 端点，但 3 个 CRITICAL 语义错误（WF-1 aborted 端点逻辑全错、TASK-1 缺生命周期更新、CH-1 groupEntriesMap 空）。通知发送完全缺失，迭代号硬编码。建议优先修 CRITICAL + HIGH。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 5）
+
+- ✅ **WF-1**（CRITICAL）：改为按 workflowId 定位持有者（documentrevision/partrevision/workspace_workflow）→ 经 aborted-workflow 关联表返回持有者名下 aborted 列表。列名 information_schema 核实。
+- ✅ **WF-2/WF-3/WF-4**（HIGH）：list_wwf 返回 workspace_workflow UUID id；instantiate 用 RETURNING id；WF-4 补审批通知 TODO（notifier 无 sendApproval 接口）。
+- ✅ **TASK-1**（CRITICAL）：新增 `_apply_final_lifecycle_state`，工作流完成时按 `{RELEASED:1,OBSOLETE:2}` 更新持有者 partrevision/documentrevision.status。
+- ✅ **TASK-2**（HIGH）：process_task 返回 204。
+- ✅ **CH-1**（CRITICAL）：`_get_acl_dict` 从 aclusergroupentry 填充 userGroupEntriesMap。
+- ✅ **CH-2**（HIGH）：update_item 改为白名单+静默忽略非白名单字段（对齐 Java DTO 提取，避免破坏前端 save）；补 WrongInputException→400。
+- ✅ **CH-4**（HIGH）：affected-part iteration 用 body/MAX 实际值。
+- ✅ **CH-5**（HIGH）：_set_affected_* 补 ACL 写检查，主 agent 接线 issue/order/request 的 update+affected 路由。
+- ⏳ **未纳入批 5（后续/决策项）**：TASK-3、CH-3（功能增强，需用户决策保留/回退）、WF-5~7、TASK-4/5、CH-6~8、WF-8/9（MEDIUM/LOW）。

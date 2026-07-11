@@ -6,7 +6,42 @@
 
 ---
 
-## 2026-07-12 — fix: 文档删除端点精确孤儿清理（对齐 Payara，批 4 后续）
+## 2026-07-12 — fix: FIX-PLAN 批次 5（P1 语义 CRITICAL，workflow/task/change/query）
+
+> FIX-PLAN 批次 5。4 并行 subagent（H workflow / I task / J change / K query，文件不相交）。主 agent code review 发现并修复 2 处 subagent 隐患（Q-1 数据丢失、CH-2 破坏前端），并补齐 CH-5 接线与 WrongInputException 状态码。
+
+### fix(workflow): aborted-workflow-list / ws-workflow 查询修正 + RETURNING id（WF-1~WF-4）
+
+- **WF-1** `workflow_manager.py` `get_aborted_workflow_instance`：从「查单个 workflow」改为「按 workflowId 定位持有者（documentrevision/partrevision/workspace_workflow 的 workflow_id）→ 经 `document_aborted_workflow`/`part_aborted_workflow`/`workspace_aborted_workflow` 关联表返回持有者名下全部 aborted workflow 列表」，对齐 Java `WorkflowManagerBean.java:387-419`。返回类型 dict→list。列名已全部 information_schema 核实。
+- **WF-2** `list_workspace_workflows`：改查 `workspace_workflow` 表返回 UUID id（原查 workflow.* 把整数 id 当 UUID）。
+- **WF-3** `instantiate_workflow`：`SELECT currval('workflow_id_seq')` → `INSERT ... RETURNING id`，消除并发风险。
+- **WF-4**：`instantiate_workflow` 末尾补审批通知 TODO（现有 `notifier.py` 无 sendApproval 接口，受文件约束不新建，留 TODO 说明）。
+
+### fix(task): 工作流完成时更新持有者生命周期状态 + 204（TASK-1, TASK-2）
+
+- **TASK-1** `task_manager.py`：`_advance_activity`/`_start_activity` 改为返回 bool 标识工作流是否全部完成；新增 `_apply_final_lifecycle_state` —— 工作流完成时读 `workflow.finallifecyclestate`，按 `{RELEASED:1, OBSOLETE:2}`（对齐 `part_mapper.STATUS_MAP`）更新持有者 partrevision/documentrevision 的 `status`。对齐 Java PartRevision/DocumentRevision.getLifeCycleState 委托 workflow。
+- **TASK-2** `tasks.py` `process_task`：返回 `Response(204)`（原返回 holder 200），对齐 Java `TaskResource.java:306` noContent。
+
+### fix(change): userGroupEntriesMap / 真实 iteration / update 白名单 + ACL 写检查（CH-1,CH-2,CH-4,CH-5）
+
+- **CH-1** `change_common.py` `_get_acl_dict`：从 `aclusergroupentry` 填充 `userGroupEntriesMap`（group_id→permission），原恒空。
+- **CH-4** `_set_affected_parts`：iteration 从 body 取，无则查 `partiteration` MAX（原恒硬编码 1）。已验证 iteration=2 的零件正确写 2、body 显式 1 时写 1。
+- **CH-2** `change_manager.py` `update_item`：仅应用白名单字段（description/priority/category/assignee/dueDate + milestone_id + Milestone.title），对 name/author/initiator/id 等非白名单字段**静默忽略**（不抛异常）。**关键**：Java REST 层接收完整 DTO 但只提取 4 个字段，且 Backbone 前端 save 会带 author+initiator，若抛错则前端编辑弹框全部 400 —— 主 agent 对拍 `ChangeIssuesResource.updateIssue` + `change_issue_edition.js` 后纠正 subagent 的「抛 WrongInputException」为静默忽略。
+- **CH-5** `_set_affected_parts`/`_set_affected_documents`：新增 `user_login`/`is_admin` 参，执行 `check_write_access`（对齐 Java `checkChangeItemWriteAccess:889`）；主 agent 将 issue/order/request 的 update + affected-parts/documents 6+3 个路由接线 `user_login`（原 update 路由从不传 user_login → 恒 403，是相对 Payara 的偏差，接线后恢复 Payara 行为）。
+- **状态码**：`exception_handlers._status_for` 补 `WrongInputException → 400`（对齐 Java `ApplicationExceptionMapper` 基类映射 BAD_REQUEST）。
+
+### fix(query): 他人签出隐藏末迭代（脱离 session）/ 动态 author 列 / pr fallback 白名单（Q-1, Q-2, Q-11）
+
+- **Q-1** `query_executor.py` `run_part_query`：对被他人签出的 revision 隐藏末迭代（对齐 Java `searchPartRevisions` isCheckoutByAnotherUser）。**主 agent 修复 subagent 数据丢失隐患**：`iterations` 关系为 `cascade="all, delete-orphan"`，直接 `pop()` 会在 `save=true` 的 `db.commit()` 时把末迭代从库删除 —— 改为先 `_ = pr.part_master`（预加载防脱离后懒加载报错）+ `db.expunge(pr)`（对齐 Java `em.detach`）再 pop。已用 alice 签出 + save=true 验证迭代数不变。
+- **Q-2** author.* 分支：`acc.name` 硬编码 → `acc.{_safe_ident(sub)}`，支持 author.email/language/name。
+- **Q-11** `_pr_leaf` fallback：加 `_PR_VALID_COLS` 白名单，非白名单（如 checkOutUser/author 关系字段）返回 `1=1`，避免生成非法列名 500。
+
+### 验证
+
+- pytest `-q --ignore=tests/test_vault.py`：**278 passed / 1 known-fail**（test_i18n_bypass，批 0 既存）/ 1 skipped，无新增 fail。
+- 在线 smoke（test1 JWT，FastAPI :8000）：WF-1 aborted-list（不存在 wfid→[] 200）、WF-2 ws-workflows 200、TASK 204、CH-2 前端形态 PUT（含 name/author/initiator→200 且非白名单忽略、description/priority/category 生效）、CH-4 iteration 实际值、Q-1 数据安全（save=true 不删迭代）、Q-2/Q-11 无 500。
+
+---
 
 > 批 4 smoke 暴露的独立预存 bug。派 subagent 核实结论 + 对拍 Java 后确认修复方向。
 

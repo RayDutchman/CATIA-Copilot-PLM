@@ -71,3 +71,13 @@
 | 已排除 | 9+2 | FE-1~9、Q-6、Q-13 |
 
 整体：Query 执行引擎核心（operator 映射、11 前缀路由、属性 EXISTS、权限/检入过滤）质量较高，与 PartRevisionQueryDAO 对齐良好。主要缺陷：checkout 隐藏遗漏(Q-1)、author.* 列名错误(Q-2)、导出端点架构断裂(Q-3)、两个导入桩(Q-4)。SQL 注入面基本安全但列名白名单可加强。
+
+---
+
+## 修复状态（2026-07-12，FIX-PLAN 批次 5）
+
+- ✅ **Q-1**（CRITICAL）：`run_part_query` 对被他人签出的 revision 隐藏末迭代。**主 agent 修数据丢失隐患**：`iterations` 关系 `cascade="all, delete-orphan"`，直接 `pop()` 会在 save=true 的 commit 时真删末迭代 → 改为先预加载 part_master + `db.expunge(pr)`（对齐 Java em.detach）再 pop。alice 签出 + save=true 验证迭代数不变。
+- ✅ **Q-2**（CRITICAL）：author.* 分支 `acc.name` 硬编码 → `acc.{_safe_ident(sub)}`，支持 email/language/name。
+- ✅ **Q-11**（LOW）：`_pr_leaf` fallback 加 `_PR_VALID_COLS` 白名单，非白名单返回 `1=1` 防 500。
+- ⏳ **留批 6**：Q-3（query-export 改 POST+补导出已存查询，涉及 parts.py，避免与其它 parts.py 修改并行冲突）。
+- ⏳ **未纳入**：Q-4（导入桩）、Q-5/P-6（批 6）、Q-7~Q-10/Q-12（MEDIUM/LOW）。
