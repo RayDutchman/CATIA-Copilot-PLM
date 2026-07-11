@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -99,14 +99,15 @@ def my_group_memberships(ws: str, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/add-user")
 @router.put(f"{PREFIX}/add-user/", include_in_schema=False)
 def add_user(ws: str, body: dict, db: Session = Depends(get_db),
-             current_user: Account = Depends(get_current_user)):
+             current_user: Account = Depends(get_current_user),
+             group: str = Query(None)):
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         raise UserNotFoundException("UserNotFoundException", login)
-    user_mgmt_service.add_user(db, ws, login, body.get("group"))
+    user_mgmt_service.add_user(db, ws, login, group)
     return Response(status_code=204)
 
 

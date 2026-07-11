@@ -49,20 +49,7 @@ class OrganizationService:
         db.commit()
         return self.get_organization_of_account(db, name)
 
-    def add_account_in_organization(self, db: Session, org_name: str,
-                                     login: str) -> None:
-        db.execute(text(
-            "UPDATE account SET organization_name = :o WHERE login = :l"
-        ), {"o": org_name, "l": login})
-        db.commit()
 
-    def remove_accounts_from_organization(self, db: Session, org_name: str,
-                                           logins: list) -> None:
-        for login in logins:
-            db.execute(text(
-                "UPDATE account SET organization_name = NULL WHERE login = :l"
-            ), {"l": login})
-        db.commit()
 
 
 organization_service = OrganizationService()

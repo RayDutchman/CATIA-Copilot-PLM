@@ -13,6 +13,7 @@ from app.core.exceptions import (
     WorkspaceNotFoundException, ListOfValuesNotFoundException,
 )
 from app.models.auth import Account
+from app.models.util.naming_convention import is_valid_name
 from app.schemas.admin import (
     WorkspaceDTO, WorkspaceListDTO, StatsOverviewDTO, DiskUsageDTO,
     FrontOptionsDTO, BackOptionsDTO, ReachableUserDTO,
@@ -241,131 +242,6 @@ def reindex_workspace(ws: str, db: Session = Depends(get_db),
     return result
 
 
-@router.get("/workspaces/{ws}/tags", response_model=List[TagDTO])
-@router.get("/workspaces/{ws}/tags/", include_in_schema=False)
-def workspace_tags(ws: str, db: Session = Depends(get_db),
-                   current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT label, workspace_id FROM tag WHERE workspace_id = :ws ORDER BY label"
-    ), {"ws": ws}).fetchall()
-    return [{"id": r[0], "label": r[0], "workspaceId": r[1]} for r in rows]
-
-
-@router.post("/workspaces/{ws}/tags", status_code=201, response_model=TagDTO)
-@router.post("/workspaces/{ws}/tags/", status_code=201, include_in_schema=False)
-def create_tag(ws: str, body: dict, db: Session = Depends(get_db),
-               current_user: Account = Depends(get_current_user)):
-    label = body.get("label", "").strip()
-    if not label:
-        raise NotAllowedException("NotAllowedException9", label)
-    existing = db.execute(text(
-        "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
-    ), {"label": label, "ws": ws}).fetchone()
-    if existing:
-        raise TagAlreadyExistsException("TagAlreadyExistsException", label)
-    db.execute(text(
-        "INSERT INTO tag (label, workspace_id) VALUES (:label, :ws)"
-    ), {"label": label, "ws": ws})
-    db.commit()
-    return {"id": label, "label": label, "workspaceId": ws}
-
-
-@router.post("/workspaces/{ws}/tags/multiple", status_code=201, response_model=List[TagDTO])
-@router.post("/workspaces/{ws}/tags/multiple/", status_code=201, include_in_schema=False)
-def create_tags_multiple(ws: str, body: dict, db: Session = Depends(get_db),
-                         current_user: Account = Depends(get_current_user)):
-    labels = body.get("tags", [])
-    created = []
-    for label in labels:
-        label = str(label).strip()
-        if not label:
-            continue
-        existing = db.execute(text(
-            "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
-        ), {"label": label, "ws": ws}).fetchone()
-        if existing:
-            continue
-        db.execute(text(
-            "INSERT INTO tag (label, workspace_id) VALUES (:label, :ws)"
-        ), {"label": label, "ws": ws})
-        created.append({"id": label, "label": label, "workspaceId": ws})
-    db.commit()
-    return created
-
-
-@router.delete("/workspaces/{ws}/tags/{tag_id}", status_code=204)
-@router.delete("/workspaces/{ws}/tags/{tag_id}/", status_code=204, include_in_schema=False)
-def delete_tag(ws: str, tag_id: str, db: Session = Depends(get_db),
-               current_user: Account = Depends(get_current_user)):
-    existing = db.execute(text(
-        "SELECT label FROM tag WHERE label = :label AND workspace_id = :ws"
-    ), {"label": tag_id, "ws": ws}).fetchone()
-    if not existing:
-        raise TagNotFoundException("TagNotFoundException", tag_id)
-    db.execute(text(
-        "DELETE FROM tag WHERE label = :label AND workspace_id = :ws"
-    ), {"label": tag_id, "ws": ws})
-    db.commit()
-
-
-@router.get("/workspaces/{ws}/tags/{tag_id}/documents", response_model=List[dict])
-@router.get("/workspaces/{ws}/tags/{tag_id}/documents/", include_in_schema=False)
-def tag_documents(ws: str, tag_id: str, db: Session = Depends(get_db),
-                  current_user: Account = Depends(get_current_user)):
-    """按标签查询文档修订版（对齐 Java TagResource.getDocumentsWithGivenTagIdAndWorkspaceId）"""
-    from app.models.document.document_revision import DocumentRevision
-
-    rows = db.execute(text("""
-        SELECT DISTINCT dr.documentmaster_id, dr.version, dr.workspace_id,
-               dr.title, dr.location_completepath, dr.creationdate,
-               dr.checkoutuser_login, dr.checkoutdate
-        FROM documentrevision dr
-        JOIN documentrevision_tag drt
-          ON dr.workspace_id = drt.documentmaster_workspace_id
-         AND dr.documentmaster_id = drt.documentmaster_id
-         AND dr.version = drt.documentrevision_version
-        WHERE drt.tag_workspace_id = :ws
-          AND drt.tag_label = :tag
-    """), {"ws": ws, "tag": tag_id}).fetchall()
-
-    result = []
-    for row in rows:
-        last_it_row = db.execute(text("""
-            SELECT iteration, creationdate
-            FROM documentiteration
-            WHERE workspace_id = :ws
-              AND documentmaster_id = :did
-              AND documentrevision_version = :v
-            ORDER BY iteration DESC
-            LIMIT 1
-        """), {"ws": row.workspace_id, "did": row.documentmaster_id, "v": row.version}).first()
-
-        result.append({
-            "documentMasterId": row.documentmaster_id,
-            "version": row.version,
-            "workspaceId": row.workspace_id,
-            "title": row.title,
-            "path": row.location_completepath or "",
-            "checkOutUser": row.checkoutuser_login,
-            "checkOutDate": row.checkoutdate.isoformat() if row.checkoutdate else None,
-            "creationDate": row.creationdate.isoformat() if row.creationdate else None,
-            "documentIterations": [
-                {
-                    "iteration": last_it_row.iteration,
-                    "title": row.title,
-                    "creationDate": last_it_row.creationdate.isoformat() if last_it_row.creationdate else None,
-                }
-            ] if last_it_row else [],
-            "lastIteration": last_it_row.iteration if last_it_row else 0,
-            "tags": None,
-            "workflow": None,
-            "lifeCycleState": None,
-            "iterationSubscription": False,
-            "stateSubscription": False,
-        })
-
-    return result
-
 
 @router.get("/workspaces/{ws}/lov", response_model=Dict[str, List[LOVValueDTO]])
 @router.get("/workspaces/{ws}/lov/", include_in_schema=False)
@@ -495,11 +371,12 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
 def create_workspace(body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user),
                      userLogin: str = Query(None)):
-    # 检查平台策略：ADMIN_VALIDATION 时仅管理员可创建
+    # 检查平台策略：ADMIN_VALIDATION 时仅管理员可创建，且 workspace 默认 disabled
     strategy_row = db.execute(text(
         "SELECT workspacecreationstrategy FROM platformoptions LIMIT 1"
     )).first()
-    if strategy_row and strategy_row[0] == 1:  # ADMIN_VALIDATION
+    is_admin_validation = strategy_row is not None and strategy_row[0] == 1
+    if is_admin_validation:
         is_admin = db.execute(text(
             "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
         ), {"l": current_user.login}).first()
@@ -507,6 +384,10 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
             raise AccessRightException("AccessRightException", current_user.login)
     ws_id = body.get("id", "").strip()
     if not ws_id:
+        raise NotAllowedException("NotAllowedException9", ws_id)
+
+    # 命名约定校验（对齐 Java WorkspaceManagerBean.createWorkspace）
+    if not is_valid_name(ws_id):
         raise NotAllowedException("NotAllowedException9", ws_id)
 
     existing = db.execute(text(
@@ -518,11 +399,13 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
     admin = userLogin or current_user.login
     desc = body.get("description", "")
     folder_locked = body.get("folderLocked", False)
+    enabled = not is_admin_validation  # ADMIN_VALIDATION → false，否则 true
 
     db.execute(text(
         "INSERT INTO workspace (id, description, enabled, folderlocked, admin_login) "
-        "VALUES (:id, :desc, TRUE, :folder_locked, :admin)"
-    ), {"id": ws_id, "desc": desc, "folder_locked": folder_locked, "admin": admin})
+        "VALUES (:id, :desc, :enabled, :folder_locked, :admin)"
+    ), {"id": ws_id, "desc": desc, "enabled": enabled,
+        "folder_locked": folder_locked, "admin": admin})
 
     # Payara 对齐: createWorkspace → createUser + addUserMembership
     db.execute(text(
@@ -541,7 +424,7 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
     return {
         "id": ws_id,
         "description": desc,
-        "enabled": True,
+        "enabled": enabled,
         "folderLocked": folder_locked,
         "admin": admin,
         "creationDate": None,

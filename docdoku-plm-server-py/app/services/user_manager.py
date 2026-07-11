@@ -50,12 +50,18 @@ class UserMgmtService:
             UserGroup.id == group_id, UserGroup.workspace_id == ws).first()
         if not g:
             raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
-        # 检查成员
-        members = db.execute(text(
-            "SELECT COUNT(*) FROM usergroupmapping WHERE groupname = :g"
-        ), {"g": group_id}).scalar()
-        if members > 0:
+        # ACL 约束检查：组被 ACL 引用时禁止删除
+        acl_ref = db.execute(text(
+            "SELECT 1 FROM aclusergroupentry "
+            "WHERE principal_id = :gid AND principal_workspace_id = :ws"
+        ), {"gid": group_id, "ws": ws}).first()
+        if acl_ref:
             raise EntityConstraintException("EntityConstraintException11")
+        # 先删 workspace 级别的组成员关系，再删组本身
+        db.execute(text(
+            "DELETE FROM workspaceusergroupmembership "
+            "WHERE member_id = :gid AND member_workspace_id = :ws"
+        ), {"gid": group_id, "ws": ws})
         db.delete(g)
         db.commit()
 
@@ -92,12 +98,23 @@ class UserMgmtService:
         db.commit()
 
     def remove_user_from_workspace(self, db: Session, ws: str, login: str):
+        # 先删 workspace 级别的成员关系（避免 FK 约束冲突）
+        db.execute(text(
+            "DELETE FROM workspaceusermembership "
+            "WHERE member_login = :l AND workspace_id = :w"
+        ), {"l": login, "w": ws})
+        db.execute(text(
+            "DELETE FROM workspaceusergroupmembership "
+            "WHERE member_id IN (SELECT groupname FROM usergroupmapping WHERE login = :l) "
+            "AND workspace_id = :w"
+        ), {"l": login, "w": ws})
+        db.execute(text(
+            "DELETE FROM usergroupmapping "
+            "WHERE login = :l AND groupname IN (SELECT id FROM usergroup WHERE workspace_id = :w)"
+        ), {"l": login, "w": ws})
         db.execute(text(
             "DELETE FROM userdata WHERE login = :l AND workspace_id = :w"
         ), {"l": login, "w": ws})
-        db.execute(text(
-            "DELETE FROM usergroupmapping WHERE login = :l"
-        ), {"l": login})
         db.commit()
 
     def check_user_active(self, db: Session, ws: str, login: str) -> bool:

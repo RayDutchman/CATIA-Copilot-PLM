@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import NotAllowedException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -80,6 +81,17 @@ def workspace_stats(db: Session = Depends(get_db),
 @router.put("/accounts/gcm/", status_code=204, include_in_schema=False)
 def put_gcm(body: dict, db: Session = Depends(get_db),
             current_user: Account = Depends(get_current_user)):
+    gcm_id = body.get("gcmId", "")
+    if not gcm_id:
+        raise NotAllowedException("NotAllowedException9", gcm_id)
+    login = current_user.login
+    db.execute(text(
+        "DELETE FROM gcmaccount WHERE account_login = :login"
+    ), {"login": login})
+    db.execute(text(
+        "INSERT INTO gcmaccount (gcmid, account_login) VALUES (:gcmid, :login)"
+    ), {"gcmid": gcm_id, "login": login})
+    db.commit()
     return Response(status_code=204)
 
 
@@ -87,5 +99,9 @@ def put_gcm(body: dict, db: Session = Depends(get_db),
 @router.delete("/accounts/gcm/", status_code=204, include_in_schema=False)
 def delete_gcm(db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
+    db.execute(text(
+        "DELETE FROM gcmaccount WHERE account_login = :login"
+    ), {"login": current_user.login})
+    db.commit()
     return Response(status_code=204)
 
