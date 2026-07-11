@@ -23,6 +23,21 @@ part_revision_tags = Table(
 )
 
 
+# partrevision → 有效性（M:N），只读：写入由 effectivity 路由/删除逻辑的裸 SQL 负责
+part_revision_effectivities = Table(
+    "partrevision_effectivity", Base.metadata,
+    Column("partmaster_workspace_id", String, primary_key=True),
+    Column("partmaster_partnumber", String, primary_key=True),
+    Column("partrevision_version", String, primary_key=True),
+    Column("effectivity_id", Integer, primary_key=True),
+    ForeignKeyConstraint(
+        ["partmaster_workspace_id", "partmaster_partnumber", "partrevision_version"],
+        ["partrevision.workspace_id", "partrevision.partmaster_partnumber",
+         "partrevision.version"],
+    ),
+)
+
+
 class PartRevision(Base):
     __tablename__ = "partrevision"
 
@@ -87,6 +102,19 @@ class PartRevision(Base):
             & (Tag.label == part_revision_tags.c.tag_label)
         ),
     )
+    effectivities: Mapped[List["Effectivity"]] = relationship(
+        "Effectivity",
+        secondary=part_revision_effectivities,
+        primaryjoin=lambda: (
+            (PartRevision.workspace_id == part_revision_effectivities.c.partmaster_workspace_id)
+            & (PartRevision.partmaster_partnumber == part_revision_effectivities.c.partmaster_partnumber)
+            & (PartRevision.version == part_revision_effectivities.c.partrevision_version)
+        ),
+        secondaryjoin=lambda: (
+            Effectivity.id == part_revision_effectivities.c.effectivity_id
+        ),
+        viewonly=True,
+    )
 
     @property
     def last_iteration(self) -> Optional["PartIteration"]:
@@ -113,3 +141,4 @@ class PartRevision(Base):
 
 
 from app.models.part import Tag  # noqa: E402
+from app.models.product.effectivity import Effectivity  # noqa: E402

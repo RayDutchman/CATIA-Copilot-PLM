@@ -29,7 +29,7 @@ class EffectivityService:
         description = body.get("description", "")
         if type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
             eff = Effectivity(
-                dtype="S", name=name, description=description,
+                dtype="SerialNumberBasedEffectivity", name=name, description=description,
                 start_number=body.get("startNumber"),
                 end_number=body.get("endNumber"),
                 configurationitem_id=ci_id,
@@ -37,7 +37,7 @@ class EffectivityService:
             )
         elif type_eff == "LOTBASEDEFFECTIVITY":
             eff = Effectivity(
-                dtype="L", name=name, description=description,
+                dtype="LotBasedEffectivity", name=name, description=description,
                 start_lot=body.get("startLotId"),
                 end_lot=body.get("endLotId"),
                 configurationitem_id=ci_id,
@@ -45,7 +45,7 @@ class EffectivityService:
             )
         else:
             eff = Effectivity(
-                dtype="D", name=name, description=description,
+                dtype="DateBasedEffectivity", name=name, description=description,
                 start_date=_parse_date(body.get("startDate")),
                 end_date=_parse_date(body.get("endDate")),
                 configurationitem_id=ci_id,

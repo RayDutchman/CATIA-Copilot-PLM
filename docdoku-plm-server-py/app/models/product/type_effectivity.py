@@ -3,4 +3,4 @@ from app.models.product.effectivity import Effectivity
 
 
 class TypeEffectivity(Effectivity):
-    __mapper_args__ = {"polymorphic_identity": "type"}
+    __mapper_args__ = {"polymorphic_identity": "TypeEffectivity"}

@@ -47,15 +47,15 @@ def _effectivity_to_dto(eff) -> dict:
         "configurationItemNumber": d.get("configurationitem_id"),
         "workspaceId": d.get("configurationitem_workspace_id"),
     }
-    if dtype == "D":
+    if dtype == "DateBasedEffectivity":
         dto["typeEffectivity"] = "DATEBASEDEFFECTIVITY"
         dto["startDate"] = d.get("start_date") or d.get("startdate")
         dto["endDate"] = d.get("end_date") or d.get("enddate")
-    elif dtype == "S":
+    elif dtype == "SerialNumberBasedEffectivity":
         dto["typeEffectivity"] = "SERIALNUMBERBASEDEFFECTIVITY"
         dto["startNumber"] = d.get("start_number") or d.get("startnumber")
         dto["endNumber"] = d.get("end_number") or d.get("endnumber")
-    elif dtype == "L":
+    elif dtype == "LotBasedEffectivity":
         dto["typeEffectivity"] = "LOTBASEDEFFECTIVITY"
         dto["startLotId"] = d.get("start_lot") or d.get("startlotid")
         dto["endLotId"] = d.get("end_lot") or d.get("endlotid")
@@ -103,7 +103,7 @@ def create_effectivity(
     if type_eff == "DATEBASEDEFFECTIVITY":
         if not body.get("startDate"):
             raise CreationException("startDate is required for DateBasedEffectivity")
-        dtype = "D"
+        dtype = "DateBasedEffectivity"
         eff = Effectivity(
             dtype=dtype, name=name, description=description,
             start_date=_parse_date(body.get("startDate")),
@@ -114,7 +114,7 @@ def create_effectivity(
     elif type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
         if not body.get("startNumber"):
             raise CreationException("startNumber is required for SerialNumberBasedEffectivity")
-        dtype = "S"
+        dtype = "SerialNumberBasedEffectivity"
         eff = Effectivity(
             dtype=dtype, name=name, description=description,
             start_number=body.get("startNumber"),
@@ -125,7 +125,7 @@ def create_effectivity(
     else:  # LOTBASEDEFFECTIVITY
         if not body.get("startLotId"):
             raise CreationException("startLotId is required for LotBasedEffectivity")
-        dtype = "L"
+        dtype = "LotBasedEffectivity"
         eff = Effectivity(
             dtype=dtype, name=name, description=description,
             start_lot=body.get("startLotId"),

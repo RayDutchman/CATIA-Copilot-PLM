@@ -3,4 +3,4 @@ from app.models.product.effectivity import Effectivity
 
 
 class LotBasedEffectivity(Effectivity):
-    __mapper_args__ = {"polymorphic_identity": "lot_based"}
+    __mapper_args__ = {"polymorphic_identity": "LotBasedEffectivity"}

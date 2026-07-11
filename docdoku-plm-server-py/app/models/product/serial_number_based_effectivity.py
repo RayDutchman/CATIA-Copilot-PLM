@@ -3,4 +3,4 @@ from app.models.product.effectivity import Effectivity
 
 
 class SerialNumberBasedEffectivity(Effectivity):
-    __mapper_args__ = {"polymorphic_identity": "serial_number_based"}
+    __mapper_args__ = {"polymorphic_identity": "SerialNumberBasedEffectivity"}
