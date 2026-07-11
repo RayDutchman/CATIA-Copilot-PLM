@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import WrongInputException
 from app.models.auth import Account
 from app.models.part import PartRevision, PartIteration, part_revision_tags
 from app.schemas.part import (
@@ -103,6 +104,7 @@ def search_parts(
 ):
     from datetime import datetime
     from app.services.indexer.indexer_query_builder import es_query_builder
+    from elasticsearch.exceptions import ConnectionError as ESConnectionError, ConnectionTimeout as ESConnectionTimeout
 
     # ES 优先搜索
     try:
@@ -143,8 +145,8 @@ def search_parts(
                 rev_map = {(pr.partmaster_partnumber, pr.version): pr for pr in revisions}
                 ordered = [rev_map[k] for k in rev_keys if k in rev_map]
                 return [map_revision(pr, db) for pr in ordered]
-    except Exception:
-        pass  # ES 失败 → fallback 到 DB 搜索
+    except (ESConnectionError, ESConnectionTimeout):
+        pass  # ES 连接失败 → fallback 到 DB 搜索
 
     # DB LIKE fallback
     author_val = author if author else None
@@ -386,11 +388,11 @@ def post_queries(request: Request,
                  body: dict = Body(...),
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    """无 workspace 前缀版本：从 body.contexts 推断工作区，无法推断则退回重名检查。"""
+    """无 workspace 前缀版本：从 body.contexts 推断工作区。"""
     ctxs = body.get("contexts") or []
     ws = ctxs[0].get("workspaceId") if ctxs else None
     if not ws:
-        return {"id": 0}
+        raise WrongInputException("WrongInputException")
     return _run_custom_query(db, ws, body, request, current_user.login)
 
 
@@ -498,32 +500,137 @@ def _save_query(db, workspace_id, author_login, body):
     return qid
 
 
-@router.get("/parts/query-export",
-            response_model=dict)
-@router.get("/parts/query-export/",
-            response_model=dict, include_in_schema=False)
+@router.post("/parts/query-export",
+             response_model=dict)
+@router.post("/parts/query-export/",
+             response_model=dict, include_in_schema=False)
 def query_export(request: Request,
+                 body: dict = Body(...),
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     """导出零件查询结果为 JSON 或 CSV（exportType=json|xls）。
 
-    对齐 Java QueryResultMessageBodyWriter。
+    对齐 Java QueryResultMessageBodyWriter → POST exportCustomQuery。
+    接收完整 QueryDTO body，执行查询后序列化导出。
     """
-    from app.routers.export.query_result import export_query_as_json, export_query_as_csv
+    import json, csv, io
     from fastapi.responses import Response
+    from app.services.query_executor import run_part_query
+    from app.services.query_pbs import filter_pbs, merge_rows
+    from app.schemas.query_result import build_query_result_rows
 
     params = dict(request.query_params)
     export_type = params.get("exportType", "json")
+    ctxs = body.get("contexts") or []
+    ws = ctxs[0].get("workspaceId") if ctxs else ""
+    login = current_user.login
+    is_admin = _query_admin_flag(db, ws, login)
+
+    if not ws:
+        raise WrongInputException("WrongInputException")
+
+    parts = run_part_query(db, ws, body, login, is_admin)
+    if body.get("contexts"):
+        pbs_rows = filter_pbs(db, ws, body, login, is_admin)
+        rows = merge_rows(pbs_rows, parts)
+    else:
+        rows = [{"partRevision": map_revision(pr, db)} for pr in parts]
+    result_rows = build_query_result_rows(rows, body, db)
 
     if export_type == "xls":
-        csv_data = export_query_as_csv(db, "", params)
+        if result_rows:
+            cols = list(result_rows[0].keys())
+        else:
+            cols = []
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(cols)
+        for row in result_rows:
+            writer.writerow([row.get(c, "") for c in cols])
+        csv_data = output.getvalue()
         return Response(
             content=csv_data,
             media_type="application/csv",
             headers={"Content-Disposition": 'attachment; filename="TSR.csv"'},
         )
     else:
-        json_data = export_query_as_json(db, "", params)
+        json_data = json.dumps(result_rows, default=str, ensure_ascii=False)
+        return Response(
+            content=json_data,
+            media_type="application/json",
+            headers={"Content-Disposition": "inline"},
+        )
+
+
+@router.get("/parts/queries/{query_id}/format/{export_type}")
+@router.get("/parts/queries/{query_id}/format/{export_type}/", include_in_schema=False)
+def export_existing_query(query_id: int, export_type: str,
+                          current_user: Account = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    """导出已保存查询（对齐 Java GET exportExistingQuery）。"""
+    import json, csv, io
+    from fastapi.responses import Response
+    from sqlalchemy import text
+    from app.services.query_executor import run_part_query
+    from app.services.query_pbs import filter_pbs, merge_rows
+    from app.schemas.query_result import build_query_result_rows
+
+    row = db.execute(text(
+        "SELECT id, name, author_workspace_id, queryrule_id, pathdata_queryrule_id FROM query WHERE id = :q"
+    ), {"q": query_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Query not found")
+    ws = row[2]
+    login = current_user.login
+    is_admin = _query_admin_flag(db, ws, login)
+
+    selects = [s[0] for s in db.execute(text(
+        "SELECT selects FROM query_selects WHERE query_id = :q"
+    ), {"q": query_id}).fetchall()]
+    order_by = [s[0] for s in db.execute(text(
+        "SELECT orderbylist FROM query_order_by WHERE query_id = :q"
+    ), {"q": query_id}).fetchall()]
+    grouped_by = [s[0] for s in db.execute(text(
+        "SELECT groupedbylist FROM query_grouped_by WHERE query_id = :q"
+    ), {"q": query_id}).fetchall()]
+    contexts = _load_query_contexts(db, query_id)
+
+    body = {
+        "selects": selects,
+        "orderByList": order_by,
+        "groupedByList": grouped_by,
+        "contexts": contexts,
+        "queryRule": _load_query_rule(db, row[3]),
+        "pathDataQueryRule": _load_query_rule(db, row[4]),
+    }
+
+    parts = run_part_query(db, ws, body, login, is_admin)
+    if contexts:
+        pbs_rows = filter_pbs(db, ws, body, login, is_admin)
+        rows = merge_rows(pbs_rows, parts)
+    else:
+        rows = [{"partRevision": map_revision(pr, db)} for pr in parts]
+    result_rows = build_query_result_rows(rows, body, db)
+
+    export_lower = export_type.lower()
+    if export_lower == "xls" or export_lower == "csv":
+        if result_rows:
+            cols = list(result_rows[0].keys())
+        else:
+            cols = []
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(cols)
+        for r in result_rows:
+            writer.writerow([r.get(c, "") for c in cols])
+        csv_data = output.getvalue()
+        return Response(
+            content=csv_data,
+            media_type="application/csv",
+            headers={"Content-Disposition": 'attachment; filename="TSR.csv"'},
+        )
+    else:
+        json_data = json.dumps(result_rows, default=str, ensure_ascii=False)
         return Response(
             content=json_data,
             media_type="application/json",

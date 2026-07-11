@@ -3,13 +3,16 @@ import re
 import uuid
 import hashlib
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import PartIterationNotFoundException
+from app.core.exceptions import (
+    PartIterationNotFoundException, AccessRightException,
+    PartMasterNotFoundException, BaselineNotFoundException, WrongInputException,
+)
 from app.models.auth import Account
 from app.models.part import SharedEntity
 from app.models.product.part_iteration import PartIteration
@@ -188,15 +191,19 @@ def obsolete_part(workspace_id: str, part_key: str,
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/newVersion",
-            response_model=PartRevisionDTO)
+            status_code=204)
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/newVersion/",
-            response_model=PartRevisionDTO, include_in_schema=False)
+            status_code=204, include_in_schema=False)
 def new_version_part(workspace_id: str, part_key: str,
+                     body: dict = Body({}),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
     pr = svc.create_new_version(db, workspace_id, number, version, current_user.login)
-    return map_revision(pr, db)
+    # 仅 service 已支持的字段：description 可在创建后更新；workflow/acl/roleMapping 需改 product_manager.py
+    if body.get("description"):
+        pr.description = body["description"]
+        db.commit()
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/tags",
@@ -305,41 +312,44 @@ def share_part(workspace_id: str, part_key: str,
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/publish",
-            response_model=PartRevisionDTO)
+            status_code=204)
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/publish/",
-            response_model=PartRevisionDTO, include_in_schema=False)
+            status_code=204, include_in_schema=False)
 def publish_part(workspace_id: str, part_key: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
+    from app.services.factory.acl_factory import check_write_access
     number, version = _split_part_key(part_key)
     pr = svc.get_revision(db, workspace_id, number, version)
+    if not check_write_access(db, pr.acl_id, current_user.login, False, workspace_id=workspace_id):
+        raise AccessRightException("AccessRightException", current_user.login)
     pr.public_shared = True
     db.commit()
-    return map_revision(pr, db)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish",
-            response_model=PartRevisionDTO)
+            status_code=204)
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish/",
-            response_model=PartRevisionDTO, include_in_schema=False)
+            status_code=204, include_in_schema=False)
 def unpublish_part(workspace_id: str, part_key: str,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
+    from app.services.factory.acl_factory import check_write_access
     number, version = _split_part_key(part_key)
     pr = svc.get_revision(db, workspace_id, number, version)
+    if not check_write_access(db, pr.acl_id, current_user.login, False, workspace_id=workspace_id):
+        raise AccessRightException("AccessRightException", current_user.login)
     pr.public_shared = False
     db.commit()
-    return map_revision(pr, db)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/acl",
-            response_model=AclIdDTO)
+            status_code=204)
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/acl/",
-            response_model=AclIdDTO, include_in_schema=False)
+            status_code=204, include_in_schema=False)
 def update_part_acl(workspace_id: str, part_key: str, body: dict,
                     db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
-    from app.core.exceptions import AccessRightException
     number, version = _split_part_key(part_key)
     pr = svc.get_revision(db, workspace_id, number, version)
     # 仅 revision 作者或工作区管理员可修改 ACL
@@ -355,7 +365,6 @@ def update_part_acl(workspace_id: str, part_key: str, body: dict,
     if pr.acl_id != new_acl_id:
         pr.acl_id = new_acl_id
         db.commit()
-    return {"aclId": new_acl_id}
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_number}/latest-revision",
@@ -579,13 +588,13 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     try:
         bl_id = int(baseline_id)
     except ValueError:
-        raise HTTPException(status_code=400, detail="baseline_id 必须是整数")
+        raise WrongInputException("WrongInputException")
 
     baseline = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
     if baseline is None:
-        raise HTTPException(status_code=404, detail="Baseline not found")
+        raise BaselineNotFoundException("BaselineNotFoundException", baseline_id)
     if baseline.configurationitem_workspace_id != workspace_id:
-        raise HTTPException(status_code=403, detail="Baseline not in this workspace")
+        raise BaselineNotFoundException("BaselineNotFoundException", baseline_id)
 
     bp = (
         db.query(BaselinedPart)
@@ -598,7 +607,7 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     )
 
     if bp is None:
-        raise HTTPException(status_code=404, detail="Part not found in baseline")
+        raise PartMasterNotFoundException("PartMasterNotFoundException", pn)
 
     pi = (
         db.query(PartIteration)
@@ -612,19 +621,35 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     )
 
     if pi is None:
-        raise HTTPException(status_code=404, detail="Part iteration not found in database")
+        raise PartIterationNotFoundException(
+            "PartIterationNotFoundException", pn,
+            bp.target_partrevision_version, bp.target_iteration)
 
     return [map_revision(pi.revision, db)]
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion",
-            response_model=StatusDTO)
+            status_code=204)
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion/",
-            response_model=StatusDTO, include_in_schema=False)
+            status_code=204, include_in_schema=False)
 def retry_conversion(workspace_id: str, part_key: str, iteration: int,
+                     request: Request,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
+    from app.services.kafka_producer import send_conversion_order
     number, version = _split_part_key(part_key)
+    # 检查是否存在 nativeCADFile（无则 400，对齐 Java PartResource.retryConversion）
+    pi = db.query(PartIteration).filter(
+        PartIteration.workspace_id == workspace_id,
+        PartIteration.partmaster_partnumber == number,
+        PartIteration.partrevision_version == version,
+        PartIteration.iteration == iteration,
+    ).first()
+    if pi is None or pi.native_cad_file is None:
+        raise HTTPException(400, "No native CAD file uploaded")
+    br = pi.native_cad_file
+    filename = br.full_name.split("/")[-1] if br.full_name else "unknown"
+    # 创建或重置 conversion
     conv = svc.get_conversion(db, workspace_id, number, version, iteration)
     if conv is None:
         conv = svc.create_conversion(db, workspace_id, number, version, iteration)
@@ -634,4 +659,7 @@ def retry_conversion(workspace_id: str, part_key: str, iteration: int,
         conv.start_date = None
         conv.end_date = None
     db.commit()
-    return {"status": "retry_queued"}
+    # 实发 Kafka 转换任务（对齐 Java converter.convertCADFile）
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else ""
+    send_conversion_order(workspace_id, number, version, iteration, filename, token)
