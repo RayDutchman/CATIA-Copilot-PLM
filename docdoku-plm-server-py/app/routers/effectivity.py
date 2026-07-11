@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import CreationException
 from app.models.auth import Account
 from app.models.product.effectivity import Effectivity
 from app.services.effectivity_manager import effectivity_service
@@ -36,7 +37,7 @@ def _effectivity_to_dto(eff) -> dict:
         d = eff
     else:
         # ORM 对象
-        d = {c.name: getattr(eff, c.name) for c in eff.__table__.columns}
+        d = {k: v for k, v in vars(eff).items() if not k.startswith('_sa_')}
 
     dtype = d.get("dtype", "")
     dto: dict = {
@@ -56,8 +57,8 @@ def _effectivity_to_dto(eff) -> dict:
         dto["endNumber"] = d.get("end_number") or d.get("endnumber")
     elif dtype == "L":
         dto["typeEffectivity"] = "LOTBASEDEFFECTIVITY"
-        dto["startLotId"] = d.get("start_lot") or d.get("startlot")
-        dto["endLotId"] = d.get("end_lot") or d.get("endlot")
+        dto["startLotId"] = d.get("start_lot") or d.get("startlotid")
+        dto["endLotId"] = d.get("end_lot") or d.get("endlotid")
     else:
         dto["typeEffectivity"] = "DATEBASEDEFFECTIVITY"
     return dto
@@ -98,33 +99,35 @@ def create_effectivity(
     ci_id = body.get("configurationItemNumber")
     name = body.get("name", "")
     description = body.get("description", "")
-    now = datetime.utcnow()
 
     if type_eff == "DATEBASEDEFFECTIVITY":
+        if not body.get("startDate"):
+            raise CreationException("startDate is required for DateBasedEffectivity")
         dtype = "D"
         eff = Effectivity(
             dtype=dtype, name=name, description=description,
-            creation_date=now,
             start_date=_parse_date(body.get("startDate")),
             end_date=_parse_date(body.get("endDate")),
             configurationitem_id=ci_id,
             configurationitem_workspace_id=workspace_id,
         )
     elif type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
+        if not body.get("startNumber"):
+            raise CreationException("startNumber is required for SerialNumberBasedEffectivity")
         dtype = "S"
         eff = Effectivity(
             dtype=dtype, name=name, description=description,
-            creation_date=now,
             start_number=body.get("startNumber"),
             end_number=body.get("endNumber"),
             configurationitem_id=ci_id,
             configurationitem_workspace_id=workspace_id,
         )
     else:  # LOTBASEDEFFECTIVITY
+        if not body.get("startLotId"):
+            raise CreationException("startLotId is required for LotBasedEffectivity")
         dtype = "L"
         eff = Effectivity(
             dtype=dtype, name=name, description=description,
-            creation_date=now,
             start_lot=body.get("startLotId"),
             end_lot=body.get("endLotId"),
             configurationitem_id=ci_id,
@@ -137,7 +140,7 @@ def create_effectivity(
     # 关联到 partrevision
     db.execute(text(
         "INSERT INTO partrevision_effectivity "
-        "(workspace_id, partmaster_partnumber, partrevision_version, effectivity_id) "
+        "(partmaster_workspace_id, partmaster_partnumber, partrevision_version, effectivity_id) "
         "VALUES (:ws, :pn, :ver, :eid)"
     ), {"ws": workspace_id, "pn": part_number, "ver": version, "eid": eff.id})
     db.commit()
@@ -161,9 +164,10 @@ def delete_effectivity(
     return Response(status_code=204)
 
 
-@router.get("/effectivities/{id}")
-@router.get("/effectivities/{id}/", include_in_schema=False)
+@router.get("/workspaces/{workspace_id}/effectivities/{id}")
+@router.get("/workspaces/{workspace_id}/effectivities/{id}/", include_in_schema=False)
 def get_effectivity(
+    workspace_id: str,
     id: int,
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -176,9 +180,10 @@ def get_effectivity(
     return _effectivity_to_dto(eff)
 
 
-@router.put("/effectivities/{id}", status_code=204)
-@router.put("/effectivities/{id}/", status_code=204, include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/effectivities/{id}", status_code=204)
+@router.put("/workspaces/{workspace_id}/effectivities/{id}/", status_code=204, include_in_schema=False)
 def put_effectivity(
+    workspace_id: str,
     id: int,
     body: dict = Body(...),
     current_user: Account = Depends(get_current_user),

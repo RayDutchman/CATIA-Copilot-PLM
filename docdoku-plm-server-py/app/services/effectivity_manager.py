@@ -13,7 +13,7 @@ class EffectivityService:
 
     def get_effectivity(self, db: Session, ws: str, effectivity_id: int) -> dict:
         row = db.execute(text(
-            "SELECT * FROM effectivity WHERE id = :id AND workspace_id = :ws"
+            "SELECT * FROM effectivity WHERE id = :id AND EXISTS(SELECT 1 FROM partrevision_effectivity pre WHERE pre.effectivity_id = :id AND pre.partmaster_workspace_id = :ws)"
         ), {"id": effectivity_id, "ws": ws}).first()
         if not row:
             from app.core.exceptions import EntityNotFoundException
@@ -27,11 +27,9 @@ class EffectivityService:
         ci_id = body.get("configurationItemNumber")
         name = body.get("name", "")
         description = body.get("description", "")
-        now = datetime.utcnow()
         if type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
             eff = Effectivity(
                 dtype="S", name=name, description=description,
-                creation_date=now,
                 start_number=body.get("startNumber"),
                 end_number=body.get("endNumber"),
                 configurationitem_id=ci_id,
@@ -40,7 +38,6 @@ class EffectivityService:
         elif type_eff == "LOTBASEDEFFECTIVITY":
             eff = Effectivity(
                 dtype="L", name=name, description=description,
-                creation_date=now,
                 start_lot=body.get("startLotId"),
                 end_lot=body.get("endLotId"),
                 configurationitem_id=ci_id,
@@ -49,7 +46,6 @@ class EffectivityService:
         else:
             eff = Effectivity(
                 dtype="D", name=name, description=description,
-                creation_date=now,
                 start_date=_parse_date(body.get("startDate")),
                 end_date=_parse_date(body.get("endDate")),
                 configurationitem_id=ci_id,
@@ -59,7 +55,7 @@ class EffectivityService:
         db.flush()
         db.execute(text(
             "INSERT INTO partrevision_effectivity "
-            "(workspace_id, partmaster_partnumber, partrevision_version, effectivity_id) "
+            "(partmaster_workspace_id, partmaster_partnumber, partrevision_version, effectivity_id) "
             "VALUES (:ws, :pn, :ver, :eid)"
         ), {"ws": ws, "pn": part_number, "ver": version, "eid": eff.id})
         db.commit()
@@ -96,8 +92,11 @@ class EffectivityService:
     def delete_effectivity(self, db: Session, ws: str, part_number: str,
                             version: str, effectivity_id: int) -> None:
         db.execute(text(
-            "DELETE FROM effectivity WHERE id = :id AND workspace_id = :ws"
+            "DELETE FROM partrevision_effectivity WHERE effectivity_id = :id AND partmaster_workspace_id = :ws"
         ), {"id": effectivity_id, "ws": ws})
+        db.execute(text(
+            "DELETE FROM effectivity WHERE id = :id"
+        ), {"id": effectivity_id})
         db.commit()
 
 
