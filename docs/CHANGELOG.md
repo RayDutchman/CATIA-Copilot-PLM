@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-07-12 — fix: EFFECTIVE_* 基线 config-spec 激活 + 有效性判别值/异常码对齐 Payara
+
+> 用户决策「Payara 对齐 / 单一入口」后，将原本死代码的 config-spec 有效性基线路径激活为 EFFECTIVE_DATE/SERIAL/LOT 的实际实现。在线对拍 Payara(:8001) 过程中连带发现并修复两处更深层的 Payara 差异（有效性判别值、异常 HTTP 码）。pytest **282 passed / 1 skipped**。已重建 back-py 镜像并 recreate 持久化。
+
+### fix(effectivity): Effectivity 判别值对齐 Payara EclipseLink 类名 + 补 PartRevision.effectivities 关系
+
+- **对拍发现的真实互操作 bug**：`Effectivity` 用 `@Inheritance()` 单表继承但无显式 `@DiscriminatorValue`，EclipseLink 默认判别值为**实体类名**。经 Payara 实测：Payara 写入 `dtype="DateBasedEffectivity"`，而 FastAPI 写的是 `"D"/"S"/"L"` → 两系统互相读不到对方创建的有效性（`isinstance` 失败，有效性过滤恒不生效）。
+- **修复**：4 个子类 `polymorphic_identity` + 写入端（`effectivity` 路由、`effectivity_manager`）+ 读取端（`_effectivity_to_dto`）统一改为全类名 `DateBasedEffectivity`/`SerialNumberBasedEffectivity`/`LotBasedEffectivity`/`TypeEffectivity`。与代码库其余判别列（BinaryResource/SharedPart 等）惯例一致。全表原无历史数据，无需迁移。
+- **补 `PartRevision.effectivities` relationship**：镜像已验证的 `tags` 复合 FK secondary 模式（`viewonly=True`，写入仍由裸 SQL 负责），修复 `EffectivityConfigSpec._is_effective_revision` 因 `pr.effectivities` 缺失恒返回空的问题。
+
+### fix(baselines): EFFECTIVE_* 基线改走 config-spec（激活死代码，Payara 语义）
+
+- 3 个 baseline create 端点统一改走 `product_baseline_service`（**单一入口**）；非 effectivity 类型内部委托回 `ProductStructureService`。
+- `ProductBaselineService.create_baseline` 返回 ORM 对象；effectivity 分支透传 retained substitute/optional links。
+- `BaselineCallbacks` 对齐 Java `ProductBaselineManagerBean`：零件无法解析出有效迭代/路径时抛 `NotAllowedException49/48/51/50`（**all-or-error**，而非静默跳过产生部分/空基线——原 decision-point「无匹配→空基线」的前提经对拍证伪）。
+- `date_based_effectivity_config_spec` 日期比较归一为 UTC naive，修复请求日期带 `Z` 时区与 DB naive 时间戳比较的 `TypeError`（500）。
+- 移除 `ProductStructureService._fill_effectivity_baselined_parts` 裸 SQL best-effort 兜底（无匹配退化 LATEST、序列号朴素字典序比较），改由 config-spec + `alphanumeric_compare` 唯一负责。
+- **对拍 Payara**（GD50/ceshi，整棵树 10 件挂 DateBased 有效性 2020-2030）：date-in 2025-06-01 两端 DB 均落 **10 件 baselinedpart**；date-out 2015 两端均 `NotAllowedException49`。序列号 `"9"` 在 `[1,100]` 内正确命中（alphanumeric 优于裸 SQL 字典序）。（注：Payara create/detail 响应的 `baselinedParts` 字段对 LATEST/EFFECTIVE 均返回空数组、仅 DB 落行，属其既有 DTO 行为，与本次无关。）
+
+### fix(errors): NotAllowedException / EntityConstraintException 映射 HTTP 400（Payara 对齐）
+
+- 对拍发现 Java `NotAllowedExceptionMapper` 与 `EntityConstraintExceptionMapper` 均返回 `BAD_REQUEST(400)`，FastAPI 误映射为 403。改为 400（`AccessRightException` 保持 403，与 Java `FORBIDDEN` 一致）。影响 checkout/release/obsolete/删除受约束零件、effectivity 基线等所有端点的错误状态码。同步更新 6 处测试断言。
+
+### chore(deploy): 重建 back-py 镜像并 recreate 容器（持久化本次修复）
+
+- `docker build -t docdoku-plm-docker-back-py:latest . && docker compose up -d --force-recreate --no-deps back-py`。recreate 后 smoke：有效性 CRUD 写入 `dtype=DateBasedEffectivity`、不完整有效性基线 → HTTP 400 NotAllowedException49——随镜像持久化。测试数据清理归零。
+
+---
+
 ## 2026-07-12 — fix: 批次 7 后续（baseline type 对齐 Payara + 镜像持久化）
 
 > 用户复核批次 7 提出的两处「预存差异」的后续处理。

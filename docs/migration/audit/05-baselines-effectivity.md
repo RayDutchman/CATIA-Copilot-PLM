@@ -50,6 +50,12 @@
 - 证据：Java 支持 5 种 ProductBaselineType（LATEST/RELEASED/EFFECTIVE_DATE/SERIAL/LOT），Python 只处理 LATEST(0)/RELEASED(1)，缺 effectiveDate/effectiveSerialNumber/effectiveLotId 参数。
 - 结论与建议：补三种 effectivity-based 基线类型。
 - **✅ 已修复（2026-07-12，批 7）**：ProductBaselineType 枚举补 EFFECTIVE_DATE/SERIAL/LOT；3 个 create 路由映射 5 类型名 + 透传 effectiveDate/Serial/Lot；`create_baseline` 服务加参数 + `_fill_effectivity_baselined_parts`（裸 SQL 按 effectivity 选 revision，无匹配退化 LATEST）。**best-effort**：GD50 无 effectivity 数据、`PartRevision.effectivities` relationship 缺失，未在线验证。对拍创建 type=EFFECTIVE_DATE 成功、Payara 读回 `type:"EFFECTIVE_DATE"`。
+- **✅ 深化完成（2026-07-12，用户选 Payara 对齐/单一入口）**：从「best-effort 裸 SQL」升级为**完整 config-spec 对齐**：
+  - 3 个 create 端点统一走 `product_baseline_service`（单一入口，对齐 Java `ProductBaselineManagerBean`）；EFFECTIVE_* 类型走 `DateBasedEffectivityConfigSpec` / `SerialNumberBasedEffectivityConfigSpec`（`alphanumeric_compare`）/ `LotBasedEffectivityConfigSpec` + `PSFilterVisitor` 遍历选迭代；移除 `_fill_effectivity_baselined_parts` 裸 SQL 兜底。
+  - 补 `PartRevision.effectivities` relationship（tags 复合 FK secondary 模式，viewonly），修复 `_is_effective_revision` 恒空。
+  - `BaselineCallbacks` 对齐 Java：零件无有效迭代/路径 → `NotAllowedException49/48/51/50`（**all-or-error**；原「无匹配→空基线」假设经对拍证伪）。
+  - **对拍发现的两处深层 Payara 差异并修复**：① 有效性判别值——EclipseLink 默认 `@DiscriminatorValue`=实体类名，Payara 写 `dtype="DateBasedEffectivity"`，FastAPI 原写 `"D"/"S"/"L"` → 互不可读；已全端统一为全类名。② `NotAllowedException`/`EntityConstraintException` → HTTP **400**（原误映射 403）。
+  - **在线对拍 Payara(:8001)**：GD50/ceshi 整棵树 10 件挂 DateBased 有效性，date-in 2025-06-01 两端 DB 均落 **10 件 baselinedpart**；date-out 2015 两端均 `NotAllowedException49`。commits 6967c80 / f60f6df / f5ed730。
 
 ## 问题 B-7
 - 严重级：HIGH
