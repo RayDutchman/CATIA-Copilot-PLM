@@ -90,9 +90,10 @@ _404_EXCEPTIONS = (
 
 
 def _status_for(exc: ApplicationException) -> int:
-    if isinstance(exc, EntityConstraintException):
-        return 403
-    if isinstance(exc, (AccessRightException, NotAllowedException, WorkspaceNotEnabledException)):
+    # 对齐 Payara：NotAllowedExceptionMapper / EntityConstraintExceptionMapper → BAD_REQUEST(400)
+    if isinstance(exc, (NotAllowedException, EntityConstraintException)):
+        return 400
+    if isinstance(exc, (AccessRightException, WorkspaceNotEnabledException)):
         return 403
     if isinstance(exc, EntityNotFoundException):
         return 404

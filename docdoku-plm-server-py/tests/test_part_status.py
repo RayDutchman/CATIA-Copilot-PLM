@@ -65,12 +65,12 @@ def _cleanup(num, h, ver="A"):
     client.request("DELETE", f"{PREFIX}/workspaces/{WS}/parts/{num}-{ver}", headers=h)
 
 
-def test_release_checked_out_returns_403():
+def test_release_checked_out_returns_400():
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     num = "P1BST-REL-1"; _pre_cleanup(num); _create(num, h)
     # 新建即签出，直接 release 应报已签出 46
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/release", headers=h)
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     assert resp.text == i18n.get("NotAllowedException46", "zh")
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     _cleanup(num, h)
@@ -89,11 +89,11 @@ def test_release_then_obsolete_succeeds():
     _cleanup(num, h)
 
 
-def test_obsolete_unreleased_returns_403():
+def test_obsolete_unreleased_returns_400():
     token = _token(); h = {"Authorization": f"Bearer {token}"}
     num = "P1BST-OBSU-1"; _pre_cleanup(num); _create(num, h)
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/obsolete", headers=h)
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     assert resp.text == i18n.get("NotAllowedException36", "zh")
     _cleanup(num, h)

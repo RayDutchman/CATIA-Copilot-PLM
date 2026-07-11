@@ -75,11 +75,11 @@ def _make_app():
 
 def test_handler_maps_status_codes():
     client = _make_app()
-    assert client.get("/notallowed").status_code == 403
+    assert client.get("/notallowed").status_code == 400
     assert client.get("/notfound").status_code == 404
     assert client.get("/exists").status_code == 409
     assert client.get("/access").status_code == 403
-    assert client.get("/constraint").status_code == 403
+    assert client.get("/constraint").status_code == 400
     assert client.get("/creation").status_code == 500
 
 

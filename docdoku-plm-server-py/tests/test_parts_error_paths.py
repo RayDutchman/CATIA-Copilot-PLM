@@ -12,14 +12,14 @@ def _token():
     return resp.headers.get("jwt")
 
 
-def test_delete_part_used_as_component_returns_403_zh():
-    """test1 是 zh 用户，删被用作组件的零件应返回 403 + 中文消息。"""
+def test_delete_part_used_as_component_returns_400_zh():
+    """test1 是 zh 用户，删被用作组件的零件应返回 400（对齐 Payara EntityConstraintExceptionMapper）+ 中文消息。"""
     token = _token()
     resp = client.request(
         "DELETE",
         f"{PREFIX}/workspaces/{WS}/parts/GD50_Frame-A",
         headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     assert resp.text == "您无法删除在装配体中用作组件的零件"
 
 
@@ -28,8 +28,8 @@ def test_delete_part_used_as_component_returns_403_zh():
 import uuid
 
 
-def test_checkout_already_checked_out_returns_403():
-    """对已签出的零件再签出应返回 403 + NotAllowedException37 翻译。"""
+def test_checkout_already_checked_out_returns_400():
+    """对已签出的零件再签出应返回 400（对齐 Payara NotAllowedExceptionMapper）+ NotAllowedException37 翻译。"""
     token = _token()
     h = {"Authorization": f"Bearer {token}"}
     num = "ERRPATH-CO-" + uuid.uuid4().hex[:8]
@@ -37,7 +37,7 @@ def test_checkout_already_checked_out_returns_403():
                 json={"number": num, "name": "t"}, headers=h)
     # 新建即自动签出；再次签出应失败
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkout", headers=h)
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     assert resp.text == "该项目已被签出"
     # 清理：直接通过 API 删除（先签入再删，或直接 UNDO+DROP）
     client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/checkin", headers=h)
