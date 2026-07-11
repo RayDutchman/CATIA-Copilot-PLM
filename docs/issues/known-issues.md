@@ -536,4 +536,37 @@
 
 ---
 
-*最后更新：2026-07-08*
+### [BUG-47] 零件迭代更新 500：实例属性跨迭代共享触发 FK 冲突
+
+- **文件：** `docdoku-plm-server-py/app/services/product_manager.py`（`_copy_iteration_files` + `_sync_instance_attributes`）
+- **根本原因（双层）：**
+  1. 检出创建新迭代时（`_copy_iteration_files`），实例属性为**浅拷贝**——新迭代的 `partiteration_attribute` 关联复用旧迭代同一个 `instanceattribute` 行 id，未克隆底层行，导致多个迭代共享同一 `InstanceAttribute`（DB 实证 `GD50_Frame/A` 的 id 7352 被 iter1+iter2 共享）。
+  2. 更新时（`_sync_instance_attributes`）无条件删除本迭代旧 `instanceattribute` 行，因另一迭代仍引用该共享行 → `ForeignKeyViolation fk_partiteration_attribute_instanceattribute_id`。
+- **影响：** CATIA Copilot 同步更新带实例属性的零件（`PUT .../parts/{pn}-{ver}/iterations/{n}`）报 500，属性更新失败。
+- **Java 比对：** Payara `ProductManagerBean.checkOutPart:553-560` 对每属性 `attr.clone()`+`createAttribute()`（persist 新行新 id）深拷贝独占；`PartIteration.java:130` `@OneToMany(orphanRemoval=true)` + 连接表以 ITERATION 为键，更新删除只影响当前迭代。确认修复方向正确。
+- **修复状态：** `已修复`（2026-07-11）
+- **修复方案：**
+  - A（根治）：`_copy_iteration_files` 检出复制实例属性改为深克隆（`INSERT INTO instanceattribute ... SELECT ... WHERE id=:old RETURNING id` 复制全部值列，再用新 id 建关联）。
+  - B（兜底 + 存量修复）：`_sync_instance_attributes` 删孤儿前先查是否仍被其它 `partiteration_attribute` 引用，共享则跳过删除；更新后该迭代切换到独立新行，存量坏数据自愈。
+- **部署：** docker cp back-py + 重启，启动无导入错误。
+
+---
+
+### [BUG-48] 删除工作区遗漏 BinaryResource DB 行 + vault 磁盘文件，重建后上传 409
+
+- **文件：** `docdoku-plm-server-py/app/routers/workspaces.py`（`delete_workspace`）
+- **根本原因：**
+  `delete_workspace` 只做按 `workspace_id` 的 DB 级联，遗漏两处二进制层：① `binaryresource` 表无 `workspace_id` 列（主键 `fullname` 路径），级联匹配不到，删除后残留（GD50 实测残留 102 行）；② 无任何 vault 磁盘文件删除，`vault/{ws}/` 文件夹整体保留。上传附件 `binary_storage.save_attached` 靠查 `BinaryResource.full_name` 是否存在判重 → 命中残留行抛 `FileAlreadyExistsException`（409）。
+- **影响：** 删工作区→重建同名工作区→上传原有零件附件报 409 `文件已存在`。
+- **Payara 比对：** `WorkspaceManagerBean.deleteWorkspace`（`@Asynchronous`）= `WorkspaceDAO.removeWorkspace`（DB，BinaryResource 靠 `PartIteration.nativeCADFile/attachedFiles/geometries` 的 JPA `orphanRemoval` 级联删除，DAO 内无显式 DELETE）+ `storageManager.deleteWorkspaceFolder`（`FileUtils.deleteDirectory(vaultPath/workspaceId)`）+ 删 ES 索引。
+- **为何 Python 未自动删（精确表述）：** Python 模型**部分复刻**了 JPA 级联（`PartRevision.iterations`/`DocumentRevision.iterations`/`PathDataMaster.iterations`/`PartIteration.conversions` 均有 `cascade="all, delete-orphan"`），但**唯独未复刻 BinaryResource 的 orphanRemoval**——`part_iteration.py` 的 `native_cad_file`/`attached_files`/`geometries` 均无 `delete-orphan`，且后两者是 `secondary=` 多对多关系，SQLAlchemy 不允许在多对多上用 `delete-orphan`（删父只清中间表行，不删目标 BinaryResource）。加之 `delete_workspace` 走批量裸 SQL，完全绕过 ORM 工作单元，已复刻的级联也不触发。故须显式删 binaryresource + vault 以对齐 Payara 结果。
+- **修复状态：** `已修复`（2026-07-11）
+- **修复方案：**
+  - A：级联末尾增 `DELETE FROM binaryresource WHERE fullname LIKE :p ESCAPE '\'`，前缀 `{ws}/%`，LIKE 转义（`_`→`\_`、`%`→`\%`）对齐 `WorkspaceDAO.java:130`。
+  - B：`db.commit()` 后 `shutil.rmtree(VAULT_PATH/ws, ignore_errors=True)`，复刻 `deleteWorkspaceFolder`，失败仅记日志不回滚。
+  - Python 保持同步删除（Payara 为 `@Asynchronous`）。
+- **部署：** docker cp back-py + 重启；DB 校验转义 LIKE 精确匹配 GD50 的 102 行。
+
+---
+
+*最后更新：2026-07-11*

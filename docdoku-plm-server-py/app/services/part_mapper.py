@@ -100,11 +100,9 @@ def map_usage_link(link: PartUsageLink) -> PartUsageLinkDTO:
 
 
 def map_iteration(it: PartIteration, db: Session | None = None) -> PartIterationDTO:
-    # geometryFileURI：逗号分隔所有 GLB 几何体的 URI
-    geometries = it.geometries or []
-    geometry_uri = ",".join(
-        [f"/api/files/{g.full_name}" for g in geometries]
-    ) if geometries else None
+    # geometryFileURI：取 quality 最小（最高精度）的单个 GLB 路径
+    geometries = sorted(it.geometries or [], key=lambda g: g.quality or 0)
+    geometry_uri = f"/api/files/{geometries[0].full_name}" if geometries else None
 
     # instanceAttributes：从 partiteration_attribute + instanceattribute 查询
     instance_attributes = []

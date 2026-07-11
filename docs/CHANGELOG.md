@@ -6,7 +6,60 @@
 
 ---
 
-## 2026-07-11 — SQL 列名/表名批量修复 + DTO 缺字段修复（back-py）
+## 2026-07-11 — 3D 预览修复 + Conversion Service 收尾 + 删除工作区遗漏修复
+
+> 3D 预览三根因修复，conversion LOD 生成部署，工作区删除 file 级联补全。instances 辅助函数移入 instance_body_writer_tools.py。
+
+### fix(py-3d): 修复 3D 预览三根因
+
+- **症状**：GD50 工作区 11 个零件（GLB 文件存在、转换成功）在前端均无法 3D 预览。
+- **根因 1**（`app/routers/part.py:436`）：`GET parts/{part_key}/instances` 硬编码 `return []`（stub）→ 前端 InstancesManager 拿不到任何实例数据→装配体 iframe 无渲染
+- **根因 2**（`app/services/part_mapper.py:105`）：`geometryFileURI` 逗号拼接多 GLB 路径（`/api/files/A.glb,/api/files/B.glb`）→ 前端 `showCADFileView` 当单文件路径构造无效 URL
+- **根因 3**（`app/parts/js/views/cad-file-view.js`）：CADFileView 使用 OBJLoader + MTLLoader，无法解析 GLB 格式（原 Java 版输出 OBJ，现 Python 版输出 GLB）
+- **修复**：
+  - Fix 1：实现 instances 端点——递归遍历装配树（`partiteration_partusagelink`→`partusagelink`→`partusagelink_cadinstance`→`cadinstance`），叶子节点输出实例 JSON（matrix 4×4 行主序 / files 按 quality 升序 / 包围盒 / path/id），对齐 Java `InstanceBodyWriterTools.writeLeaf()`
+  - Fix 2：geometryFileURI 改为取 quality=0（最高精度）的单个 GLB 路径
+  - Fix 3：CADFileView 替换 OBJLoader/MTLLoader 为 GLTFLoader；`parts/main.js` 添加 `gltfloader` RequireJS 路径
+- **数据库验证**：确认 `partiteration_partusagelink` 复合键结构（workspace/partnumber/version/iteration + component_id）、`partiteration_geometry` 关联表（geometry_fullname→binaryresource.fullname）、`cadinstance` 支持 ANGLE/MATRIX 双模式
+- **验证**：`GD50_Frame-A/instances` → 1 实例 + identity矩阵 + 3 GLB；`Product1-A/instances` → 9 子组件 + 正确位置矩阵
+
+### feat(conversion): LOD 生成 + docker-compose 本地 build（续前次 handoff）
+
+- `conversion-service-py/main.py` LOD 三级精度（deflection 0.05/0.30/1.00），失败降级；`convertedFileLODs` 动态构建
+- `docker-compose.yml` conversion 改为本地 build（`context: ../conversion-service-py`）
+- `docdoku-plm-conversion-service/DEPRECATED.md` 废弃标注
+- 容器重建部署，LOD 代码验证通过
+
+### 删除工作区遗漏修复（back-py）
+
+- **症状**：删 GD50 后重建，上传附件 409 FileAlreadyExists（`binaryresource` 残留 + vault 文件夹未清）
+- **根因**：`delete_workspace` 只做 `workspace_id` 级联 DELETE FROM → `binaryresource` 无 `workspace_id` 列（主键是 fullname 路径）匹配不到；无 vault 磁盘删除
+- **Payara 比对**：Java 靠 JPA `orphanRemoval` + `FileUtils.deleteDirectory(vaultPath/workspaceId)` 自动清理
+- **修复**：显式按前缀 `fullname LIKE 'GD50/%'` 删 binaryresource + `shutil.rmtree` 删 vault 文件夹
+- **为何不能靠 ORM 级联**：`attached_files`/`geometries` 为多对多 `secondary=` 关系，SQLAlchemy 禁止 `delete-orphan`；`native_cad_file` 多对一缺 `delete-orphan`；且走批量裸 SQL 绕过 ORM 工作单元
+- **修复 A**：级联末尾（所有引用 binaryresource 的 join 表删除后）增 `DELETE FROM binaryresource WHERE fullname LIKE :p ESCAPE '\'`，前缀 `{ws}/%`，LIKE 转义（`_`→`\_`、`%`→`\%`）对齐 `WorkspaceDAO.java:130`。覆盖 nativecad/attachedfiles/geometry GLB/文档文件，等价 JPA 级联范围。
+- **修复 B**：`db.commit()` 后 `shutil.rmtree(VAULT_PATH/ws, ignore_errors=True)`，复刻 `deleteWorkspaceFolder`；失败仅记日志不回滚（对齐 Payara 文件层异常不影响 DB）。
+- **说明**：Python 端保持**同步**删除（Payara 是 `@Asynchronous`，其"删得慢"是异步窗口所致；Python 同步更简单可靠）。存量已坏的 GD50 用修复后的 delete 重删即可清净（DB 行 + vault 文件夹一并清除）。
+- 部署：docker cp back-py + 重启，启动无导入错误；DB 校验转义 LIKE 精确匹配 GD50 的 102 行 binaryresource。
+
+---
+
+
+> CATIA Copilot 同步更新零件报 `PUT /workspaces/{ws}/parts/{pn}-{ver}/iterations/{n}` 500。根因经与 Payara Java 源码逐条比对确认。
+
+### fix(py-part): 实例属性跨迭代共享导致更新时 FK 冲突
+
+- **症状**：更新已存在迭代（如 GD50_Frame/A/2）报 500 `ForeignKeyViolation ... fk_partiteration_attribute_instanceattribute_id`。
+- **根因（双层）**：
+  1. 主因：`product_manager.py::_copy_iteration_files`（checkout 创建新迭代时）复制实例属性为**浅拷贝**——新迭代的 `partiteration_attribute` 关联复用旧迭代同一个 `instanceattribute` 行 id，未克隆底层行。DB 实证 `GD50_Frame/A` 的 `instanceattribute` id 7352 被 iter1+iter2 共享。
+  2. 触发：`_sync_instance_attributes` 更新时无条件删除本迭代旧 `instanceattribute` 行，因另一迭代仍引用共享行 → FK 冲突。
+- **Java 比对结论**：Payara `checkOutPart`（ProductManagerBean.java:553-560）对每个属性 `attr.clone()`+`instanceAttributeDAO.createAttribute()`（em.persist→新行新 id），每个 PartIteration **深拷贝独占**其 InstanceAttribute；更新时靠 `@OneToMany(orphanRemoval=true)`（PartIteration.java:130）自动删旧行，连接表以 ITERATION 为键，删除只影响当前迭代。确认 Python 修复方向正确。
+- **修复 A（根治）**：`_copy_iteration_files` 检出复制实例属性改为**深克隆**（`INSERT INTO instanceattribute ... SELECT ... FROM instanceattribute WHERE id=:old RETURNING id` 复制全部值列，再用新 id 建关联），对齐 Java `attr.clone()+persist`。
+- **修复 B（兜底 + 修复存量坏数据）**：`_sync_instance_attributes` 删除孤儿 `instanceattribute` 前先查是否仍被其它 `partiteration_attribute` 行引用，被共享则跳过删除，避免历史浅拷贝数据再触发 FK 冲突（更新后该迭代自动切换到独立新行，存量数据自愈）。
+- 部署：docker cp back-py + 重启，启动无导入错误。
+
+---
+
 
 > 由 `scripts/validate_sql_columns.py` + `scripts/validate_dto_fields.py` 扫描驱动。全部 docker cp 部署 back-py 并重启，启动无导入错误。
 

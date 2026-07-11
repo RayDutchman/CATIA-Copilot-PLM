@@ -39,6 +39,7 @@ require.config({
         reflector: '../../js/dmu/utils/Reflector',
         objloader: '../../js/dmu/loaders/OBJLoader',
         mtlloader: '../../js/dmu/loaders/MTLLoader',
+        gltfloader: '../../js/dmu/loaders/GLTFLoader',
         popoverUtils: '../../js/utils/popover.utils',
         fileDownload: '../../js/utils/file-download',
         moment: '../../bower_components/moment/min/moment-with-locales',

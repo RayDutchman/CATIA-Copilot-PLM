@@ -3,12 +3,11 @@ define([
     'threecore',
     'reflector',
     'orbitcontrols',
-    'objloader',
-    'mtlloader',
+    'gltfloader',
     'backbone',
     'mustache',
     'text!templates/cad-file.html'
-], function (THREE, Reflector, Controls, OBJLoader, MTLLoader, Backbone, Mustache, template) {
+], function (THREE, Reflector, Controls, GLTFLoader, Backbone, Mustache, template) {
 
     'use strict';
 
@@ -228,16 +227,13 @@ define([
                 needsRedraw = true;
             }
 
-            function onMaterials(materials) {
+            function loadModel() {
 
-                var objLoader = new OBJLoader();
+                var loader = new GLTFLoader();
 
-                if (materials && typeof materials.preload === 'function') {
-                    materials.preload();
-                    objLoader.setMaterials(materials);
-                }
+                loader.load(fileName, function (gltf) {
 
-                objLoader.load(fileName, function (object) {
+                    var object = gltf.scene;
 
                     var bBoxHelper = new THREE.BoxHelper(object, 0xff0000);
                     bBoxHelper.update();
@@ -263,14 +259,7 @@ define([
 
             }
 
-            var texturePath = fileName.substring(0, fileName.lastIndexOf('/') + 1);
-            var split = fileName.split('?');
-            var fileShortName = split[0].substr(texturePath.length, split[0].length);
-            var mtlFile = fileShortName.substr(0, fileShortName.lastIndexOf('.')) + '.mtl';
-
-            var mtlLoader = new MTLLoader(resourceToken);
-            mtlLoader.setPath(texturePath + 'attachedfiles/');
-            mtlLoader.load(mtlFile, onMaterials, null, onMaterials);
+            loadModel();
 
             return this;
         }

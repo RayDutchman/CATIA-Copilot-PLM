@@ -12,6 +12,7 @@
 
 - [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — 多对多表已接入
 - [ ] **3D 预览不显示** — Three.js r90 交互差异，需升级或抓包
+- [x] **3D 预览三根因修复（2026-07-11）** — instances stub / geometryFileURI 逗号拼接 / CADFileView OBJ→GLB，已部署验证 GD50_Frame-A instances 正确返回 + Product1-A 9 子组件递归遍历
 - [x] **update_iteration 3 项辅助功能已补齐 (2026-07-07)**
 
 ### 中优先级
@@ -53,6 +54,22 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **2026-07-11 删除工作区遗漏 binaryresource + vault 文件修复（back-py）**:
+  - 症状：删 GD50 工作区→重建→上传附件报 409 `文件已存在`
+  - 根因：`delete_workspace` 只按 workspace_id 级联删 DB，遗漏 ① `binaryresource` 表（无 workspace_id 列，主键 fullname，残留 102 行）② vault 磁盘文件夹（从不删）；`save_attached` 查 BinaryResource DB 记录判重 → 409
+  - Payara 比对：`deleteWorkspace` = removeWorkspace（BinaryResource 靠 PartIteration JPA orphanRemoval 级联）+ `deleteWorkspaceFolder`(FileUtils.deleteDirectory) + 删 ES 索引；Payara 该操作 `@Asynchronous`
+  - 修复 A：级联末尾 `DELETE FROM binaryresource WHERE fullname LIKE '{ws}/%' ESCAPE '\'`（转义对齐 WorkspaceDAO.java:130）
+  - 修复 B：commit 后 `shutil.rmtree(VAULT_PATH/ws)`，失败仅记日志（Python 端保持同步）
+  - docker cp 部署 back-py + 重启；存量 GD50 用修复后 delete 重删即清净
+
+- [x] **2026-07-11 零件迭代更新 500（实例属性 FK 冲突）修复（back-py）**:
+  - 症状：CATIA Copilot 同步更新零件 `PUT .../parts/{pn}-{ver}/iterations/{n}` 报 500 `ForeignKeyViolation fk_partiteration_attribute_instanceattribute_id`
+  - 根因：checkout 创建新迭代时实例属性浅拷贝（新迭代复用旧迭代同一 instanceattribute 行），更新时删该行触发 FK 冲突（另一迭代仍引用）
+  - 已与 Payara Java 逐条比对确认：Java `checkOutPart` 对每属性 `clone()+persist` 深拷贝独占，更新靠 orphanRemoval 删本迭代行
+  - 修复 A（`_copy_iteration_files`）：检出复制实例属性改深克隆（INSERT...SELECT...RETURNING 新 id）
+  - 修复 B（`_sync_instance_attributes`）：删孤儿前查是否被其它 partiteration_attribute 引用，共享则跳过，兜底 + 修复存量坏数据（更新后自愈）
+  - docker cp 部署 back-py + 重启
 
 - [x] **2026-07-11 SQL 列名/表名批量修复 + DTO 缺字段修复（back-py）**:
   - 修复 `validate_sql_columns.py` 报的 34 处 raw SQL 错误（14 文件）：attributes/document/product_instances/products/tasks/cascade_action/instance_body_writer/notification/subscription/part_notification/organization/product_manager/part_workflow/webhook；均先经 information_schema 核实真实列名/表名

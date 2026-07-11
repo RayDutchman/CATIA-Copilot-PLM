@@ -202,14 +202,40 @@ async def handle_order(order: dict) -> None:
         await send_error(token, ws, number, ver, str(e))
         return
 
+    bbox = result["bbox"]
+
+    # LOD 生成（对齐 Java Decimater.java 三级细节设计，通过 deflection 控制三角化精度）
+    # LOD 0: deflection=0.05（已完成，最高精度）
+    # LOD 1: deflection=0.30（中等，远景查看）
+    # LOD 2: deflection=1.00（低精度，缩略图/大场景）
+    # 单个 LOD 失败不阻塞主流程，降级为已有 LOD 集合
+    converted_lods: dict = {"0": glb_filename}
+    LOD_SPECS = [("1", 0.30), ("2", 1.00)]
+    ref_size = os.path.getsize(glb_path)
+    for lod_key, lod_deflection in LOD_SPECS:
+        lod_uuid = str(uuid.uuid4())
+        lod_filename = lod_uuid + ".glb"
+        lod_path = str(temp_dir / lod_filename)
+        try:
+            convert(input_path, lod_path, deflection=lod_deflection, angular=0.5)
+            lod_size = os.path.getsize(lod_path)
+            logger.info(
+                "LOD %s 生成完成: %s-%s  deflection=%.2f  size=%dKB (%.0f%% of LOD0)",
+                lod_key, number, ver, lod_deflection,
+                lod_size // 1024,
+                100.0 * lod_size / ref_size if ref_size > 0 else 0,
+            )
+            converted_lods[lod_key] = lod_filename
+        except Exception as lod_err:
+            logger.warning("LOD %s 生成失败，降级: %s", lod_key, lod_err)
+
     # 构造 ConversionResultDTO payload（与后端 Dozer 反序列化契约对齐）
     # - tempDir:           仅 UUID 目录名，后端会用 serverConfig.conversionsPath 拼成绝对路径
-    # - convertedFileLODs: {"0": "xxx.glb"}（key="0" 表示最高质量，与 Java 版一致）
+    # - convertedFileLODs: {"0": "xxx.glb", "1": "...", "2": "..."}（key=质量等级，与 Java 版一致）
     # - box:               [xMin, yMin, zMin, xMax, yMax, zMax]
-    bbox = result["bbox"]
     payload = {
         "tempDir":           temp_uuid,
-        "convertedFileLODs": {"0": glb_filename},
+        "convertedFileLODs": converted_lods,
         "box":               bbox,
     }
 

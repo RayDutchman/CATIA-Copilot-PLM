@@ -767,9 +767,16 @@ class ProductService:
             "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
             "AND partrevision_version=:ver AND iteration=:it"
         ), {"ws": ws, "pn": pn, "ver": ver, "it": it})
-        # 删除孤儿 InstanceAttribute
+        # 删除孤儿 InstanceAttribute：仅当无其它迭代/关联仍引用该行时才删，
+        # 避免历史"浅拷贝"共享行触发 FK 冲突（fk_partiteration_attribute_instanceattribute_id）
         if old_ids:
             for oid in old_ids:
+                still_referenced = db.execute(text(
+                    "SELECT 1 FROM partiteration_attribute "
+                    "WHERE instanceattribute_id=:id LIMIT 1"
+                ), {"id": oid}).first()
+                if still_referenced:
+                    continue
                 db.execute(text(
                     "DELETE FROM instanceattribute WHERE id=:id"
                 ), {"id": oid})
@@ -1286,7 +1293,9 @@ class ProductService:
                 documentlink_id=row.documentlink_id,
             ))
 
-        # 复制实例属性（纯关系）
+        # 复制实例属性：深克隆 instanceattribute 行（每个迭代独占其属性，
+        # 对齐 Java checkOutPart 的 attr.clone()+instanceAttributeDAO.createAttribute()）
+        from sqlalchemy import text as _clone_text
         for row in db.execute(
             part_iteration_attribute.select().where(
                 part_iteration_attribute.c.workspace_id == ws,
@@ -1295,10 +1304,21 @@ class ProductService:
                 part_iteration_attribute.c.iteration == from_iter,
             )
         ).fetchall():
+            cloned = db.execute(_clone_text(
+                "INSERT INTO instanceattribute "
+                "(name, mandatory, locked, dtype, booleanvalue, datevalue, indexvalue, "
+                "numbervalue, textvalue, longtextvalue, urlvalue, "
+                "partmaster_workspace_id, partmaster_partnumber) "
+                "SELECT name, mandatory, locked, dtype, booleanvalue, datevalue, indexvalue, "
+                "numbervalue, textvalue, longtextvalue, urlvalue, "
+                "partmaster_workspace_id, partmaster_partnumber "
+                "FROM instanceattribute WHERE id = :old_id RETURNING id"
+            ), {"old_id": row.instanceattribute_id}).fetchone()
+            new_attr_id = cloned[0]
             db.execute(part_iteration_attribute.insert().values(
                 workspace_id=ws, partmaster_partnumber=pn,
                 partrevision_version=ver, iteration=to_iter,
-                instanceattribute_id=row.instanceattribute_id,
+                instanceattribute_id=new_attr_id,
                 attribute_order=row.attribute_order,
             ))
 
