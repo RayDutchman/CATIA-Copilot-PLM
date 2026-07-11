@@ -54,12 +54,13 @@
 - **PR-HIGH-3** (要点#11)：`products.py:537-596` ci_paths(searchPaths) 缺 configSpec/diverge，永远用最后修订。Java ProductResource.java:336-357。
 - **PR-HIGH-4** (要点#11)：`products.py` cascade-checkout/checkin/undo 缺 configSpec/path，全量收集易 OOM。Java ProductResource.java:877-934。
 - **PR-HIGH-5** (要点#2)：`path_to_path_service.py:317-323` P2P link 的 sourceComponents/targetComponents 恒空数组，未做 decodePath。Java ProductResource.java:1070-1096。
+- **✅ PR-HIGH-1~5 已修复（2026-07-12，批 7）**：configSpec/diverge/path 经既有 `parse_config_spec_str`+PSFilter 贯通 filter/searchPaths/cascade/3D-instances；`parse_config_spec_str` 加 diverge 透传（并修 4 个 PSFilter `filter_links` 访问不存在的 `PartUsageLink.substitutes` 致 diverge=true 500 的预存 bug）；`_link_row_to_dict` 用 `decode_path` 填充 source/targetComponents。linkType/pi- 无对应引擎，退化并注释。PR-HIGH-2 的 list_instances 实在 `product_instances.py`（非 products.py），`collect_leaf_instances` 加可选 ps_filter 向后兼容；新增 POST `/instances/paths`。
 
 ## 问题 PR-MED-1 ~ PR-MED-5
-- **PR-MED-1** (要点#5)：`path_data_service.py:340-358` `_sync_path_data_attributes` INSERT 漏 dtype → 读回全退化 TEXT（product_structure.py:432 fallback）。对比 product_manager.py:806 正确写 dtype。
+- **PR-MED-1** (要点#5)：`path_data_service.py:340-358` `_sync_path_data_attributes` INSERT 漏 dtype → 读回全退化 TEXT（product_structure.py:432 fallback）。对比 product_manager.py:806 正确写 dtype。**✅ 已修复（2026-07-12，批 7）**：INSERT 补 dtype 列，新增 `_infer_attr_dtype`（支持显式 dtype/typeName 优先）。
 - **PR-MED-2** (要点#8)：`product_manager.py:694-713` cadInstances 写入 rotation_type 可能 None；当前 Python 读取端有 fallback 但 rotationType 空+matrix 非空会走错分支。建议写入端推断 rotation_type。**✅ 已修复（2026-07-12，批次 3）**：`__do_sync_components` 写入端 rotationType 为 None 时按有 m00→"MATRIX"、否则→"ANGLE" 推断（Java 枚举实为 ANGLE 非 ANGULAR）。smoke 验证新 cadinstance rotationtype=MATRIX。
 - **PR-MED-3** (要点#17)：缺 `POST /{ciId}/instances`（PathListDTO 批量多路径）、缺 layers 子资源。Java ProductResource.java:497-543 / :360-363。
-- **PR-MED-4** (要点#2)：`products.py:226-253` get_product_instance 返回缺 acl 字段。Java ProductInstanceMasterDTO 有 acl。
+- **PR-MED-4** (要点#2)：`products.py:226-253` get_product_instance 返回缺 acl 字段。Java ProductInstanceMasterDTO 有 acl。**✅ 已修复（2026-07-12，批 7）**：读 productinstancemaster.acl_id → ACL/AclUserEntry/AclUserGroupEntry 构造 acl（含 userEntries/groupEntries/maps），无 acl 时返回 null。
 - **PR-MED-5** (要点#3+#14)：`products.py:41-47` `_p2p_svc_lazy` `except Exception: return []` 吞异常。
 
 ## 问题 PR-LOW-1

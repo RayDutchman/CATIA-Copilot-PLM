@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-07-12 — fix: FIX-PLAN 批次 7（P3 configSpec / 基线类型 / 缺失端点）
+
+> FIX-PLAN 批次 7（末批）。2 并行 subagent（P products/configSpec，Q baseline 路由，文件不相交）。主 agent code review + 在线对拍 Payara(:8005) 修复 3 处 subagent 隐患/预存 bug。pytest **282 passed / 1 skipped / 0 failed**（无回归）。
+
+### fix(products): configSpec/diverge 贯通 + P2P decode + path-data dtype + 实例 acl（PR-HIGH-1~5, PR-MED-1, PR-MED-4）
+
+- **PR-HIGH-1** `filter_product_structure`/`filter_structure` 端点补 `linkType`+`diverge`；`parse_config_spec_str` 新增 `diverge` 并透传给各 PSFilter（latest/released/wip/pi-）。linkType 无 P2P-linkType 引擎，退化为普通遍历（注释标注）。
+- **PR-HIGH-2** `list_instances` 3D 模式改用 PSFilter 按 configSpec 选迭代（原硬编码最大 iteration）；`pi-{serial}` 解析（退化 latest，注释标注）；新增 `POST .../instances/paths` 多路径批量收集（避开 `/instances` POST 冲突）；`collect_leaf_instances`/`_handle_child_component` 新增可选 `ps_filter`（默认 None 保持原行为，向后兼容）。
+- **PR-HIGH-3** `ci_paths`（searchPaths）补 configSpec/diverge，walk 用 filter 选迭代。
+- **PR-HIGH-4** cascade-checkout/checkin/undocheckout 补 configSpec/path；`_collect_ci_parts` 按 filter 选迭代、按 path 用 `decode_path` 定位起始子树。
+- **PR-HIGH-5** `path_to_path_service._link_row_to_dict` 对 source/targetPath 调 `decode_path` 填充 source/targetComponents（原恒空数组），4 处公开列表调用点连线 db/ws/ci_id；`products.py` P2P links detail 端点同步改用之。
+- **PR-MED-1** `path_data_service._sync_path_data_attributes` INSERT 补 `dtype` 判别列（新增 `_infer_attr_dtype`），修复 pathData 属性读回全退化 TEXT。
+- **PR-MED-4** `get_product_instance` 返回补 `acl`（读 productinstancemaster.acl_id → ACL/AclUserEntry/AclUserGroupEntry）。
+- **主 agent 修（diverge=true 500）**：4 个 PSFilter 的 `filter_links` 直接访问 `nominal.substitutes` 而 `PartUsageLink` 无该属性 → diverge=true 必 500（此前 diverge 从未接线故未暴露）。改为 `getattr(nominal,'substitutes',None)` 守卫（对齐 update_part_iteration_ps_filter 既有写法）。对拍 :8000 latest/released/wip + diverge=true 全 200。
+
+### fix(baselines): 文档快照过滤 + EFFECTIVE_* 类型 + detail DTO 对齐 Payara（B-5,B-6,B-7,B-10）
+
+- **B-5/B-10** `create_doc_baseline` 实现 snapshotDocuments 语义：去重、RELEASED→`status IN (1,2)` 取末迭代、LATEST→签出感知（签出取 `last-1`）；过滤后空集抛 `NotAllowedException66`（原 `HTTPException(400)`，且移到过滤后、INSERT 前，事务不留残行）。对拍 :8000 空集→403「您无法创建空文档集合」。
+- **B-6** `product_baseline_type` 枚举补 EFFECTIVE_DATE/SERIAL/LOT；3 个 create 端点映射 5 类型名 + 透传 effectiveDate/Serial/Lot；`create_baseline` 服务补 `effective_date/serial/lot` 参数 + `_fill_effectivity_baselined_parts`（裸 SQL 按 effectivity 选 revision，无匹配退化 LATEST，best-effort：GD50 无 effectivity 数据不可在线验证）。对拍 :8000 创建 type=EFFECTIVE_DATE 成功、Payara 读回 `type:"EFFECTIVE_DATE"`。
+- **B-7** baseline detail 补 `configurationItemLatestRevision`（**字符串版本号**，对拍 Payara 确认为 String 而非对象）+ `hasObsoletePartRevisions`，删非标准 `configurationItemWorkspaceId`；**同步把 summary DTO 及 `_ci_latest_revision` 由对象改字符串**以对齐 Payara。对拍 :8005 detail keys 一致（除 `type` int-vs-string 为预存差异、author.membership 预存字段）。
+- **B-15**：经核实 document-baseline `export-files`（ZIP，`export/document_baseline_export.py`）**已存在**且为 Java `DocumentBaselineFileExportMessageBodyWriter` 忠实实现；P2P links types 路径前缀也已对齐 → **B-15 为审计误报**。**主 agent 回退** subagent Q 新加的重复 JSON-list `export-files` 端点（路由冲突且语义不符）。
+- **主 agent 修（delete_baseline 500，预存 bug）**：`delete_baseline` 先删 `partcollection` 后 `db.delete(bl)`（commit 时才 flush）→ 违反 `fk_productbaseline_partcollection_id` 必 500（批 2 补级联时引入的顺序 bug，此前未单独 delete-test）。改为先 `db.delete(bl); db.flush()` 再删集合。对拍 create→delete 往返成功、partcollection 残留 0。
+
 ## 2026-07-12 — fix: FIX-PLAN 批次 6（P2 HIGH/MEDIUM 机械类，状态码/权限/DTO/级联）
 
 > FIX-PLAN 批次 6。4 并行 subagent（L parts / M documents / N workspace / O crosscutting，文件不相交）。主 agent code review 发现并修复 2 处 subagent 隐患（X-6 破坏 3D 预览、workspaces.py 重复 tag 路由使 X-5/X-9 成死代码），并顺带清零 test_i18n_bypass 已知 fail。

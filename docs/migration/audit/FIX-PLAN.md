@@ -238,16 +238,19 @@
 
 ### PKG-products-configspec → Subagent P
 **Files:** `app/routers/products.py`、`app/services/product_structure.py`、`app/services/products/path_data_service.py`、`app/services/products/path_to_path_service.py`
-- [ ] **PR-HIGH-1** filter 补 linkType/diverge。**PR-HIGH-2** list_instances 3D 按 configSpec + pi- 解析。**PR-HIGH-3** searchPaths 补 configSpec/diverge。**PR-HIGH-4** cascade 补 configSpec/path。**PR-HIGH-5** P2P sourceComponents/targetComponents 做 decodePath。**PR-MED-1** path_data_service INSERT 补 dtype。**PR-MED-4** get_product_instance 补 acl。
+- [x] **PR-HIGH-1** filter 补 linkType/diverge。**PR-HIGH-2** list_instances 3D 按 configSpec + pi- 解析。**PR-HIGH-3** searchPaths 补 configSpec/diverge。**PR-HIGH-4** cascade 补 configSpec/path。**PR-HIGH-5** P2P sourceComponents/targetComponents 做 decodePath。**PR-MED-1** path_data_service INSERT 补 dtype。**PR-MED-4** get_product_instance 补 acl。
+  > ✅ 全部完成（2026-07-12）。**实际文件包扩至**：+`routers/product_instances.py`（PR-HIGH-2 的 list_instances 实际在此，非 products.py）、+`services/file_export/instance_body_writer_tools.py`（collect_leaf_instances 加可选 ps_filter）、+`models/configuration/product_baseline_type.py`（B-6 枚举）。configSpec 经既有 `parse_config_spec_str`+PSFilter 贯通；linkType/pi- 无对应引擎，退化并注释。**主 agent 修 diverge=true 500**：4 个 PSFilter `filter_links` 访问不存在的 `PartUsageLink.substitutes`（diverge 从未接线故潜伏）→ 加 getattr 守卫。对拍 :8000 latest/released/wip/diverge 全 200，3D instances 返回真实 matrix/bbox/files。
 
 ### PKG-baseline-types → Subagent Q（与 products.py 不相交；product_structure.py ⚠️ 与 P 冲突）
-> ⚠️ **product_structure.py 被 Subagent P（PR-HIGH-1）与 Subagent Q（B-6）同时需要 → 冲突！** 解决：B-6 归入 Subagent P（合并 products 相关），Subagent Q 只认领 `app/routers/product_baselines.py`、`app/routers/document_baselines.py`。
+> ⚠️ **product_structure.py 被 Subagent P（PR-HIGH-1）与 Subagent Q（B-6）同时需要 → 冲突！** 解决：B-6 的 product_structure.py 部分归入 Subagent P，Subagent Q 只认领 `app/routers/product_baselines.py`、`app/routers/document_baselines.py`。
 **Files:** `app/routers/product_baselines.py`、`app/routers/document_baselines.py`
-- [ ] **B-5**（CRITICAL）`document_baselines.py:115-167`：文档基线创建补 snapshotDocuments 校验——RELEASED 类型过滤 `status IN (1,2)`、LATEST 类型移除他人签出的末迭代、已存在跳过、空集抛 `NotAllowedException("NotAllowedException66")`（对齐 `DocumentBaselineManagerBean.java:66-78,157-185`）。
-- [ ] **B-6** create_baseline 补 EFFECTIVE_DATE/SERIAL/LOT 三类型（**在 product_structure.py 的部分并入 Subagent P**；路由参数提取在 product_baselines.py 由 Q 做）。**B-7** detail 补 configurationItemLatestRevision。**B-15** P2P links 路径前缀对齐 + 补 document-baseline export-files。**B-10** 空文档校验移 service 层抛 NotAllowedException66。
+- [x] **B-5**（CRITICAL）`document_baselines.py`：文档基线创建补 snapshotDocuments 校验——RELEASED 类型过滤 `status IN (1,2)`、LATEST 类型移除他人签出的末迭代、已存在跳过、空集抛 `NotAllowedException("NotAllowedException66")`（对齐 `DocumentBaselineManagerBean.java:66-78,157-185`）。✅ 完成，对拍空集→403「您无法创建空文档集合」。
+- [x] **B-6** create_baseline 补 EFFECTIVE_DATE/SERIAL/LOT 三类型（product_structure.py 部分并入 P；路由参数提取在 product_baselines.py 由 Q 做）。**B-7** detail 补 configurationItemLatestRevision（对拍 Payara 确认为 **String** 版本号，非对象；连带 summary DTO+`_ci_latest_revision` 改字符串，删非标准 configurationItemWorkspaceId）。**B-15** ⚠️ **判定误报**：export-files（ZIP）已存在于 `export/document_baseline_export.py`、P2P 路径前缀已对齐 → 回退 subagent 重复端点。**B-10** 空文档校验抛 NotAllowedException66（就地在 router 实现，本包无 service 文件）。
+  > ✅ 完成。**主 agent 修 delete_baseline 500 预存 bug**：先删 partcollection 后 `db.delete(bl)`（commit 才 flush）→ 违反 fk_productbaseline_partcollection_id；改为先 delete+flush baseline 再删集合，对拍 create→delete 往返成功、残留 0。
 
 ### 主 agent 批 7 收尾
-- [ ] 部署 + configSpec 分支对拍（latest/released/wip/baseline）。全量 pytest。commit。更新文档。
+- [x] 部署 + configSpec 分支对拍（latest/released/wip/diverge）。全量 pytest。commit。更新文档。
+  > ✅ pytest **282 passed / 1 skipped / 0 failed**（无回归）；2 原子 commit（products / baselines）；对拍 Payara(:8005) baseline detail keys 一致。GD50 smoke 数据已清理归零。**🎉 FIX-PLAN 批次 0~7 全部完成。**
 
 ---
 

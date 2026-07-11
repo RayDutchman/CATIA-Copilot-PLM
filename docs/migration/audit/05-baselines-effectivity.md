@@ -40,6 +40,7 @@
 - Java 对照：`DocumentBaselineManagerBean.java:66-78,157-185`（snapshotDocuments）
 - 证据：Python 直接插入用户提交的 baselinedDocuments，无类型过滤(RELEASED)/签出处理(LATEST)/已存在跳过/空集校验。
 - 结论与建议：实现 snapshotDocuments 逻辑。
+- **✅ 已修复（2026-07-12，批 7）**：`create_doc_baseline` 实现去重 + RELEASED（status IN 1,2 取末迭代）+ LATEST（签出感知，签出取 last-1）过滤；空集抛 `NotAllowedException66`（含 B-10）。对拍空集→403「您无法创建空文档集合」。
 
 ## 问题 B-6
 - 严重级：HIGH
@@ -48,6 +49,7 @@
 - Java 对照：`ProductBaselineManagerBean.java:102-147`
 - 证据：Java 支持 5 种 ProductBaselineType（LATEST/RELEASED/EFFECTIVE_DATE/SERIAL/LOT），Python 只处理 LATEST(0)/RELEASED(1)，缺 effectiveDate/effectiveSerialNumber/effectiveLotId 参数。
 - 结论与建议：补三种 effectivity-based 基线类型。
+- **✅ 已修复（2026-07-12，批 7）**：ProductBaselineType 枚举补 EFFECTIVE_DATE/SERIAL/LOT；3 个 create 路由映射 5 类型名 + 透传 effectiveDate/Serial/Lot；`create_baseline` 服务加参数 + `_fill_effectivity_baselined_parts`（裸 SQL 按 effectivity 选 revision，无匹配退化 LATEST）。**best-effort**：GD50 无 effectivity 数据、`PartRevision.effectivities` relationship 缺失，未在线验证。对拍创建 type=EFFECTIVE_DATE 成功、Payara 读回 `type:"EFFECTIVE_DATE"`。
 
 ## 问题 B-7
 - 严重级：HIGH
@@ -56,18 +58,19 @@
 - Java 对照：`ProductBaselineDTO.java` + `ProductBaselinesResource.java:222-224`
 - 证据：detail 响应缺 configurationItemLatestRevision；多余 configurationItemWorkspaceId 非标准字段。
 - 结论与建议：detail 补 configurationItemLatestRevision。
+- **✅ 已修复（2026-07-12，批 7）**：detail 补 `configurationItemLatestRevision` + `hasObsoletePartRevisions`、删非标准 `configurationItemWorkspaceId`。**对拍 Payara(:8005) 确认 `configurationItemLatestRevision` 为 String 版本号（非对象）** → 连带把 summary DTO 及 `_ci_latest_revision` 由对象改字符串以对齐。detail keys 对拍一致（仅 `type` int-vs-string 为预存差异）。
 
 ## 问题 B-8 ~ B-12（MEDIUM）
 - **B-8**(要点#4)：delete_baseline 未检查 productinstanceiteration 引用（Java isBaselinedUsed→EntityConstraintException16）。
 - **B-9**(要点#11)：effectivity.py:164-180 `GET/PUT /effectivities/{id}` 缺 `/workspaces/{ws}` 前缀。`/parts/{key}/effectivities` 系列已对齐（排除）。
-- **B-10**(要点#7)：document_baselines.py:123 空文档抛 HTTPException(400)，应 service 层抛 NotAllowedException66。
+- **B-10**(要点#7)：document_baselines.py:123 空文档抛 HTTPException(400)，应 service 层抛 NotAllowedException66。**✅ 批 7 修复**（就地在 router 抛 NotAllowedException66，移到过滤后；本包无 doc-baseline service 文件）。
 - **B-11**(要点#8)：effectivity.py:49-63 `_effectivity_to_dto` 双后备列名，建议统一 DB 真值列名。
 - **B-12**(要点#7)：create_effectivity 未做三类型必填字段（startNumber/startDate/startLotId）校验，Java 抛 CreationException。
 
 ## 问题 B-13 ~ B-15（LOW）
 - **B-13**(要点#2)：_bl_summary_dict 列表端点多返回 pathToPathLinks/optionalsParts，缺 substitutesParts。
 - **B-14**(要点#6)：getAllBaselines/createBaseline 未显式调 workspace 权限（依赖 get_current_user，需核 deps.py）。
-- **B-15**(要点#17)：P2P links types 端点路径前缀 `/product-baselines/{pid}/baselines/` 与 Java `/products/{ciId}/baselines/` 不一致→前端可能 404；缺 document-baseline export-files。
+- **B-15**(要点#17)：P2P links types 端点路径前缀 `/product-baselines/{pid}/baselines/` 与 Java `/products/{ciId}/baselines/` 不一致→前端可能 404；缺 document-baseline export-files。**⚠️ 批 7 判定为误报**：Python 路径实为 `/workspaces/{ws}/product-baselines/{pid}/baselines/{bid}/path-to-path-links-types`，与 Java 类级 `@Path` 前缀对齐；document-baseline `export-files`（ZIP）已存在于 `routers/export/document_baseline_export.py`（忠实实现 `DocumentBaselineFileExportMessageBodyWriter`）。subagent 误加的重复 JSON-list 端点已由主 agent 回退。
 
 ## 已排除
 - E-1 baseline BFS 校验 LATEST/RELEASED 逻辑正确。E-2 summary DTO 对齐无 422。E-3 DocumentBaseline 级联删除顺序正确。E-4 GET effectivity 用 partmaster_workspace_id 正确（历史 bug 已修）。E-5 baselinedpart 子查询列名正确。
