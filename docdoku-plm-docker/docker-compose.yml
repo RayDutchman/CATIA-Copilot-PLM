@@ -20,7 +20,7 @@ services:
       - network
     ports:
       - 8000:80
-      # 8005:85 已移除（Port 85 Payara 对比 server block 已删，back 容器已停用）
+      - 8005:85
     volumes:
       - ./env/front.json:/usr/share/nginx/html/webapp.properties.json
       # Custom nginx config that adds charset=utf-8 so Chinese NLS files are
@@ -72,10 +72,7 @@ services:
 
   conversion:
     # Python-only 转换服务（2.7.0-py）：替代原 Java/Quarkus 编排层
-    # 回滚方式：删除 build 块，将 image 改回 docdoku/docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback
-    build:
-      context: ../conversion-service-py
-      dockerfile: Dockerfile
+    # 回滚方式：将 image 改回 docdoku/docdoku-plm-conversion-service:2.6.2-jvm-hybrid-rollback
     image: docdoku/docdoku-plm-conversion-service:2.7.0-py
     restart: unless-stopped
     env_file: ./env/conversion.env
