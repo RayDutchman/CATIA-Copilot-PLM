@@ -572,11 +572,8 @@ class ProductStructureService:
                 ), {"ws": ws, "pn": bp.get("partNumber", ""),
                     "ver": bp.get("version", "A"), "iter": bp.get("iteration", 1),
                     "pcid": pc_id})
-        # 若未显式提供 baselined_parts 且 bl_type ∈ {2,3,4}，按 effectivity 自动选择迭代
-        if not baselined_parts and bl_type in (2, 3, 4):
-            self._fill_effectivity_baselined_parts(
-                db, ws, master, pc_id, bl_type,
-                effective_date, effective_serial_number, effective_lot_id)
+        # effectivity(2/3/4) 的迭代选择已上移至 ProductBaselineService._create_effectivity_baseline
+        # （config-spec + PSFilterVisitor 驱动），此处仅按传入的 baselined_parts 落库
         if substitute_links:
             for sl in substitute_links:
                 db.execute(text(
@@ -662,82 +659,6 @@ class ProductStructureService:
                             ).first()
                             if child:
                                 queue.append(child)
-
-    def _fill_effectivity_baselined_parts(self, db: Session, ws: str,
-                                            root_pm, pc_id: int, bl_type: int,
-                                            effective_date, effective_serial_number,
-                                            effective_lot_id):
-        """BFS 遍历产品结构，按 effectivity 选择迭代写入 baselinedpart。
-        effectivity-based 选择为 best-effort，数据缺失时退化 LATEST（last checked-in iteration）。
-        """
-        visited = set()
-        queue = [root_pm]
-
-        while queue:
-            pm = queue.pop(0)
-            key = (pm.workspace_id, pm.number)
-            if key in visited:
-                continue
-            visited.add(key)
-
-            rev_version = None
-            iteration = None
-            # effectivity SQL 查询匹配 revision
-            if bl_type in (2, 3, 4):
-                sql = """
-                SELECT pre.partrevision_version FROM partrevision_effectivity pre
-                JOIN effectivity e ON e.id = pre.effectivity_id
-                WHERE pre.partmaster_workspace_id=:ws AND pre.partmaster_partnumber=:pn
-                AND (
-                    (:btype=2 AND e.startdate <= :edate AND (e.enddate IS NULL OR e.enddate >= :edate))
-                    OR (:btype=3 AND e.startnumber IS NOT NULL AND e.startnumber <= :eserial AND (e.endnumber IS NULL OR e.endnumber >= :eserial))
-                    OR (:btype=4 AND e.startlotid IS NOT NULL AND e.startlotid <= :elot AND (e.endlotid IS NULL OR e.endlotid >= :elot))
-                )
-                ORDER BY pre.partrevision_version DESC LIMIT 1
-                """
-                row = db.execute(text(sql), {
-                    "ws": ws, "pn": pm.number,
-                    "btype": bl_type,
-                    "edate": effective_date, "eserial": effective_serial_number or "",
-                    "elot": effective_lot_id or "",
-                }).first()
-                if row:
-                    rev_version = row[0]
-
-            if rev_version:
-                # 命中 effectivity 的版本
-                rev = db.query(PartRevision).filter(
-                    PartRevision.workspace_id == ws,
-                    PartRevision.partmaster_partnumber == pm.number,
-                    PartRevision.version == rev_version,
-                ).first()
-            else:
-                # 退化：取 last checked-in revision
-                rev = pm.last_revision
-                if rev and rev.checkout_user_login:
-                    rev = None  # 已签出无可用迭代
-
-            if rev:
-                last_it = rev.last_iteration
-                iteration = last_it.iteration if last_it else 1
-                # 写入 baselinedpart
-                db.execute(text(
-                    "INSERT INTO baselinedpart "
-                    "(target_workspace_id, target_partmaster_partnumber, "
-                    "target_partrevision_version, target_iteration, partcollection_id) "
-                    "VALUES (:ws, :pn, :ver, :iter, :pcid)"
-                ), {"ws": ws, "pn": pm.number, "ver": rev.version, "iter": iteration, "pcid": pc_id})
-
-                # 遍历子件
-                if last_it:
-                    for link in (last_it.components or []):
-                        child = db.query(PartMaster).filter(
-                            PartMaster.workspace_id == link.component_workspace_id,
-                            PartMaster.number == link.component_partnumber,
-                        ).first()
-                        if child:
-                            queue.append(child)
-
 
     def delete_baseline(self, db: Session, ws: str, bl_id: int):
         bl = db.query(ProductBaseline).filter(

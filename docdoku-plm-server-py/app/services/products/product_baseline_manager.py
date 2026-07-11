@@ -52,7 +52,7 @@ class ProductBaselineService:
             baselined_parts=baselined_parts,
             substitute_links=substitute_links,
             optional_usage_links=optional_usage_links)
-        return self._to_dict(bl)
+        return bl
 
     def _create_effectivity_baseline(self, db, ws, ci_id, name, desc,
                                        bl_type, **kwargs):
@@ -80,13 +80,30 @@ class ProductBaselineService:
         else:
             raise ValueError("No effectivity parameter specified")
 
-        # 遍历
+        # 遍历（对齐 Java ProductBaselineManagerBean 的 PSFilterVisitorCallbacks：
+        # 任一零件无法解析出有效迭代/路径时抛异常，而非静默跳过 → 与 Payara 一致）
+        from app.core.exceptions import NotAllowedException
+
         class BaselineCallbacks(PSFilterVisitorCallbacks):
             def __init__(self):
                 self.visited_paths = set()
+
             def on_path_walk(self, path, parts):
                 self.visited_paths.add(tuple(str(getattr(l, 'id', '')) for l in path))
                 return True
+
+            def on_unresolved_version(self, part_master):
+                raise NotAllowedException("NotAllowedException49",
+                                          getattr(part_master, "number", ""))
+
+            def on_indeterminate_version(self, part_master, part_iterations):
+                raise NotAllowedException("NotAllowedException48")
+
+            def on_unresolved_path(self, current_path, part_iterations):
+                raise NotAllowedException("NotAllowedException51")
+
+            def on_indeterminate_path(self, current_path, part_iterations):
+                raise NotAllowedException("NotAllowedException50")
 
         callbacks = BaselineCallbacks()
         visitor = PSFilterVisitor(db, ws, spec, callbacks)
@@ -104,6 +121,8 @@ class ProductBaselineService:
         return self.create_baseline(
             db, ws, ci_id, name, bl_type, desc,
             baselined_parts=baselined_parts,
+            substitute_links=list(spec.retained_substitute_links),
+            optional_usage_links=list(spec.retained_optional_usage_links),
             user_login=kwargs.get("user_login", ""),
             dry_run=kwargs.get("dry_run", False))
 

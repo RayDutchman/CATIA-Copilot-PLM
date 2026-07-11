@@ -24,14 +24,24 @@ class DateBasedEffectivityConfigSpec(EffectivityConfigSpec):
                 effectivity.configurationitem_workspace_id != ci.workspace_id):
                 return False
 
+        # 归一为 naive（DB effectivity 日期为 timestamp without tz；请求日期可能带 Z 时区）
+        date = self._as_naive(self.date)
         # startDate > date → 尚未生效
-        start_date = getattr(effectivity, 'start_date', None)
-        if start_date and start_date > self.date:
+        start_date = self._as_naive(getattr(effectivity, 'start_date', None))
+        if start_date and date and start_date > date:
             return False
 
         # endDate < date → 已过期
-        end_date = getattr(effectivity, 'end_date', None)
-        if end_date and end_date < self.date:
+        end_date = self._as_naive(getattr(effectivity, 'end_date', None))
+        if end_date and date and end_date < date:
             return False
 
         return True
+
+    @staticmethod
+    def _as_naive(dt):
+        """带时区的 datetime 转为 UTC naive，便于与 DB 的 naive 时间戳比较。"""
+        if dt is not None and getattr(dt, "tzinfo", None) is not None:
+            from datetime import timezone
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt

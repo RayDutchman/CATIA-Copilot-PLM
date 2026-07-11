@@ -10,6 +10,7 @@ from app.models.auth import Account
 from app.models.product import ProductBaseline, ConfigurationItem
 from app.models.part import PartRevision
 from app.services.product_structure import ProductStructureService
+from app.services.products.product_baseline_manager import product_baseline_service
 from app.schemas.product import ProductBaselineSummaryDTO, ProductBaselineDetailDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -131,14 +132,16 @@ def create_workspace_baseline(ws: str, body: dict,
     eff_lot = body.get("effectiveLotId")
     if dryRun:
         return {"id": -1, "name": body.get("name", ""), "dryRun": True}
-    bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
-                               body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"),
-                               body.get("substituteLinks"),
-                               body.get("optionalUsageLinks"),
-                               effective_date=eff_date,
-                               effective_serial_number=eff_serial,
-                               effective_lot_id=eff_lot)
+    bl = product_baseline_service.create_baseline(
+        db, ws, ci_id, body.get("name", ""), bl_type,
+        description=body.get("description", ""),
+        effective_date=eff_date,
+        effective_serial=eff_serial,
+        effective_lot=eff_lot,
+        baselined_parts=body.get("baselinedParts"),
+        substitute_links=body.get("substituteLinks"),
+        optional_usage_links=body.get("optionalUsageLinks"),
+        user_login=current_user.login)
     return _bl_summary_dict(bl, db)
 
 
@@ -166,14 +169,16 @@ def create_ci_scoped_baseline(ws: str, ci_id: str, body: dict,
     eff_lot = body.get("effectiveLotId")
     if dryRun:
         return {"id": -1, "name": body.get("name", ""), "dryRun": True}
-    bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
-                               body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"),
-                               body.get("substituteLinks"),
-                               body.get("optionalUsageLinks"),
-                               effective_date=eff_date,
-                               effective_serial_number=eff_serial,
-                               effective_lot_id=eff_lot)
+    bl = product_baseline_service.create_baseline(
+        db, ws, ci_id, body.get("name", ""), bl_type,
+        description=body.get("description", ""),
+        effective_date=eff_date,
+        effective_serial=eff_serial,
+        effective_lot=eff_lot,
+        baselined_parts=body.get("baselinedParts"),
+        substitute_links=body.get("substituteLinks"),
+        optional_usage_links=body.get("optionalUsageLinks"),
+        user_login=current_user.login)
     return _bl_summary_dict(bl, db)
 
 
@@ -355,14 +360,16 @@ def create_baseline(ws: str, ci_id: str, body: dict,
     eff_lot = body.get("effectiveLotId")
     if dryRun:
         return {"id": -1, "name": body.get("name", ""), "dryRun": True}
-    bl = svc.create_baseline(db, ws, ci_id, body.get("name", ""),
-                               body.get("description", ""), bl_type,
-                               current_user.login, body.get("baselinedParts"),
-                               body.get("substituteLinks"),
-                               body.get("optionalUsageLinks"),
-                               effective_date=eff_date,
-                               effective_serial_number=eff_serial,
-                               effective_lot_id=eff_lot)
+    bl = product_baseline_service.create_baseline(
+        db, ws, ci_id, body.get("name", ""), bl_type,
+        description=body.get("description", ""),
+        effective_date=eff_date,
+        effective_serial=eff_serial,
+        effective_lot=eff_lot,
+        baselined_parts=body.get("baselinedParts"),
+        substitute_links=body.get("substituteLinks"),
+        optional_usage_links=body.get("optionalUsageLinks"),
+        user_login=current_user.login)
     return _bl_summary_dict(bl, db)
 
 
