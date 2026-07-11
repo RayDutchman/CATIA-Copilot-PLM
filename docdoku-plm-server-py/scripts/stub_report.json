@@ -1,81 +1,66 @@
 [
   {
     "endpoint": "PUT /front-options",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /workspaces/{WS} (update desc)",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /add-user (enable in workspace)",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "POST /roles (create)",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /roles/STUBROLE-{TAG} (update defaults)",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "DELETE /roles/***",
-    "status": "❌STUB",
-    "detail": "no data change after write"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "POST /groups (create)",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "DELETE /groups/***",
-    "status": "✅PERSIST",
-    "detail": "data changed"
-  },
-  {
-    "endpoint": "PUT /changes/issues/{id}/affected-documents",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /workflow-models/STUBWF-{TAG} (update)",
-    "status": "❌STUB",
-    "detail": "no data change after write"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /parts/{pk}/checkout",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /parts/{pk}/checkin",
-    "status": "✅PERSIST",
-    "detail": "data changed"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /parts/{pk}/tags (add tag)",
-    "status": "⚠ERROR",
-    "detail": "write=500"
+    "status": "⚠SKIP",
+    "detail": "GET before=404"
   },
   {
     "endpoint": "PUT /accounts/me (update)",
-    "status": "✅PERSIST",
-    "detail": "data changed"
-  },
-  {
-    "endpoint": "PUT /products (update CI desc)",
-    "status": "❌STUB",
-    "detail": "no data change after write"
-  },
-  {
-    "endpoint": "DELETE /products/{ciId}",
     "status": "✅PERSIST",
     "detail": "data changed"
   }

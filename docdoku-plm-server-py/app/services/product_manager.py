@@ -393,6 +393,13 @@ class ProductService:
                 it.attached_files[:] = []
             if it.geometries:
                 it.geometries[:] = []
+            # 清理 instance attributes（FK 到 partiteration）
+            db.execute(
+                text("DELETE FROM partiteration_attribute "
+                     "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
+                     "AND partrevision_version=:ver AND iteration=:it"),
+                {"ws": workspace_id, "pn": number, "ver": version, "it": it.iteration},
+            )
             # 清理 vault 物理文件（对齐 Payara removeCADFile/removeAttachedFiles）
             try:
                 import shutil
