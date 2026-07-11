@@ -200,7 +200,7 @@ class ProductStructureService:
             part_usage_link_id = f"u{usage_link.id}"
         else:
             path_str = parent_path if parent_path else ci_id
-            part_usage_link_id = None
+            part_usage_link_id = "-1"
 
         # virtual/substitute: 从 path 末位 link 判断
         is_virtual = False
