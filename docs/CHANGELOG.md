@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-12 — fix: 批次 7 后续（baseline type 对齐 Payara + 镜像持久化）
+
+> 用户复核批次 7 提出的两处「预存差异」的后续处理。
+
+### fix(baselines): baseline `type` 序列化为 Payara 枚举名字符串（B-7 延伸）
+
+- **确认属实**：产品基线 list/detail/create 端点 `type` 返回 **int**（0/1/2..），而 Payara 返回 `ProductBaselineType` **枚举名字符串**（LATEST/RELEASED/EFFECTIVE_*）。文档基线早已经 `_baseline_type_name` 输出字符串，唯产品基线遗漏。
+- **实为潜伏前端 bug**：前端 `baseline.js:22 isReleased()` 用 `this.get('type') === 'RELEASED'` 字符串严格比较，int 使其恒为 false。
+- **改动**：`product_baselines.py` 加 `_TYPE_NAME`/`_type_name()`，在 `_bl_summary_dict`/`_bl_detail_dict`/`get_baseline_by_id(light)` 3 处将 int 转枚举名；`ProductBaselineSummaryDTO`/`ProductBaselineDetailDTO`/`DocumentBaselineDTO` 的 `type` 字段由 int 改 str。前端 0 改动（本就期望字符串）。对拍 :8005 detail `type` 一致（LATEST/EFFECTIVE_DATE 往返）。
+
+### chore(deploy): 重建 back-py 镜像并 recreate 容器（持久化批次 7 + 本次修复）
+
+- 批次 5~7 及本次修复此前均以 `docker cp` 热部署，容器 recreate 会回退。已 `docker build -t docdoku-plm-docker-back-py:latest . && docker compose up -d --force-recreate --no-deps back-py`，从已提交源码重建镜像并重建容器。recreate 后 smoke 验证：filter diverge=true 200、baseline type 字符串、baseline delete 200 残留 0、configurationItemLatestRevision 字符串——全部随镜像持久化。
+
+---
+
 ## 2026-07-12 — fix: FIX-PLAN 批次 7（P3 configSpec / 基线类型 / 缺失端点）
 
 > FIX-PLAN 批次 7（末批）。2 并行 subagent（P products/configSpec，Q baseline 路由，文件不相交）。主 agent code review + 在线对拍 Payara(:8005) 修复 3 处 subagent 隐患/预存 bug。pytest **282 passed / 1 skipped / 0 failed**（无回归）。
