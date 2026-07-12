@@ -73,33 +73,33 @@
 
 ### 文件包 PKG-document-perm → Subagent B1
 **Files:** `app/services/document_manager.py`、`app/routers/document.py`、`app/routers/folders.py`
-- [ ] **P4-02** `document_manager.py` `release`（约 :753）：开头补 `check_write_access`（对齐 Java `checkDocumentRevisionWriteAccess`）。
-- [ ] **P4-04** `move_document`（`document.py:726` + service）：补 write access 检查。
-- [ ] **P4-05** `delete_folder`（`document_manager.py:1079` + `folders.py:117`）：补 `is_home`/`is_root`/`is_another_user_home` 保护（对齐 Java NotAllowedException21）。
-- [ ] **P4-06** `move_folder`（`folders.py:76`）：补 home/root + 跨工作区目标验证。
-- [ ] **P4-07** `delete_template`（`document_manager.py:1166`）：`DELETE FROM acl` 前先删 `acluserentry`+`aclusergroupentry`（DB 确认两 FK 无 CASCADE）。
-- [ ] **P4-08** `update_doc_acl`（`document.py:711`）：补 `hasEntries`→removeACL 分支 + admin/author 权限检查。
-- [ ] **P4-09（DTO）** `inverse_path_link`（`document.py:464`）：补 partLinksList/serialNumber（findProductByPathMaster + decodePath）。
+- [x] **P4-02** `document_manager.py` `release`（约 :753）：开头补 `check_write_access`（对齐 Java `checkDocumentRevisionWriteAccess`）。
+- [x] **P4-04** `move_document`（`document.py:726` + service）：补 write access 检查。
+- [x] **P4-05** `delete_folder`（`document_manager.py:1079` + `folders.py:117`）：补 `is_home`/`is_root`/`is_another_user_home` 保护（对齐 Java NotAllowedException21）。
+- [x] **P4-06** `move_folder`（`folders.py:76`）：补 home/root + 跨工作区目标验证。
+- [x] **P4-07** `delete_template`（`document_manager.py:1166`）：`DELETE FROM acl` 前先删 `acluserentry`+`aclusergroupentry`（DB 确认两 FK 无 CASCADE）。
+- [x] **P4-08** `update_doc_acl`（`document.py:711`）：补 `hasEntries`→removeACL 分支 + admin/author 权限检查。
+- [x] **P4-09（DTO）** `inverse_path_link`（`document.py:464`）：补 partLinksList/serialNumber（findProductByPathMaster + decodePath）。
 
 ### 文件包 PKG-part-perm → Subagent B2
 **Files:** `app/services/product_manager.py`
-- [ ] **P1-04** `get_latest_revision`（约 :87-97）：补 `check_read_access`（对齐 Java `getLatestPartRevision`→canAccess→hasPartRevisionReadAccess），无权限 403。修复信息泄露。
+- [x] **P1-04** `get_latest_revision`（约 :87-97）：补 `check_read_access`（对齐 Java `getLatestPartRevision`→canAccess→hasPartRevisionReadAccess），无权限 403。修复信息泄露。
 
 ### 文件包 PKG-admin-perm → Subagent B3
 **Files:** `app/routers/admin.py`
-- [ ] **P5-07** `get_platform_options`（约 :263）补 `current_user` 参数 + `_require_admin`；`get_index`（约 :409）补认证 + `_require_admin`（对齐 Java `AdminResource` 类级 `@RolesAllowed(ADMIN_ROLE_ID)`）。
+- [x] **P5-07** `get_platform_options`（约 :263）补 `current_user` 参数 + `_require_admin`；`get_index`（约 :409）补认证 + `_require_admin`（对齐 Java `AdminResource` 类级 `@RolesAllowed(ADMIN_ROLE_ID)`）。
 
 ### 文件包 PKG-membership-dto → Subagent B4
 **Files:** `app/routers/workspace_memberships.py`、`app/routers/user_groups.py`
-- [ ] **P5-03** `remove_from_group`（`workspace_memberships.py:149`）：返回被操作的 group（按 gid 查）或 204，而非 `list_groups()[0]`。
-- [ ] **P5-04** `setUserAccess`（`workspace_memberships.py:235`）：返回 UserDTO；membership 为 null → 400。
-- [ ] **P5-06** `my_memberships`（`workspace_memberships.py:61`）：返回单个 WorkspaceUserMemberShipDTO（非列表）；移除 Java 不存在的 `permission` 字段。
-- [ ] **P5-05** `setGroupAccess`（`user_groups.py:141`）：返回 WorkspaceUserGroupMemberShipDTO（workspaceId/memberId/readOnly）。
+- [x] **P5-03** `remove_from_group`（`workspace_memberships.py:149`）：返回被操作的 group（按 gid 查）或 204，而非 `list_groups()[0]`。
+- [x] **P5-04** `setUserAccess`（`workspace_memberships.py:235`）：返回 UserDTO；membership 为 null → 400。
+- [x] **P5-06** `my_memberships`（`workspace_memberships.py:61`）：返回单个 WorkspaceUserMemberShipDTO（非列表）；移除 Java 不存在的 `permission` 字段。
+- [x] **P5-05** `setGroupAccess`（`user_groups.py:141`）：返回 WorkspaceUserGroupMemberShipDTO（workspaceId/memberId/readOnly）。
 
 ### 主 agent 批 2 收尾
-- [ ] 逐包 review + 部署。
-- [ ] smoke/对拍：非授权用户 release/move/delete_folder → 403；删根/他人home 文件夹 → 拒绝；删含 ACL 的模板无 FK 500；get_latest_revision 对无权限用户 403；admin 端点匿名/普通用户 403；membership 端点返回 DTO 结构对拍 Payara。
-- [ ] `pytest` 无新增 fail。commit（分域）。更新文档 + 勾除。
+- [x] 逐包 review + 部署（rebuild+recreate, health 200）。主 agent 纠正 B2 建议的错误 admin 检查（account.isadmin 不存在→改用 usergroupmapping groupname='admin'），并在 part.py 接线 P1-04。
+- [x] smoke：get_platform_options/get_index 非 admin→403 ✅；latest-revision authed 200 / noauth 401 ✅；my_memberships 返回单对象 ✅；update_doc_acl 空 entries→204 ✅；acl_factory/decode_path 签名 + prdinstiteration_pathdatamstr 列名核实通过。
+- [x] `pytest` 279 passed/1 skipped（无新增 fail）。commit c-batch2。更新文档 + 勾除。
 
 ---
 

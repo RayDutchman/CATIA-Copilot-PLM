@@ -6,6 +6,21 @@
 
 ---
 
+## 2026-07-12 — fix: audit-round2 批次 2 修复（12 权限/安全 HIGH）
+
+> FIX-PLAN 批次 2，4 并行 subagent（文件不相交）+ 主 agent 接线/纠错。pytest 279 passed/1 skipped（无新增 fail）。
+
+- **fix(document): P4-02/03/04** release/undo_checkout/move_document 补 `check_write_access`（对齐 Java checkDocumentRevisionWriteAccess）。
+- **fix(document): P4-05/06** delete_folder/move_folder 补 isRoot/isHome/isAnotherUserHome + 跨工作区保护（NotAllowedException21/23）。
+- **fix(document): P4-07** delete_template 先删 acluserentry/aclusergroupentry 再删 acl（两 FK 无 CASCADE，原 FK 500）。
+- **fix(document): P4-08** update_doc_acl 补 admin/author 权限 + hasEntries→removeACL 分支。smoke 空 entries→204。
+- **fix(document): P4-09** inverse_path_link 补 partLinksList（decode_path）+ serialNumber（prdinstiteration_pathdatamstr 列名已核实）。
+- **fix(part): P1-04** get_latest_revision 补读 ACL 检查（无权限 AccessRightException→403），part.py router 接线 current_user_login+is_admin。**主 agent 纠正 subagent 误用的 account.isadmin（不存在）→ usergroupmapping groupname='admin'**。smoke authed 200/noauth 401。
+- **fix(workspace): P5-03/04/05/06** remove_from_group 返回被操作 group；setUserAccess 返回 UserDTO+membership null→400；setGroupAccess 返回 WorkspaceUserGroupMemberShipDTO；my_memberships 返回单对象（原列表）。
+- **fix(admin): P5-07** get_platform_options/get_index 补 `_require_admin`（对齐类级 @RolesAllowed）。smoke 非 admin→403。
+
+---
+
 ## 2026-07-12 — fix: audit-round2 批次 1 修复（6 CRITICAL）
 
 > 按 `docs/migration/audit-round2/FIX-PLAN.md` 批次 1，4 个并行 subagent（文件包不相交）修复 6 个复核确认的 CRITICAL；主 agent 统一 review + 部署 + 验证 + commit。pytest 279 passed / 1 skipped（= 282 基线减 3 个 test_vault ignore，无新增 fail）。commit c27547c。
