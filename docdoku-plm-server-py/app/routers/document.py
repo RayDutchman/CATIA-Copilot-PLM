@@ -192,7 +192,7 @@ def set_tags(ws: str, doc_key: str, body: dict,
         labels = [t.get("label", "") for t in raw_tags if t.get("label")]
     else:
         labels = raw_tags
-    svc.set_tags(db, ws, doc_id, ver, labels)
+    svc.set_tags(db, ws, doc_id, ver, labels, current_user.login)
     return svc.build_revision_dto(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
 
 
@@ -216,7 +216,7 @@ def add_tag(ws: str, doc_key: str, body: dict,
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
     existing_labels = [r[0] for r in existing_rows]
     merged = list(dict.fromkeys(existing_labels + new_labels))
-    svc.set_tags(db, ws, doc_id, ver, merged)
+    svc.set_tags(db, ws, doc_id, ver, merged, current_user.login)
     return svc.build_revision_dto(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
 
 
@@ -226,7 +226,7 @@ def remove_tag(ws: str, doc_key: str, tag_label: str,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    return svc.remove_tag(db, ws, doc_id, ver, tag_label)
+    return svc.remove_tag(db, ws, doc_id, ver, tag_label, current_user.login)
 
 
 @router.put("/workspaces/{ws}/documents/{doc_key}/acl", status_code=204)

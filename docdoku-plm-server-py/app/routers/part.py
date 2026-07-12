@@ -256,7 +256,8 @@ def remove_tag(workspace_id: str, part_key: str, tag_label: str,
                current_user: Account = Depends(get_current_user),
                db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    pr = svc.remove_tag(db, workspace_id, number, version, tag_label)
+    pr = svc.remove_tag(db, workspace_id, number, version, tag_label,
+                        current_user_login=current_user.login)
     return map_revision(pr, db)
 
 

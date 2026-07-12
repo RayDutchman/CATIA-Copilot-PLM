@@ -1164,9 +1164,13 @@ class ProductService:
         return pr
 
     def remove_tag(self, db: Session, ws: str, pn: str, ver: str,
-                   label: str) -> PartRevision:
+                   label: str, current_user_login: str = None) -> PartRevision:
         from app.models.part import part_revision_tags
-        pr = self.get_revision(db, ws, pn, ver)
+        from app.services.factory.acl_factory import check_write_access
+        pr = self.get_revision(db, ws, pn, ver,
+                               current_user_login=current_user_login)
+        if current_user_login and not check_write_access(db, pr.acl_id, current_user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", current_user_login or "")
         db.execute(part_revision_tags.delete().where(
             part_revision_tags.c.partmaster_workspace_id == ws,
             part_revision_tags.c.partmaster_partnumber == pn,

@@ -11,10 +11,11 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.core.exceptions import NotAllowedException
+from app.core.exceptions import NotAllowedException, AccessRightException
 from app.services.factory.acl_factory import check_write_access
 from app.services.product_manager import ProductService
 from app.models.product.part_master import PartMaster
+from app.models.configuration.product_instance_master import ProductInstanceMaster
 from app.services.importers.attributes_importer_utils import (
     TOKEN_TO_DTYPE as _TOKEN_TO_DTYPE,
     TOKEN_TO_VALUECOL as _TOKEN_TO_VALUECOL,
@@ -375,8 +376,23 @@ class ImporterService:
                 errors.append(f"ProductInstanceMasterNotFound: {ci_id}/{sn}")
                 continue
 
-            # TODO: 补 canWrite 实例级写权限检查（Java productInstanceManager.canWrite）
-            # 当前仅验证实例存在，未阻断无权限用户写入
+            # 实例级写权限检查（对齐 Java productInstanceManager.canWrite + checkProductInstanceWriteAccess）
+            # ProductInstanceManagerBean.java:909-918, 1230-1244
+            prod_inst_master = db.query(ProductInstanceMaster).filter(
+                ProductInstanceMaster.workspace_id == ws,
+                ProductInstanceMaster.configurationitem_id == ci_id,
+                ProductInstanceMaster.serialnumber == sn,
+            ).one_or_none()
+
+            if prod_inst_master is None:
+                errors.append(f"ProductInstanceMasterNotFound: {ci_id}/{sn}")
+                continue
+
+            try:
+                check_write_access(db, prod_inst_master.acl_id, user_login, is_admin, workspace_id=ws)
+            except AccessRightException as e:
+                errors.append(f"AccessRightException: {ci_id}/{sn}: {e}")
+                continue
 
             # 查找已存在的 PathDataMaster
             existing_master = pds.get_path_data_by_path(db, ws, ci_id, sn, pd_path)

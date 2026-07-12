@@ -61,6 +61,9 @@ class DocumentService:
                          folder_path=None, template_id=None, workflow_model_id=None,
                          role_mapping=None, description=None,
                          user_entries=None, user_group_entries=None):
+        from app.services.factory.acl_factory import check_write_access
+        if not check_write_access(db, None, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         existing = db.query(DocumentMaster).filter(
             DocumentMaster.workspace_id == ws,
             DocumentMaster.id == doc_id,
@@ -898,6 +901,9 @@ class DocumentService:
 
     def mark_obsolete(self, db, ws, doc_id, ver, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
+        from app.services.factory.acl_factory import check_write_access
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         if pr.status != 1:
             raise NotAllowedException("NotAllowedException65")
         pr.status = 2
@@ -967,8 +973,11 @@ class DocumentService:
         if t is None:
             db.add(Tag(workspace_id=ws, label=label)); db.flush()
 
-    def set_tags(self, db, ws, doc_id, ver, labels):
+    def set_tags(self, db, ws, doc_id, ver, labels, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
+        from app.services.factory.acl_factory import check_write_access
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         db.execute(document_revision_tags.delete().where(
             document_revision_tags.c.documentmaster_workspace_id == ws,
             document_revision_tags.c.documentmaster_id == doc_id,
@@ -984,8 +993,11 @@ class DocumentService:
         indexer_manager.index_document_revision(pr)  # 对标 saveTags:1007
         return pr
 
-    def add_tag(self, db, ws, doc_id, ver, label):
+    def add_tag(self, db, ws, doc_id, ver, label, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
+        from app.services.factory.acl_factory import check_write_access
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         self._ensure_tag(db, ws, label)
         exists = db.execute(document_revision_tags.select().where(
             document_revision_tags.c.documentmaster_workspace_id == ws,
@@ -1001,8 +1013,11 @@ class DocumentService:
         db.commit(); db.refresh(pr)
         return pr
 
-    def remove_tag(self, db, ws, doc_id, ver, label):
+    def remove_tag(self, db, ws, doc_id, ver, label, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
+        from app.services.factory.acl_factory import check_write_access
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         db.execute(document_revision_tags.delete().where(
             document_revision_tags.c.documentmaster_workspace_id == ws,
             document_revision_tags.c.documentmaster_id == doc_id,
@@ -2253,6 +2268,6 @@ class DocumentService:
             workflow_model_id=workflow_model_id,
         )
         self._ensure_tag(db, ws, tag_label)
-        self.add_tag(db, ws, dr.documentmaster_id, dr.version, tag_label)
+        self.add_tag(db, ws, dr.documentmaster_id, dr.version, tag_label, user_login)
 
         return self.build_revision_dto(db, dr, user_login)

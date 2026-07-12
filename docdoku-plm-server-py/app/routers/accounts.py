@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_global_admin
 from app.core.exceptions import NotAllowedException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
@@ -55,14 +55,16 @@ def list_workspaces(db: Session = Depends(get_db),
 @router.get("/admin/accounts-stats", response_model=AccountStatsDTO)
 @router.get("/admin/accounts-stats/", include_in_schema=False)
 def accounts_stats(db: Session = Depends(get_db),
-                   current_user: Account = Depends(get_current_user)):
+                   current_user: Account = Depends(get_current_user),
+                   _admin: Account = Depends(require_global_admin)):
     return user_mgmt_service.get_accounts_stats(db)
 
 
 @router.get("/admin/workspace-stats", response_model=WorkspaceStatsDTO)
 @router.get("/admin/workspace-stats/", include_in_schema=False)
 def workspace_stats(db: Session = Depends(get_db),
-                    current_user: Account = Depends(get_current_user)):
+                    current_user: Account = Depends(get_current_user),
+                    _admin: Account = Depends(require_global_admin)):
     return user_mgmt_service.get_admin_workspace_stats(db)
 
 

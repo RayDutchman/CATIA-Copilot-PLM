@@ -151,35 +151,40 @@ def put_platform_options(body: dict, db: Session = Depends(get_db),
 @router.get("/admin/disk-usage-stats", response_model=Dict[str, int])
 @router.get("/admin/disk-usage-stats/", include_in_schema=False)
 def admin_disk_usage_stats(db: Session = Depends(get_db),
-                           current_user: Account = Depends(get_current_user)):
+                           current_user: Account = Depends(get_current_user),
+                           _admin: Account = Depends(require_global_admin)):
     return account_service.get_disk_usage_stats(db, current_user.login)
 
 
 @router.get("/admin/users-stats", response_model=Dict[str, int])
 @router.get("/admin/users-stats/", include_in_schema=False)
 def admin_users_stats(db: Session = Depends(get_db),
-                      current_user: Account = Depends(get_current_user)):
+                      current_user: Account = Depends(get_current_user),
+                      _admin: Account = Depends(require_global_admin)):
     return account_service.get_users_stats(db, current_user.login)
 
 
 @router.get("/admin/documents-stats", response_model=Dict[str, int])
 @router.get("/admin/documents-stats/", include_in_schema=False)
 def admin_documents_stats(db: Session = Depends(get_db),
-                          current_user: Account = Depends(get_current_user)):
+                          current_user: Account = Depends(get_current_user),
+                          _admin: Account = Depends(require_global_admin)):
     return account_service.get_documents_stats(db, current_user.login)
 
 
 @router.get("/admin/products-stats", response_model=Dict[str, int])
 @router.get("/admin/products-stats/", include_in_schema=False)
 def admin_products_stats(db: Session = Depends(get_db),
-                         current_user: Account = Depends(get_current_user)):
+                         current_user: Account = Depends(get_current_user),
+                         _admin: Account = Depends(require_global_admin)):
     return account_service.get_products_stats(db, current_user.login)
 
 
 @router.get("/admin/parts-stats", response_model=Dict[str, int])
 @router.get("/admin/parts-stats/", include_in_schema=False)
 def admin_parts_stats(db: Session = Depends(get_db),
-                      current_user: Account = Depends(get_current_user)):
+                      current_user: Account = Depends(get_current_user),
+                      _admin: Account = Depends(require_global_admin)):
     return account_service.get_parts_stats(db, current_user.login)
 
 
@@ -188,7 +193,8 @@ def admin_parts_stats(db: Session = Depends(get_db),
 @router.put("/admin/index/{ws}", status_code=202)
 @router.put("/admin/index/{ws}/", status_code=202, include_in_schema=False)
 def put_index(ws: str, db: Session = Depends(get_db),
-              current_user: Account = Depends(get_current_user)):
+              current_user: Account = Depends(get_current_user),
+              _admin: Account = Depends(require_global_admin)):
     try:
         import elasticsearch
         return {"status": "accepted"}

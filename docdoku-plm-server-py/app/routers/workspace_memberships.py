@@ -77,6 +77,7 @@ def my_group_memberships(ws: str, db: Session = Depends(get_db),
 def add_user(ws: str, body: dict, db: Session = Depends(get_db),
              current_user: Account = Depends(get_current_user),
              group: str = Query(None)):
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
@@ -91,6 +92,7 @@ def add_user(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/remove-from-workspace/", include_in_schema=False)
 def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)

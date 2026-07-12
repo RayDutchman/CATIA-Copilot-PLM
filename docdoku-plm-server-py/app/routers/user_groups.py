@@ -10,6 +10,7 @@ from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
     UserGroupDTO, UserGroupMemberDTO, TagSubscriptionDTO,
 )
+from app.routers.workspace_memberships import _check_workspace_admin
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -33,7 +34,7 @@ def list_groups(ws: str, db: Session = Depends(get_db),
 def create_group(ws: str, body: dict, db: Session = Depends(get_db),
                  
                  current_user: Account = Depends(get_current_user)):
-
+    _check_workspace_admin(db, ws, current_user)
     g = user_mgmt_service.create_group(db, ws, body.get("id", ""))
     return _group_to_dict(g)
 
@@ -43,7 +44,7 @@ def create_group(ws: str, body: dict, db: Session = Depends(get_db),
 def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
                  
                  current_user: Account = Depends(get_current_user)):
-
+    _check_workspace_admin(db, ws, current_user)
     user_mgmt_service.delete_group(db, ws, group_id)
 
 
@@ -60,6 +61,7 @@ def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
                  
                  current_user: Account = Depends(get_current_user)):
     """启用工作组：写入 workspaceusergroupmembership 表"""
+    _check_workspace_admin(db, ws, current_user)
     group_id = body.get("id", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
@@ -72,6 +74,7 @@ def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
 def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
     """禁用工作组：删除 workspaceusergroupmembership 记录"""
+    _check_workspace_admin(db, ws, current_user)
     group_id = body.get("id", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
@@ -85,6 +88,7 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
                      
                      current_user: Account = Depends(get_current_user)):
     """设置工作组访问权限。对齐 Java WorkspaceResource.setGroupAccess → 返回 WorkspaceUserGroupMemberShipDTO（workspaceId/memberId/readOnly）"""
+    _check_workspace_admin(db, ws, current_user)
     group_id = body.get("member", {}).get("id", "") or body.get("memberId", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
