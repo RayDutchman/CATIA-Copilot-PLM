@@ -12,9 +12,9 @@
 
 > **修复进行中**。初判 10C/34H → 复核后 **6 CRITICAL / 29 HIGH / 40 MED / 24 LOW**。
 >
-> **✅ 批次 1~4 已完成（2026-07-12）：6 CRITICAL + 29 HIGH 全部修复**（commits：批1 c27547c、批2、批3、批4）。每批 subagent 并行改文件包 + 主 agent review/部署/pytest(279 passed)/smoke/commit。主 agent 修复的 subagent 隐患：批2 误用 account.isadmin（改 usergroupmapping）、批3 task_manager.py 缩进回归（语法错误）、批4 更新 stub 测试。
-> **⏳ 批次 5（待排期）：40 MED + 24 LOW 收尾**——状态码 204 对齐、DTO 字段/null 语义、死代码清理、幂等等，详见各域报告 MED/LOW 清单 + FIX-PLAN 批次 5。
+> **✅ 批次 1~5 已完成（2026-07-12）：6 CRITICAL + 29 HIGH + 40 MED 全部处理**（24 LOW 未列入，用户指定只修到 MED）。每批 subagent 并行改文件包 + 主 agent review/部署/pytest(279 passed，含 test_i18n_bypass)/smoke/commit。主 agent 纠正的 subagent 隐患：批2 误用 account.isadmin；批3 task_manager.py 缩进回归；批4 更新 stub 测试；批5 回退 P1-06/07 null 语义（Payara 复核）、修 document_templates.py 语法错误、改回 3 处硬编码 HTTPException 为领域异常（i18n）、修 P1-09 越界。
 > **未实现留 TODO（notifier 无接口）**：P6-08/P6-01 workflow 审批通知邮件。
+> **剩余**：24 LOW（状态码/DTO 冗余/死代码/风格），另行排期。
 
 ### 🔴 全量审计发现（2026-07-11，见 docs/migration/audit/00-index.md，共 26 CRITICAL）
 

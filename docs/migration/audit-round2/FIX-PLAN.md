@@ -170,7 +170,12 @@
 - **死代码/风格/幂等**：P3-08（document_baseline_manager 用不存在列）、P7-10（importer docstring 过时）、P7-02（BOM stub 加注释说明 Java 亦无实现）、P8-01（layer marker 删除顺序，或标注为对齐 Java 死代码）、P5-13（权限函数重复 5 处）、P6-14（SELECT * 索引取值）、P6-15（无界缓存）、P7-12（import 子表幂等）。
 
 ### 主 agent 批 5 收尾
-- [ ] 按域报告逐文件包并行修 → review → 部署 → 全量 pytest 无新增 fail → 抽样对拍 → commit → 更新文档。
+- [x] 按域报告逐文件包并行修（2 波：域1-4 / 域5-8）→ review → 部署 → 全量 pytest 无新增 fail（279 passed/1 skipped，含 test_i18n_bypass）→ 抽样对拍 → commit → 更新文档。
+  > **实际修复 40 MED 中的绝大多数**（部分为 no-op/注释标注：P2-09 已对齐、P3-06 已存在、P7-05/P7-07/P8-07 加注释、P2-10 vault 路径已对齐）。
+  > **主 agent 纠正的 subagent 隐患**：① 域1 P1-06/P1-07 null 语义改动经 Payara 复核后回退（front-compat 风险、低价值）；② 域4 document_templates.py dict 推导式语法错误（2 处）修复；③ **域1 P1-05/P1-03 硬编码 `raise HTTPException` 违反 i18n 约定**（P1-03 甚至替换掉了原有领域异常）→ 改回 NotAllowedException/PartMasterNotFoundException/PartIterationNotFoundException（test_i18n_bypass 因用位置参数而漏检，主 agent 手工 grep 揪出）；④ 域1 P1-09 越界改了 product_manager.py（无并发冲突，改动正确）。
+  > commits: 批5波1、`part.py i18n fix`、批5波2。
+
+> **🎉 audit-round2 批次 1~5 全部完成**：6 CRITICAL + 29 HIGH + 40 MED 已处理；24 LOW 未列入本轮（用户指定只修到 MED）。
 
 ---
 

@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-07-12 — fix: audit-round2 批次 5 修复（40 MED，仅到 MED）
+
+> FIX-PLAN 批次 5，2 波各 4 个域 subagent（文件不相交）+ 主 agent review/纠错。pytest 279 passed/1 skipped（含 test_i18n_bypass）。用户指定只修 MED，24 LOW 不列入。
+
+- **域1 Parts**：P1-01 set_tags 500 修复、P1-03 filter 单 PartIterationDTO+404、P1-05 removeFile subresource、P1-08 TODO、P1-09 add_tag 写权限。
+- **域2 Products**：P2-07 list_product_instances 完整 DTO、P2-08 filter linkType、P2-10 vault 路径对齐 product-instances/{sn}。
+- **域3 Baselines**：P3-04 put_effectivity 200+DTO、P3-05 delete_baseline 204。
+- **域4 Documents**：P4-03 undo admin 覆盖、P4-10 routePath String、P4-11 create_in_folder 字段透传、P4-12 attributesLocked、P4-13 修 NameError+userGroupEntriesMap、P4-14 批量 commit。
+- **域5 Workspace**：P5-08 去 creationDate 噪音、P5-09 deleteWorkspace 202、P5-10 +readOnly、P5-11 getReachableUsers→UserDTO。
+- **域6 Workflow**：P6-10 list_models 权限、P6-11 assignedGroups、P6-12 STATUS_MAP +NOT_TO_BE_DONE、P6-13 change set_tags 权限接线。
+- **域7 Query/Importer**：P7-04 LOV 表头不 fall-through、P7-06 query-export 真 XLSX、P7-08 多值补空属性、P7-09 post_import pathdata 分支。
+- **域8 Crosscutting**：P8-01 删死代码 marker DELETE、P8-04 password recovery 写 request、P8-05 lov 写权限、P8-06 isLOVDeletable 查零件迭代使用。
+- **主 agent 纠错**：回退 P1-06/P1-07（null 语义 front 风险，Payara 复核后）；修 document_templates.py 语法错误；**改回 3 处硬编码 raise HTTPException 为领域异常**（P1-05/P1-03，违反 i18n 约定，test_i18n_bypass 因位置参数漏检）；P1-09 越界改 product_manager.py（无冲突）。
+
+> **🎉 audit-round2 批次 1~5 全部完成：6 CRITICAL + 29 HIGH + 40 MED**。
+
+---
+
 ## 2026-07-12 — fix: audit-round2 批次 4 修复（8 products/query HIGH）
 
 > FIX-PLAN 批次 4，3 并行 subagent + 主 agent 更新 stub 测试。pytest 279 passed/1 skipped。
