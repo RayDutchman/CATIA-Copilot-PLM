@@ -276,6 +276,10 @@ async def main_loop() -> None:
         max_poll_records=1,
         # value 保留原始 bytes，由我们手动 JSON 解析
         value_deserializer=None,
+        # 防止同步转换阻塞导致心跳超时 → session 过期 → commit 失败 → infinite loop
+        session_timeout_ms=60000,       # 默认 10s → 60s（转换耗时 ~31s）
+        heartbeat_interval_ms=10000,    # 默认 3s → 10s
+        max_poll_interval_ms=300000,    # 显式声明（默认即为 5min）
     )
 
     await consumer.start()
