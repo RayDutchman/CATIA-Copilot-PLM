@@ -316,7 +316,7 @@ class PathDataService:
         db.execute(text(
             "INSERT INTO prdinstiteration_pathdatamstr "
             "(workspace_id, configurationitem_id, prdinstancemaster_serialnumber, "
-            "iteration, pathdatamaster_id) "
+            "prdinstanceiteration_iteration, pathdatamaster_id) "
             "VALUES (:ws, :ci, :sn, :it, :mid) "
             "ON CONFLICT DO NOTHING"
         ), {"ws": ws, "ci": ci_id, "sn": sn,

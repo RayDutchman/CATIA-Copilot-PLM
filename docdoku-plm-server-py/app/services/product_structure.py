@@ -944,24 +944,35 @@ class ProductStructureService:
                     "pcid": pc_id})
         # effectivity(2/3/4) 的迭代选择已上移至 ProductBaselineService._create_effectivity_baseline
         # （config-spec + PSFilterVisitor 驱动），此处仅按传入的 baselined_parts 落库
+
+        def _normalize_path(p) -> str | None:
+            """将链接元素统一为路径字符串（兼容 str 入参和历史 dict 入参）。
+            对齐 Java baseline.addSubstituteLink(pathStr)/addOptionalUsageLink(pathStr) 的
+            @ElementCollection 语义（存路径字符串到 productbaseline_substitutelink/_optionallink）。"""
+            if isinstance(p, str):
+                return p
+            if isinstance(p, dict):
+                return p.get("fullPath") or p.get("path")
+            return None
+
         if substitute_links:
             for sl in substitute_links:
-                db.execute(text(
-                    "INSERT INTO partsubstitutelink "
-                    "(component_workspace_id, component_partnumber, "
-                    "substitute_workspace_id, substitute_partnumber) "
-                    "VALUES (:cws, :cpn, :sws, :spn)"
-                ), {"cws": ws, "cpn": sl.get("partNumber", ""),
-                    "sws": ws, "spn": sl.get("substitutePartNumber", "")})
+                path = _normalize_path(sl)
+                if path:
+                    db.execute(text(
+                        "INSERT INTO productbaseline_substitutelink "
+                        "(productbaseline_id, substitutelinks) "
+                        "VALUES (:bid, :path)"
+                    ), {"bid": bl.id, "path": path})
         if optional_usage_links:
             for ol in optional_usage_links:
-                db.execute(text(
-                    "UPDATE partusagelink SET optional = true "
-                    "WHERE component_workspace_id = :ws "
-                    "AND component_partnumber = :pn "
-                    "AND component_partversion = :ver"
-                ), {"ws": ws, "pn": ol.get("partNumber", ""),
-                    "ver": ol.get("version", "A")})
+                path = _normalize_path(ol)
+                if path:
+                    db.execute(text(
+                        "INSERT INTO productbaseline_optionallink "
+                        "(productbaseline_id, optionalusagelinks) "
+                        "VALUES (:bid, :path)"
+                    ), {"bid": bl.id, "path": path})
         db.commit(); db.refresh(bl)
         return bl
 
