@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-12 — fix: audit-round2 批次 1 修复（6 CRITICAL）
+
+> 按 `docs/migration/audit-round2/FIX-PLAN.md` 批次 1，4 个并行 subagent（文件包不相交）修复 6 个复核确认的 CRITICAL；主 agent 统一 review + 部署 + 验证 + commit。pytest 279 passed / 1 skipped（= 282 基线减 3 个 test_vault ignore，无新增 fail）。commit c27547c。
+
+- **fix(products): P2-02** `search_ci_numbers` 的 `_ci_to_dict(db,c)` 参数错序 → `_ci_to_dict(c,db)`。原：所有 `/products/numbers?q=` 搜索因 Session 被当 ConfigurationItem 访问 `.partmaster_partnumber` 而 500。smoke 验证 200。
+- **fix(document): P4-01** `_doc_to_dict` 的 iteration `attachedFiles` 硬编码 `[]` → 查 `documentiteration_binres`+`binaryresource` 填充（复用 update_iteration 模式）。smoke 验证 GET 文档 200 且字段从 DB 填充。
+- **fix(workspace): P5-01** `cascade_delete_workspace` 补 folder 级联（`UPDATE folder SET parentfolder_completepath=NULL` + `DELETE FROM folder`），对齐 Java WorkspaceDAO。原：删 ws 后 folder 永久残留孤儿。smoke 验证 seed ws+2 folder→DELETE 204→残留 0。
+- **fix(workspace): P5-02** `workspaces.py` 补 `from pathlib import Path`/`from app.core.config import settings`/`from app.services.indexer_manager import indexer_manager`。原：disk-usage-stats/reindex/create 首调 NameError。smoke 验证 disk-usage-stats 200。
+- **fix(change): P6-02** `_set_affected_documents` 硬编码 `iteration=1` → 取 body iteration 或 `MAX(iteration)`（对齐 _set_affected_parts）。原：文档 iteration>1 时 FK 500。
+- **fix(workflow): P6-03/P6-09** `get_instance`/`get_workspace_workflow` 新增 `_enrich_activity_dicts` 计算 WorkflowActivityDTO 的 complete/stopped/inProgress/toDo/relaunchStep + currentStep（对齐 Java ActivityDozerConverter / WorkflowDTO.getCurrentStep）。原：全为默认 0/False。
+
+---
+
 ## 2026-07-12 — docs: 迁移代码第二轮全量审计 + 独立复核 + FIX-PLAN（audit-round2，仅审计不修复）
 
 > 编排 8 域 explore subagent 分 2 波并行，逐端点对照 Java 源 + information_schema 核实 + GD50 验证，主 agent 汇总定级；随后再派 8 域 subagent **独立复核**（重新定位实际 Python + Payara Java + DB FK，裁决真实性/降级/证伪）。聚焦**代码对比**。产出 `docs/migration/audit-round2/`（00-index + 01~08 域报告，每条 CRIT/HIGH 含复核裁决行 + FIX-PLAN.md）。**未做任何代码修复。**

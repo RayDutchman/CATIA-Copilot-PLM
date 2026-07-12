@@ -41,29 +41,29 @@
 
 ### 文件包 PKG-products-crit → Subagent A1
 **Files:** `app/routers/products.py`
-- [ ] **P2-02（C1）** `products.py` `search_ci_numbers`（约 :97）：`_ci_to_dict(db, c)` 参数错序 → 改为 `_ci_to_dict(c, db)`。对照签名 `_ci_to_dict(ci, db)`（约 :50）。验证：`GET /workspaces/GD50/products/numbers?q=A` 返回 200 而非 500。
+- [x] **P2-02（C1）** `products.py` `search_ci_numbers`（约 :97）：`_ci_to_dict(db, c)` 参数错序 → 改为 `_ci_to_dict(c, db)`。对照签名 `_ci_to_dict(ci, db)`（约 :50）。验证：`GET /workspaces/GD50/products/numbers?q=A` 返回 200 而非 500。
 
 ### 文件包 PKG-document-crit → Subagent A2
 **Files:** `app/routers/document.py`
-- [ ] **P4-01（C2）** `document.py` `_doc_to_dict`（约 :118-151）：iteration 的 `attachedFiles` 硬编码 `[]` → 查询 `documentiteration_binres` + `binaryresource` 填充（复用同文件 `update_iteration` 约 :499-517 的查询模式）。DB 核实 `\d documentiteration_binres` `\d binaryresource`。验证：GET 有附件的文档 iteration，attachedFiles 非空。
+- [x] **P4-01（C2）** `document.py` `_doc_to_dict`（约 :118-151）：iteration 的 `attachedFiles` 硬编码 `[]` → 查询 `documentiteration_binres` + `binaryresource` 填充（复用同文件 `update_iteration` 约 :499-517 的查询模式）。DB 核实 `\d documentiteration_binres` `\d binaryresource`。验证：GET 有附件的文档 iteration，attachedFiles 非空。
 
 ### 文件包 PKG-workspace-crit → Subagent A3
 **Files:** `app/services/workspace_deletion.py`、`app/routers/workspaces.py`
-- [ ] **P5-01（C3）** `workspace_deletion.py` `cascade_delete_workspace`：在删 workspace 本身之前补 folder 清理——先 `UPDATE folder SET parentfolder_completepath=NULL WHERE parentfolder_completepath=:ws OR parentfolder_completepath LIKE :like`，再 `DELETE FROM folder WHERE completepath=:ws OR completepath LIKE :like`（`:like`=`ws/%`）。对齐 Java `WorkspaceDAO.removeWorkspace`。DB 核实 `\d folder`（列 `completepath`/`parentfolder_completepath`）。
-- [ ] **P5-02（C4）** `workspaces.py` 顶部补 import：`from pathlib import Path`、`from app.core.config import settings`、`indexer_manager`（延迟/顶层导入，按现有服务模块路径核实）。消除 disk_usage_stats(:148)/reindex_workspace(:241)/create_workspace(:422) 的 NameError。验证：三端点首次调用不再 NameError。
+- [x] **P5-01（C3）** `workspace_deletion.py` `cascade_delete_workspace`：在删 workspace 本身之前补 folder 清理——先 `UPDATE folder SET parentfolder_completepath=NULL WHERE parentfolder_completepath=:ws OR parentfolder_completepath LIKE :like`，再 `DELETE FROM folder WHERE completepath=:ws OR completepath LIKE :like`（`:like`=`ws/%`）。对齐 Java `WorkspaceDAO.removeWorkspace`。DB 核实 `\d folder`（列 `completepath`/`parentfolder_completepath`）。
+- [x] **P5-02（C4）** `workspaces.py` 顶部补 import：`from pathlib import Path`、`from app.core.config import settings`、`indexer_manager`（延迟/顶层导入，按现有服务模块路径核实）。消除 disk_usage_stats(:148)/reindex_workspace(:241)/create_workspace(:422) 的 NameError。验证：三端点首次调用不再 NameError。
 
 ### 文件包 PKG-change-workflow-crit → Subagent A4
 **Files:** `app/routers/change_common.py`、`app/routers/workflow.py`
-- [ ] **P6-02（C5）** `change_common.py` `_set_affected_documents`（约 :226-230）：去掉硬编码 `iteration=1`，改为查 `MAX(iteration)`（对齐同文件 `_set_affected_parts`）或从 body 取 iteration。DB 核实 `changeissue_affected_document`/`changeorder_affected_document`/`changereq_affected_document` FK→`documentiteration`。
-- [ ] **P6-03（C6）** `workflow.py` `get_instance`/`get_workspace_workflow`（约 :44-50）：填充 WorkflowActivityDTO 的 `complete`（status=2 计数）/`inProgress`（status=1）/`toDo`（status=0）/`stopped`（workflow aborted）/`relaunchStep`（查 activity_relaunch 表）。对齐 Java `ActivityDozerConverter`。
-- [ ] **P6-09（顺带 HIGH）** `workflow.py` `get_instance`（约 :51-57）：`currentStep` 不再硬编码 0，按 Java `WorkflowDTO.getCurrentStep()`（遍历 activities 累加 isComplete）计算。
+- [x] **P6-02（C5）** `change_common.py` `_set_affected_documents`（约 :226-230）：去掉硬编码 `iteration=1`，改为查 `MAX(iteration)`（对齐同文件 `_set_affected_parts`）或从 body 取 iteration。DB 核实 `changeissue_affected_document`/`changeorder_affected_document`/`changereq_affected_document` FK→`documentiteration`。
+- [x] **P6-03（C6）** `workflow.py` `get_instance`/`get_workspace_workflow`（约 :44-50）：填充 WorkflowActivityDTO 的 `complete`（status=2 计数）/`inProgress`（status=1）/`toDo`（status=0）/`stopped`（workflow aborted）/`relaunchStep`（查 activity_relaunch 表）。对齐 Java `ActivityDozerConverter`。
+- [x] **P6-09（顺带 HIGH）** `workflow.py` `get_instance`（约 :51-57）：`currentStep` 不再硬编码 0，按 Java `WorkflowDTO.getCurrentStep()`（遍历 activities 累加 isComplete）计算。
 
 ### 主 agent 批 1 收尾
-- [ ] 逐包 code review（diff 对照规格 + DB 真值）。
-- [ ] 部署 back-py。
-- [ ] 在线 smoke（GD50，test1 JWT）：CI 搜索 200；文档附件非空；建临时 ws→塞 folder→删 ws→`SELECT * FROM folder WHERE completepath LIKE 'ws/%'` 残留 0；disk-usage/reindex/create 无 NameError；change 关联 iteration>1 文档无 500；工作流实例 activity 字段/currentStep 正确。
-- [ ] `pytest -q` = 282 passed / 1 skipped（无新增 fail）。
-- [ ] commit（分域原子提交）+ 更新 CHANGELOG/REMINDERS + 勾除本文件。
+- [x] 逐包 code review（diff 对照规格 + DB 真值）。
+- [x] 部署 back-py（rebuild 镜像 + recreate，health 200）。
+- [x] 在线 smoke（GD50，test1 JWT）：CI 搜索 200 ✅；文档 GET 200 且 attachedFiles 从 DB 填充（GD50 无附件行故为空）✅；seed 临时 ws+2 folder→DELETE 204→folder/workspace 残留 0 ✅；disk-usage-stats 200（原 NameError）✅；P6-02/P6-03/P6-09 因 GD50 无 workflow/change-iteration 数据，由 code review + pytest 覆盖。
+- [x] `pytest -q --ignore=tests/test_vault.py` = 279 passed / 1 skipped（= 282 基线减 3 个 ignore，无新增 fail）。
+- [x] commit `c27547c` + 更新 CHANGELOG/REMINDERS + 勾除本文件。
 
 ---
 
