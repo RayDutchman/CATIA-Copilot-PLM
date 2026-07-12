@@ -24,8 +24,37 @@ class LOVService:
             raise EntityNotFoundException("ListOfValuesNotFoundException", lov_name)
         return dict(row._mapping)
 
+    def get_lovs_with_values(self, db: Session, ws: str) -> dict:
+        """获取workspace所有LOV及其值，返回 {name: [{name, value}]}"""
+        rows = db.execute(text(
+            "SELECT l.name FROM lov l WHERE l.workspace_id = :ws ORDER BY l.name"
+        ), {"ws": ws}).fetchall()
+        result = {}
+        for r in rows:
+            name = r[0]
+            nv_rows = db.execute(text(
+                "SELECT nv.name, nv.value FROM lov_namevalue nv "
+                "WHERE nv.lov_name = :name AND nv.lov_workspace_id = :ws "
+                "ORDER BY nv.namevalue_order"
+            ), {"name": name, "ws": ws}).fetchall()
+            result[name] = [{"name": n[0], "value": n[1]} for n in nv_rows]
+        return result
+
+    def lov_exists(self, db: Session, ws: str, lov_name: str) -> bool:
+        """检查指定workspace中是否存在指定名称的LOV。"""
+        return db.execute(text(
+            "SELECT 1 FROM lov WHERE name = :name AND workspace_id = :ws"
+        ), {"name": lov_name, "ws": ws}).first() is not None
+
     def create_lov(self, db: Session, ws: str, name: str,
-                    name_value_pairs: list) -> dict:
+                    name_value_pairs: list, check_exists: bool = True) -> dict:
+        if check_exists:
+            existing = db.execute(text(
+                "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
+            ), {"name": name, "ws": ws}).fetchone()
+            if existing:
+                from app.core.exceptions import EntityAlreadyExistsException
+                raise EntityAlreadyExistsException("LOVAlreadyExistsException", name)
         db.execute(text(
             "INSERT INTO lov (workspace_id, name) VALUES (:ws, :n) "
             "ON CONFLICT (workspace_id, name) DO NOTHING"
@@ -41,6 +70,9 @@ class LOVService:
         return self.find_lov(db, ws, name)
 
     def delete_lov(self, db: Session, ws: str, lov_name: str) -> None:
+        db.execute(text(
+            "DELETE FROM lov_namevalue WHERE lov_name = :n AND lov_workspace_id = :ws"
+        ), {"n": lov_name, "ws": ws})
         db.execute(text(
             "DELETE FROM lov WHERE workspace_id = :ws AND name = :n"
         ), {"ws": ws, "n": lov_name})
@@ -63,6 +95,18 @@ class LOVService:
                 "ord": nvp.get("order", 0)})
         db.commit()
         return self.find_lov(db, ws, new_name)
+
+    def build_lov_dto(self, db: Session, ws: str, lov_row: dict) -> dict:
+        """将 lov 行 + 关联 namevalues 组装成 DTO。"""
+        attrs = db.execute(text(
+            "SELECT name, value FROM lov_namevalue "
+            "WHERE lov_workspace_id = :ws AND lov_name = :n ORDER BY namevalue_order"
+        ), {"ws": ws, "n": lov_row["name"]}).fetchall()
+        return {
+            "name": lov_row["name"],
+            "workspaceId": lov_row["workspace_id"],
+            "values": [{"name": r[0], "value": r[1]} for r in attrs],
+        }
 
     def is_lov_deletable(self, db: Session, ws: str, lov_name: str) -> bool:
         """对齐 Java isLOVDeletable：检查 LOV 是否被任何模板或实际零件迭代引用。"""

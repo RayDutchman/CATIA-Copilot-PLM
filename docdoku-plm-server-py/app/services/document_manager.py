@@ -59,7 +59,8 @@ class DocumentService:
 
     def create_document(self, db, ws, doc_id, title, user_login,
                          folder_path=None, template_id=None, workflow_model_id=None,
-                         role_mapping=None):
+                         role_mapping=None, description=None,
+                         user_entries=None, user_group_entries=None):
         existing = db.query(DocumentMaster).filter(
             DocumentMaster.workspace_id == ws,
             DocumentMaster.id == doc_id,
@@ -105,6 +106,8 @@ class DocumentService:
             author_workspace_id=ws, author_login=user_login,
             checkout_user_workspace_id=ws, checkout_user_login=user_login,
             check_out_date=now)
+        if description:
+            rev.description = description
         if workflow_model_id:
             from app.services.workflow_manager import workflow_service
             workflow = workflow_service.instantiate_workflow(
@@ -122,6 +125,13 @@ class DocumentService:
         if template_id:
             self._copy_template_instance_attrs(db, ws, template_id, doc_id)
             self._copy_template_files(db, ws, template_id, doc_id)
+
+        if user_entries or user_group_entries:
+            from app.services.factory.acl_factory import apply_acl
+            acl_id = getattr(rev, "acl_id", None)
+            new_acl_id = apply_acl(db, acl_id or None, user_entries or {}, user_group_entries or {})
+            if getattr(rev, "acl_id", None) != new_acl_id:
+                rev.acl_id = new_acl_id
 
         db.commit(); db.refresh(rev)
         return rev
@@ -1017,6 +1027,106 @@ class DocumentService:
             result.extend(m.revisions)
         return result
 
+    def resolve_es_document_keys(self, db, ws, keys: list):
+        """解析 ES 返回的迭代级 key: '{docMId}-{version}-{iteration}' → DocumentRevision 列表（按 revision 去重）。"""
+        from sqlalchemy.orm import joinedload
+        from sqlalchemy import or_, and_
+        seen = set()
+        rev_keys = []
+        for k in keys:
+            parts = k.rsplit("-", 2)
+            if len(parts) >= 2:
+                dv = (parts[0], parts[1])
+                if dv not in seen:
+                    seen.add(dv)
+                    rev_keys.append(dv)
+        if not rev_keys:
+            return []
+        conditions = [
+            (DocumentRevision.workspace_id == ws) &
+            (DocumentRevision.documentmaster_id == dv[0]) &
+            (DocumentRevision.version == dv[1])
+            for dv in rev_keys
+        ]
+        revisions = db.query(DocumentRevision).options(
+            joinedload(DocumentRevision.iterations),
+        ).filter(or_(*conditions)).all()
+        rev_map = {(dr.documentmaster_id, dr.version): dr for dr in revisions}
+        return [rev_map[k] for k in rev_keys if k in rev_map]
+
+    def search_documents_sql(self, db, ws, q=None, doc_id=None, title=None,
+                               version=None, author=None, tags=None, content=None,
+                               createdFrom=None, createdTo=None,
+                               modifiedFrom=None, modifiedTo=None,
+                               start=0, size=20):
+        """SQL LIKE 回退搜索（ES 失败时使用），从 router 内联 DB 迁入。"""
+        from sqlalchemy import or_, text as sql_text
+        from datetime import datetime
+
+        query = db.query(DocumentRevision).join(
+            DocumentMaster,
+            (DocumentRevision.workspace_id == DocumentMaster.workspace_id) &
+            (DocumentRevision.documentmaster_id == DocumentMaster.id)
+        ).filter(DocumentMaster.workspace_id == ws)
+        if q:
+            q_pattern = f"%{q}%"
+            query = query.filter(or_(
+                DocumentMaster.id.ilike(q_pattern),
+                DocumentRevision.title.ilike(q_pattern),
+            ))
+        if doc_id:
+            query = query.filter(DocumentMaster.id.ilike(f"%{doc_id}%"))
+        if title:
+            query = query.filter(DocumentRevision.title.ilike(f"%{title}%"))
+        if version:
+            query = query.filter(DocumentRevision.version == version)
+        if author:
+            query = query.filter(DocumentRevision.author_login == author)
+        if tags:
+            matched_ids = [row[0] for row in db.execute(sql_text(
+                "SELECT dr.documentmaster_id FROM documentrevision dr "
+                "JOIN documentrevision_tag t ON dr.documentmaster_id=t.documentmaster_id "
+                "AND dr.version=t.documentrevision_version "
+                "WHERE t.tag_label ILIKE :t AND dr.workspace_id=:w"
+            ), {"t": f"%{tags}%", "w": ws}).fetchall()]
+            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+        if content:
+            matched_ids = [row[0] for row in db.execute(sql_text(
+                "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
+                "WHERE di.workspace_id = :w AND di.revisionnote ILIKE :c"
+            ), {"w": ws, "c": f"%{content}%"}).fetchall()]
+            if matched_ids:
+                query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+            else:
+                query = query.filter(DocumentRevision.documentmaster_id == None)
+        if createdFrom:
+            cf = datetime.fromisoformat(createdFrom)
+            query = query.filter(DocumentRevision.creation_date >= cf)
+        if createdTo:
+            ct = datetime.fromisoformat(createdTo)
+            query = query.filter(DocumentRevision.creation_date <= ct)
+        if modifiedFrom:
+            mf = datetime.fromisoformat(modifiedFrom)
+            matched_ids = [row[0] for row in db.execute(sql_text(
+                "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
+                "WHERE di.workspace_id = :w AND di.modificationdate >= :d"
+            ), {"w": ws, "d": mf}).fetchall()]
+            if matched_ids:
+                query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+            else:
+                query = query.filter(DocumentRevision.documentmaster_id == None)
+        if modifiedTo:
+            mt = datetime.fromisoformat(modifiedTo)
+            matched_ids = [row[0] for row in db.execute(sql_text(
+                "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
+                "WHERE di.workspace_id = :w AND di.modificationdate <= :d"
+            ), {"w": ws, "d": mt}).fetchall()]
+            if matched_ids:
+                query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
+            else:
+                query = query.filter(DocumentRevision.documentmaster_id == None)
+        return query.order_by(DocumentMaster.id).offset(start).limit(size).all()
+
     def list_checked_out(self, db, ws):
         return db.query(DocumentRevision).filter(
             DocumentRevision.workspace_id == ws,
@@ -1909,3 +2019,240 @@ class DocumentService:
             pass
         db.commit()
         return {"fullName": new_full, "name": new_name}
+
+    # ── tag CRUD ────────────────────────────────────────────────
+
+    def get_all_tags(self, db, ws):
+        from app.models.part import Tag
+        tags = db.query(Tag).filter(Tag.workspace_id == ws).all()
+        return [{"id": t.label, "label": t.label, "workspaceId": ws} for t in tags]
+
+    def create_tag(self, db, ws, label):
+        from app.models.part import Tag
+        existing = db.query(Tag).filter(
+            Tag.workspace_id == ws, Tag.label == label
+        ).first()
+        if existing is None:
+            db.add(Tag(workspace_id=ws, label=label))
+            db.commit()
+        return {"id": label, "label": label, "workspaceId": ws}
+
+    def create_tags_batch(self, db, ws, labels):
+        from app.models.part import Tag
+        for label in labels:
+            if not label:
+                continue
+            existing = db.query(Tag).filter(
+                Tag.workspace_id == ws, Tag.label == label
+            ).first()
+            if existing is None:
+                db.add(Tag(workspace_id=ws, label=label))
+        db.commit()
+
+    def delete_tag(self, db, ws, label):
+        db.execute(sql_text("DELETE FROM documentrevision_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        db.execute(sql_text("DELETE FROM partrevision_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        db.execute(sql_text("DELETE FROM changeissue_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        db.execute(sql_text("DELETE FROM changeorder_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        db.execute(sql_text("DELETE FROM changerequest_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        db.execute(sql_text("DELETE FROM tagusersubscription WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        db.execute(sql_text("DELETE FROM tagusergroupsubscription WHERE tag_label=:label AND tag_workspace_id=:ws"),
+                   {"label": label, "ws": ws})
+        result = db.execute(
+            sql_text("DELETE FROM tag WHERE label=:label AND workspace_id=:ws"),
+            {"label": label, "ws": ws},
+        )
+        if result.rowcount:
+            db.commit()
+
+    def get_documents_by_tag(self, db, ws, tag_label, current_user_login=None):
+        from app.models.document import DocumentRevision, document_revision_tags
+        revisions = db.query(DocumentRevision).join(
+            document_revision_tags,
+            (DocumentRevision.workspace_id == document_revision_tags.c.documentmaster_workspace_id)
+            & (DocumentRevision.documentmaster_id == document_revision_tags.c.documentmaster_id)
+            & (DocumentRevision.version == document_revision_tags.c.documentrevision_version)
+        ).filter(
+            DocumentRevision.workspace_id == ws,
+            document_revision_tags.c.tag_label == tag_label,
+        ).all()
+        return [self.build_revision_dto(db, dr, current_user_login) for dr in revisions]
+
+    # ── move folder ─────────────────────────────────────────────
+
+    def get_folder(self, db, completepath):
+        return db.query(Folder).filter(Folder.completepath == completepath).first()
+
+    def move_folder(self, db, ws, folder_id, new_parent, user_login):
+        from app.core.exceptions import NotAllowedException, EntityAlreadyExistsException, FolderNotFoundException
+        from fastapi import HTTPException
+
+        folder = db.query(Folder).filter(Folder.completepath == folder_id).first()
+        if not folder:
+            raise FolderNotFoundException("FolderNotFoundException", folder_id)
+        if self._is_root_folder(folder_id):
+            raise NotAllowedException("NotAllowedException21")
+        if self._is_home_folder(folder_id):
+            raise NotAllowedException("NotAllowedException21")
+        if self._is_another_user_home_folder(user_login, folder_id):
+            raise NotAllowedException("NotAllowedException21")
+
+        def _parse_workspace_id(path: str) -> str:
+            idx = path.find("/")
+            return path[:idx] if idx != -1 else path
+
+        if _parse_workspace_id(new_parent) != ws:
+            raise NotAllowedException("NotAllowedException23")
+
+        old_prefix = folder.completepath
+        old_name = old_prefix.split('/')[-1]
+        new_path = f"{new_parent}/{old_name}" if new_parent else old_name
+        existing = db.query(Folder).filter(Folder.completepath == new_path).first()
+        if existing:
+            raise EntityAlreadyExistsException("FolderAlreadyExistsException", new_path)
+
+        rows = db.query(Folder).filter(Folder.completepath.like(f"{old_prefix}%")).all()
+        for f in rows:
+            f.completepath = f.completepath.replace(old_prefix, new_path, 1)
+            if f.parentfolder_completepath:
+                f.parentfolder_completepath = f.parentfolder_completepath.replace(old_prefix, new_path, 1)
+
+        docs = db.query(DocumentRevision).filter(
+            DocumentRevision.location_completepath.like(f"{old_prefix}%")
+        ).all()
+        for doc in docs:
+            doc.location_completepath = doc.location_completepath.replace(old_prefix, new_path, 1)
+
+        db.commit()
+
+    # ── document template DTO ───────────────────────────────────
+
+    def _build_template_acl_dict(self, db, acl_id):
+        if not acl_id:
+            return {}
+        acl_obj = db.query(ACL).filter(ACL.id == acl_id).first()
+        user_entries = []
+        group_entries = []
+        if acl_obj:
+            user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+        perm_map = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+        return {
+            "userEntries": [{"key": e.principal_login, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in user_entries],
+            "groupEntries": [{"key": e.principal_id, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in group_entries],
+            "userEntriesMap": {e.principal_login: perm_map.get(e.permission, "FORBIDDEN") for e in user_entries},
+            "userGroupEntriesMap": {e.principal_id: perm_map.get(e.permission, "FORBIDDEN") for e in group_entries},
+        }
+
+    def build_template_dto(self, db, t):
+        author = None
+        if t.author_login:
+            acc = db.query(Account).filter(Account.login == t.author_login).first()
+            author = {
+                "login": t.author_login,
+                "name": acc.name if acc else t.author_login,
+                "email": acc.email if acc else None,
+                "language": acc.language if acc else None,
+                "workspaceId": t.workspace_id,
+            }
+        acl = self._build_template_acl_dict(db, t.acl_id)
+        return {
+            "id": t.id, "workspaceId": t.workspace_id,
+            "documentType": t.document_type, "mask": t.mask,
+            "idGenerated": t.id_generated,
+            "attributesLocked": t.attributes_locked,
+            "author": author or {},
+            "acl": acl or {},
+            "creationDate": str(t.creation_date) if t.creation_date else None,
+            "attachedFiles": [],
+            "attributeTemplates": [],
+        }
+
+    def list_templates_dto(self, db, ws):
+        templates = self.list_templates(db, ws)
+        return [self.build_template_dto(db, t) for t in templates]
+
+    def get_template_dto(self, db, ws, template_id):
+        t = self.get_template(db, ws, template_id)
+        return self.build_template_dto(db, t)
+
+    def update_template_with_attrs(self, db, ws, template_id, body):
+        from datetime import datetime
+        t = self.get_template(db, ws, template_id)
+        for field in ("documentType", "mask", "idGenerated"):
+            if field in body:
+                col = "document_type" if field == "documentType" else (
+                    "mask" if field == "mask" else "id_generated")
+                setattr(t, col, body[field])
+        if "workflowModelId" in body:
+            t.workflowmodel_id = body["workflowModelId"]
+        if "attributeTemplates" in body:
+            db.execute(sql_text(
+                "DELETE FROM documentmastertemplate_attr "
+                "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+            ), {"ws": ws, "tid": template_id})
+            for order, attr in enumerate(body["attributeTemplates"]):
+                attr_name = attr.get("name", "")
+                attr_dtype = attr.get("dtype", "InstanceTextAttribute")
+                attr_mandatory = attr.get("mandatory", False)
+                attr_locked = attr.get("locked", False)
+                attr_type = attr.get("attributeType", 0)
+                lov_name = attr.get("lovName")
+                lov_ws = attr.get("lovWorkspaceId")
+                result = db.execute(sql_text(
+                    "INSERT INTO instanceattributetemplate "
+                    "(dtype, name, mandatory, locked, attributetype, lov_name, lov_workspace_id) "
+                    "VALUES (:dtype, :name, :mand, :locked, :atype, :lovn, :lovw) RETURNING id"
+                ), {"dtype": attr_dtype, "name": attr_name, "mand": attr_mandatory,
+                    "locked": attr_locked, "atype": attr_type,
+                    "lovn": lov_name, "lovw": lov_ws})
+                attr_id = result.fetchone()[0]
+                db.execute(sql_text(
+                    "INSERT INTO documentmastertemplate_attr "
+                    "(workspace_id, documentmastertemplate_id, instanceattributetemplate_id, attr_order) "
+                    "VALUES (:ws, :tid, :aid, :ord)"
+                ), {"ws": ws, "tid": template_id, "aid": attr_id, "ord": order})
+        if "lovs" in body or "LOVs" in body:
+            pass
+        t.modification_date = datetime.utcnow()
+        db.commit()
+        return {"id": t.id, "status": "updated"}
+
+    def update_doc_template_acl(self, db, ws, template_id, body):
+        from app.services.factory.acl_factory import apply_acl
+        tpl = db.query(DocumentMasterTemplate).filter(
+            DocumentMasterTemplate.workspace_id == ws,
+            DocumentMasterTemplate.id == template_id,
+        ).first()
+        if not tpl:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("DocumentMasterTemplateNotFoundException", template_id)
+        acl_id = getattr(tpl, "acl_id", None)
+        new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
+        if tpl.acl_id != new_acl_id:
+            tpl.acl_id = new_acl_id
+            db.commit()
+        return new_acl_id
+
+    def create_document_in_root_with_tag(self, db, ws, body, tag_label, user_login):
+        doc_id = body.get("reference", body.get("id", ""))
+        title = body.get("title", "")
+        template_id = body.get("templateId")
+        workflow_model_id = body.get("workflowModelId")
+
+        dr = self.create_document(
+            db, ws, doc_id, title, user_login,
+            folder_path=ws,
+            template_id=template_id,
+            workflow_model_id=workflow_model_id,
+        )
+        self._ensure_tag(db, ws, tag_label)
+        self.add_tag(db, ws, dr.documentmaster_id, dr.version, tag_label)
+
+        return self.build_revision_dto(db, dr, user_login)

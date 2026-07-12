@@ -136,3 +136,104 @@ def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
             continue
     raise FileNotFoundException("FileNotFoundException", full_name)
 
+
+def delete_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
+                     sub_type: str, file_name: str,
+                     user_login: str) -> None:
+    """删除零件文件（含关联表清理 + vault 物理删除）。"""
+    from app.core.exceptions import NotAllowedException
+    from app.core.config import settings
+    from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
+
+    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
+
+    if sub_type == "nativecad":
+        it = db.query(PartIteration).filter(
+            PartIteration.workspace_id == ws,
+            PartIteration.partmaster_partnumber == pn,
+            PartIteration.partrevision_version == ver,
+            PartIteration.iteration == iteration,
+        ).first()
+        if it:
+            it.native_cad_file_fullname = None
+    elif sub_type == "attachedfiles":
+        db.execute(part_iteration_binres.delete().where(
+            part_iteration_binres.c.workspace_id == ws,
+            part_iteration_binres.c.partmaster_partnumber == pn,
+            part_iteration_binres.c.partrevision_version == ver,
+            part_iteration_binres.c.iteration == iteration,
+            part_iteration_binres.c.attachedfile_fullname == full_name,
+        ))
+    else:
+        db.execute(part_iteration_geometry.delete().where(
+            part_iteration_geometry.c.workspace_id == ws,
+            part_iteration_geometry.c.partmaster_partnumber == pn,
+            part_iteration_geometry.c.partrevision_version == ver,
+            part_iteration_geometry.c.iteration == iteration,
+            part_iteration_geometry.c.geometry_fullname == full_name,
+        ))
+
+    try:
+        vault_path = Path(settings.VAULT_PATH) / full_name
+        if vault_path.exists():
+            vault_path.unlink()
+    except Exception:
+        pass
+
+    db.commit()
+
+
+def rename_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
+                     sub_type: str, old_name: str, new_name: str,
+                     user_login: str) -> dict:
+    """重命名零件文件（含关联表 + vault 物理重命名）。"""
+    from fastapi import HTTPException
+    from app.core.config import settings
+    from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
+
+    old_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{old_name}"
+    new_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{new_name}"
+
+    br = db.query(BinaryResource).filter(
+        BinaryResource.full_name == old_full).first()
+    if br:
+        br.full_name = new_full
+
+    if sub_type == "nativecad":
+        it = db.query(PartIteration).filter(
+            PartIteration.workspace_id == ws,
+            PartIteration.partmaster_partnumber == pn,
+            PartIteration.partrevision_version == ver,
+            PartIteration.iteration == iteration,
+        ).first()
+        if it:
+            it.native_cad_file_fullname = new_full
+    elif sub_type == "attachedfiles":
+        db.execute(part_iteration_binres.update().where(
+            part_iteration_binres.c.workspace_id == ws,
+            part_iteration_binres.c.partmaster_partnumber == pn,
+            part_iteration_binres.c.partrevision_version == ver,
+            part_iteration_binres.c.iteration == iteration,
+            part_iteration_binres.c.attachedfile_fullname == old_full,
+        ).values(attachedfile_fullname=new_full))
+    else:
+        db.execute(part_iteration_geometry.update().where(
+            part_iteration_geometry.c.workspace_id == ws,
+            part_iteration_geometry.c.partmaster_partnumber == pn,
+            part_iteration_geometry.c.partrevision_version == ver,
+            part_iteration_geometry.c.iteration == iteration,
+            part_iteration_geometry.c.geometry_fullname == old_full,
+        ).values(geometry_fullname=new_full))
+
+    try:
+        old_path = Path(settings.VAULT_PATH) / old_full
+        new_path = Path(settings.VAULT_PATH) / new_full
+        if old_path.exists():
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            old_path.rename(new_path)
+    except Exception:
+        pass
+
+    db.commit()
+    return {"fullName": new_full, "name": new_name}
+

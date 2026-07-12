@@ -9,21 +9,13 @@ from typing import List
 from fastapi import APIRouter, Depends, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.part import Tag
 from app.services.document_manager import DocumentService
-from app.services.part_mapper import map_revision as map_part_revision
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 doc_svc = DocumentService()
-
-
-def _build_doc_dto(dr, db: Session, current_user_login=None) -> dict:
-    """组装文档修订版 DTO，委托 DocumentService 构建。"""
-    return doc_svc.build_revision_dto(db, dr, current_user_login)
 
 
 @router.get("/workspaces/{workspace_id}/tags")
@@ -34,8 +26,7 @@ def get_tags(
     db: Session = Depends(get_db),
 ):
     """获取工作空间中所有标签。"""
-    tags = db.query(Tag).filter(Tag.workspace_id == workspace_id).all()
-    return [{"id": t.label, "label": t.label, "workspaceId": workspace_id} for t in tags]
+    return doc_svc.get_all_tags(db, workspace_id)
 
 
 @router.post("/workspaces/{workspace_id}/tags", status_code=201)
@@ -48,13 +39,7 @@ def create_tag(
 ):
     """创建单个标签。"""
     label = body.get("label", body.get("id", ""))
-    existing = db.query(Tag).filter(
-        Tag.workspace_id == workspace_id, Tag.label == label
-    ).first()
-    if existing is None:
-        db.add(Tag(workspace_id=workspace_id, label=label))
-        db.commit()
-    return {"id": label, "label": label, "workspaceId": workspace_id}
+    return doc_svc.create_tag(db, workspace_id, label)
 
 
 @router.post("/workspaces/{workspace_id}/tags/multiple", status_code=204)
@@ -67,16 +52,12 @@ def create_tags(
 ):
     """批量创建标签（对齐 Java TagResource.createTags：TagListDTO{tags:[TagDTO]} → 204）。"""
     items = body.get("tags", []) if isinstance(body, dict) else (body or [])
+    labels = []
     for item in items:
         label = item.get("label", item.get("id", "")) if isinstance(item, dict) else str(item)
-        if not label:
-            continue
-        existing = db.query(Tag).filter(
-            Tag.workspace_id == workspace_id, Tag.label == label
-        ).first()
-        if existing is None:
-            db.add(Tag(workspace_id=workspace_id, label=label))
-    db.commit()
+        if label:
+            labels.append(label)
+    doc_svc.create_tags_batch(db, workspace_id, labels)
     return Response(status_code=204)
 
 
@@ -89,28 +70,7 @@ def delete_tag(
     db: Session = Depends(get_db),
 ):
     """删除标签（先清关联表再删 tag，避免 FK 约束错误）。"""
-    db.execute(text("DELETE FROM documentrevision_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    db.execute(text("DELETE FROM partrevision_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    db.execute(text("DELETE FROM changeissue_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    db.execute(text("DELETE FROM changeorder_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    db.execute(text("DELETE FROM changerequest_tag WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    db.execute(text("DELETE FROM tagusersubscription WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    db.execute(text("DELETE FROM tagusergroupsubscription WHERE tag_label=:label AND tag_workspace_id=:ws"),
-               {"label": tag_id, "ws": workspace_id})
-    # 用裸 SQL 删 tag 行，避免 ORM M:N secondary（part_revision_tags 等）在 flush 时
-    # 重新同步已加载的关联集合、把刚删的关联行重新 INSERT 回去导致 FK 冲突
-    result = db.execute(
-        text("DELETE FROM tag WHERE label=:label AND workspace_id=:ws"),
-        {"label": tag_id, "ws": workspace_id},
-    )
-    if result.rowcount:
-        db.commit()
+    doc_svc.delete_tag(db, workspace_id, tag_id)
     return Response(status_code=204)
 
 
@@ -123,17 +83,7 @@ def get_documents_by_tag(
     db: Session = Depends(get_db),
 ):
     """获取带有指定标签的所有文档修订版。"""
-    from app.models.document import DocumentRevision, document_revision_tags
-    revisions = db.query(DocumentRevision).join(
-        document_revision_tags,
-        (DocumentRevision.workspace_id == document_revision_tags.c.documentmaster_workspace_id)
-        & (DocumentRevision.documentmaster_id == document_revision_tags.c.documentmaster_id)
-        & (DocumentRevision.version == document_revision_tags.c.documentrevision_version)
-    ).filter(
-        DocumentRevision.workspace_id == workspace_id,
-        document_revision_tags.c.tag_label == tag_id,
-    ).all()
-    return [_build_doc_dto(dr, db, current_user.login) for dr in revisions]
+    return doc_svc.get_documents_by_tag(db, workspace_id, tag_id, current_user.login)
 
 
 @router.post("/workspaces/{workspace_id}/tags/{tag_id}/documents", status_code=201)
@@ -146,28 +96,4 @@ def create_document_in_root_with_tag(
     db: Session = Depends(get_db),
 ):
     """在根文件夹创建文档并打上标签（对标 Java createDocumentMasterInRootFolderWithTag）。"""
-    doc_id = body.get("reference", body.get("id", ""))
-    title = body.get("title", "")
-    template_id = body.get("templateId")
-    workflow_model_id = body.get("workflowModelId")
-
-    dr = doc_svc.create_document(
-        db, workspace_id, doc_id, title, current_user.login,
-        folder_path=workspace_id,
-        template_id=template_id,
-        workflow_model_id=workflow_model_id,
-    )
-    # 打标签
-    _ensure_tag(db, workspace_id, tag_id)
-    doc_svc.add_tag(db, workspace_id, dr.documentmaster_id, dr.version, tag_id)
-
-    return _build_doc_dto(dr, db, current_user.login)
-
-
-def _ensure_tag(db: Session, ws: str, label: str) -> None:
-    existing = db.query(Tag).filter(
-        Tag.workspace_id == ws, Tag.label == label
-    ).first()
-    if existing is None:
-        db.add(Tag(workspace_id=ws, label=label))
-        db.flush()
+    return doc_svc.create_document_in_root_with_tag(db, workspace_id, body, tag_id, current_user.login)

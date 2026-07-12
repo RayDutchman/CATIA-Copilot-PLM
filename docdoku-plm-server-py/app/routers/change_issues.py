@@ -2,7 +2,6 @@
 from typing import List
 from fastapi import APIRouter, Depends
 from app.schemas.change import ChangeIssueDTO
-from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -26,9 +25,7 @@ svc = ChangeService()
 def list_issues(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     return [_item_to_dict(i, db, current_user)
             for i in svc.list_items(db, ws, "issues",
                                      user_login=current_user.login,
@@ -73,9 +70,7 @@ def update_issue(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     return _item_to_dict(svc.update_item(db, ws, "issue", item_id, body,
                                           user_login=current_user.login,
                                           is_admin=is_admin), db, current_user)
@@ -87,9 +82,7 @@ def delete_issue(ws: str, item_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     svc.delete_item(db, ChangeIssue, ws, item_id, current_user.login, is_admin)
 
 
@@ -99,9 +92,7 @@ def set_issue_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     tags_raw = body.get("tags", [])
     if tags_raw and isinstance(tags_raw, list) and isinstance(tags_raw[0], dict):
         tags = [t.get("label", "") for t in tags_raw]
@@ -147,9 +138,7 @@ def set_issue_affected_documents(ws: str, item_id: int, body: dict,
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeissue_affected_document", "changeissue_id",
                             user_login=current_user.login, is_admin=is_admin)
@@ -164,9 +153,7 @@ def set_issue_affected_parts(ws: str, item_id: int, body: dict,
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeissue_affected_part", "changeissue_id",
                         user_login=current_user.login, is_admin=is_admin)

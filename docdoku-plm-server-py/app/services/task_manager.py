@@ -16,6 +16,52 @@ STATUS_MAP = {0: "NOT_STARTED", 1: "IN_PROGRESS", 2: "APPROVED", 3: "REJECTED", 
 
 class TaskService:
 
+    def _parse_task_id(self, task_id):
+        """解析 Java 复合 task ID: "workflowId-step-taskIndex" → (wf_id, step, num)"""
+        if isinstance(task_id, int):
+            return None, None, task_id
+        parts = task_id.split("-")
+        if len(parts) == 3:
+            try:
+                return int(parts[0]), int(parts[1]), int(parts[2])
+            except ValueError:
+                return None, None, task_id
+        return None, None, task_id
+
+    def _resolve_holder(self, db: Session, ws: str, wf_id: int):
+        """解析 workflow 持有者类型（document/part/workspace-workflow）"""
+        if wf_id is None:
+            return None, None, None
+        doc = db.execute(text(
+            "SELECT documentmaster_id, version FROM documentrevision "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if doc:
+            return "documents", doc[0], doc[1]
+        part = db.execute(text(
+            "SELECT partmaster_partnumber, version FROM partrevision "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if part:
+            return "part", part[0], part[1]
+        ww = db.execute(text(
+            "SELECT id FROM workspace_workflow "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if ww:
+            return "workspace-workflow", ww[0], None
+        return None, None, None
+
+    def _lookup_worker(self, db: Session, worker_login: str, worker_ws: str) -> dict:
+        if not worker_login:
+            return {}
+        acc = db.query(Account).filter(Account.login == worker_login).first()
+        return {
+            "login": worker_login,
+            "name": (acc.name if acc and acc.name else worker_login) or "",
+            "workspaceId": worker_ws,
+        }
+
     def _is_admin(self, db: Session, login: str) -> bool:
         return db.execute(text(
             "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
@@ -83,39 +129,8 @@ class TaskService:
         ), {"l": login, "w": ws}).fetchall()
         result = []
         for t in rows:
-            wf_id = t[11] if len(t) > 11 else None  # workflow_id
-            holder_type = None
-            holder_reference = None
-            holder_version = None
-            # 检查文档
-            doc = db.execute(text(
-                "SELECT documentmaster_id, version FROM documentrevision "
-                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-            ), {"wf_id": wf_id, "ws": ws}).first()
-            if doc:
-                holder_type = "documents"
-                holder_reference = doc[0]
-                holder_version = doc[1]
-            else:
-                # 检查零件
-                part = db.execute(text(
-                    "SELECT partmaster_partnumber, version FROM partrevision "
-                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-                ), {"wf_id": wf_id, "ws": ws}).first()
-                if part:
-                    holder_type = "part"
-                    holder_reference = part[0]
-                    holder_version = part[1]
-                else:
-                    # 检查工作区工作流
-                    ww = db.execute(text(
-                        "SELECT id FROM workspace_workflow "
-                        "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-                    ), {"wf_id": wf_id, "ws": ws}).first()
-                    if ww:
-                        holder_type = "workspace-workflow"
-                        holder_reference = ww[0]
-            # 构建 worker 信息
+            wf_id = t[11] if len(t) > 11 else None
+            holder_type, holder_reference, holder_version = self._resolve_holder(db, ws, wf_id)
             worker_login = t[13] if len(t) > 13 else None
             worker_ws = t[12] if len(t) > 12 else None
             worker = None
@@ -151,6 +166,148 @@ class TaskService:
                 ],
             })
         return result
+
+    def get_task_dto(self, db: Session, ws: str, task_id_str: str) -> dict:
+        """获取单个 task 的完整 DTO（含 holder、worker name、assignedGroups）"""
+        wf_id, step, num = self._parse_task_id(task_id_str)
+        if wf_id is not None and step is not None:
+            t = self.get_task(db, ws, workflow_id=wf_id, activity_step=step, task_num=num)
+        else:
+            t = self.get_task(db, ws, task_id=int(num) if isinstance(num, int) else num)
+        _wf_id = t[11] if len(t) > 11 else None
+        holder_type, holder_reference, holder_version = self._resolve_holder(db, ws, _wf_id)
+        worker_login = t[13] if len(t) > 13 and t[13] else None
+        worker_ws = t[12] if len(t) > 12 else None
+        worker = self._lookup_worker(db, worker_login, worker_ws)
+        activity_step = t[10] if len(t) > 10 else None
+        return {
+            "num": t[0],
+            "title": t[9] if len(t) > 9 and t[9] else "",
+            "instructions": t[4] if len(t) > 4 and t[4] else "",
+            "status": STATUS_MAP.get(t[7], "NOT_STARTED"),
+            "worker": worker,
+            "closureComment": t[1] if len(t) > 1 else None,
+            "signature": t[5] if len(t) > 5 else None,
+            "closureDate": t[2].isoformat() + "Z" if len(t) > 2 and t[2] else None,
+            "holderType": holder_type,
+            "holderReference": holder_reference,
+            "holderVersion": holder_version,
+            "workspaceId": ws,
+            "workflowId": _wf_id,
+            "activityStep": activity_step,
+            "assignedGroups": [
+                {"id": g[0], "workspaceId": g[1]}
+                for g in db.execute(text(
+                    "SELECT usergroup_id, usergroup_workspace_id FROM task_usergroup "
+                    "WHERE workflow_id = :wf AND activity_step = :step AND task_num = :num"
+                ), {"wf": _wf_id, "step": activity_step, "num": t[0]}).fetchall()
+            ],
+        }
+
+    def verify_downloaded(self, db: Session, ws: str, task_id_str: str, user_login: str) -> bool:
+        """验证用户是否已检出/下载了关联的零件或文档"""
+        wf_id, step, num = self._parse_task_id(task_id_str)
+        if wf_id is None or step is None:
+            t_info = db.execute(text(
+                "SELECT workflow_id, activity_step FROM task WHERE num = :id LIMIT 1"
+            ), {"id": num}).first()
+            if not t_info:
+                raise NotAllowedException("NotAllowedException42")
+            wf_id, step = t_info[0], t_info[1]
+        doc = db.execute(text(
+            "SELECT dr.documentmaster_id, dr.version, dr.checkoutuser_login "
+            "FROM documentrevision dr "
+            "WHERE dr.workflow_id = :wf_id AND dr.workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if doc:
+            if doc[2] and doc[2] == user_login:
+                return True
+            raise NotAllowedException("NotAllowedException42")
+        part = db.execute(text(
+            "SELECT pr.partmaster_partnumber, pr.version, pr.checkoutuser_login "
+            "FROM partrevision pr "
+            "WHERE pr.workflow_id = :wf_id AND pr.workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if part:
+            if part[2] and part[2] == user_login:
+                return True
+            raise NotAllowedException("NotAllowedException42")
+        return True
+
+    def get_task_documents(self, db: Session, ws: str, login: str, status_filter: str = None) -> list:
+        status_cond = "AND t.status < 2"
+        if status_filter == "in_progress":
+            status_cond = "AND t.status = 1"
+        wf_rows = db.execute(text(
+            f"SELECT DISTINCT t.workflow_id FROM task t "
+            f"WHERE t.worker_login = :l AND t.worker_workspace_id = :w {status_cond}"
+        ), {"l": login, "w": ws}).fetchall()
+        wf_ids = [r[0] for r in wf_rows]
+        if not wf_ids:
+            return []
+        from app.models.document import DocumentRevision
+        docs = db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.workflow_id.in_(wf_ids)
+        ).all()
+        from app.services.document_manager import DocumentService
+        doc_svc = DocumentService()
+        result = []
+        for d in docs:
+            dto = doc_svc.build_revision_dto(db, d, login)
+            dto["tags"] = []
+            dto["workflow"] = None
+            result.append(dto)
+        return result
+
+    def get_task_parts(self, db: Session, ws: str, login: str, status_filter: str = None) -> list:
+        status_cond = "AND t.status < 2"
+        if status_filter == "in_progress":
+            status_cond = "AND t.status = 1"
+        wf_rows = db.execute(text(
+            f"SELECT DISTINCT t.workflow_id FROM task t "
+            f"WHERE t.worker_login = :l AND t.worker_workspace_id = :w {status_cond}"
+        ), {"l": login, "w": ws}).fetchall()
+        wf_ids = [r[0] for r in wf_rows]
+        if not wf_ids:
+            return []
+        from app.models.part import PartRevision
+        parts = db.query(PartRevision).filter(
+            PartRevision.workspace_id == ws,
+            PartRevision.workflow_id.in_(wf_ids)
+        ).all()
+        return [self._part_to_dict(db, p) for p in parts]
+
+    def _part_to_dict(self, db: Session, rev) -> dict:
+        author_acc = db.query(Account).filter(Account.login == rev.author_login).first() if rev.author_login else None
+        author = {
+            "login": rev.author_login or "",
+            "name": (author_acc.name if author_acc and author_acc.name else rev.author_login) or "",
+            "workspaceId": rev.workspace_id,
+        }
+        checkout_user = {}
+        if rev.checkout_user_login:
+            co_acc = db.query(Account).filter(Account.login == rev.checkout_user_login).first()
+            checkout_user = {
+                "login": rev.checkout_user_login,
+                "name": (co_acc.name if co_acc and co_acc.name else rev.checkout_user_login) or "",
+                "workspaceId": rev.workspace_id,
+            }
+        return {
+            "partKey": f"{rev.partmaster_partnumber}-{rev.version}",
+            "partNumber": rev.partmaster_partnumber,
+            "version": rev.version,
+            "name": rev.name or rev.partmaster_partnumber,
+            "workspaceId": rev.workspace_id,
+            "description": rev.description or "",
+            "type": rev.part_master.type if rev.part_master else "",
+            "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
+            "checkOutUser": checkout_user,
+            "checkOutDate": int(rev.check_out_date.timestamp() * 1000) if rev.check_out_date else None,
+            "standardPart": rev.part_master.standard_part if rev.part_master else False,
+            "author": author,
+            "creationDate": int(rev.creation_date.timestamp() * 1000) if rev.creation_date else None,
+        }
 
     def _is_potential_worker(self, db: Session, ws: str, user_login: str,
                                workflow_id: int, activity_step: int, task_num: int) -> bool:
@@ -276,31 +433,7 @@ class TaskService:
             holder_reference = relaunched.get("holderReference")
             holder_version = relaunched.get("holderVersion")
         else:
-            doc = db.execute(text(
-                "SELECT documentmaster_id, version FROM documentrevision "
-                "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-            ), {"wf_id": wf_id, "ws": ws}).first()
-            if doc:
-                holder_type = "documents"
-                holder_reference = doc[0]
-                holder_version = doc[1]
-            else:
-                part = db.execute(text(
-                    "SELECT partmaster_partnumber, version FROM partrevision "
-                    "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-                ), {"wf_id": wf_id, "ws": ws}).first()
-                if part:
-                    holder_type = "part"
-                    holder_reference = part[0]
-                    holder_version = part[1]
-                else:
-                    ww = db.execute(text(
-                        "SELECT id FROM workspace_workflow "
-                        "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
-                    ), {"wf_id": wf_id, "ws": ws}).first()
-                    if ww:
-                        holder_type = "workspace-workflow"
-                        holder_reference = ww[0]
+            holder_type, holder_reference, holder_version = self._resolve_holder(db, ws, wf_id)
         db.commit()
         return {
             "holderType": holder_type,

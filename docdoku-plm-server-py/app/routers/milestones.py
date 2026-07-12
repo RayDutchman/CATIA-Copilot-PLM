@@ -2,7 +2,6 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Response
 from app.schemas.change import MilestoneDTO, ChangeRequestDTO, ChangeOrderDTO
-from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -20,21 +19,13 @@ svc = ChangeService()
 
 
 def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[Account] = None) -> dict:
-    numberOfOrders = 0
-    numberOfRequests = 0
+    numberOfOrders, numberOfRequests = (0, 0)
     if db is not None:
-        numberOfOrders = db.scalar(sql_text(
-            "SELECT COUNT(*) FROM changeorder WHERE milestone_id=:mid"
-        ), {"mid": ms.id}) or 0
-        numberOfRequests = db.scalar(sql_text(
-            "SELECT COUNT(*) FROM changerequest WHERE milestone_id=:mid"
-        ), {"mid": ms.id}) or 0
+        numberOfOrders, numberOfRequests = svc.get_milestone_counts(db, ms.id)
 
     is_admin = False
     if current_user and db:
-        is_admin = db.execute(sql_text(
-            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-        ), {"l": current_user.login}).first() is not None
+        is_admin = svc.is_admin(db, current_user.login)
 
     writable = True
     if db and current_user:
@@ -74,6 +65,8 @@ def create_milestone(ws: str, body: dict,
     _check_workspace_access(db, ws, current_user.login)
     ms = svc.create_item(db, ws, "milestone", body, current_user.login)
     return _milestone_to_dict(ms, db, current_user)
+
+
 @router.get("/workspaces/{ws}/changes/milestones/{item_id}", response_model=MilestoneDTO)
 @router.get("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
 def get_milestone(ws: str, item_id: int,
@@ -81,6 +74,7 @@ def get_milestone(ws: str, item_id: int,
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
     return _milestone_to_dict(svc.get_by_id(db, Milestone, ws, item_id), db, current_user)
+
 
 @router.put("/workspaces/{ws}/changes/milestones/{item_id}", response_model=MilestoneDTO)
 @router.put("/workspaces/{ws}/changes/milestones/{item_id}/", include_in_schema=False)
@@ -97,9 +91,7 @@ def delete_milestone(ws: str, item_id: int,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     svc.delete_item(db, Milestone, ws, item_id, current_user.login, is_admin)
 
 

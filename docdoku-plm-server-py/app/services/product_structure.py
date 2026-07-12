@@ -1083,6 +1083,44 @@ class ProductStructureService:
 
     # ── Configuration ──
 
+    def get_config_substitute_paths(self, db: Session, config_id: int) -> list:
+        rows = db.execute(text(
+            "SELECT substitutelinks FROM prdcfg_substitutelink "
+            "WHERE productbaseline_id = :cid"
+        ), {"cid": config_id}).fetchall()
+        return [r[0] for r in rows if r[0]]
+
+    def get_config_optional_paths(self, db: Session, config_id: int) -> list:
+        rows = db.execute(text(
+            "SELECT optionalusagelinks FROM prdcfg_optionallink "
+            "WHERE productbaseline_id = :cid"
+        ), {"cid": config_id}).fetchall()
+        return [r[0] for r in rows if r[0]]
+
+    def get_config_by_id(self, db: Session, ws: str, ci_id: str, cfg_id: int) -> ProductConfiguration:
+        cfg = db.query(ProductConfiguration).filter(
+            ProductConfiguration.id == cfg_id,
+            ProductConfiguration.configurationitem_id == ci_id,
+            ProductConfiguration.configurationitem_workspace_id == ws,
+        ).first()
+        if not cfg:
+            raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
+        return cfg
+
+    def update_config_acl(self, db: Session, ws: str, ci_id: str, cfg_id: int,
+                           user_entries: dict, group_entries: dict):
+        config = self.get_config_by_id(db, ws, ci_id, cfg_id)
+        if not user_entries and not group_entries:
+            config.acl_id = None
+            db.commit()
+            return {"aclId": None}
+        acl_id = getattr(config, "acl_id", None)
+        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+        if config.acl_id != new_acl_id:
+            config.acl_id = new_acl_id
+            db.commit()
+        return {"aclId": new_acl_id}
+
     def create_config(self, db: Session, ws: str, ci_id: str, name: str,
                        desc: str, user_login: str,
                        substitute_links: list | None = None,

@@ -16,20 +16,6 @@ from app.services.factory.acl_factory import check_write_access
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
-def _build_lov_dto(lov_row: dict, db, ws: str) -> dict:
-    """将 lov 行 + 关联 namevalues 组装成 DTO。"""
-    from sqlalchemy import text
-    attrs = db.execute(text(
-        "SELECT name, value FROM lov_namevalue "
-        "WHERE lov_workspace_id = :ws AND lov_name = :n ORDER BY namevalue_order"
-    ), {"ws": ws, "n": lov_row["name"]}).fetchall()
-    return {
-        "name": lov_row["name"],
-        "workspaceId": lov_row["workspace_id"],
-        "values": [{"name": r[0], "value": r[1]} for r in attrs],
-    }
-
-
 @router.get("/workspaces/{workspace_id}/lov")
 @router.get("/workspaces/{workspace_id}/lov/", include_in_schema=False)
 def get_lovs(
@@ -41,7 +27,7 @@ def get_lovs(
     rows = lov_service.find_lov_from_workspace(db, workspace_id)
     result = []
     for row in rows:
-        dto = _build_lov_dto(row, db, workspace_id)
+        dto = lov_service.build_lov_dto(db, workspace_id, row)
         dto["deletable"] = lov_service.is_lov_deletable(db, workspace_id, row["name"])
         result.append(dto)
     return result
@@ -61,7 +47,7 @@ def create_lov(
     values = body.get("values", [])
     lov_service.create_lov(db, workspace_id, name, values)
     row = lov_service.find_lov(db, workspace_id, name)
-    return _build_lov_dto(row, db, workspace_id)
+    return lov_service.build_lov_dto(db, workspace_id, row)
 
 
 @router.get("/workspaces/{workspace_id}/lov/{lov_name}")
@@ -74,7 +60,7 @@ def get_lov(
 ):
     """获取指定 LOV。"""
     row = lov_service.find_lov(db, workspace_id, lov_name)
-    return _build_lov_dto(row, db, workspace_id)
+    return lov_service.build_lov_dto(db, workspace_id, row)
 
 
 @router.put("/workspaces/{workspace_id}/lov/{lov_name}")
@@ -92,7 +78,7 @@ def update_lov(
     values = body.get("values", [])
     lov_service.update_lov(db, workspace_id, lov_name, new_name, values)
     row = lov_service.find_lov(db, workspace_id, new_name)
-    return _build_lov_dto(row, db, workspace_id)
+    return lov_service.build_lov_dto(db, workspace_id, row)
 
 
 @router.delete("/workspaces/{workspace_id}/lov/{lov_name}", status_code=204)

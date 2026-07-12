@@ -6,11 +6,11 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
-    AccessRightException, EntityNotFoundException, NotAllowedException,
-    UserNotFoundException, WorkspaceNotFoundException,
+    NotAllowedException, UserNotFoundException, WorkspaceNotFoundException,
 )
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
+from app.services.workspace_manager import workspace_service
 from app.schemas.user_mgmt import (
     WorkspaceMembershipDTO, WorkspaceUserGroupMembershipDTO, UserGroupDTO,
 )
@@ -22,16 +22,7 @@ PREFIX = "/workspaces/{ws}"
 
 def _check_workspace_admin(db: Session, ws: str, current_user: Account):
     """验证当前用户是全局管理员或工作区管理员，否则 403。"""
-    is_global_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first()
-    if is_global_admin:
-        return
-    is_ws_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": ws, "l": current_user.login}).first()
-    if not is_ws_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
+    workspace_service.check_workspace_admin(db, ws, current_user.login)
 
 
 def _group_to_dict(g):
@@ -62,57 +53,21 @@ def list_user_memberships(ws: str, db: Session = Depends(get_db),
 def my_memberships(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
     """获取当前用户在工作区中的成员关系。对齐 Java getWorkspaceSpecificUserMemberShips → 返回单个 WorkspaceUserMemberShipDTO（workspaceId/member/readOnly，无 permission 字段）"""
-    row = db.execute(text(
-        "SELECT wm.readonly "
-        "FROM workspaceusermembership wm "
-        "WHERE wm.workspace_id = :ws AND wm.member_login = :l AND wm.member_workspace_id = :ws"
-    ), {"ws": ws, "l": current_user.login}).fetchone()
-    acc = db.query(Account).filter(Account.login == current_user.login).first()
-    read_only = bool(row[0]) if row else True
-    return {
-        "workspaceId": ws,
-        "member": {
-            "login": current_user.login,
-            "name": acc.name or "" if acc else "",
-            "email": acc.email or "" if acc else "",
-            "language": acc.language or "" if acc else "",
-            "workspaceId": ws,
-        },
-        "readOnly": read_only,
-    }
+    return user_mgmt_service.get_my_membership(db, ws, current_user.login)
 
 
 @router.get(f"{PREFIX}/memberships/usergroups", response_model=List[WorkspaceUserGroupMembershipDTO])
 @router.get(f"{PREFIX}/memberships/usergroups/", include_in_schema=False)
 def list_group_memberships(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT wgm.workspace_id, wgm.member_id, wgm.readonly "
-        "FROM workspaceusergroupmembership wgm "
-        "WHERE wgm.workspace_id = :ws"
-    ), {"ws": ws}).fetchall()
-    if not rows:
-        return []
-    return [{"workspaceId": r[0], "memberId": r[1],
-             "readOnly": bool(r[2]) if r[2] is not None else False,
-             "member": {"id": r[1]}} for r in rows]
+    return user_mgmt_service.list_group_memberships(db, ws)
 
 
 @router.get(f"{PREFIX}/memberships/usergroups/me")
 @router.get(f"{PREFIX}/memberships/usergroups/me/", include_in_schema=False)
 def my_group_memberships(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT g.id, g.workspace_id, COALESCE(wgm.readonly, false) "
-        "FROM usergroup g "
-        "JOIN usergroupmapping m ON g.id = m.groupname "
-        "LEFT JOIN workspaceusergroupmembership wgm "
-        "  ON wgm.member_id = g.id "
-        "  AND wgm.member_workspace_id = g.workspace_id "
-        "  AND wgm.workspace_id = g.workspace_id "
-        "WHERE g.workspace_id = :ws AND m.login = :l"
-    ), {"ws": ws, "l": current_user.login}).fetchall()
-    return [{"workspaceId": r[1], "memberId": r[0], "readOnly": bool(r[2])} for r in rows]
+    return user_mgmt_service.get_my_group_memberships(db, ws, current_user.login)
 
 
 # ============ 用户管理操作 ============
@@ -140,12 +95,7 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
     user_mgmt_service.remove_user_from_workspace(db, ws, login)
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not r:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
+    r = workspace_service.get_workspace_admin(db, ws)
     return _workspace_to_dict(r)
 
 
@@ -158,16 +108,7 @@ def remove_from_group(ws: str, gid: str, body: dict,
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
-    group = db.execute(text(
-        "SELECT id, workspace_id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
-    ), {"gid": gid, "ws": ws}).fetchone()
-    if not group:
-        raise EntityNotFoundException("UserGroupNotFoundException", gid)
-    db.execute(text(
-        "DELETE FROM usergroupmapping WHERE login = :l AND groupname = :g"
-    ), {"l": login, "g": gid})
-    db.commit()
-    return {"id": group.id, "workspaceId": group.workspace_id}
+    return user_mgmt_service.remove_from_group(db, ws, gid, login)
 
 
 @router.put(f"{PREFIX}/admin", response_model=WorkspaceDTO)
@@ -182,19 +123,9 @@ def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         raise UserNotFoundException("UserNotFoundException", login)
-    ws_row = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not ws_row:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-    db.execute(text(
-        "UPDATE workspace SET admin_login = :login WHERE id = :id"
-    ), {"login": login, "id": ws})
-    db.commit()
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
+    workspace_service.get_workspace_admin(db, ws)  # 存在性校验
+    user_mgmt_service.set_workspace_admin(db, ws, login)
+    r = workspace_service.get_workspace_admin(db, ws)
     return _workspace_to_dict(r)
 
 
@@ -239,30 +170,20 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
 
-    # 对齐 Java UserDTO.getMembership() == null → 400
     membership = body.get("membership", "")
     if not membership:
         raise NotAllowedException("NotAllowedException9", login)
 
     read_only = (membership == "READ_ONLY")
 
-    db.execute(text(
-        "INSERT INTO workspaceusermembership "
-        "(workspace_id, member_login, member_workspace_id, readonly) "
-        "VALUES (:ws, :l, :ws, :ro) "
-        "ON CONFLICT (workspace_id, member_login, member_workspace_id) "
-        "DO UPDATE SET readonly = :ro2"
-    ), {"ws": ws, "l": login, "ro": read_only, "ro2": read_only})
+    user_mgmt_service.set_user_access(db, ws, login, read_only)
 
-    # 对齐 Java grantUserAccess 返回 null → 400：确认 membership 记录存在
     mem_row = db.execute(text(
         "SELECT 1 FROM workspaceusermembership "
         "WHERE workspace_id = :ws AND member_login = :l AND member_workspace_id = :ws"
     ), {"ws": ws, "l": login}).fetchone()
     if not mem_row:
         raise NotAllowedException("NotAllowedException9", login)
-
-    db.commit()
 
     acc = db.query(Account).filter(Account.login == login).first()
     return {

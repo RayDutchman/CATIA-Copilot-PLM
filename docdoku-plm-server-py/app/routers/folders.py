@@ -1,11 +1,10 @@
 """文件夹端点路由（FolderResource）。"""
 from typing import List
 from fastapi import APIRouter, Depends
-from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import AccessRightException, EntityAlreadyExistsException, FolderNotFoundException
+from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.services.document_manager import DocumentService
 from app.schemas.misc import FolderDTO, FolderStatusDTO
@@ -30,7 +29,6 @@ def list_root(ws: str, current_user: Account = Depends(get_current_user),
     for f in folders:
         is_home = f.completepath == home_path
         folder_name = f.completepath.split('/')[-1]
-        # 过滤其他用户的主文件夹（~ 开头的文件夹是用户专属，不属于普通文件夹列表）
         if not is_home and folder_name.startswith("~"):
             continue
         result.append({
@@ -79,43 +77,8 @@ def move_folder(ws: str, folder_id: str, body: dict,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     _check_workspace_write_access(db, ws, current_user.login)
-    from app.models.document import Folder, DocumentRevision
-    from app.core.exceptions import NotAllowedException
-    from fastapi import HTTPException
-    folder = db.query(Folder).filter(Folder.completepath == folder_id).first()
-    if not folder:
-        raise FolderNotFoundException("FolderNotFoundException", folder_id)
-    # 对齐 Java moveFolder: isAnotherUserHomeFolder / isRoot / isHome → NotAllowedException21
-    if svc._is_root_folder(folder_id):
-        raise NotAllowedException("NotAllowedException21")
-    if svc._is_home_folder(folder_id):
-        raise NotAllowedException("NotAllowedException21")
-    if svc._is_another_user_home_folder(current_user.login, folder_id):
-        raise NotAllowedException("NotAllowedException21")
     new_parent = body.get("parentFolder", ws)
-    # 对齐 Java moveFolder: 目标父路径 workspace 必须等于当前 workspace
-    def _parse_workspace_id(path: str) -> str:
-        idx = path.find("/")
-        return path[:idx] if idx != -1 else path
-    if _parse_workspace_id(new_parent) != ws:
-        raise NotAllowedException("NotAllowedException23")
-    old_prefix = folder.completepath
-    old_name = old_prefix.split('/')[-1]
-    new_path = f"{new_parent}/{old_name}" if new_parent else old_name
-    existing = db.query(Folder).filter(Folder.completepath == new_path).first()
-    if existing:
-        raise EntityAlreadyExistsException("FolderAlreadyExistsException", new_path)
-    rows = db.query(Folder).filter(Folder.completepath.like(f"{old_prefix}%")).all()
-    for f in rows:
-        f.completepath = f.completepath.replace(old_prefix, new_path, 1)
-        if f.parentfolder_completepath:
-            f.parentfolder_completepath = f.parentfolder_completepath.replace(old_prefix, new_path, 1)
-    docs = db.query(DocumentRevision).filter(
-        DocumentRevision.location_completepath.like(f"{old_prefix}%")
-    ).all()
-    for doc in docs:
-        doc.location_completepath = doc.location_completepath.replace(old_prefix, new_path, 1)
-    db.commit()
+    svc.move_folder(db, ws, folder_id, new_parent, current_user.login)
 
 
 @router.put("/workspaces/{ws}/folders/{folder_path:path}")
@@ -174,4 +137,3 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
             rev.acl_id = new_acl_id
     db.commit()
     return svc.build_revision_dto(db, rev, current_user.login)
-

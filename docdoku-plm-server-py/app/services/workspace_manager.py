@@ -100,7 +100,7 @@ class WorkspaceService:
 
     def update_workspace(self, db: Session, ws: str,
                           description: str = None,
-                          folder_locked: bool = None) -> dict:
+                          folder_locked: bool = None):
         updates = {}
         if description is not None:
             updates["description"] = description
@@ -111,7 +111,7 @@ class WorkspaceService:
             db.execute(text(f"UPDATE workspace SET {set_clause} WHERE id = :ws"),
                        {"ws": ws, **updates})
             db.commit()
-        return self.get_workspace(db, ws)
+        return self.get_workspace_admin(db, ws)
 
     def enable_workspace(self, db: Session, ws: str, enabled: bool) -> dict:
         db.execute(text(
@@ -120,12 +120,12 @@ class WorkspaceService:
         db.commit()
         return self.get_workspace(db, ws)
 
-    def change_admin(self, db: Session, ws: str, login: str) -> dict:
+    def change_admin(self, db: Session, ws: str, login: str):
         db.execute(text(
             "UPDATE workspace SET admin_login = :l WHERE id = :ws"
         ), {"l": login, "ws": ws})
         db.commit()
-        return self.get_workspace(db, ws)
+        return self.get_workspace_admin(db, ws)
 
     # ============================================================
     # Admin endpoints
@@ -184,7 +184,155 @@ class WorkspaceService:
         db.commit()
         return self.get_workspace_admin(db, ws)
 
-    def get_workspace_front_options(self, db: Session, ws: str) -> dict:
+    # ============================================================
+    # Workspace router helpers
+    # ============================================================
+
+    @staticmethod
+    def _row_to_dict(r) -> dict:
+        return {
+            "id": r[0],
+            "description": r[1] or "",
+            "enabled": bool(r[2]) if r[2] is not None else True,
+            "folderLocked": bool(r[3]) if r[3] is not None else False,
+            "admin": r[4] or "",
+        }
+
+    def check_workspace_admin(self, db: Session, ws: str, login: str):
+        """验证用户是全球管理员或工作区管理员，否则 403。"""
+        is_global_admin = db.execute(text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": login}).first()
+        if is_global_admin:
+            return
+        is_ws_admin = db.execute(text(
+            "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+        ), {"w": ws, "l": login}).first()
+        if not is_ws_admin:
+            from app.core.exceptions import AccessRightException
+            raise AccessRightException("AccessRightException", login)
+
+    def is_global_admin(self, db: Session, login: str) -> bool:
+        return db.execute(text(
+            "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": login}).scalar() > 0
+
+    def get_user_workspace_ids(self, db: Session, login: str) -> set:
+        rows = db.execute(text(
+            "SELECT workspace_id FROM userdata WHERE login=:l"
+        ), {"l": login}).fetchall()
+        return {r[0] for r in rows}
+
+    def list_workspaces_for_user(self, db: Session, current_login: str) -> dict:
+        """返回 {administratedWorkspaces, allWorkspaces}"""
+        rows = db.execute(text(
+            "SELECT id, description, enabled, folderlocked, admin_login FROM workspace ORDER BY id"
+        )).fetchall()
+        all_ws = [self._row_to_dict(r) for r in rows]
+        if self.is_global_admin(db, current_login):
+            return {"administratedWorkspaces": all_ws, "allWorkspaces": all_ws}
+        admin_ws = [w for w in all_ws if w["admin"] == current_login]
+        user_ws = self.get_user_workspace_ids(db, current_login)
+        return {"administratedWorkspaces": admin_ws,
+                "allWorkspaces": [w for w in all_ws if w["id"] in user_ws]}
+
+    def list_more_workspaces_for_user(self, db: Session, login: str) -> list:
+        rows = db.execute(text(
+            "SELECT w.id, w.description FROM workspace w "
+            "JOIN userdata u ON w.id = u.workspace_id "
+            "WHERE u.login = :l"
+        ), {"l": login}).fetchall()
+        return [{"id": r[0], "description": r[1] or ""} for r in rows]
+
+    def get_reachable_users(self, db: Session, current_login: str) -> list:
+        from app.models.auth import Account as Acct
+        caller_ws = db.execute(text(
+            "SELECT workspace_id FROM userdata WHERE login = :l"
+        ), {"l": current_login}).fetchall()
+        ws_ids = [r[0] for r in caller_ws]
+        if not ws_ids:
+            return []
+        user_logins = db.execute(text(
+            "SELECT DISTINCT u.login FROM userdata u "
+            "WHERE u.workspace_id = ANY(:ws) AND u.login != :caller"
+        ), {"ws": ws_ids, "caller": current_login}).fetchall()
+        logins = [r[0] for r in user_logins]
+        if not logins:
+            return []
+        users = db.query(Acct).filter(Acct.login.in_(logins)).all()
+        login_to_user = {u.login: u for u in users}
+        ud_rows = db.execute(text(
+            "SELECT login, workspace_id FROM userdata WHERE login = ANY(:logins) AND workspace_id = ANY(:ws)"
+        ), {"logins": logins, "ws": ws_ids}).fetchall()
+        login_to_ws = {}
+        for r in ud_rows:
+            if r[0] not in login_to_ws:
+                login_to_ws[r[0]] = r[1]
+        result = []
+        for login in logins:
+            u = login_to_user.get(login)
+            if u:
+                result.append({
+                    "login": u.login, "name": u.name, "email": u.email,
+                    "language": u.language or "", "workspaceId": login_to_ws.get(login, ""),
+                })
+        return result
+
+    def get_stats_overview(self, db: Session, ws: str) -> dict:
+        parts = db.execute(text(
+            "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+        docs = db.execute(text(
+            "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+        users = db.execute(text(
+            "SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+        products = db.execute(text(
+            "SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
+        checked_out_docs = db.execute(text(
+            "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:w AND checkoutuser_login IS NOT NULL"
+        ), {"w": ws}).scalar() or 0
+        checked_out_parts = db.execute(text(
+            "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:w AND checkoutuser_login IS NOT NULL"
+        ), {"w": ws}).scalar() or 0
+        return {
+            "parts": parts, "documents": docs, "users": users,
+            "products": products, "checkedOutDocuments": checked_out_docs,
+            "checkedOutParts": checked_out_parts,
+        }
+
+    def get_checked_out_stats(self, db: Session, ws: str, table: str) -> dict:
+        rows = db.execute(text(
+            f"SELECT checkoutuser_login, checkoutdate "
+            f"FROM {table} "
+            "WHERE workspace_id = :ws AND checkoutuser_login IS NOT NULL"
+        ), {"ws": ws}).fetchall()
+        result = {}
+        for r in rows:
+            login = r[0] or "unknown"
+            ts = int(r[1].timestamp() * 1000) if r[1] else 0
+            if login not in result:
+                result[login] = []
+            result[login].append({"date": ts})
+        return result
+
+    def get_workspace_attributes_part_iterations(self, db: Session, ws: str) -> list:
+        rows = db.execute(text(
+            "SELECT DISTINCT ia.name FROM partiteration_attribute pia "
+            "JOIN instanceattribute ia ON ia.id = pia.instanceattribute_id "
+            "WHERE pia.workspace_id = :ws ORDER BY ia.name"
+        ), {"ws": ws}).fetchall()
+        return [r[0] for r in rows]
+
+    def get_workspace_attributes_path_data(self, db: Session, ws: str) -> list:
+        rows = db.execute(text(
+            "SELECT DISTINCT iat.name FROM partiteration_pathdata_attr ppa "
+            "JOIN instanceattributetemplate iat ON iat.id = ppa.instanceattribute_template_id "
+            "WHERE ppa.workspace_id = :ws ORDER BY iat.name"
+        ), {"ws": ws}).fetchall()
+        return [r[0] for r in rows]
+
+    # ============================================================
+    # Front / Back options
+    # ============================================================
         """读取 workspacefrontoptions + 列配置（对齐 Payara getWorkspaceFrontOptions）。"""
         part_cols = db.execute(text(
             "SELECT tablecolumn FROM workspace_parttablecolumn "

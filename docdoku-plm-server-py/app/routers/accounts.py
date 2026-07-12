@@ -2,7 +2,6 @@ from typing import List
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import NotAllowedException
@@ -16,9 +15,7 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
 def _account_to_dict(acc, db):
-    is_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login = :l AND groupname = 'admin'"
-    ), {"l": acc.login}).first() is not None
+    is_admin = user_mgmt_service.is_account_admin(db, acc.login)
     result = {
         "login": acc.login,
         "email": acc.email or "",
@@ -59,22 +56,14 @@ def list_workspaces(db: Session = Depends(get_db),
 @router.get("/admin/accounts-stats/", include_in_schema=False)
 def accounts_stats(db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    from sqlalchemy import text
-    total = db.execute(text("SELECT COUNT(*) FROM account")).scalar()
-    enabled = db.execute(text("SELECT COUNT(*) FROM account WHERE enabled = true")).scalar()
-    disabled = total - enabled if total else 0
-    return {"totalAccounts": total or 0, "enabledAccounts": enabled or 0,
-            "disabledAccounts": disabled}
+    return user_mgmt_service.get_accounts_stats(db)
 
 
 @router.get("/admin/workspace-stats", response_model=WorkspaceStatsDTO)
 @router.get("/admin/workspace-stats/", include_in_schema=False)
 def workspace_stats(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
-    from sqlalchemy import text
-    total = db.execute(text("SELECT COUNT(*) FROM workspace")).scalar()
-    enabled = db.execute(text("SELECT COUNT(*) FROM workspace WHERE enabled = true")).scalar()
-    return {"totalWorkspaces": total or 0, "enabledWorkspaces": enabled or 0}
+    return user_mgmt_service.get_admin_workspace_stats(db)
 
 
 @router.put("/accounts/gcm", status_code=204)
@@ -84,14 +73,7 @@ def put_gcm(body: dict, db: Session = Depends(get_db),
     gcm_id = body.get("gcmId", "")
     if not gcm_id:
         raise NotAllowedException("NotAllowedException9", gcm_id)
-    login = current_user.login
-    db.execute(text(
-        "DELETE FROM gcmaccount WHERE account_login = :login"
-    ), {"login": login})
-    db.execute(text(
-        "INSERT INTO gcmaccount (gcmid, account_login) VALUES (:gcmid, :login)"
-    ), {"gcmid": gcm_id, "login": login})
-    db.commit()
+    user_mgmt_service.put_gcm(db, current_user.login, gcm_id)
     return Response(status_code=204)
 
 
@@ -99,9 +81,6 @@ def put_gcm(body: dict, db: Session = Depends(get_db),
 @router.delete("/accounts/gcm/", status_code=204, include_in_schema=False)
 def delete_gcm(db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
-    db.execute(text(
-        "DELETE FROM gcmaccount WHERE account_login = :login"
-    ), {"login": current_user.login})
-    db.commit()
+    user_mgmt_service.delete_gcm(db, current_user.login)
     return Response(status_code=204)
 

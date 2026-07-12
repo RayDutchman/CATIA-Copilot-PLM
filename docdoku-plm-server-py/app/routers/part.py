@@ -1,8 +1,5 @@
 """单个零件 CRUD（PartResource）。"""
 import re
-import uuid
-import hashlib
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -10,22 +7,15 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
-    PartIterationNotFoundException, AccessRightException, NotAllowedException,
-    PartMasterNotFoundException, BaselineNotFoundException, WrongInputException,
+    PartIterationNotFoundException,
 )
 from app.models.auth import Account
-from app.models.part import SharedEntity
-from app.models.product.part_iteration import PartIteration
 from app.schemas.part import PartRevisionDTO, PartIterationDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO, StatusDTO, SharedPartDTO, AclIdDTO
 from app.schemas.workflow import WorkflowAbortedDTO
 from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision, map_iteration
 from app.services import converter
-from app.services.factory.acl_factory import apply_acl
 from app.services.workflow_manager import workflow_service
-from app.services.file_export.instance_body_writer_tools import (
-    identity_matrix, collect_leaf_instances,
-)
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductService()
@@ -199,10 +189,10 @@ def new_version_part(workspace_id: str, part_key: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    pr = svc.create_new_version(db, workspace_id, number, version, current_user.login)
+    svc.create_new_version(db, workspace_id, number, version, current_user.login)
     if body.get("description"):
-        pr.description = body["description"]
-        db.commit()
+        svc.set_new_version_description(db, workspace_id, number, version,
+                                         body["description"])
     # TODO: newVersion 尚缺 workflowModelId/acl/roleMapping 传递（service.create_new_version 暂不支持）。
     #       对应 Java PartResource.createNewPartVersion(PartCreationDTO: description/workflowModelId/acl/roleMapping)。
     #       需扩展 product_manager.create_new_version 支持 workflowModelId/acl_id/roleMapping 参数。
@@ -292,26 +282,10 @@ def share_part(workspace_id: str, part_key: str,
                db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
     svc.get_revision(db, workspace_id, number, version)
-    shared_uuid = str(uuid.uuid4())
-    password = body.get("password")
-    expire_date_str = body.get("expireDate")
-    password_hash = hashlib.md5(password.encode()).hexdigest() if password else None
-    expire_date = datetime.fromisoformat(expire_date_str) if expire_date_str else None
-    entity = SharedEntity(
-        uuid=shared_uuid,
-        dtype="SharedPart",
-        creation_date=datetime.utcnow(),
-        expire_date=expire_date,
-        password=password_hash,
-        author_workspace_id=workspace_id,
-        author_login=current_user.login,
-        workspace_id=workspace_id,
-        entity_workspace_id=workspace_id,
-        partmaster_partnumber=number,
-        partrevision_version=version,
-    )
-    db.add(entity)
-    db.commit()
+    shared_uuid = svc.share_part(db, workspace_id, number, version,
+                                  current_user.login,
+                                  password=body.get("password"),
+                                  expire_date_str=body.get("expireDate"))
     return {"uuid": shared_uuid, "workspaceId": workspace_id}
 
 
@@ -326,52 +300,10 @@ def delete_part_file_subresource(
     db: Session = Depends(get_db),
 ):
     """SubResource 路径删除文件（对齐 Java PartResource.removeFile）。"""
-    from pathlib import Path
-    from app.core.config import settings
-    from app.services.factory.acl_factory import check_write_access
-    from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
-
     number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    if not pr or pr.checkout_user_login != current_user.login \
-            or pr.last_iteration_number != iteration:
-        raise NotAllowedException("NotAllowedException4")
-    full_name = f"{workspace_id}/parts/{number}/{version}/{iteration}/{sub_type}/{file_name}"
-
-    if sub_type == "nativecad":
-        it = db.query(PartIteration).filter(
-            PartIteration.workspace_id == workspace_id,
-            PartIteration.partmaster_partnumber == number,
-            PartIteration.partrevision_version == version,
-            PartIteration.iteration == iteration,
-        ).first()
-        if it:
-            it.native_cad_file_fullname = None
-    elif sub_type == "attachedfiles":
-        db.execute(part_iteration_binres.delete().where(
-            part_iteration_binres.c.workspace_id == workspace_id,
-            part_iteration_binres.c.partmaster_partnumber == number,
-            part_iteration_binres.c.partrevision_version == version,
-            part_iteration_binres.c.iteration == iteration,
-            part_iteration_binres.c.attachedfile_fullname == full_name,
-        ))
-    else:
-        db.execute(part_iteration_geometry.delete().where(
-            part_iteration_geometry.c.workspace_id == workspace_id,
-            part_iteration_geometry.c.partmaster_partnumber == number,
-            part_iteration_geometry.c.partrevision_version == version,
-            part_iteration_geometry.c.iteration == iteration,
-            part_iteration_geometry.c.geometry_fullname == full_name,
-        ))
-
-    try:
-        vault_path = Path(settings.VAULT_PATH) / full_name
-        if vault_path.exists():
-            vault_path.unlink()
-    except OSError:
-        pass
-
-    db.commit()
+    svc.delete_part_file_subresource(db, workspace_id, number, version,
+                                      iteration, sub_type, file_name,
+                                      current_user.login)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/publish",
@@ -381,13 +313,8 @@ def delete_part_file_subresource(
 def publish_part(workspace_id: str, part_key: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    from app.services.factory.acl_factory import check_write_access
     number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    if not check_write_access(db, pr.acl_id, current_user.login, False, workspace_id=workspace_id):
-        raise AccessRightException("AccessRightException", current_user.login)
-    pr.public_shared = True
-    db.commit()
+    svc.publish_revision(db, workspace_id, number, version, current_user.login)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/unpublish",
@@ -397,13 +324,8 @@ def publish_part(workspace_id: str, part_key: str,
 def unpublish_part(workspace_id: str, part_key: str,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
-    from app.services.factory.acl_factory import check_write_access
     number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    if not check_write_access(db, pr.acl_id, current_user.login, False, workspace_id=workspace_id):
-        raise AccessRightException("AccessRightException", current_user.login)
-    pr.public_shared = False
-    db.commit()
+    svc.unpublish_revision(db, workspace_id, number, version, current_user.login)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/acl",
@@ -414,20 +336,8 @@ def update_part_acl(workspace_id: str, part_key: str, body: dict,
                     db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     number, version = _split_part_key(part_key)
-    pr = svc.get_revision(db, workspace_id, number, version)
-    # 仅 revision 作者或工作区管理员可修改 ACL
-    is_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": workspace_id, "l": current_user.login}).scalar()
-    if pr.author_login != current_user.login and not is_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
-    acl_id = getattr(pr, "acl_id", None)
-    user_entries = body.get("userEntries", {})
-    group_entries = body.get("groupEntries", {})
-    new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
-    if pr.acl_id != new_acl_id:
-        pr.acl_id = new_acl_id
-        db.commit()
+    svc.update_part_acl(db, workspace_id, number, version,
+                         current_user.login, body)
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_number}/latest-revision",
@@ -455,24 +365,10 @@ def used_by_component(workspace_id: str, part_key: str,
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    rows = db.execute(text(
-        "SELECT DISTINCT pr.workspace_id, pr.partmaster_partnumber, pr.version "
-        "FROM partrevision pr "
-        "JOIN partiteration pi ON pi.workspace_id = pr.workspace_id "
-        "  AND pi.partmaster_partnumber = pr.partmaster_partnumber "
-        "  AND pi.partrevision_version = pr.version "
-        "JOIN partiteration_partusagelink piul "
-        "  ON piul.workspace_id = pi.workspace_id "
-        "  AND piul.partmaster_partnumber = pi.partmaster_partnumber "
-        "  AND piul.partrevision_version = pi.partrevision_version "
-        "  AND piul.iteration = pi.iteration "
-        "JOIN partusagelink pul ON pul.id = piul.component_id "
-        "WHERE pul.component_workspace_id = :ws AND pul.component_partnumber = :pn"
-    ), {"ws": workspace_id, "pn": number}).fetchall()
+    rows = svc.get_used_by_as_component(db, workspace_id, number, version)
     result = []
-    for row in rows:
-        pr = svc.get_revision(db, row.workspace_id, row.partmaster_partnumber,
-                              row.version)
+    for ws, pn, v in rows:
+        pr = svc.get_revision(db, ws, pn, v)
         result.append(map_revision(pr, db))
     return result
 
@@ -485,25 +381,10 @@ def used_by_substitute(workspace_id: str, part_key: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    rows = db.execute(text(
-        "SELECT DISTINCT pr.workspace_id, pr.partmaster_partnumber, pr.version "
-        "FROM partrevision pr "
-        "JOIN partiteration pi ON pi.workspace_id = pr.workspace_id "
-        "  AND pi.partmaster_partnumber = pr.partmaster_partnumber "
-        "  AND pi.partrevision_version = pr.version "
-        "JOIN partiteration_partusagelink piul "
-        "  ON piul.workspace_id = pi.workspace_id "
-        "  AND piul.partmaster_partnumber = pi.partmaster_partnumber "
-        "  AND piul.partrevision_version = pi.partrevision_version "
-        "  AND piul.iteration = pi.iteration "
-        "JOIN pusagelink_psubstitutelink upl ON upl.partusagelink_id = piul.component_id "
-        "JOIN partsubstitutelink psl ON psl.id = upl.partsubstitute_id "
-        "WHERE psl.substitute_workspace_id = :ws AND psl.substitute_partnumber = :pn"
-    ), {"ws": workspace_id, "pn": number}).fetchall()
+    rows = svc.get_used_by_as_substitute(db, workspace_id, number, version)
     result = []
-    for row in rows:
-        pr = svc.get_revision(db, row.workspace_id, row.partmaster_partnumber,
-                              row.version)
+    for ws, pn, v in rows:
+        pr = svc.get_revision(db, ws, pn, v)
         result.append(map_revision(pr, db))
     return result
 
@@ -520,24 +401,7 @@ def get_instances(workspace_id: str, part_key: str,
     前端 InstancesManager 调用此端点获取 3D 场景数据。
     每个叶子实例包含：矩阵、几何文件列表、包围盒、属性。
     """
-    parts = part_key.rsplit("-", 1)
-    if len(parts) != 2:
-        raise HTTPException(400, "partKey 格式应为 {number}-{version}，如 GD50_Frame-A")
-    part_number, version = parts
-
-    pi = db.query(PartIteration).filter(
-        PartIteration.workspace_id == workspace_id,
-        PartIteration.partmaster_partnumber == part_number,
-        PartIteration.partrevision_version == version,
-    ).order_by(PartIteration.iteration.desc()).first()
-
-    if not pi:
-        raise PartIterationNotFoundException(
-            "PartIterationNotFoundException", workspace_id, part_number, version)
-
-    result: list[dict] = []
-    collect_leaf_instances(db, pi, identity_matrix(), [-1], result)
-    return result
+    return svc.get_leaf_instances(db, workspace_id, part_key)
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/baselines",
@@ -548,38 +412,7 @@ def get_baselines(workspace_id: str, part_key: str,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-
-    from app.models.configuration.baselined_part import BaselinedPart
-    from app.models.configuration.product_baseline import ProductBaseline
-
-    subq = (
-        db.query(BaselinedPart.partcollection_id)
-        .filter(
-            BaselinedPart.target_workspace_id == workspace_id,
-            BaselinedPart.target_partmaster_partnumber == number,
-            BaselinedPart.target_partrevision_version == version,
-        )
-        .subquery()
-    )
-
-    baselines = (
-        db.query(ProductBaseline)
-        .filter(ProductBaseline.partcollection_id.in_(subq))
-        .order_by(ProductBaseline.name)
-        .all()
-    )
-
-    return [
-        {
-            "id": b.id,
-            "name": b.name,
-            "description": b.description,
-            "type": b.type,
-            "configurationItemId": b.configurationitem_id,
-            "creationDate": b.creation_date.isoformat() if b.creation_date else None,
-        }
-        for b in baselines
-    ]
+    return svc.get_baselines_for_part(db, workspace_id, number, version)
 
 
 @router.get("/workspaces/{workspace_id}/parts/{part_key}/aborted-workflows",
@@ -602,45 +435,7 @@ def used_by_product(workspace_id: str, part_key: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-
-    from app.models.configuration.baselined_part import BaselinedPart
-    from app.models.configuration.product_baseline import ProductBaseline
-    from app.models.configuration.product_instance_master import ProductInstanceMaster
-    from sqlalchemy import and_
-
-    results = (
-        db.query(ProductInstanceMaster)
-        .distinct()
-        .join(
-            ProductBaseline,
-            and_(
-                ProductBaseline.configurationitem_workspace_id == ProductInstanceMaster.workspace_id,
-                ProductBaseline.configurationitem_id == ProductInstanceMaster.configurationitem_id,
-            ),
-        )
-        .join(
-            BaselinedPart,
-            BaselinedPart.partcollection_id == ProductBaseline.partcollection_id,
-        )
-        .filter(
-            BaselinedPart.target_workspace_id == workspace_id,
-            BaselinedPart.target_partmaster_partnumber == number,
-            BaselinedPart.target_partrevision_version == version,
-        )
-        .order_by(ProductBaseline.configurationitem_id)
-        .all()
-    )
-
-    return [
-        {
-            "serialNumber": pim.serialnumber,
-            "configurationItemId": pim.configurationitem_id,
-            "workspaceId": pim.workspace_id,
-            "productInstanceIterations": None,
-            "acl": None,
-        }
-        for pim in results
-    ]
+    return svc.get_used_by_product_instances(db, workspace_id, number, version)
 
 
 @router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}",
@@ -650,50 +445,8 @@ def used_by_product(workspace_id: str, part_key: str,
 def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    from app.models.configuration.baselined_part import BaselinedPart
-    from app.models.configuration.product_baseline import ProductBaseline
-
-    try:
-        bl_id = int(baseline_id)
-    except ValueError:
-        raise WrongInputException("WrongInputException")
-
-    baseline = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
-    if baseline is None:
-        raise BaselineNotFoundException("BaselineNotFoundException", baseline_id)
-    if baseline.configurationitem_workspace_id != workspace_id:
-        raise BaselineNotFoundException("BaselineNotFoundException", baseline_id)
-
-    bp = (
-        db.query(BaselinedPart)
-        .filter(
-            BaselinedPart.partcollection_id == baseline.partcollection_id,
-            BaselinedPart.target_workspace_id == workspace_id,
-            BaselinedPart.target_partmaster_partnumber == pn,
-        )
-        .first()
-    )
-
-    if bp is None:
-        raise PartMasterNotFoundException("PartMasterNotFoundException", pn)
-
-    pi = (
-        db.query(PartIteration)
-        .filter(
-            PartIteration.workspace_id == workspace_id,
-            PartIteration.partmaster_partnumber == pn,
-            PartIteration.partrevision_version == bp.target_partrevision_version,
-            PartIteration.iteration == bp.target_iteration,
-        )
-        .first()
-    )
-
-    if pi is None:
-        raise PartIterationNotFoundException(
-            "PartIterationNotFoundException", pn,
-            bp.target_partrevision_version, bp.target_iteration)
-
-    # 对齐 Java PartsResource.filterPartMasterInBaseline: 返回单个 PartIterationDTO
+    """对齐 Java PartsResource.filterPartMasterInBaseline: 返回单个 PartIterationDTO"""
+    pi = svc.filter_by_baseline(db, workspace_id, pn, baseline_id)
     return map_iteration(pi, db)
 
 
@@ -707,28 +460,7 @@ def retry_conversion(workspace_id: str, part_key: str, iteration: int,
                      db: Session = Depends(get_db)):
     from app.services.kafka_producer import send_conversion_order
     number, version = _split_part_key(part_key)
-    # 检查是否存在 nativeCADFile（无则 400，对齐 Java PartResource.retryConversion）
-    pi = db.query(PartIteration).filter(
-        PartIteration.workspace_id == workspace_id,
-        PartIteration.partmaster_partnumber == number,
-        PartIteration.partrevision_version == version,
-        PartIteration.iteration == iteration,
-    ).first()
-    if pi is None or pi.native_cad_file is None:
-        raise HTTPException(400, "No native CAD file uploaded")
-    br = pi.native_cad_file
-    filename = br.full_name.split("/")[-1] if br.full_name else "unknown"
-    # 创建或重置 conversion
-    conv = svc.get_conversion(db, workspace_id, number, version, iteration)
-    if conv is None:
-        conv = svc.create_conversion(db, workspace_id, number, version, iteration)
-    else:
-        conv.pending = True
-        conv.succeed = False
-        conv.start_date = None
-        conv.end_date = None
-    db.commit()
-    # 实发 Kafka 转换任务（对齐 Java converter.convertCADFile）
+    filename, _pi = svc.retry_conversion(db, workspace_id, number, version, iteration)
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.startswith("Bearer ") else ""
     send_conversion_order(workspace_id, number, version, iteration, filename, token)

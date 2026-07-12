@@ -2,7 +2,6 @@
 from typing import List
 from fastapi import APIRouter, Depends
 from app.schemas.change import ChangeOrderDTO
-from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -26,9 +25,7 @@ svc = ChangeService()
 def list_orders(ws: str, current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     return [_item_to_dict(o, db, current_user)
             for o in svc.list_items(db, ws, "orders",
                                      user_login=current_user.login,
@@ -73,9 +70,7 @@ def update_order(ws: str, item_id: int, body: dict,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     return _item_to_dict(svc.update_item(db, ws, "order", item_id, body,
                                           user_login=current_user.login,
                                           is_admin=is_admin), db, current_user)
@@ -87,9 +82,7 @@ def delete_order(ws: str, item_id: int,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     svc.delete_item(db, ChangeOrder, ws, item_id, current_user.login, is_admin)
 
 
@@ -99,9 +92,7 @@ def set_order_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     tags_raw = body.get("tags", [])
     if tags_raw and isinstance(tags_raw, list) and isinstance(tags_raw[0], dict):
         tags = [t.get("label", "") for t in tags_raw]
@@ -144,9 +135,7 @@ def set_order_affected_documents(ws: str, item_id: int, body: dict,
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     _set_affected_documents(db, ws, item_id, body.get("documents", []),
                             "changeorder_affected_document", "changeorder_id",
                             user_login=current_user.login, is_admin=is_admin)
@@ -161,9 +150,7 @@ def set_order_affected_parts(ws: str, item_id: int, body: dict,
                               current_user: Account = Depends(get_current_user),
                               db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    is_admin = db.execute(sql_text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = svc.is_admin(db, current_user.login)
     _set_affected_parts(db, ws, item_id, body.get("parts", []),
                         "changeorder_affected_part", "changeorder_id",
                         user_login=current_user.login, is_admin=is_admin)
@@ -178,18 +165,7 @@ def set_order_affected_requests(ws: str, item_id: int, body: dict,
                                  current_user: Account = Depends(get_current_user),
                                  db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
-    db.execute(sql_text(
-        "DELETE FROM changeorder_changerequest WHERE changeorder_id=:iid"
-    ), {"iid": item_id})
-    requests = body.get("requests", [])
-    for req_data in requests:
-        req_id = req_data.get("id") if isinstance(req_data, dict) else req_data
-        if req_id:
-            db.execute(sql_text(
-                "INSERT INTO changeorder_changerequest (changeorder_id, changerequest_id) "
-                "VALUES (:oid, :rid)"
-            ), {"oid": item_id, "rid": req_id})
-    db.commit()
+    svc.set_order_affected_requests(db, ws, item_id, body.get("requests", []))
     it = svc.get_by_id(db, ChangeOrder, ws, item_id)
     return _item_to_dict(it, db, current_user)
 

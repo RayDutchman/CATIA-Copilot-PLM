@@ -1673,3 +1673,682 @@ class ProductService:
                 except Exception:
                     pass
             iteration.native_cad_file_fullname = new_full
+
+    # ── publish / unpublish ─────────────────────────────────────
+
+    def publish_revision(self, db: Session, workspace_id: str,
+                         number: str, version: str, user_login: str) -> None:
+        from app.services.factory.acl_factory import check_write_access
+        pr = self.get_revision(db, workspace_id, number, version)
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=workspace_id):
+            raise AccessRightException("AccessRightException", user_login)
+        pr.public_shared = True
+        db.commit()
+
+    def unpublish_revision(self, db: Session, workspace_id: str,
+                           number: str, version: str, user_login: str) -> None:
+        from app.services.factory.acl_factory import check_write_access
+        pr = self.get_revision(db, workspace_id, number, version)
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=workspace_id):
+            raise AccessRightException("AccessRightException", user_login)
+        pr.public_shared = False
+        db.commit()
+
+    # ── ACL ─────────────────────────────────────────────────────
+
+    def update_part_acl(self, db: Session, workspace_id: str, number: str,
+                        version: str, user_login: str, body: dict) -> None:
+        from sqlalchemy import text
+        from app.services.factory.acl_factory import apply_acl
+        pr = self.get_revision(db, workspace_id, number, version)
+        is_admin = db.execute(text(
+            "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+        ), {"w": workspace_id, "l": user_login}).scalar()
+        if pr.author_login != user_login and not is_admin:
+            raise AccessRightException("AccessRightException", user_login)
+        acl_id = getattr(pr, "acl_id", None)
+        user_entries = body.get("userEntries", {})
+        group_entries = body.get("groupEntries", {})
+        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+        if pr.acl_id != new_acl_id:
+            pr.acl_id = new_acl_id
+            db.commit()
+
+    # ── used-by 查询 ────────────────────────────────────────────
+
+    def get_used_by_as_component(self, db: Session, workspace_id: str,
+                                 number: str, version: str) -> list:
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT DISTINCT pr.workspace_id, pr.partmaster_partnumber, pr.version "
+            "FROM partrevision pr "
+            "JOIN partiteration pi ON pi.workspace_id = pr.workspace_id "
+            "  AND pi.partmaster_partnumber = pr.partmaster_partnumber "
+            "  AND pi.partrevision_version = pr.version "
+            "JOIN partiteration_partusagelink piul "
+            "  ON piul.workspace_id = pi.workspace_id "
+            "  AND piul.partmaster_partnumber = pi.partmaster_partnumber "
+            "  AND piul.partrevision_version = pi.partrevision_version "
+            "  AND piul.iteration = pi.iteration "
+            "JOIN partusagelink pul ON pul.id = piul.component_id "
+            "WHERE pul.component_workspace_id = :ws AND pul.component_partnumber = :pn"
+        ), {"ws": workspace_id, "pn": number}).fetchall()
+        return [(row.workspace_id, row.partmaster_partnumber, row.version) for row in rows]
+
+    def get_used_by_as_substitute(self, db: Session, workspace_id: str,
+                                  number: str, version: str) -> list:
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT DISTINCT pr.workspace_id, pr.partmaster_partnumber, pr.version "
+            "FROM partrevision pr "
+            "JOIN partiteration pi ON pi.workspace_id = pr.workspace_id "
+            "  AND pi.partmaster_partnumber = pr.partmaster_partnumber "
+            "  AND pi.partrevision_version = pr.version "
+            "JOIN partiteration_partusagelink piul "
+            "  ON piul.workspace_id = pi.workspace_id "
+            "  AND piul.partmaster_partnumber = pi.partmaster_partnumber "
+            "  AND piul.partrevision_version = pi.partrevision_version "
+            "  AND piul.iteration = pi.iteration "
+            "JOIN pusagelink_psubstitutelink upl ON upl.partusagelink_id = piul.component_id "
+            "JOIN partsubstitutelink psl ON psl.id = upl.partsubstitute_id "
+            "WHERE psl.substitute_workspace_id = :ws AND psl.substitute_partnumber = :pn"
+        ), {"ws": workspace_id, "pn": number}).fetchall()
+        return [(row.workspace_id, row.partmaster_partnumber, row.version) for row in rows]
+
+    # ── baseline 查询 ───────────────────────────────────────────
+
+    def get_baselines_for_part(self, db: Session, workspace_id: str,
+                               number: str, version: str) -> list:
+        from app.models.configuration.baselined_part import BaselinedPart
+        from app.models.configuration.product_baseline import ProductBaseline
+
+        subq = (
+            db.query(BaselinedPart.partcollection_id)
+            .filter(
+                BaselinedPart.target_workspace_id == workspace_id,
+                BaselinedPart.target_partmaster_partnumber == number,
+                BaselinedPart.target_partrevision_version == version,
+            )
+            .subquery()
+        )
+
+        baselines = (
+            db.query(ProductBaseline)
+            .filter(ProductBaseline.partcollection_id.in_(subq))
+            .order_by(ProductBaseline.name)
+            .all()
+        )
+
+        return [
+            {
+                "id": b.id,
+                "name": b.name,
+                "description": b.description,
+                "type": b.type,
+                "configurationItemId": b.configurationitem_id,
+                "creationDate": b.creation_date.isoformat() if b.creation_date else None,
+            }
+            for b in baselines
+        ]
+
+    def get_used_by_product_instances(self, db: Session, workspace_id: str,
+                                      number: str, version: str) -> list:
+        from app.models.configuration.baselined_part import BaselinedPart
+        from app.models.configuration.product_baseline import ProductBaseline
+        from app.models.configuration.product_instance_master import ProductInstanceMaster
+        from sqlalchemy import and_
+
+        results = (
+            db.query(ProductInstanceMaster)
+            .distinct()
+            .join(
+                ProductBaseline,
+                and_(
+                    ProductBaseline.configurationitem_workspace_id == ProductInstanceMaster.workspace_id,
+                    ProductBaseline.configurationitem_id == ProductInstanceMaster.configurationitem_id,
+                ),
+            )
+            .join(
+                BaselinedPart,
+                BaselinedPart.partcollection_id == ProductBaseline.partcollection_id,
+            )
+            .filter(
+                BaselinedPart.target_workspace_id == workspace_id,
+                BaselinedPart.target_partmaster_partnumber == number,
+                BaselinedPart.target_partrevision_version == version,
+            )
+            .order_by(ProductBaseline.configurationitem_id)
+            .all()
+        )
+
+        return [
+            {
+                "serialNumber": pim.serialnumber,
+                "configurationItemId": pim.configurationitem_id,
+                "workspaceId": pim.workspace_id,
+                "productInstanceIterations": None,
+                "acl": None,
+            }
+            for pim in results
+        ]
+
+    def filter_by_baseline(self, db: Session, workspace_id: str, pn: str,
+                           baseline_id: str) -> PartIteration:
+        from app.models.configuration.baselined_part import BaselinedPart
+        from app.models.configuration.product_baseline import ProductBaseline
+        from app.core.exceptions import WrongInputException, BaselineNotFoundException
+
+        try:
+            bl_id = int(baseline_id)
+        except ValueError:
+            raise WrongInputException("WrongInputException")
+
+        baseline = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+        if baseline is None:
+            raise BaselineNotFoundException("BaselineNotFoundException", baseline_id)
+        if baseline.configurationitem_workspace_id != workspace_id:
+            raise BaselineNotFoundException("BaselineNotFoundException", baseline_id)
+
+        bp = (
+            db.query(BaselinedPart)
+            .filter(
+                BaselinedPart.partcollection_id == baseline.partcollection_id,
+                BaselinedPart.target_workspace_id == workspace_id,
+                BaselinedPart.target_partmaster_partnumber == pn,
+            )
+            .first()
+        )
+
+        if bp is None:
+            raise PartMasterNotFoundException("PartMasterNotFoundException", pn)
+
+        pi = (
+            db.query(PartIteration)
+            .filter(
+                PartIteration.workspace_id == workspace_id,
+                PartIteration.partmaster_partnumber == pn,
+                PartIteration.partrevision_version == bp.target_partrevision_version,
+                PartIteration.iteration == bp.target_iteration,
+            )
+            .first()
+        )
+
+        if pi is None:
+            raise PartIterationNotFoundException(
+                "PartIterationNotFoundException", pn,
+                bp.target_partrevision_version, bp.target_iteration)
+
+        return pi
+
+    # ── conversion ──────────────────────────────────────────────
+
+    def retry_conversion(self, db: Session, workspace_id: str, number: str,
+                         version: str, iteration: int) -> tuple:
+        from fastapi import HTTPException
+        pi = db.query(PartIteration).filter(
+            PartIteration.workspace_id == workspace_id,
+            PartIteration.partmaster_partnumber == number,
+            PartIteration.partrevision_version == version,
+            PartIteration.iteration == iteration,
+        ).first()
+        if pi is None or pi.native_cad_file is None:
+            raise HTTPException(400, "No native CAD file uploaded")
+        br = pi.native_cad_file
+        filename = br.full_name.split("/")[-1] if br.full_name else "unknown"
+        conv = self.get_conversion(db, workspace_id, number, version, iteration)
+        if conv is None:
+            conv = self.create_conversion(db, workspace_id, number, version, iteration)
+        else:
+            conv.pending = True
+            conv.succeed = False
+            conv.start_date = None
+            conv.end_date = None
+        db.commit()
+        return filename, pi
+
+    # ── share ───────────────────────────────────────────────────
+
+    def share_part(self, db: Session, workspace_id: str, number: str,
+                   version: str, user_login: str, password: str = None,
+                   expire_date_str: str = None) -> str:
+        import uuid
+        import hashlib
+        from app.models.part import SharedEntity
+        shared_uuid = str(uuid.uuid4())
+        password_hash = hashlib.md5(password.encode()).hexdigest() if password else None
+        expire_date = datetime.fromisoformat(expire_date_str) if expire_date_str else None
+        entity = SharedEntity(
+            uuid=shared_uuid,
+            dtype="SharedPart",
+            creation_date=datetime.utcnow(),
+            expire_date=expire_date,
+            password=password_hash,
+            author_workspace_id=workspace_id,
+            author_login=user_login,
+            workspace_id=workspace_id,
+            entity_workspace_id=workspace_id,
+            partmaster_partnumber=number,
+            partrevision_version=version,
+        )
+        db.add(entity)
+        db.commit()
+        return shared_uuid
+
+    # ── file subresource ────────────────────────────────────────
+
+    def delete_part_file_subresource(self, db: Session, workspace_id: str,
+                                     number: str, version: str, iteration: int,
+                                     sub_type: str, file_name: str,
+                                     user_login: str) -> None:
+        from pathlib import Path
+        from app.core.config import settings
+        from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
+
+        pr = self.get_revision(db, workspace_id, number, version)
+        if not pr or pr.checkout_user_login != user_login \
+                or pr.last_iteration_number != iteration:
+            raise NotAllowedException("NotAllowedException4")
+        full_name = f"{workspace_id}/parts/{number}/{version}/{iteration}/{sub_type}/{file_name}"
+
+        if sub_type == "nativecad":
+            it = db.query(PartIteration).filter(
+                PartIteration.workspace_id == workspace_id,
+                PartIteration.partmaster_partnumber == number,
+                PartIteration.partrevision_version == version,
+                PartIteration.iteration == iteration,
+            ).first()
+            if it:
+                it.native_cad_file_fullname = None
+        elif sub_type == "attachedfiles":
+            db.execute(part_iteration_binres.delete().where(
+                part_iteration_binres.c.workspace_id == workspace_id,
+                part_iteration_binres.c.partmaster_partnumber == number,
+                part_iteration_binres.c.partrevision_version == version,
+                part_iteration_binres.c.iteration == iteration,
+                part_iteration_binres.c.attachedfile_fullname == full_name,
+            ))
+        else:
+            db.execute(part_iteration_geometry.delete().where(
+                part_iteration_geometry.c.workspace_id == workspace_id,
+                part_iteration_geometry.c.partmaster_partnumber == number,
+                part_iteration_geometry.c.partrevision_version == version,
+                part_iteration_geometry.c.iteration == iteration,
+                part_iteration_geometry.c.geometry_fullname == full_name,
+            ))
+
+        try:
+            vault_path = Path(settings.VAULT_PATH) / full_name
+            if vault_path.exists():
+                vault_path.unlink()
+        except OSError:
+            pass
+
+        db.commit()
+
+    # ── new version description ─────────────────────────────────
+
+    def set_new_version_description(self, db: Session, workspace_id: str,
+                                    number: str, version: str,
+                                    description: str) -> None:
+        pr = self.get_revision(db, workspace_id, number, version)
+        pr.description = description
+        db.commit()
+
+    # ── instances ───────────────────────────────────────────────
+
+    def get_leaf_instances(self, db: Session, workspace_id: str,
+                           part_key: str) -> list[dict]:
+        from fastapi import HTTPException
+        from app.services.file_export.instance_body_writer_tools import (
+            identity_matrix, collect_leaf_instances,
+        )
+        parts = part_key.rsplit("-", 1)
+        if len(parts) != 2:
+            raise HTTPException(400, "partKey 格式应为 {number}-{version}，如 GD50_Frame-A")
+        part_number, version = parts
+
+        pi = db.query(PartIteration).filter(
+            PartIteration.workspace_id == workspace_id,
+            PartIteration.partmaster_partnumber == part_number,
+            PartIteration.partrevision_version == version,
+        ).order_by(PartIteration.iteration.desc()).first()
+
+        if not pi:
+            raise PartIterationNotFoundException(
+                "PartIterationNotFoundException", workspace_id, part_number, version)
+
+        result: list[dict] = []
+        collect_leaf_instances(db, pi, identity_matrix(), [-1], result)
+        return result
+
+    # ── template 管理（从 routers/part_templates.py 迁入）───────
+
+    def _get_template_account(self, db: Session, login: str | None,
+                               workspace_id: str) -> dict:
+        if not login:
+            return {"login": "", "name": "", "email": None, "language": None, "workspaceId": workspace_id}
+        from app.models.auth import Account
+        acc = db.query(Account).filter(Account.login == login).first()
+        return {
+            "login": login,
+            "name": acc.name if (acc and acc.name) else login,
+            "email": acc.email if acc else None,
+            "language": acc.language if acc else None,
+            "workspaceId": workspace_id,
+        }
+
+    def _list_template_files(self, db: Session, workspace_id: str,
+                              template_id: str) -> str | None:
+        from sqlalchemy import text
+        row = db.execute(text(
+            "SELECT attachedfile_fullname FROM partmastertemplate "
+            "WHERE workspace_id = :ws AND id = :tid"
+        ), {"ws": workspace_id, "tid": template_id}).first()
+        if row and row[0]:
+            from pathlib import Path
+            return Path(row[0]).name
+        return None
+
+    def _build_template_attrs(self, db: Session, workspace_id: str,
+                               template_id: str) -> list[dict]:
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT iat.id, iat.name, iat.dtype, iat.mandatory, iat.locked, "
+            "iat.attributetype, iat.lov_name, iat.lov_workspace_id, "
+            "pta.attr_order "
+            "FROM partmastertemplate_attr pta "
+            "JOIN instanceattributetemplate iat ON iat.id = pta.instanceattributetemplate_id "
+            "WHERE pta.workspace_id = :ws AND pta.partmastertemplate_id = :tid "
+            "ORDER BY pta.attr_order"
+        ), {"ws": workspace_id, "tid": template_id}).fetchall()
+        return [{
+            "id": row.id,
+            "name": row.name,
+            "dtype": row.dtype,
+            "mandatory": row.mandatory,
+            "locked": row.locked,
+            "attributeType": row.attributetype,
+            "lovName": row.lov_name,
+            "lovWorkspaceId": row.lov_workspace_id,
+            "attrOrder": row.attr_order,
+        } for row in rows]
+
+    def _build_instance_attr_templates(self, db: Session, workspace_id: str,
+                                        template_id: str) -> list[dict]:
+        from sqlalchemy import text
+        rows = db.execute(text(
+            "SELECT iat.id, iat.name, iat.dtype, iat.mandatory, iat.locked, "
+            "iat.attributetype, iat.lov_name, iat.lov_workspace_id, pta.attr_order "
+            "FROM instanceattributetemplate iat "
+            "JOIN partmastertemplate_attr pta ON pta.instanceattributetemplate_id = iat.id "
+            "WHERE pta.workspace_id = :ws AND pta.partmastertemplate_id = :tid "
+            "ORDER BY pta.attr_order"
+        ), {"ws": workspace_id, "tid": template_id}).fetchall()
+        return [{
+            "id": row.id,
+            "name": row.name,
+            "dtype": row.dtype,
+            "mandatory": row.mandatory,
+            "locked": row.locked,
+            "attributeType": row.attributetype,
+            "lovName": row.lov_name,
+            "lovWorkspaceId": row.lov_workspace_id,
+            "attrOrder": row.attr_order,
+        } for row in rows]
+
+    def _build_template_dto(self, db: Session, t, workspace_id: str) -> dict:
+        from app.services.factory.acl_factory import build_acl_dict
+        return {
+            "id": t.id,
+            "workspaceId": t.workspace_id,
+            "mask": t.mask,
+            "idGenerated": t.id_generated,
+            "partType": t.part_type,
+            "attributesLocked": t.attributes_locked,
+            "author": self._get_template_account(db, t.author_login, t.author_workspace_id or t.workspace_id),
+            "creationDate": t.creation_date.isoformat() if t.creation_date else None,
+            "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
+            "acl": build_acl_dict(db, t.acl_id) or {},
+            "workflowModelId": t.workflowmodel_id,
+            "attributeTemplates": self._build_template_attrs(db, workspace_id, t.id),
+            "attributeInstanceTemplates": self._build_instance_attr_templates(db, workspace_id, t.id),
+            "attachedFile": self._list_template_files(db, workspace_id, t.id),
+        }
+
+    def list_part_templates(self, db: Session, workspace_id: str) -> list:
+        from app.models.product.part_master_template import PartMasterTemplate
+        templates = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id)
+            .all()
+        )
+        return [self._build_template_dto(db, t, workspace_id) for t in templates]
+
+    def get_part_template(self, db: Session, workspace_id: str,
+                          template_id: str) -> dict:
+        from app.models.product.part_master_template import PartMasterTemplate
+        from app.core.exceptions import PartMasterTemplateNotFoundException
+        t = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id,
+                    PartMasterTemplate.id == template_id)
+            .first()
+        )
+        if t is None:
+            raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
+        return self._build_template_dto(db, t, workspace_id)
+
+    def create_part_template(self, db: Session, workspace_id: str,
+                              body: dict, user_login: str) -> dict:
+        from app.models.product.part_master_template import PartMasterTemplate
+        from app.core.exceptions import PartMasterTemplateAlreadyExistsException
+        template_id = body.get("reference") or body.get("id") or ""
+        existing = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id,
+                    PartMasterTemplate.id == template_id)
+            .first()
+        )
+        if existing:
+            raise PartMasterTemplateAlreadyExistsException(
+                "PartMasterTemplateAlreadyExistsException", template_id)
+        t = PartMasterTemplate(
+            id=template_id,
+            workspace_id=workspace_id,
+            mask=body.get("mask", ""),
+            id_generated=body.get("idGenerated", False),
+            part_type=body.get("partType", ""),
+            attributes_locked=body.get("attributesLocked", False),
+            author_login=user_login,
+            author_workspace_id=workspace_id,
+            creation_date=datetime.utcnow(),
+            modification_date=datetime.utcnow(),
+            acl_id=body.get("aclId"),
+            workflowmodel_id=body.get("workflowModelId"),
+        )
+        db.add(t)
+        db.commit()
+        return self._build_template_dto(db, t, workspace_id)
+
+    def update_part_template(self, db: Session, workspace_id: str,
+                              template_id: str, body: dict) -> dict:
+        from app.models.product.part_master_template import PartMasterTemplate
+        from app.core.exceptions import PartMasterTemplateNotFoundException
+        t = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id,
+                    PartMasterTemplate.id == template_id)
+            .first()
+        )
+        if t is None:
+            raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
+        if "mask" in body:
+            t.mask = body["mask"]
+        if "idGenerated" in body:
+            t.id_generated = body["idGenerated"]
+        if "partType" in body:
+            t.part_type = body["partType"]
+        if "attributesLocked" in body:
+            t.attributes_locked = body["attributesLocked"]
+        if "workflowModelId" in body:
+            t.workflowmodel_id = body["workflowModelId"]
+        t.modification_date = datetime.utcnow()
+        db.commit()
+        return self._build_template_dto(db, t, workspace_id)
+
+    def delete_part_template(self, db: Session, workspace_id: str,
+                              template_id: str) -> None:
+        from app.models.product.part_master_template import PartMasterTemplate
+        from app.core.exceptions import PartMasterTemplateNotFoundException
+        t = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id,
+                    PartMasterTemplate.id == template_id)
+            .first()
+        )
+        if t is None:
+            raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
+        db.delete(t)
+        db.commit()
+
+    def _mask_to_sql_like(self, mask: str) -> str:
+        result = []
+        for ch in mask:
+            if ch == '#':
+                result.append('_')
+            elif ch == '*':
+                result.append('_')
+            elif ch == '_':
+                result.append('\\_')
+            elif ch == '%':
+                result.append('\\%')
+            else:
+                result.append(ch)
+        return ''.join(result)
+
+    def _parse_id_with_mask(self, id_str: str, mask: str) -> str | None:
+        if len(id_str) != len(mask):
+            return None
+        variable_chars = []
+        for i, (mch, ich) in enumerate(zip(mask, id_str)):
+            if mch == '#':
+                if not ich.isdigit():
+                    return None
+                variable_chars.append(ich)
+            elif mch == '*':
+                if not ich.isalnum():
+                    return None
+                variable_chars.append(ich)
+            elif mch != ich:
+                return None
+        return ''.join(variable_chars)
+
+    def _increment_masked_value(self, value: str, mask: str) -> str | None:
+        mask_vars = [(i, ch) for i, ch in enumerate(mask) if ch in ('#', '*')]
+        if not mask_vars:
+            return None
+        result = list(value)
+        for pos, mch in reversed(mask_vars):
+            if result[pos] == '9' if mch == '#' else result[pos] == 'Z':
+                result[pos] = '0' if mch == '#' else 'A'
+                continue
+            c = result[pos]
+            if mch == '#':
+                result[pos] = chr(ord(c) + 1)
+            else:
+                result[pos] = chr(ord(c) + 1)
+                if result[pos] > 'Z' and result[pos] < 'a':
+                    result[pos] = 'a'
+            break
+        else:
+            return None
+        return ''.join(result)
+
+    def _first_id_from_mask(self, mask: str) -> str:
+        result = []
+        for ch in mask:
+            if ch == '#':
+                result.append('0')
+            elif ch == '*':
+                result.append('A')
+            else:
+                result.append(ch)
+        return ''.join(result)
+
+    def _generate_from_mask(self, db: Session, workspace_id: str, mask: str) -> str:
+        like_pattern = self._mask_to_sql_like(mask)
+        rows = (
+            db.query(PartMaster.number)
+            .filter(PartMaster.workspace_id == workspace_id,
+                    PartMaster.number.like(like_pattern))
+            .order_by(PartMaster.number.desc())
+            .limit(50)
+            .all()
+        )
+        last_valid = None
+        for (number,) in rows:
+            val = self._parse_id_with_mask(number, mask)
+            if val is not None:
+                last_valid = number
+                break
+        if last_valid is not None:
+            new_id = self._increment_masked_value(last_valid, mask)
+            if new_id is not None:
+                return new_id
+            return self._first_id_from_mask(mask)
+        return self._first_id_from_mask(mask)
+
+    def _generate_from_template_id(self, db: Session, workspace_id: str,
+                                    template_id: str) -> str:
+        import re
+        rows = (
+            db.query(PartMaster.number)
+            .filter(PartMaster.workspace_id == workspace_id,
+                    PartMaster.number.like(f"{template_id}%"))
+            .all()
+        )
+        max_seq = 0
+        seq_re = re.compile(rf'^{re.escape(template_id)}-(\d+)$')
+        for (number,) in rows:
+            m = seq_re.match(number)
+            if m:
+                max_seq = max(max_seq, int(m.group(1)))
+        return f"{template_id}-{max_seq + 1:03d}"
+
+    def generate_part_template_id(self, db: Session, workspace_id: str,
+                                   template_id: str) -> str:
+        from app.models.product.part_master_template import PartMasterTemplate
+        from app.core.exceptions import PartMasterTemplateNotFoundException
+        t = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id,
+                    PartMasterTemplate.id == template_id)
+            .first()
+        )
+        if t is None:
+            raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
+        mask = t.mask
+        if mask:
+            return self._generate_from_mask(db, workspace_id, mask)
+        return self._generate_from_template_id(db, workspace_id, template_id)
+
+    def update_part_template_acl(self, db: Session, workspace_id: str,
+                                  template_id: str, body: dict) -> int:
+        from app.models.product.part_master_template import PartMasterTemplate
+        from app.core.exceptions import PartMasterTemplateNotFoundException
+        from app.services.factory.acl_factory import apply_acl
+        t = (
+            db.query(PartMasterTemplate)
+            .filter(PartMasterTemplate.workspace_id == workspace_id,
+                    PartMasterTemplate.id == template_id)
+            .first()
+        )
+        if t is None:
+            raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
+        user_entries = body.get("userEntries", {})
+        group_entries = body.get("groupEntries", {})
+        new_acl_id = apply_acl(db, t.acl_id, user_entries, group_entries)
+        if t.acl_id != new_acl_id:
+            t.acl_id = new_acl_id
+            db.commit()
+        return new_acl_id

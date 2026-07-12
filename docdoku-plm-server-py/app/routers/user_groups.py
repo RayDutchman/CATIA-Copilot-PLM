@@ -2,10 +2,9 @@ from typing import List
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import AccessRightException, NotAllowedException, UserGroupNotFoundException
+from app.core.exceptions import NotAllowedException
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -52,13 +51,7 @@ def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/groups/{{group_id}}/users/", include_in_schema=False)
 def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT a.login, a.name, a.email, a.language "
-        "FROM account a "
-        "JOIN usergroupmapping m ON a.login = m.login "
-        "WHERE m.groupname = :gid"
-    ), {"gid": group_id}).fetchall()
-    return [{"login": r[0], "name": r[1], "email": r[2], "language": r[3]} for r in rows]
+    return user_mgmt_service.get_users_in_group(db, group_id)
 
 
 @router.put(f"{PREFIX}/enable-group")
@@ -70,18 +63,7 @@ def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
     group_id = body.get("id", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
-    existing = db.execute(text(
-        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
-    ), {"gid": group_id, "ws": ws}).fetchone()
-    if not existing:
-        raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
-    db.execute(text(
-        "INSERT INTO workspaceusergroupmembership "
-        "(workspace_id, member_id, member_workspace_id, readonly) "
-        "VALUES (:ws, :gid, :ws, false) "
-        "ON CONFLICT (workspace_id, member_id, member_workspace_id) DO NOTHING"
-    ), {"ws": ws, "gid": group_id})
-    db.commit()
+    user_mgmt_service.enable_group(db, ws, group_id)
     return Response(status_code=204)
 
 
@@ -93,16 +75,7 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
     group_id = body.get("id", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
-    existing = db.execute(text(
-        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
-    ), {"gid": group_id, "ws": ws}).fetchone()
-    if not existing:
-        raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
-    db.execute(text(
-        "DELETE FROM workspaceusergroupmembership "
-        "WHERE workspace_id = :ws AND member_id = :gid"
-    ), {"ws": ws, "gid": group_id})
-    db.commit()
+    user_mgmt_service.disable_group(db, ws, group_id)
     return Response(status_code=204)
 
 
@@ -115,21 +88,8 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
     group_id = body.get("member", {}).get("id", "") or body.get("memberId", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
-    group = db.execute(text(
-        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
-    ), {"gid": group_id, "ws": ws}).fetchone()
-    if not group:
-        raise UserGroupNotFoundException("UserGroupNotFoundException", group_id)
     read_only = body.get("readOnly", False)
-    db.execute(text(
-        "INSERT INTO workspaceusergroupmembership "
-        "(workspace_id, member_id, member_workspace_id, readonly) "
-        "VALUES (:ws, :gid, :ws, :ro) "
-        "ON CONFLICT (workspace_id, member_id, member_workspace_id) "
-        "DO UPDATE SET readonly = :ro2"
-    ), {"ws": ws, "gid": group_id, "ro": read_only, "ro2": read_only})
-    db.commit()
-    return {"workspaceId": ws, "memberId": group_id, "readOnly": read_only}
+    return user_mgmt_service.set_group_access(db, ws, group_id, read_only)
 
 
 # ============ 工作组 tag 订阅 ============
@@ -138,21 +98,7 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/", include_in_schema=False)
 def group_tag_subscriptions(ws: str, groupId: str, db: Session = Depends(get_db),
                             current_user: Account = Depends(get_current_user)):
-    group = db.execute(text(
-        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
-    ), {"gid": groupId, "ws": ws}).fetchone()
-    if not group:
-        raise UserGroupNotFoundException("UserGroupNotFoundException", groupId)
-    rows = db.execute(text(
-        "SELECT tag_workspace_id, tag_label, oniterationchange, onstatechange "
-        "FROM tagusergroupsubscription "
-        "WHERE subscriber_id = :gid AND subscriber_workspace_id = :ws"
-    ), {"gid": groupId, "ws": ws}).fetchall()
-    return [{
-        "tag": r[1],
-        "onIterationChange": bool(r[2]) if r[2] is not None else False,
-        "onStateChange": bool(r[3]) if r[3] is not None else False,
-    } for r in rows]
+    return user_mgmt_service.get_group_tag_subscriptions(db, ws, groupId)
 
 
 @router.put(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}")
@@ -162,28 +108,10 @@ def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
                                 db: Session = Depends(get_db),
                                 
                                 current_user: Account = Depends(get_current_user)):
-
-    group = db.execute(text(
-        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
-    ), {"gid": groupId, "ws": ws}).fetchone()
-    if not group:
-        raise UserGroupNotFoundException("UserGroupNotFoundException", groupId)
     on_iter = (body or {}).get("onIterationChange", False)
     on_state = (body or {}).get("onStateChange", False)
-    db.execute(text(
-        "INSERT INTO tag (workspace_id, label) VALUES (:ws, :tag) ON CONFLICT DO NOTHING"
-    ), {"ws": ws, "tag": tagName})
-    db.execute(text(
-        "INSERT INTO tagusergroupsubscription "
-        "(tag_workspace_id, tag_label, subscriber_id, subscriber_workspace_id, "
-        " oniterationchange, onstatechange) "
-        "VALUES (:ws, :tag, :gid, :ws, :oi, :os) "
-        "ON CONFLICT (tag_workspace_id, tag_label, subscriber_id, subscriber_workspace_id) "
-        "DO UPDATE SET oniterationchange = :oi2, onstatechange = :os2"
-    ), {"ws": ws, "tag": tagName, "gid": groupId,
-        "oi": on_iter, "oi2": on_iter, "os": on_state, "os2": on_state})
-    db.commit()
-    return {"tag": tagName, "onIterationChange": on_iter, "onStateChange": on_state}
+    return user_mgmt_service.set_group_tag_subscription(
+        db, ws, groupId, tagName, on_iter, on_state)
 
 
 @router.delete(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}", status_code=204)
@@ -192,13 +120,7 @@ def group_tag_subscription_delete(ws: str, groupId: str, tagName: str,
                                    db: Session = Depends(get_db),
                                    
                                    current_user: Account = Depends(get_current_user)):
-
-    db.execute(text(
-        "DELETE FROM tagusergroupsubscription "
-        "WHERE tag_workspace_id = :ws AND tag_label = :tag "
-        "AND subscriber_id = :gid AND subscriber_workspace_id = :ws"
-    ), {"ws": ws, "tag": tagName, "gid": groupId})
-    db.commit()
+    user_mgmt_service.delete_group_tag_subscription(db, ws, groupId, tagName)
 
 
 # ============ 用户组查询 ============
@@ -207,7 +129,4 @@ def group_tag_subscription_delete(ws: str, groupId: str, tagName: str,
 @router.get(f"{PREFIX}/user-group/", include_in_schema=False)
 def workspace_user_group(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT g.id, g.workspace_id FROM usergroup g WHERE g.workspace_id = :ws"
-    ), {"ws": ws}).fetchall()
-    return [{"id": r[0], "workspaceId": r[1]} for r in rows]
+    return user_mgmt_service.get_workspace_user_groups(db, ws)

@@ -6,9 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.product import ProductConfiguration
 from app.services.product_structure import ProductStructureService
-from app.services.factory.acl_factory import apply_acl, build_acl_dict
+from app.services.factory.acl_factory import build_acl_dict
 from app.models.util.date_utils import format_iso_date
 from app.schemas.product import ProductConfigurationDTO
 
@@ -24,29 +23,9 @@ def _get_user_dto(db: Session, login: str, ws: str) -> dict:
     if login in _NAME_CACHE:
         cached = _NAME_CACHE[login]
         return {"login": login, "name": cached, "email": None, "language": None, "workspaceId": ws}
-    from app.models.auth import Account
-    acc = db.query(Account).filter(Account.login == login).first()
-    name = acc.name if (acc and acc.name) else login
-    _NAME_CACHE[login] = name
-    return {"login": login, "name": name, "email": None, "language": None, "workspaceId": ws}
-
-
-def _config_substitute_paths(db: Session, config_id: int) -> list:
-    from sqlalchemy import text as _t
-    rows = db.execute(_t(
-        "SELECT substitutelinks FROM prdcfg_substitutelink "
-        "WHERE productbaseline_id = :cid"
-    ), {"cid": config_id}).fetchall()
-    return [r[0] for r in rows if r[0]]
-
-
-def _config_optional_paths(db: Session, config_id: int) -> list:
-    from sqlalchemy import text as _t
-    rows = db.execute(_t(
-        "SELECT optionalusagelinks FROM prdcfg_optionallink "
-        "WHERE productbaseline_id = :cid"
-    ), {"cid": config_id}).fetchall()
-    return [r[0] for r in rows if r[0]]
+    dto = svc._build_user_dto(db, login, ws)
+    _NAME_CACHE[login] = dto.get("name", login)
+    return dto
 
 
 def _decode_paths(db: Session, ws: str, ci_id: str, paths: list) -> list:
@@ -65,8 +44,8 @@ def _decode_paths(db: Session, ws: str, ci_id: str, paths: list) -> list:
 
 def _config_to_dict(cfg, db) -> dict:
     ws = cfg.configurationitem_workspace_id
-    sub_paths = _config_substitute_paths(db, cfg.id)
-    opt_paths = _config_optional_paths(db, cfg.id)
+    sub_paths = svc.get_config_substitute_paths(db, cfg.id)
+    opt_paths = svc.get_config_optional_paths(db, cfg.id)
     return {
         "id": cfg.id,
         "name": cfg.name,
@@ -122,14 +101,7 @@ def list_ci_configs(ws: str, pid: str,
 def get_config_by_ci(ws: str, ciId: str, cfg_id: int,
                      db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    cfg = db.query(ProductConfiguration).filter(
-        ProductConfiguration.id == cfg_id,
-        ProductConfiguration.configurationitem_id == ciId,
-        ProductConfiguration.configurationitem_workspace_id == ws,
-    ).first()
-    if not cfg:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
+    cfg = svc.get_config_by_id(db, ws, ciId, cfg_id)
     return _config_to_dict(cfg, db)
 
 
@@ -138,14 +110,7 @@ def get_config_by_ci(ws: str, ciId: str, cfg_id: int,
 def delete_config_by_ci(ws: str, ciId: str, cfg_id: int,
                         db: Session = Depends(get_db),
                         current_user: Account = Depends(get_current_user)):
-    cfg = db.query(ProductConfiguration).filter(
-        ProductConfiguration.id == cfg_id,
-        ProductConfiguration.configurationitem_id == ciId,
-        ProductConfiguration.configurationitem_workspace_id == ws,
-    ).first()
-    if not cfg:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
+    svc.get_config_by_id(db, ws, ciId, cfg_id)
     svc.delete_config(db, ws, cfg_id)
     return Response(status_code=204)
 
@@ -180,26 +145,9 @@ def delete_config(ws: str, ci_id: str, cfg_id: int,
 def update_config_acl(ws: str, ci_id: str, cfg_id: int, body: dict,
                       db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    config = db.query(ProductConfiguration).filter(
-        ProductConfiguration.configurationitem_workspace_id == ws,
-        ProductConfiguration.configurationitem_id == ci_id,
-        ProductConfiguration.id == cfg_id,
-    ).first()
-    if not config:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("ProductConfigurationNotFoundException", str(cfg_id))
     user_entries = body.get("userEntries", {})
     group_entries = body.get("groupEntries", {})
-    if not user_entries and not group_entries:
-        config.acl_id = None
-        db.commit()
-        return {"aclId": None}
-    acl_id = getattr(config, "acl_id", None)
-    new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
-    if config.acl_id != new_acl_id:
-        config.acl_id = new_acl_id
-        db.commit()
-    return {"aclId": new_acl_id}
+    return svc.update_config_acl(db, ws, ci_id, cfg_id, user_entries, group_entries)
 
 
 # 注意：CI 级 PathToPathLink CRUD（POST/GET/PUT/DELETE）定义在 products.py 路由中，

@@ -4,15 +4,13 @@ from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
-    AccessRightException, EntityAlreadyExistsException,
-    EntityNotFoundException, NotAllowedException,
+    NotAllowedException,
     TagAlreadyExistsException, TagNotFoundException,
-    WorkspaceNotFoundException, ListOfValuesNotFoundException,
+    ListOfValuesNotFoundException,
 )
 from app.models.auth import Account
 from app.models.util.naming_convention import is_valid_name
@@ -24,6 +22,8 @@ from app.schemas.misc import TagDTO, LOVDTO, LOVValueDTO
 from app.schemas.part import UserDTO
 from app.services.indexer_manager import indexer_manager
 from app.services.workspace_manager import workspace_service
+from app.services.lov_manager import lov_service
+from app.services.user_manager import user_mgmt_service
 from app.services.workspace_deletion import cascade_delete_workspace
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -31,16 +31,7 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 def _check_workspace_admin(db: Session, ws: str, current_user: Account):
     """验证当前用户是全局管理员或工作区管理员，否则 403。"""
-    is_global_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first()
-    if is_global_admin:
-        return
-    is_ws_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": ws, "l": current_user.login}).first()
-    if not is_ws_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
+    workspace_service.check_workspace_admin(db, ws, current_user.login)
 
 
 def _row_to_dict(r) -> dict:
@@ -57,25 +48,7 @@ def _row_to_dict(r) -> dict:
 @router.get("/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login FROM workspace ORDER BY id"
-    )).fetchall()
-    all_ws = [_row_to_dict(r) for r in rows]
-
-    # 全局管理员（usergroupmapping groupname='admin'）看全部 workspace
-    is_global_admin = db.execute(text(
-        "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).scalar() > 0
-    if is_global_admin:
-        return {"administratedWorkspaces": all_ws, "allWorkspaces": all_ws}
-
-    admin_ws = [w for w in all_ws if w["admin"] == current_user.login]
-    user_ws_ids = db.execute(text(
-        "SELECT workspace_id FROM userdata WHERE login=:l"
-    ), {"l": current_user.login}).fetchall()
-    user_ws = {r[0] for r in user_ws_ids}
-    return {"administratedWorkspaces": admin_ws,
-            "allWorkspaces": [w for w in all_ws if w["id"] in user_ws]}
+    return workspace_service.list_workspaces_for_user(db, current_user.login)
 
 
 @router.get("/workspaces/more", response_model=List[WorkspaceDTO])
@@ -83,12 +56,7 @@ def list_workspaces(db: Session = Depends(get_db),
 def list_more_workspaces(db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
     """GetDTO: 返回用户可切换的更多 Workspace 列表。"""
-    rows = db.execute(text(
-        "SELECT w.id, w.description FROM workspace w "
-        "JOIN userdata u ON w.id = u.workspace_id "
-        "WHERE u.login = :l"
-    ), {"l": current_user.login}).fetchall()
-    return [{"id": r[0], "description": r[1] or ""} for r in rows]
+    return workspace_service.list_more_workspaces_for_user(db, current_user.login)
 
 
 @router.get("/workspaces/reachable-users", response_model=List[UserDTO])
@@ -96,68 +64,14 @@ def list_more_workspaces(db: Session = Depends(get_db),
 def reachable_users(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
     """返回与当前用户有共同工作区的其他用户。对齐 Java WorkspaceResource.getReachableUsersForCaller → UserDTO[]"""
-    from app.models.auth import Account as Acct
-    caller_ws = db.execute(text(
-        "SELECT workspace_id FROM userdata WHERE login = :l"
-    ), {"l": current_user.login}).fetchall()
-    ws_ids = [r[0] for r in caller_ws]
-    if not ws_ids:
-        return []
-    user_logins = db.execute(text(
-        "SELECT DISTINCT u.login FROM userdata u "
-        "WHERE u.workspace_id = ANY(:ws) AND u.login != :caller"
-    ), {"ws": ws_ids, "caller": current_user.login}).fetchall()
-    logins = [r[0] for r in user_logins]
-    if not logins:
-        return []
-    users = db.query(Acct).filter(Acct.login.in_(logins)).all()
-    login_to_user = {u.login: u for u in users}
-    ud_rows = db.execute(text(
-        "SELECT login, workspace_id FROM userdata WHERE login = ANY(:logins) AND workspace_id = ANY(:ws)"
-    ), {"logins": logins, "ws": ws_ids}).fetchall()
-    login_to_ws = {}
-    for r in ud_rows:
-        if r[0] not in login_to_ws:
-            login_to_ws[r[0]] = r[1]
-    result = []
-    for login in logins:
-        u = login_to_user.get(login)
-        if u:
-            result.append({
-                "login": u.login,
-                "name": u.name,
-                "email": u.email,
-                "language": u.language or "",
-                "workspaceId": login_to_ws.get(login, ""),
-            })
-    return result
+    return workspace_service.get_reachable_users(db, current_user.login)
 
 
 @router.get("/workspaces/{ws}/stats-overview", response_model=StatsOverviewDTO)
 @router.get("/workspaces/{ws}/stats-overview/", include_in_schema=False)
 def stats_overview(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    # 对齐 Payara: 直接 COUNT PartRevision/DocumentRevision 行数
-    parts = db.execute(text(
-        "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
-    docs = db.execute(text(
-        "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
-    users = db.execute(text("SELECT COUNT(*) FROM userdata WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
-    products = db.execute(text("SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:w"), {"w": ws}).scalar() or 0
-    checked_out_docs = db.execute(text(
-        "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:w AND checkoutuser_login IS NOT NULL"
-    ), {"w": ws}).scalar() or 0
-    checked_out_parts = db.execute(text(
-        "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:w AND checkoutuser_login IS NOT NULL"
-    ), {"w": ws}).scalar() or 0
-    return {
-        "parts": parts,
-        "documents": docs,
-        "users": users,
-        "products": products,
-        "checkedOutDocuments": checked_out_docs,
-        "checkedOutParts": checked_out_parts,
-    }
+    return workspace_service.get_stats_overview(db, ws)
 
 
 
@@ -188,42 +102,14 @@ def disk_usage_stats(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/checked-out-documents-stats/", include_in_schema=False)
 def checked_out_docs_stats(ws: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
-    from sqlalchemy import text
-    from datetime import datetime
-    rows = db.execute(text(
-        "SELECT checkoutuser_login, checkoutdate "
-        "FROM documentrevision "
-        "WHERE workspace_id = :ws AND checkoutuser_login IS NOT NULL"
-    ), {"ws": ws}).fetchall()
-    result = {}
-    for r in rows:
-        login = r[0] or "unknown"
-        ts = int(r[1].timestamp() * 1000) if r[1] else 0
-        if login not in result:
-            result[login] = []
-        result[login].append({"date": ts})
-    return result
+    return workspace_service.get_checked_out_stats(db, ws, "documentrevision")
 
 
 @router.get("/workspaces/{ws}/checked-out-parts-stats", response_model=Dict[str, List[dict]])
 @router.get("/workspaces/{ws}/checked-out-parts-stats/", include_in_schema=False)
 def checked_out_parts_stats(ws: str, db: Session = Depends(get_db),
                             current_user: Account = Depends(get_current_user)):
-    from sqlalchemy import text
-    from datetime import datetime
-    rows = db.execute(text(
-        "SELECT checkoutuser_login, checkoutdate "
-        "FROM partrevision "
-        "WHERE workspace_id = :ws AND checkoutuser_login IS NOT NULL"
-    ), {"ws": ws}).fetchall()
-    result = {}
-    for r in rows:
-        login = r[0] or "unknown"
-        ts = int(r[1].timestamp() * 1000) if r[1] else 0
-        if login not in result:
-            result[login] = []
-        result[login].append({"date": ts})
-    return result
+    return workspace_service.get_checked_out_stats(db, ws, "partrevision")
 
 
 @router.get("/workspaces/{ws}/front-options", response_model=FrontOptionsDTO)
@@ -269,19 +155,7 @@ def reindex_workspace(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/lov/", include_in_schema=False)
 def list_of_values(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT l.name, l.workspace_id FROM lov l WHERE l.workspace_id = :ws ORDER BY l.name"
-    ), {"ws": ws}).fetchall()
-    result = {}
-    for r in rows:
-        name = r[0]
-        nv_rows = db.execute(text(
-            "SELECT nv.name, nv.value FROM lov_namevalue nv "
-            "WHERE nv.lov_name = :name AND nv.lov_workspace_id = :ws "
-            "ORDER BY nv.namevalue_order"
-        ), {"name": name, "ws": ws}).fetchall()
-        result[name] = [{"name": n[0], "value": n[1]} for n in nv_rows]
-    return result
+    return lov_service.get_lovs_with_values(db, ws)
 
 
 @router.post("/workspaces/{ws}/lov", status_code=201, response_model=LOVDTO)
@@ -291,22 +165,10 @@ def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
     name = body.get("name", "").strip()
     if not name:
         raise NotAllowedException("NotAllowedException9", name)
-    existing = db.execute(text(
-        "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
-    ), {"name": name, "ws": ws}).fetchone()
-    if existing:
-        raise EntityAlreadyExistsException("LOVAlreadyExistsException", name)
-    db.execute(text(
-        "INSERT INTO lov (name, workspace_id) VALUES (:name, :ws)"
-    ), {"name": name, "ws": ws})
     values = body.get("values", [])
-    for i, v in enumerate(values):
-        db.execute(text(
-            "INSERT INTO lov_namevalue (name, value, lov_name, lov_workspace_id, namevalue_order) "
-            "VALUES (:name, :value, :lov_name, :ws, :ord)"
-        ), {"name": v.get("name", ""), "value": v.get("value", ""),
-            "lov_name": name, "ws": ws, "ord": i})
-    db.commit()
+    name_value_pairs = [{"name": v.get("name", ""), "value": v.get("value", ""), "order": i}
+                        for i, v in enumerate(values)]
+    lov_service.create_lov(db, ws, name, name_value_pairs)
     return {"name": name, "workspaceId": ws, "values": values}
 
 
@@ -314,22 +176,12 @@ def create_lov(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put("/workspaces/{ws}/lov/{name}/", include_in_schema=False)
 def update_lov(ws: str, name: str, body: dict, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
-    existing = db.execute(text(
-        "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
-    ), {"name": name, "ws": ws}).fetchone()
-    if not existing:
+    if not lov_service.lov_exists(db, ws, name):
         raise ListOfValuesNotFoundException("ListOfValuesNotFoundException", name)
-    db.execute(text(
-        "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
-    ), {"name": name, "ws": ws})
     values = body.get("values", [])
-    for i, v in enumerate(values):
-        db.execute(text(
-            "INSERT INTO lov_namevalue (name, value, lov_name, lov_workspace_id, namevalue_order) "
-            "VALUES (:name, :value, :lov_name, :ws, :ord)"
-        ), {"name": v.get("name", ""), "value": v.get("value", ""),
-            "lov_name": name, "ws": ws, "ord": i})
-    db.commit()
+    name_value_pairs = [{"name": v.get("name", ""), "value": v.get("value", ""), "order": i}
+                        for i, v in enumerate(values)]
+    lov_service.update_lov(db, ws, name, name, name_value_pairs)
     return {"name": name, "workspaceId": ws, "values": values}
 
 
@@ -337,54 +189,30 @@ def update_lov(ws: str, name: str, body: dict, db: Session = Depends(get_db),
 @router.delete("/workspaces/{ws}/lov/{name}/", status_code=204, include_in_schema=False)
 def delete_lov(ws: str, name: str, db: Session = Depends(get_db),
                current_user: Account = Depends(get_current_user)):
-    existing = db.execute(text(
-        "SELECT name FROM lov WHERE name = :name AND workspace_id = :ws"
-    ), {"name": name, "ws": ws}).fetchone()
-    if not existing:
+    if not lov_service.lov_exists(db, ws, name):
         raise ListOfValuesNotFoundException("ListOfValuesNotFoundException", name)
-    db.execute(text(
-        "DELETE FROM lov_namevalue WHERE lov_name = :name AND lov_workspace_id = :ws"
-    ), {"name": name, "ws": ws})
-    db.execute(text(
-        "DELETE FROM lov WHERE name = :name AND workspace_id = :ws"
-    ), {"name": name, "ws": ws})
-    db.commit()
+    lov_service.delete_lov(db, ws, name)
 
 
 @router.get("/workspaces/{ws}/attributes/part-iterations", response_model=List[str])
 @router.get("/workspaces/{ws}/attributes/part-iterations/", include_in_schema=False)
 def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT DISTINCT ia.name FROM partiteration_attribute pia "
-        "JOIN instanceattribute ia ON ia.id = pia.instanceattribute_id "
-        "WHERE pia.workspace_id = :ws ORDER BY ia.name"
-    ), {"ws": ws}).fetchall()
-    return [r[0] for r in rows]
+    return workspace_service.get_workspace_attributes_part_iterations(db, ws)
 
 
 @router.get("/workspaces/{ws}/attributes/path-data", response_model=List[str])
 @router.get("/workspaces/{ws}/attributes/path-data/", include_in_schema=False)
 def attributes_path_data(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    rows = db.execute(text(
-        "SELECT DISTINCT iat.name FROM partiteration_pathdata_attr ppa "
-        "JOIN instanceattributetemplate iat ON iat.id = ppa.instanceattribute_template_id "
-        "WHERE ppa.workspace_id = :ws ORDER BY iat.name"
-    ), {"ws": ws}).fetchall()
-    return [r[0] for r in rows]
+    return workspace_service.get_workspace_attributes_path_data(db, ws)
 
 
 @router.get("/workspaces/{ws}", response_model=WorkspaceDTO)
 @router.get("/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   current_user: Account = Depends(get_current_user)):
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not r:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
+    r = workspace_service.get_workspace_admin(db, ws)
     return _row_to_dict(r)
 
 
@@ -407,29 +235,10 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
 @router.put("/workspaces/{ws}/", include_in_schema=False)
 def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    existing = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not existing:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-
-    updates = {}
-    if "description" in body:
-        updates["description"] = body["description"]
-    if "folderLocked" in body:
-        updates["folderlocked"] = body["folderLocked"]
-
-    if updates:
-        set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-        db.execute(text(
-            f"UPDATE workspace SET {set_clause} WHERE id = :id"
-        ), {**updates, "id": ws})
-        db.commit()
-
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
+    description = body.get("description")
+    folder_locked = body.get("folderLocked")
+    r = workspace_service.update_workspace(db, ws, description=description,
+                                             folder_locked=folder_locked)
     return _row_to_dict(r)
 
 
@@ -442,20 +251,9 @@ def change_admin(ws: str, body: dict, db: Session = Depends(get_db),
     new_admin = body.get("login", "").strip()
     if not new_admin:
         raise NotAllowedException("NotAllowedException9", new_admin)
-    # 验证新管理员是工作区成员
-    member = db.execute(text(
-        "SELECT 1 FROM userdata WHERE login = :l AND workspace_id = :ws"
-    ), {"l": new_admin, "ws": ws}).first()
-    if not member:
+    if not user_mgmt_service.is_workspace_member(db, ws, new_admin):
         raise NotAllowedException("NotAllowedException9", new_admin)
-    db.execute(text(
-        "UPDATE workspace SET admin_login = :a WHERE id = :ws"
-    ), {"a": new_admin, "ws": ws})
-    db.commit()
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
+    r = workspace_service.change_admin(db, ws, new_admin)
     return _row_to_dict(r)
 
 
@@ -463,9 +261,5 @@ def change_admin(ws: str, body: dict, db: Session = Depends(get_db),
 def delete_workspace(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
     _check_workspace_admin(db, ws, current_user)
-    existing = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not existing:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
+    workspace_service.get_workspace_admin(db, ws)  # 存在性校验，不存在会抛异常
     cascade_delete_workspace(db, ws)

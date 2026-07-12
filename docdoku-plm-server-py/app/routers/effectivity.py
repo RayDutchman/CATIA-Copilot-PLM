@@ -5,14 +5,13 @@ DELETE    /workspaces/{ws}/parts/{part_key}/effectivities/{effectivity_id}
 GET/PUT   /effectivities/{id}
 """
 import re
-from datetime import datetime
 from fastapi import APIRouter, Depends, Body
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import CreationException
+from app.core.exceptions import CreationException, EntityNotFoundException
 from app.models.auth import Account
 from app.models.product.effectivity import Effectivity
 from app.services.effectivity_manager import effectivity_service
@@ -100,55 +99,18 @@ def create_effectivity(
     """创建零件版本有效性（日期/序列号/批次号）。"""
     part_number, version = _split_part_key(part_key)
     type_eff = body.get("typeEffectivity", "DATEBASEDEFFECTIVITY")
-    ci_id = body.get("configurationItemNumber")
-    name = body.get("name", "")
-    description = body.get("description", "")
 
     if type_eff == "DATEBASEDEFFECTIVITY":
         if not body.get("startDate"):
             raise CreationException("startDate is required for DateBasedEffectivity")
-        dtype = "DateBasedEffectivity"
-        eff = Effectivity(
-            dtype=dtype, name=name, description=description,
-            start_date=_parse_date(body.get("startDate")),
-            end_date=_parse_date(body.get("endDate")),
-            configurationitem_id=ci_id,
-            configurationitem_workspace_id=workspace_id,
-        )
     elif type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
         if not body.get("startNumber"):
             raise CreationException("startNumber is required for SerialNumberBasedEffectivity")
-        dtype = "SerialNumberBasedEffectivity"
-        eff = Effectivity(
-            dtype=dtype, name=name, description=description,
-            start_number=body.get("startNumber"),
-            end_number=body.get("endNumber"),
-            configurationitem_id=ci_id,
-            configurationitem_workspace_id=workspace_id,
-        )
-    else:  # LOTBASEDEFFECTIVITY
+    else:
         if not body.get("startLotId"):
             raise CreationException("startLotId is required for LotBasedEffectivity")
-        dtype = "LotBasedEffectivity"
-        eff = Effectivity(
-            dtype=dtype, name=name, description=description,
-            start_lot=body.get("startLotId"),
-            end_lot=body.get("endLotId"),
-            configurationitem_id=ci_id,
-            configurationitem_workspace_id=workspace_id,
-        )
 
-    db.add(eff)
-    db.flush()
-
-    # 关联到 partrevision
-    db.execute(text(
-        "INSERT INTO partrevision_effectivity "
-        "(partmaster_workspace_id, partmaster_partnumber, partrevision_version, effectivity_id) "
-        "VALUES (:ws, :pn, :ver, :eid)"
-    ), {"ws": workspace_id, "pn": part_number, "ver": version, "eid": eff.id})
-    db.commit()
-    db.refresh(eff)
+    eff = effectivity_service.create_effectivity(db, workspace_id, part_number, version, body)
     return _effectivity_to_dto(eff)
 
 
@@ -177,11 +139,8 @@ def get_effectivity(
     db: Session = Depends(get_db),
 ):
     """按 ID 获取有效性条目。"""
-    eff = db.query(Effectivity).filter(Effectivity.id == id).first()
-    if eff is None:
-        from app.core.exceptions import EntityNotFoundException
-        raise EntityNotFoundException("EffectivityNotFoundException", str(id))
-    return _effectivity_to_dto(eff)
+    eff_dict = effectivity_service.get_effectivity(db, workspace_id, id)
+    return _effectivity_to_dto(eff_dict)
 
 
 @router.put("/workspaces/{workspace_id}/effectivities/{id}", status_code=200)
@@ -199,7 +158,6 @@ def put_effectivity(
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("EffectivityNotFoundException", str(id))
 
-    # 类型分派校验：下限字段不可清空（对齐 Java updateEffectivity → updateXxxEffectivity）
     dtype = eff.dtype
     if not dtype and body.get("typeEffectivity"):
         type_eff = body.get("typeEffectivity", "").upper()
@@ -220,32 +178,5 @@ def put_effectivity(
         if "startLotId" in body and not body.get("startLotId"):
             raise CreationException("startLotId is required for LotBasedEffectivity")
 
-    if "name" in body:
-        eff.name = body["name"]
-    if "description" in body:
-        eff.description = body["description"]
-    if "startDate" in body:
-        eff.start_date = _parse_date(body["startDate"])
-    if "endDate" in body:
-        eff.end_date = _parse_date(body["endDate"])
-    if "startNumber" in body:
-        eff.start_number = body["startNumber"]
-    if "endNumber" in body:
-        eff.end_number = body["endNumber"]
-    if "startLotId" in body:
-        eff.start_lot = body["startLotId"]
-    if "endLotId" in body:
-        eff.end_lot = body["endLotId"]
-    db.commit()
+    eff = effectivity_service.update_effectivity(db, workspace_id, id, body)
     return _effectivity_to_dto(eff)
-
-
-def _parse_date(value) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return None

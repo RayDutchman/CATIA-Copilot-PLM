@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional, Sequence
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.exceptions import (
@@ -14,6 +15,10 @@ from app.models.change import (
     ChangeIssue, ChangeRequest, ChangeOrder, Milestone,
     change_issue_tags, change_request_tags, change_order_tags,
 )
+
+_NAME_CACHE: dict = {}
+_PRIORITY_NAMES = {0: "LOW", 1: "MEDIUM", 2: "HIGH", 3: "EMERGENCY"}
+_CATEGORY_NAMES = {0: "ADAPTIVE", 1: "CORRECTIVE", 2: "PERFECTIVE", 3: "PREVENTIVE", 4: "OTHER"}
 
 TYPE_MAP = {
     "issue": ChangeIssue, "issues": ChangeIssue,
@@ -316,3 +321,246 @@ class ChangeService:
         db.execute(tag_tbl.delete().where(
             (pk_col == item_id) & (tag_tbl.c.tag_label == label)))
         db.commit()
+
+    # ========== 从 change_common 迁入的 DB 操作 ==========
+
+    def get_user_name(self, db: Session, login: str) -> str:
+        if not login:
+            return ""
+        key = login
+        if key in _NAME_CACHE:
+            return _NAME_CACHE[key]
+        acc = db.query(Account).filter(Account.login == login).first()
+        name = acc.name if (acc and acc.name) else login
+        _NAME_CACHE[key] = name
+        return name
+
+    def is_admin(self, db: Session, login: str) -> bool:
+        return db.execute(sql_text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": login}).first() is not None
+
+    def build_item_dto(self, item, db: Optional[Session] = None,
+                       current_user: Optional[Account] = None) -> dict:
+        """构建变更项完整 DTO（含 affected parts/docs、关联 issues/requests）"""
+        from app.services.factory.acl_factory import check_write_access, check_read_access, build_acl_dict
+        from app.models.util.date_utils import format_iso_date
+
+        is_request = isinstance(item, ChangeRequest)
+        is_order = isinstance(item, ChangeOrder)
+        is_issue = isinstance(item, ChangeIssue)
+
+        author_login = getattr(item, "author_login", "")
+        assignee_login = getattr(item, "assignee_login", "")
+
+        author_name = self.get_user_name(db, author_login) if db else author_login
+        assignee_name = self.get_user_name(db, assignee_login) if db else assignee_login
+
+        creation_date = None
+        cd = getattr(item, "creation_date", None)
+        if cd:
+            creation_date = format_iso_date(cd)
+
+        name = getattr(item, "name", getattr(item, "title", ""))
+
+        is_admin = False
+        if current_user and db:
+            is_admin = self.is_admin(db, current_user.login)
+
+        writable = True
+        if db and current_user:
+            writable = check_write_access(db, getattr(item, "acl_id", None),
+                                          current_user.login, is_admin,
+                                          workspace_id=getattr(item, "workspace_id", None))
+
+        data = dict(
+            acl=build_acl_dict(db, getattr(item, "acl_id", None), include_id=True) or {},
+            affectedDocuments=[],
+            affectedParts=[],
+            assignee=assignee_login or None,
+            assigneeName=assignee_name or None,
+            author=author_login,
+            authorName=author_name or author_login,
+            category=_CATEGORY_NAMES.get(getattr(item, "category", None)),
+            creationDate=creation_date,
+            description=getattr(item, "description", "") or "",
+            id=item.id,
+            name=name,
+            priority=_PRIORITY_NAMES.get(getattr(item, "priority", None)),
+            tags=[t.label for t in (getattr(item, "tags", None) or [])],
+            workspaceId=getattr(item, "workspace_id", ""),
+            writable=writable,
+        )
+
+        if is_issue:
+            data["initiator"] = getattr(item, "initiator", None)
+
+        if is_request:
+            data["milestoneId"] = getattr(item, "milestone_id", None) or -1
+        elif is_order:
+            data["milestoneId"] = getattr(item, "milestone_id", None) or -1
+
+        if db:
+            prefix_map = {
+                ChangeIssue: ("changeissue", "changeissue_id"),
+                ChangeOrder: ("changeorder", "changeorder_id"),
+                ChangeRequest: ("changereq", "changerequest_id"),
+            }
+            prefix, id_col = prefix_map.get(type(item), ("", ""))
+            if prefix:
+                rows = db.execute(sql_text(
+                    f"SELECT partmaster_partnumber, partrevision_version "
+                    f"FROM {prefix}_affected_part WHERE {id_col}=:iid"
+                ), {"iid": item.id}).fetchall()
+                data["affectedParts"] = [
+                    {"partKey": f"{r[0]}-{r[1]}", "partNumber": r[0], "version": r[1]}
+                    for r in rows
+                ]
+                rows = db.execute(sql_text(
+                    f"SELECT documentmaster_id, documentrevision_version "
+                    f"FROM {prefix}_affected_document WHERE {id_col}=:iid"
+                ), {"iid": item.id}).fetchall()
+                data["affectedDocuments"] = [
+                    {"documentKey": f"{r[0]}-{r[1]}", "documentMasterId": r[0], "version": r[1]}
+                    for r in rows
+                ]
+            if is_request:
+                issue_ids = db.execute(sql_text(
+                    "SELECT changeissue_id FROM changerequest_changeissue "
+                    "WHERE changerequest_id=:iid"
+                ), {"iid": item.id}).fetchall()
+                if issue_ids:
+                    issues = db.query(ChangeIssue).filter(
+                        ChangeIssue.id.in_([r[0] for r in issue_ids])
+                    ).all()
+                    if current_user:
+                        issues = [i for i in issues
+                                  if i.acl_id is None
+                                  or check_read_access(db, i.acl_id, current_user.login, is_admin)]
+                    data["addressedChangeIssues"] = [self.build_item_dto(i, db, current_user) for i in issues]
+                else:
+                    data["addressedChangeIssues"] = []
+            elif is_order:
+                req_ids = db.execute(sql_text(
+                    "SELECT changerequest_id FROM changeorder_changerequest "
+                    "WHERE changeorder_id=:iid"
+                ), {"iid": item.id}).fetchall()
+                if req_ids:
+                    requests = db.query(ChangeRequest).filter(
+                        ChangeRequest.id.in_([r[0] for r in req_ids])
+                    ).all()
+                    if current_user:
+                        requests = [r for r in requests
+                                    if r.acl_id is None
+                                    or check_read_access(db, r.acl_id, current_user.login, is_admin)]
+                    data["addressedChangeRequests"] = [self.build_item_dto(r, db, current_user) for r in requests]
+                else:
+                    data["addressedChangeRequests"] = []
+
+        return data
+
+    def set_affected_parts(self, db: Session, ws: str, item_id: int,
+                           parts_data: Sequence[dict], table_name: str, id_column: str,
+                           user_login: str | None = None, is_admin: bool = False):
+        from app.services.factory.acl_factory import check_write_access
+        if user_login:
+            item_table = id_column.replace("_id", "")
+            acl_id = db.scalar(sql_text(
+                f"SELECT acl_id FROM {item_table} WHERE id = :iid"
+            ), {"iid": item_id})
+            has_access = check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws)
+            if not has_access:
+                raise AccessRightException("AccessRightException", user_login)
+        db.execute(sql_text(f"DELETE FROM {table_name} WHERE {id_column}=:iid"),
+                   {"iid": item_id})
+        for part_data in parts_data:
+            part_key = part_data.get("partKey", "")
+            parts_split = part_key.rsplit("-", 1)
+            pn = parts_split[0] if len(parts_split) == 2 else part_key
+            ver = parts_split[1] if len(parts_split) == 2 else "A"
+            iteration = part_data.get("iteration")
+            if iteration is None:
+                iteration = db.scalar(sql_text(
+                    "SELECT MAX(iteration) FROM partiteration "
+                    "WHERE partmaster_partnumber = :pn "
+                    "AND partrevision_version = :ver "
+                    "AND workspace_id = :ws"
+                ), {"pn": pn, "ver": ver, "ws": ws}) or 1
+            db.execute(sql_text(
+                f"INSERT INTO {table_name} ({id_column}, partmaster_workspace_id, "
+                f"partmaster_partnumber, partrevision_version, iteration) "
+                f"VALUES (:iid, :ws, :pn, :ver, :iter)"
+            ), {"iid": item_id, "ws": ws, "pn": pn, "ver": ver, "iter": iteration})
+        db.commit()
+
+    def set_affected_documents(self, db: Session, ws: str, item_id: int,
+                               docs_data: Sequence[dict], table_name: str, id_column: str,
+                               user_login: str | None = None, is_admin: bool = False):
+        from app.services.factory.acl_factory import check_write_access
+        if user_login:
+            item_table = id_column.replace("_id", "")
+            acl_id = db.scalar(sql_text(
+                f"SELECT acl_id FROM {item_table} WHERE id = :iid"
+            ), {"iid": item_id})
+            has_access = check_write_access(db, acl_id, user_login, is_admin, workspace_id=ws)
+            if not has_access:
+                raise AccessRightException("AccessRightException", user_login)
+        db.execute(sql_text(f"DELETE FROM {table_name} WHERE {id_column}=:iid"),
+                   {"iid": item_id})
+        for doc_data in docs_data:
+            doc_key = doc_data.get("documentKey", "")
+            doc_split = doc_key.rsplit("-", 1)
+            dm_id = doc_split[0] if len(doc_split) == 2 else doc_key
+            ver = doc_split[1] if len(doc_split) == 2 else "A"
+            iteration = doc_data.get("iteration")
+            if iteration is None:
+                iteration = db.scalar(sql_text(
+                    "SELECT MAX(iteration) FROM documentiteration "
+                    "WHERE documentmaster_id = :did "
+                    "AND documentrevision_version = :ver "
+                    "AND workspace_id = :ws"
+                ), {"did": dm_id, "ver": ver, "ws": ws}) or 1
+            db.execute(sql_text(
+                f"INSERT INTO {table_name} ({id_column}, documentmaster_workspace_id, "
+                f"documentmaster_id, documentrevision_version, iteration) "
+                f"VALUES (:iid, :ws, :did, :ver, :iter)"
+            ), {"iid": item_id, "ws": ws, "did": dm_id, "ver": ver, "iter": iteration})
+        db.commit()
+
+    def set_order_affected_requests(self, db: Session, ws: str, item_id: int,
+                                     requests_data: Sequence[dict]):
+        db.execute(sql_text(
+            "DELETE FROM changeorder_changerequest WHERE changeorder_id=:iid"
+        ), {"iid": item_id})
+        for req_data in requests_data:
+            req_id = req_data.get("id") if isinstance(req_data, dict) else req_data
+            if req_id:
+                db.execute(sql_text(
+                    "INSERT INTO changeorder_changerequest (changeorder_id, changerequest_id) "
+                    "VALUES (:oid, :rid)"
+                ), {"oid": item_id, "rid": req_id})
+        db.commit()
+
+    def set_request_affected_issues(self, db: Session, ws: str, item_id: int,
+                                     issues_data: Sequence[dict]):
+        db.execute(sql_text(
+            "DELETE FROM changerequest_changeissue WHERE changerequest_id=:iid"
+        ), {"iid": item_id})
+        for issue_data in issues_data:
+            issue_id = issue_data.get("id") if isinstance(issue_data, dict) else issue_data
+            if issue_id:
+                db.execute(sql_text(
+                    "INSERT INTO changerequest_changeissue (changerequest_id, changeissue_id) "
+                    "VALUES (:rid, :iid)"
+                ), {"rid": item_id, "iid": issue_id})
+        db.commit()
+
+    def get_milestone_counts(self, db: Session, milestone_id: int) -> tuple:
+        """返回 (numberOfOrders, numberOfRequests)"""
+        numberOfOrders = db.scalar(sql_text(
+            "SELECT COUNT(*) FROM changeorder WHERE milestone_id=:mid"
+        ), {"mid": milestone_id}) or 0
+        numberOfRequests = db.scalar(sql_text(
+            "SELECT COUNT(*) FROM changerequest WHERE milestone_id=:mid"
+        ), {"mid": milestone_id}) or 0
+        return numberOfOrders, numberOfRequests

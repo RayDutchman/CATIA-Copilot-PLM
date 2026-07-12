@@ -1,13 +1,10 @@
 """文档集合路由（DocumentsResource）。"""
-from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import or_, text as sql_text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.document import DocumentRevision, DocumentMaster
 from app.services.document_manager import DocumentService
 from app.schemas.document import DocumentRevisionDTO
 
@@ -61,102 +58,19 @@ def search_documents(
         if content: es_params["content"] = content
         keys = es_query_builder.search_documents(ws, es_params)
         if keys:
-            # 解析迭代级 key: '{docMId}-{version}-{iteration}' → 按 revision 去重
-            from sqlalchemy.orm import joinedload
-            seen = set()
-            rev_keys = []
-            for k in keys:
-                parts = k.rsplit("-", 2)
-                if len(parts) >= 2:
-                    dv = (parts[0], parts[1])  # (docMId, version)
-                    if dv not in seen:
-                        seen.add(dv)
-                        rev_keys.append(dv)
-            if rev_keys:
-                from sqlalchemy import and_
-                conditions = [
-                    (DocumentRevision.workspace_id == ws) &
-                    (DocumentRevision.documentmaster_id == dv[0]) &
-                    (DocumentRevision.version == dv[1])
-                    for dv in rev_keys
-                ]
-                revisions = db.query(DocumentRevision).options(
-                    joinedload(DocumentRevision.iterations),
-                ).filter(or_(*conditions)).all()
-                rev_map = {(dr.documentmaster_id, dr.version): dr for dr in revisions}
-                ordered = [rev_map[k] for k in rev_keys if k in rev_map]
-                return [svc.build_revision_dto(db, dr, current_user.login) for dr in ordered]
+            revisions = svc.resolve_es_document_keys(db, ws, keys)
+            return [svc.build_revision_dto(db, dr, current_user.login) for dr in revisions]
     except Exception:
         pass  # ES 失败 → fallback
 
-    # DB LIKE fallback ────────────────────────────────────────
-    query = db.query(DocumentRevision).join(
-        DocumentMaster,
-        (DocumentRevision.workspace_id == DocumentMaster.workspace_id) &
-        (DocumentRevision.documentmaster_id == DocumentMaster.id)
-    ).filter(DocumentMaster.workspace_id == ws)
-    if q:
-        q_pattern = f"%{q}%"
-        query = query.filter(or_(
-            DocumentMaster.id.ilike(q_pattern),
-            DocumentRevision.title.ilike(q_pattern),
-        ))
-    if id:
-        query = query.filter(DocumentMaster.id.ilike(f"%{id}%"))
-    if title:
-        query = query.filter(DocumentRevision.title.ilike(f"%{title}%"))
-    if version:
-        query = query.filter(DocumentRevision.version == version)
-    if author:
-        query = query.filter(DocumentRevision.author_login == author)
-    if tags:
-        matched_ids = [row[0] for row in db.execute(sql_text(
-            "SELECT dr.documentmaster_id FROM documentrevision dr "
-            "JOIN documentrevision_tag t ON dr.documentmaster_id=t.documentmaster_id "
-            "AND dr.version=t.documentrevision_version "
-            "WHERE t.tag_label ILIKE :t AND dr.workspace_id=:w"
-        ), {"t": f"%{tags}%", "w": ws}).fetchall()]
-        query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
-    if content:
-        content_pattern = f"%{content}%"
-        from app.models.document import DocumentIteration
-        matched_ids = [row[0] for row in db.execute(sql_text(
-            "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
-            "WHERE di.workspace_id = :w AND di.revisionnote ILIKE :c"
-        ), {"w": ws, "c": f"%{content}%"}).fetchall()]
-        if matched_ids:
-            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
-        else:
-            query = query.filter(DocumentRevision.documentmaster_id == None)
-    if createdFrom:
-        cf = datetime.fromisoformat(createdFrom)
-        query = query.filter(DocumentRevision.creation_date >= cf)
-    if createdTo:
-        ct = datetime.fromisoformat(createdTo)
-        query = query.filter(DocumentRevision.creation_date <= ct)
-    if modifiedFrom:
-        from app.models.document import DocumentIteration as DI
-        mf = datetime.fromisoformat(modifiedFrom)
-        matched_ids = [row[0] for row in db.execute(sql_text(
-            "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
-            "WHERE di.workspace_id = :w AND di.modificationdate >= :d"
-        ), {"w": ws, "d": mf}).fetchall()]
-        if matched_ids:
-            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
-        else:
-            query = query.filter(DocumentRevision.documentmaster_id == None)
-    if modifiedTo:
-        from app.models.document import DocumentIteration as DI
-        mt = datetime.fromisoformat(modifiedTo)
-        matched_ids = [row[0] for row in db.execute(sql_text(
-            "SELECT DISTINCT di.documentmaster_id FROM documentiteration di "
-            "WHERE di.workspace_id = :w AND di.modificationdate <= :d"
-        ), {"w": ws, "d": mt}).fetchall()]
-        if matched_ids:
-            query = query.filter(DocumentRevision.documentmaster_id.in_(matched_ids))
-        else:
-            query = query.filter(DocumentRevision.documentmaster_id == None)
-    docs = query.order_by(DocumentMaster.id).offset(start).limit(size).all()
+    # DB LIKE fallback
+    docs = svc.search_documents_sql(
+        db, ws, q=q, doc_id=id, title=title, version=version,
+        author=author, tags=tags, content=content,
+        createdFrom=createdFrom, createdTo=createdTo,
+        modifiedFrom=modifiedFrom, modifiedTo=modifiedTo,
+        start=start, size=size,
+    )
     return [svc.build_revision_dto(db, d, current_user.login) for d in docs]
 
 
@@ -208,20 +122,11 @@ def create(ws: str, body: dict,
     workflow_model_id = body.get("workflowModelId")
     acl = body.get("acl", {})
     role_mapping = body.get("roleMapping")
-    user_entries = acl.get("userEntriesMap") if acl else None
-    user_group_entries = acl.get("userGroupEntriesMap") if acl else None
-    # service 层 create_document 不支持 description 参数，创建后手动设
     rev = svc.create_document(db, ws, doc_id, title, current_user.login,
-                              template_id=template_id,
-                              workflow_model_id=workflow_model_id,
-                              role_mapping=role_mapping)
-    if description:
-        rev.description = description
-    if user_entries or user_group_entries:
-        from app.services.factory.acl_factory import apply_acl
-        acl_id = getattr(rev, "acl_id", None)
-        new_acl_id = apply_acl(db, acl_id, user_entries, user_group_entries)
-        if getattr(rev, "acl_id", None) != new_acl_id:
-            rev.acl_id = new_acl_id
-    db.commit()
+                               template_id=template_id,
+                               workflow_model_id=workflow_model_id,
+                               role_mapping=role_mapping,
+                               description=description or None,
+                               user_entries=acl.get("userEntriesMap") if acl else None,
+                               user_group_entries=acl.get("userGroupEntriesMap") if acl else None)
     return svc.build_revision_dto(db, rev, current_user.login)

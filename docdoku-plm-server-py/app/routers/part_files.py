@@ -12,7 +12,6 @@ from app.services.product_manager import ProductService
 from app.services.kafka_producer import send_conversion_order
 from app.services.converter import find_pending_conversion
 from app.schemas.part import BinaryResourceDTO, StatusDTO
-from app.models.part import PartIteration
 from datetime import datetime, timezone
 
 router = APIRouter()
@@ -101,48 +100,8 @@ def delete_part_file(
     db: Session = Depends(get_db),
 ):
     _check_writable(db, ws, pn, ver, iteration, current_user.login)
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
-    from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
-    from app.services import vault
-    from app.core.config import settings
-    from pathlib import Path
-
-    # 根据 sub_type 清理关联表
-    if sub_type == "nativecad":
-        it = db.query(PartIteration).filter(
-            PartIteration.workspace_id == ws,
-            PartIteration.partmaster_partnumber == pn,
-            PartIteration.partrevision_version == ver,
-            PartIteration.iteration == iteration,
-        ).first()
-        if it:
-            it.native_cad_file_fullname = None
-    elif sub_type == "attachedfiles":
-        db.execute(part_iteration_binres.delete().where(
-            part_iteration_binres.c.workspace_id == ws,
-            part_iteration_binres.c.partmaster_partnumber == pn,
-            part_iteration_binres.c.partrevision_version == ver,
-            part_iteration_binres.c.iteration == iteration,
-            part_iteration_binres.c.attachedfile_fullname == full_name,
-        ))
-    else:
-        db.execute(part_iteration_geometry.delete().where(
-            part_iteration_geometry.c.workspace_id == ws,
-            part_iteration_geometry.c.partmaster_partnumber == pn,
-            part_iteration_geometry.c.partrevision_version == ver,
-            part_iteration_geometry.c.iteration == iteration,
-            part_iteration_geometry.c.geometry_fullname == full_name,
-        ))
-
-    # 删除 vault 物理文件
-    try:
-        vault_path = Path(settings.VAULT_PATH) / full_name
-        if vault_path.exists():
-            vault_path.unlink()
-    except Exception:
-        pass
-
-    db.commit()
+    binary_storage.delete_part_file(db, ws, pn, ver, iteration,
+                                      sub_type, file_name, current_user.login)
 
 
 @router.put("/files/{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}",
@@ -159,59 +118,11 @@ def rename_part_file(
     new_file_name = body.get("fileName")
     if not new_file_name:
         raise HTTPException(400, "fileName is required")
-    old_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
-    new_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{new_file_name}"
-
-    from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
-    from app.services import vault
-    from app.core.config import settings
-    from pathlib import Path
-
-    # 更新 BinaryResource
-    br = db.query(BinaryResource).filter(
-        BinaryResource.full_name == old_full).first()
-    if br:
-        br.full_name = new_full
-
-    # 更新关联表
-    if sub_type == "nativecad":
-        it = db.query(PartIteration).filter(
-            PartIteration.workspace_id == ws,
-            PartIteration.partmaster_partnumber == pn,
-            PartIteration.partrevision_version == ver,
-            PartIteration.iteration == iteration,
-        ).first()
-        if it:
-            it.native_cad_file_fullname = new_full
-    elif sub_type == "attachedfiles":
-        db.execute(part_iteration_binres.update().where(
-            part_iteration_binres.c.workspace_id == ws,
-            part_iteration_binres.c.partmaster_partnumber == pn,
-            part_iteration_binres.c.partrevision_version == ver,
-            part_iteration_binres.c.iteration == iteration,
-            part_iteration_binres.c.attachedfile_fullname == old_full,
-        ).values(attachedfile_fullname=new_full))
-    else:
-        db.execute(part_iteration_geometry.update().where(
-            part_iteration_geometry.c.workspace_id == ws,
-            part_iteration_geometry.c.partmaster_partnumber == pn,
-            part_iteration_geometry.c.partrevision_version == ver,
-            part_iteration_geometry.c.iteration == iteration,
-            part_iteration_geometry.c.geometry_fullname == old_full,
-        ).values(geometry_fullname=new_full))
-
-    # 重命名 vault 物理文件
-    try:
-        old_path = Path(settings.VAULT_PATH) / old_full
-        new_path = Path(settings.VAULT_PATH) / new_full
-        if old_path.exists():
-            new_path.parent.mkdir(parents=True, exist_ok=True)
-            old_path.rename(new_path)
-    except Exception:
-        pass
-
-    db.commit()
-    return StatusDTO(status="renamed", message=new_file_name)
+    result = binary_storage.rename_part_file(
+        db, ws, pn, ver, iteration, sub_type,
+        file_name, new_file_name, current_user.login,
+    )
+    return StatusDTO(status="renamed", message=result["name"])
 def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
     stat = file_path.stat()
     mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
