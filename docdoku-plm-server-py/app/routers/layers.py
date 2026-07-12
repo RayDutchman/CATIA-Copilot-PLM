@@ -73,9 +73,9 @@ def delete_layer(ws: str, pid: str, layer_id: int,
     ).first()
     if not layer:
         return Response(status_code=204)
+    # 对齐 Java @ManyToMany 不级联删 marker：仅清 join table + 删 layer
+    # marker 可能被多个 layer 共享，Java 也无 cascade，当前语义一致。
     db.execute(sql_text("DELETE FROM layer_marker WHERE layer_id=:lid"), {"lid": layer_id})
-    db.execute(sql_text("DELETE FROM marker WHERE id IN "
-                        "(SELECT marker_id FROM layer_marker WHERE layer_id=:lid)"), {"lid": layer_id})
     db.delete(layer)
     db.commit()
     return Response(status_code=204)

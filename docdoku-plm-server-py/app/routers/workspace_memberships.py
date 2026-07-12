@@ -45,7 +45,6 @@ def _workspace_to_dict(r) -> dict:
         "enabled": bool(r[2]) if r[2] is not None else True,
         "folderLocked": bool(r[3]) if r[3] is not None else False,
         "admin": r[4] or "",
-        "creationDate": None,
     }
 
 
@@ -104,11 +103,16 @@ def list_group_memberships(ws: str, db: Session = Depends(get_db),
 def my_group_memberships(ws: str, db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
     rows = db.execute(text(
-        "SELECT g.id, g.workspace_id FROM usergroup g "
+        "SELECT g.id, g.workspace_id, COALESCE(wgm.readonly, false) "
+        "FROM usergroup g "
         "JOIN usergroupmapping m ON g.id = m.groupname "
+        "LEFT JOIN workspaceusergroupmembership wgm "
+        "  ON wgm.member_id = g.id "
+        "  AND wgm.member_workspace_id = g.workspace_id "
+        "  AND wgm.workspace_id = g.workspace_id "
         "WHERE g.workspace_id = :ws AND m.login = :l"
     ), {"ws": ws, "l": current_user.login}).fetchall()
-    return [{"workspaceId": r[1], "memberId": r[0]} for r in rows]
+    return [{"workspaceId": r[1], "memberId": r[0], "readOnly": bool(r[2])} for r in rows]
 
 
 # ============ 用户管理操作 ============

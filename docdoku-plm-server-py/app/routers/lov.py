@@ -8,8 +8,10 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.services.lov_manager import lov_service
+from app.services.factory.acl_factory import check_write_access
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -54,6 +56,7 @@ def create_lov(
     db: Session = Depends(get_db),
 ):
     """创建 LOV（含选项值列表）。"""
+    check_write_access(db, None, current_user.login, False, workspace_id=workspace_id)
     name = body.get("name", "")
     values = body.get("values", [])
     lov_service.create_lov(db, workspace_id, name, values)
@@ -84,6 +87,7 @@ def update_lov(
     db: Session = Depends(get_db),
 ):
     """更新 LOV 名称与选项值列表。"""
+    check_write_access(db, None, current_user.login, False, workspace_id=workspace_id)
     new_name = body.get("name", lov_name)
     values = body.get("values", [])
     lov_service.update_lov(db, workspace_id, lov_name, new_name, values)
@@ -100,5 +104,6 @@ def delete_lov(
     db: Session = Depends(get_db),
 ):
     """删除 LOV。"""
+    check_write_access(db, None, current_user.login, False, workspace_id=workspace_id)
     lov_service.delete_lov(db, workspace_id, lov_name)
     return Response(status_code=204)

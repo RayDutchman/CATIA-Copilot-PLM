@@ -8,6 +8,7 @@ from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 from app.services.workflow_manager import workflow_service
 from app.services.factory.acl_factory import apply_acl
 from app.schemas.workflow import WorkflowModelDTO
+from app.routers.change_common import _check_workspace_access
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -89,6 +90,7 @@ def _model_to_dict(m, db: Session = None) -> dict:
 @router.get(f"{PREFIX}/workflow-models/", include_in_schema=False)
 def list_models(ws: str, db: Session = Depends(get_db),
                 current_user: Account = Depends(get_current_user)):
+    _check_workspace_access(db, ws, current_user.login)
     return [_model_to_dict(m, db) for m in
             workflow_service.list_models(db, ws, current_user.login)]
 

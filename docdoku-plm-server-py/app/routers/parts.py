@@ -500,6 +500,37 @@ def _save_query(db, workspace_id, author_login, body):
     return qid
 
 
+def _generate_xlsx(result_rows: list[dict]) -> bytes:
+    """将查询结果行生成 .xlsx 字节流（用 openpyxl）。"""
+    import io as io_mod
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "QueryResult"
+
+    if result_rows:
+        cols = list(result_rows[0].keys())
+        for ci, col_name in enumerate(cols, 1):
+            cell = ws.cell(row=1, column=ci, value=col_name)
+            cell.font = cell.font.copy(bold=True)
+        for ri, row in enumerate(result_rows, 2):
+            for ci, col_name in enumerate(cols, 1):
+                ws.cell(row=ri, column=ci, value=row.get(col_name, ""))
+        for ci, col_name in enumerate(cols, 1):
+            max_len = len(str(col_name)) + 2
+            for ri in range(2, len(result_rows) + 2):
+                val = str(ws.cell(row=ri, column=ci).value or "")
+                max_len = max(max_len, len(val))
+            ws.column_dimensions[get_column_letter(ci)].width = min(max_len + 2, 50)
+
+    buf = io_mod.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 @router.post("/parts/query-export",
              response_model=dict)
 @router.post("/parts/query-export/",
@@ -513,7 +544,7 @@ def query_export(request: Request,
     对齐 Java QueryResultMessageBodyWriter → POST exportCustomQuery。
     接收完整 QueryDTO body，执行查询后序列化导出。
     """
-    import json, csv, io
+    import json
     from fastapi.responses import Response
     from app.services.query_executor import run_part_query
     from app.services.query_pbs import filter_pbs, merge_rows
@@ -538,20 +569,11 @@ def query_export(request: Request,
     result_rows = build_query_result_rows(rows, body, db)
 
     if export_type == "xls":
-        if result_rows:
-            cols = list(result_rows[0].keys())
-        else:
-            cols = []
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(cols)
-        for row in result_rows:
-            writer.writerow([row.get(c, "") for c in cols])
-        csv_data = output.getvalue()
+        xlsx_data = _generate_xlsx(result_rows)
         return Response(
-            content=csv_data,
-            media_type="application/csv",
-            headers={"Content-Disposition": 'attachment; filename="TSR.csv"'},
+            content=xlsx_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="TSR.xlsx"'},
         )
     else:
         json_data = json.dumps(result_rows, default=str, ensure_ascii=False)
@@ -568,7 +590,7 @@ def export_existing_query(query_id: int, export_type: str,
                           current_user: Account = Depends(get_current_user),
                           db: Session = Depends(get_db)):
     """导出已保存查询（对齐 Java GET exportExistingQuery）。"""
-    import json, csv, io
+    import json
     from fastapi.responses import Response
     from sqlalchemy import text
     from app.services.query_executor import run_part_query
@@ -614,20 +636,11 @@ def export_existing_query(query_id: int, export_type: str,
 
     export_lower = export_type.lower()
     if export_lower == "xls" or export_lower == "csv":
-        if result_rows:
-            cols = list(result_rows[0].keys())
-        else:
-            cols = []
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(cols)
-        for r in result_rows:
-            writer.writerow([r.get(c, "") for c in cols])
-        csv_data = output.getvalue()
+        xlsx_data = _generate_xlsx(result_rows)
         return Response(
-            content=csv_data,
-            media_type="application/csv",
-            headers={"Content-Disposition": 'attachment; filename="TSR.csv"'},
+            content=xlsx_data,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="TSR.xlsx"'},
         )
     else:
         json_data = json.dumps(result_rows, default=str, ensure_ascii=False)
@@ -675,11 +688,12 @@ def post_import(workspace_id: str,
                 autoCheckin: bool = Query(False),
                 permissiveUpdate: bool = Query(False),
                 revisionNote: str = Query(""),
+                autoFreeze: bool = Query(False),
                 importType: str = Query(...),
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
-    """批量导入 excel 属性/BOM 数据。返回 204，通过 GET imports/{filename} 轮询结果。"""
-    if importType not in ("attributes", "bom"):
+    """批量导入 excel 属性/BOM/PathData 数据。返回 204，通过 GET imports/{filename} 轮询结果。"""
+    if importType not in ("attributes", "bom", "pathdata"):
         raise HTTPException(status_code=400, detail=f"Invalid importType: {importType}")
 
     data = upload.file.read()
@@ -704,6 +718,14 @@ def post_import(workspace_id: str,
                     revision_note=revisionNote,
                     auto_checkout=autoCheckout,
                     auto_checkin=autoCheckin,
+                    permissive_update=permissiveUpdate,
+                )
+            elif importType == "pathdata":
+                result = importer_service.import_into_path_data(
+                    db, workspace_id, file_path, filename,
+                    user_login=current_user.login, is_admin=is_admin,
+                    revision_note=revisionNote,
+                    auto_freeze=autoFreeze,
                     permissive_update=permissiveUpdate,
                 )
             else:
@@ -744,7 +766,7 @@ def post_import_preview(workspace_id: str,
                         current_user: Account = Depends(get_current_user),
                         db: Session = Depends(get_db)):
     """试运行导入——返回需要 checkout 的零件列表（不写库）。"""
-    if importType not in ("attributes", "bom"):
+    if importType not in ("attributes", "bom", "pathdata"):
         raise HTTPException(status_code=400, detail=f"Invalid importType: {importType}")
 
     data = upload.file.read()
@@ -764,6 +786,12 @@ def post_import_preview(workspace_id: str,
                 user_login=current_user.login, is_admin=is_admin,
                 auto_checkout=autoCheckout,
                 auto_checkin=autoCheckin,
+                permissive_update=permissiveUpdate,
+            )
+        elif importType == "pathdata":
+            result = importer_service.dry_run_import_path_data(
+                db, workspace_id, file_path, filename,
+                user_login=current_user.login, is_admin=is_admin,
                 permissive_update=permissiveUpdate,
             )
         else:

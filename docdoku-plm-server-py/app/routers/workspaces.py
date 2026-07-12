@@ -18,9 +18,10 @@ from app.models.auth import Account
 from app.models.util.naming_convention import is_valid_name
 from app.schemas.admin import (
     WorkspaceDTO, WorkspaceListDTO, StatsOverviewDTO, DiskUsageDTO,
-    FrontOptionsDTO, BackOptionsDTO, ReachableUserDTO,
+    FrontOptionsDTO, BackOptionsDTO,
 )
 from app.schemas.misc import TagDTO, LOVDTO, LOVValueDTO
+from app.schemas.part import UserDTO
 from app.services.indexer_manager import indexer_manager
 from app.services.workspace_manager import workspace_service
 from app.services.workspace_deletion import cascade_delete_workspace
@@ -49,7 +50,6 @@ def _row_to_dict(r) -> dict:
         "enabled": bool(r[2]) if r[2] is not None else True,
         "folderLocked": bool(r[3]) if r[3] is not None else False,
         "admin": r[4] or "",
-        "creationDate": None,
     }
 
 
@@ -91,11 +91,11 @@ def list_more_workspaces(db: Session = Depends(get_db),
     return [{"id": r[0], "description": r[1] or ""} for r in rows]
 
 
-@router.get("/workspaces/reachable-users", response_model=List[ReachableUserDTO])
+@router.get("/workspaces/reachable-users", response_model=List[UserDTO])
 @router.get("/workspaces/reachable-users/", include_in_schema=False)
 def reachable_users(db: Session = Depends(get_db),
                     current_user: Account = Depends(get_current_user)):
-    """返回与当前用户有共同工作区的其他用户。"""
+    """返回与当前用户有共同工作区的其他用户。对齐 Java WorkspaceResource.getReachableUsersForCaller → UserDTO[]"""
     from app.models.auth import Account as Acct
     caller_ws = db.execute(text(
         "SELECT workspace_id FROM userdata WHERE login = :l"
@@ -111,7 +111,26 @@ def reachable_users(db: Session = Depends(get_db),
     if not logins:
         return []
     users = db.query(Acct).filter(Acct.login.in_(logins)).all()
-    return [{"login": u.login, "name": u.name, "email": u.email} for u in users]
+    login_to_user = {u.login: u for u in users}
+    ud_rows = db.execute(text(
+        "SELECT login, workspace_id FROM userdata WHERE login = ANY(:logins) AND workspace_id = ANY(:ws)"
+    ), {"logins": logins, "ws": ws_ids}).fetchall()
+    login_to_ws = {}
+    for r in ud_rows:
+        if r[0] not in login_to_ws:
+            login_to_ws[r[0]] = r[1]
+    result = []
+    for login in logins:
+        u = login_to_user.get(login)
+        if u:
+            result.append({
+                "login": u.login,
+                "name": u.name,
+                "email": u.email,
+                "language": u.language or "",
+                "workspaceId": login_to_ws.get(login, ""),
+            })
+    return result
 
 
 @router.get("/workspaces/{ws}/stats-overview", response_model=StatsOverviewDTO)
@@ -430,7 +449,6 @@ def create_workspace(body: dict, db: Session = Depends(get_db),
         "enabled": enabled,
         "folderLocked": folder_locked,
         "admin": admin,
-        "creationDate": None,
     }
 
 
@@ -490,7 +508,7 @@ def change_admin(ws: str, body: dict, db: Session = Depends(get_db),
     return _row_to_dict(r)
 
 
-@router.delete("/workspaces/{ws}", status_code=204)
+@router.delete("/workspaces/{ws}", status_code=202)
 def delete_workspace(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
     _check_workspace_admin(db, ws, current_user)

@@ -65,9 +65,17 @@ class LOVService:
         return self.find_lov(db, ws, new_name)
 
     def is_lov_deletable(self, db: Session, ws: str, lov_name: str) -> bool:
+        """对齐 Java isLOVDeletable：检查 LOV 是否被任何模板或实际零件迭代引用。"""
         row = db.execute(text(
             "SELECT 1 FROM instanceattributetemplate "
             "WHERE lov_name = :n AND lov_workspace_id = :ws LIMIT 1"
+        ), {"n": lov_name, "ws": ws}).first()
+        if row:
+            return False
+        row = db.execute(text(
+            "SELECT 1 FROM partiteration_pathdata_attr pa "
+            "JOIN instanceattributetemplate iat ON iat.id = pa.instanceattribute_template_id "
+            "WHERE iat.lov_name = :n AND iat.lov_workspace_id = :ws LIMIT 1"
         ), {"n": lov_name, "ws": ws}).first()
         return row is None
 

@@ -57,6 +57,11 @@ register_exception_handlers(app)
 
 
 class UserLanguageMiddleware(BaseHTTPMiddleware):
+    """从 JWT 解析用户语言偏好，设置到 request.state.user_language。
+    
+    已知差异：每请求额外创建独立 SessionLocal()（与 get_db 分离），
+    高并发下每请求耗 2 连接。暂不改动，避免破坏中间件请求生命周期。
+    """
 
     async def dispatch(self, request, call_next):
         request.state.user_language = None

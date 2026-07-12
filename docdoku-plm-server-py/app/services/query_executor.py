@@ -153,6 +153,9 @@ def _pr_leaf(sub, operator, rtype, values, params):
         col = "pit.checkindate" if sub == "checkInDate" else "pit.modificationdate"
         inner = _cmp(col, operator, "date", values, params)
         # 末迭代约束：仅对最新 iteration 生效
+        # 注意：Java PartRevisionQueryDAO 用 size(partIterations)==iteration 取末迭代，
+        # 依赖迭代号连续。Python 用 MAX(iteration) 子查询，迭代号有间隙时仍能正确定位。
+        # 这是有意改进，非对齐遗漏。
         return (
             "EXISTS (SELECT 1 FROM partiteration pit WHERE pit.workspace_id = pr.workspace_id "
             "AND pit.partmaster_partnumber = pr.partmaster_partnumber "

@@ -65,7 +65,7 @@ class TaskWrapperDTO(BaseModel):
     activityStep: Optional[int] = None
     targetIteration: Optional[int] = None
     assignedUsers: List[UserDTO] = []
-    assignedGroups: List[dict] = []
+    assignedGroups: List[UserGroupDTO] = []
 
 
 
@@ -89,6 +89,7 @@ class WorkspaceWorkflowMinimalDTO(BaseModel):
 
 
 from app.schemas.part import UserDTO
+from app.schemas.user_mgmt.user_group import UserGroupDTO
 
 
 class ACLEntryDTO(BaseModel):

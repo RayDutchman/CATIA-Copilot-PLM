@@ -144,6 +144,15 @@ def get_task(ws: str, task_id: str, db: Session = Depends(get_db),
         "workspaceId": ws,
         "workflowId": t[11] if len(t) > 11 else None,
         "activityStep": t[10] if len(t) > 10 else None,
+        "assignedGroups": [
+            {"id": g[0], "workspaceId": g[1]}
+            for g in db.execute(text(
+                "SELECT usergroup_id, usergroup_workspace_id FROM task_usergroup "
+                "WHERE workflow_id = :wf AND activity_step = :step AND task_num = :num"
+            ), {"wf": (t[11] if len(t) > 11 else None),
+                "step": (t[10] if len(t) > 10 else None),
+                "num": t[0]}).fetchall()
+        ],
     }
 
 

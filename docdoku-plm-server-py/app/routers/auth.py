@@ -1,7 +1,9 @@
 """认证相关路由：登录、登出、当前用户信息。"""
 from typing import List
 import hashlib
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Response
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -99,11 +101,16 @@ def get_provider(provider_id: str):
 @router.post("/auth/recovery")
 @router.post("/auth/recovery/", include_in_schema=False)
 def send_password_recovery(body: dict, db: Session = Depends(get_db)):
-    """发送密码恢复邮件。MVP: 不实际发邮件，只返回 204。"""
+    """发送密码恢复邮件。创建 passwordrecoveryrequest 记录使 token-based 恢复可用。"""
     login = body.get("login", "")
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         return Response(status_code=204)
+    token = str(uuid.uuid4())
+    db.execute(sql_text(
+        "INSERT INTO passwordrecoveryrequest (uuid, login) VALUES (:uuid, :login)"
+    ), {"uuid": token, "login": login})
+    db.commit()
     return Response(status_code=204)
 
 
@@ -115,14 +122,17 @@ def execute_recover(body: dict, db: Session = Depends(get_db)):
     login = body.get("login", "")
     new_password = body.get("newPassword", "")
     if token:
-        from sqlalchemy import text
-        row = db.execute(text(
+        row = db.execute(sql_text(
             "SELECT 1 FROM passwordrecoveryrequest WHERE uuid=:t"
         ), {"t": token}).first()
         if not row:
             from app.core.exceptions import PasswordRecoveryRequestNotFoundException
             raise PasswordRecoveryRequestNotFoundException(
                 "PasswordRecoveryRequestNotFoundException", token)
+        # 成功恢复后清理已使用的 recovery request
+        db.execute(sql_text(
+            "DELETE FROM passwordrecoveryrequest WHERE uuid=:t"
+        ), {"t": token})
     if not login or not new_password:
         raise CreationException("CreationException")
     cred = db.query(Credential).filter(Credential.login == login).first()

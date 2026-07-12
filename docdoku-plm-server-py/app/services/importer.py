@@ -490,5 +490,49 @@ class ImporterService:
             "warnings": [],
         }
 
+    def dry_run_import_path_data(
+        self, db: Session, ws: str, file_path: str,
+        original_filename: str, user_login: str = "", is_admin: bool = False,
+        permissive_update: bool = False,
+    ) -> dict:
+        """试运行 PathData 导入——解析 excel 并返回将受影响的路径清单（不写库）。
+
+        对齐 Java ImporterBean.dryRunImportIntoPathData 语义：
+        逐行验证 productId/serialNumber → 查实例是否存在 → 返回路径列表。
+        """
+        from app.services.importers.excel_parser import parse_excel
+
+        with open(file_path, "rb") as f:
+            data = f.read()
+        result = parse_excel(data, "pathdata")
+
+        to_checkout: list[dict] = []
+
+        for part in result.parts:
+            ci_id = part.product_id
+            sn = part.serial_number
+            pd_path = part.number
+
+            if not ci_id or not sn:
+                continue
+
+            inst_iter = db.execute(text(
+                "SELECT iteration FROM productinstanceiteration "
+                "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+                "  AND prdinstancemaster_serialnumber=:sn "
+                "ORDER BY iteration DESC LIMIT 1"
+            ), {"ws": ws, "ci": ci_id, "sn": sn}).first()
+
+            if not inst_iter:
+                continue
+
+            to_checkout.append({
+                "workspaceId": ws,
+                "partNumber": pd_path,
+                "version": "",
+            })
+
+        return {"partRevsToCheckout": to_checkout, "partsToCreate": []}
+
 
 importer_service = ImporterService()

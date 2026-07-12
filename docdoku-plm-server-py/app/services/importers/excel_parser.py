@@ -54,7 +54,11 @@ class ExcelParseResult:
 
 
 def _normalize_type(type_str: str | None) -> str | None:
-    """将捕获到的类型字符串转为规范 token（大写）。"""
+    """将捕获到的类型字符串转为规范 token（大写）。
+
+    注意：Java ExcelParser.java 类型校验大小写敏感（须精确 "Text" 等），
+    Python 此处用 upper() 后匹配（"text"/"TEXT" 均通过），更宽容。
+    该差异通常无害，保留现状以更好兼容用户手写表头。"""
     if not type_str:
         return None
     upper = type_str.strip().upper()
@@ -147,13 +151,18 @@ def _parse_header_cell(cell_value, cell_comment, col_index: int,
         lov_name_val = m.group(3).strip()
         if type_candidate == "ListOfValues":
             return name, "LOV", lov_name_val
-        # 即使 group(2) 不是 ListOfValues，也当成 LOV？
-        # Java 逻辑：if (m.matches() && "ListOfValues".equals(m.group(2))) → LOV
-        # else → 不匹配，继续往下走。所以这里要 fall through。
-        # 实际上 LOV 正则有 3 个 group，如果 group(2) != "ListOfValues"，不应作为 LOV。
-        # 但两个正则中 LOV 的正则更贪婪，如果它匹配了，ATT 也一定匹配。
-        # 所以 LOV match 但 group(2) != "ListOfValues" 时，应该让 ATT 来处理。
-        pass
+        # LOV 正则匹配但 group(2) != "ListOfValues" → 立即报错（对齐 Java：
+        #   "ListOfValues".equals(m.group(2)) 为 false → 跳过 LOV 分支，
+        #   进入 ATT 分支前 m.group(2) 不合法 → ATTRIBUTE_TYPE_NOT_FOUND）
+        # 注意：不能 fall through 到 ATT 正则——ATT 正则只捕获 2 个 group，
+        # LOV 正则有 3 个 group，当 header 形如 "foo <bar> <baz>" 时，
+        # ATT 正则会把 "bar> <baz" 当成类型字符串吞掉，产生静默错误解析。
+        errors.append(
+            f"ATTRIBUTE_TYPE_NOT_FOUND: column {col_index}: "
+            f"header '{header_text}' matched LOV pattern but type "
+            f"'{type_candidate}' is not 'ListOfValues'"
+        )
+        return None, None, None
 
     # 2. 尝试普通属性正则
     m = _PATTERN_NEW_ATT.fullmatch(header_text)
@@ -243,8 +252,21 @@ def _parse_data_cell(value, comment, col_def: dict, row: int,
             f"have {len(values)} value(s) but only {len(ids)} attribute ID(s)"
         )
 
+    # 确定循环上限：ids>values 时 Java 为多余 ID 创建空值属性（addMultiplesAttributes）
+    # 对齐 Java ExcelParser.java:400-407 + PathDataAttributesImporterImpl
+    n = len(values)
+    if ids is not None and len(ids) > n:
+        n = len(ids)  # 多余 ID → 创建空值属性
+
     result = []
-    for i, val in enumerate(values):
+    for i in range(n):
+        # 确定 value
+        if i < len(values):
+            val = values[i]
+        else:
+            # 多余的 ID 位 → 空值属性（对齐 Java addMultiplesAttributes）
+            val = ""
+
         # 确定 attribute_id
         attr_id: int | None = None
         if ids is not None and i < len(ids):

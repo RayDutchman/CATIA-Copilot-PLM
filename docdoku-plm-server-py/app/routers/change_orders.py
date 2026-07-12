@@ -99,12 +99,16 @@ def set_order_tags(ws: str, item_id: int, body: dict,
                    current_user: Account = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
     tags_raw = body.get("tags", [])
     if tags_raw and isinstance(tags_raw, list) and isinstance(tags_raw[0], dict):
         tags = [t.get("label", "") for t in tags_raw]
     else:
         tags = [str(t) for t in tags_raw] if tags_raw else []
-    svc.set_tags(db, ChangeOrder, ws, item_id, tags)
+    svc.set_tags(db, ChangeOrder, ws, item_id, tags,
+                 user_login=current_user.login, is_admin=is_admin)
     return _item_to_dict(svc.get_by_id(db, ChangeOrder, ws, item_id), db, current_user)
 
 

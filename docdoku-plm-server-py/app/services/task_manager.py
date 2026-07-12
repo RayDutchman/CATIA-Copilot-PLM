@@ -11,7 +11,7 @@ from app.core.exceptions import (
     NotAllowedException, TaskNotFoundException, WorkflowNotFoundException,
 )
 
-STATUS_MAP = {0: "NOT_STARTED", 1: "IN_PROGRESS", 2: "APPROVED", 3: "REJECTED"}
+STATUS_MAP = {0: "NOT_STARTED", 1: "IN_PROGRESS", 2: "APPROVED", 3: "REJECTED", 4: "NOT_TO_BE_DONE"}
 
 
 class TaskService:
@@ -142,6 +142,13 @@ class TaskService:
                 "holderReference": holder_reference,
                 "holderVersion": holder_version,
                 "workspaceId": ws,
+                "assignedGroups": [
+                    {"id": g[0], "workspaceId": g[1]}
+                    for g in db.execute(text(
+                        "SELECT usergroup_id, usergroup_workspace_id FROM task_usergroup "
+                        "WHERE workflow_id = :wf AND activity_step = :step AND task_num = :num"
+                    ), {"wf": wf_id, "step": t[10], "num": t[0]}).fetchall()
+                ],
             })
         return result
 
