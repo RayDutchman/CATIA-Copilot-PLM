@@ -4,6 +4,7 @@
 """
 import hashlib
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.models.auth import Account
 from app.models.user_mgmt import Credential
 from app.core.exceptions import (
@@ -58,6 +59,178 @@ class AccountService:
         db.commit()
         db.refresh(acc)
         return acc
+
+
+    # ============================================================
+    # Admin endpoints
+    # ============================================================
+
+    def list_accounts_admin(self, db: Session) -> list:
+        return db.execute(text(
+            "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
+            "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
+            "FROM account a "
+            "LEFT JOIN userdata u ON a.login = u.login "
+            "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
+            "ORDER BY a.login"
+        )).fetchall()
+
+    def get_account_admin(self, db: Session, login: str):
+        return db.execute(text(
+            "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
+            "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
+            "FROM account a "
+            "LEFT JOIN userdata u ON a.login = u.login "
+            "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
+            "WHERE a.login = :login"
+        ), {"login": login}).fetchone()
+
+    def update_account_admin(self, db: Session, login: str, body: dict):
+        existing = db.execute(text(
+            "SELECT login FROM account WHERE login = :login"
+        ), {"login": login}).fetchone()
+        if not existing:
+            raise EntityNotFoundException("AccountNotFoundException", login)
+
+        updates = {}
+        if "email" in body:
+            updates["email"] = body["email"]
+        if "language" in body:
+            updates["language"] = body["language"]
+        if "enabled" in body:
+            updates["enabled"] = body["enabled"]
+        if "name" in body:
+            updates["name"] = body["name"]
+
+        if updates:
+            set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+            db.execute(text(
+                f"UPDATE account SET {set_clause} WHERE login = :login"
+            ), {**updates, "login": login})
+            db.commit()
+
+        return self.get_account_admin(db, login)
+
+    def delete_account_cascade(self, db: Session, login: str) -> None:
+        existing = db.execute(text(
+            "SELECT login FROM account WHERE login = :login"
+        ), {"login": login}).fetchone()
+        if not existing:
+            raise EntityNotFoundException("AccountNotFoundException", login)
+
+        # 关 FK 触发器，安全清理所有引用 account.login 的关联表
+        db.execute(text("SET LOCAL session_replication_role='replica'"))
+
+        # 组织和 GCM
+        db.execute(text("DELETE FROM organization_account WHERE account_login = :login"), {"login": login})
+        db.execute(text("DELETE FROM gcmaccount WHERE account_login = :login"), {"login": login})
+        # 密码恢复请求 / OAuth
+        db.execute(text("DELETE FROM passwordrecoveryrequest WHERE login = :login"), {"login": login})
+        db.execute(text("DELETE FROM providedaccount WHERE login = :login"), {"login": login})
+        # 工作区成员 + 用户组用户
+        db.execute(text("DELETE FROM workspaceusermembership WHERE member_login = :login"), {"login": login})
+        db.execute(text("DELETE FROM usergroup_user WHERE user_login = :login"), {"login": login})
+        # 角色
+        db.execute(text("DELETE FROM role_user WHERE user_login = :login"), {"login": login})
+        # 标签订阅
+        db.execute(text("DELETE FROM tagusersubscription WHERE subscriber_login = :login"), {"login": login})
+        # 迭代/状态变更订阅
+        db.execute(text("DELETE FROM iterationchangesubscription WHERE subscriber_login = :login"), {"login": login})
+        db.execute(text("DELETE FROM statechangesubscription WHERE subscriber_login = :login"), {"login": login})
+        # 工作区管理权——由该用户管理的 workspace 置空 admin_login
+        db.execute(text("UPDATE workspace SET admin_login = NULL WHERE admin_login = :login"), {"login": login})
+        # 凭据
+        db.execute(text("DELETE FROM credential WHERE login = :login"), {"login": login})
+        # userdata
+        db.execute(text("DELETE FROM userdata WHERE login = :login"), {"login": login})
+        # 用户组映射
+        db.execute(text("DELETE FROM usergroupmapping WHERE login = :login"), {"login": login})
+        # 账号本身
+        db.execute(text("DELETE FROM account WHERE login = :login"), {"login": login})
+
+        db.execute(text("SET LOCAL session_replication_role='origin'"))
+        db.commit()
+
+    def enable_account_admin(self, db: Session, login: str, enabled: bool):
+        existing = db.execute(text(
+            "SELECT login FROM account WHERE login = :login"
+        ), {"login": login}).fetchone()
+        if not existing:
+            raise EntityNotFoundException("AccountNotFoundException", login)
+        db.execute(text("UPDATE account SET enabled = :e WHERE login = :l"),
+                   {"e": enabled, "l": login})
+        db.commit()
+        return self.get_account_admin(db, login)
+
+    # ============================================================
+    # Admin stats
+    # ============================================================
+
+    def _get_admin_workspaces(self, db: Session, login: str) -> list[str]:
+        """返回当前用户管理的 workspace 列表（全局 admin 看全部）。"""
+        is_global = db.execute(text(
+            "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": login}).scalar() > 0
+        if is_global:
+            rows = db.execute(text("SELECT id FROM workspace ORDER BY id")).fetchall()
+            return [r[0] for r in rows]
+        rows = db.execute(text(
+            "SELECT id FROM workspace WHERE admin_login=:l ORDER BY id"
+        ), {"l": login}).fetchall()
+        return [r[0] for r in rows]
+
+    def get_disk_usage_stats(self, db: Session, login: str) -> dict:
+        ws_list = self._get_admin_workspaces(db, login)
+        result = {}
+        for ws in ws_list:
+            docs_size = db.execute(text(
+                "SELECT COALESCE(SUM(br.contentlength), 0) FROM binaryresource br "
+                "JOIN documentiteration_binres dib ON br.fullname = dib.attachedfile_fullname "
+                "WHERE dib.workspace_id = :ws"
+            ), {"ws": ws}).scalar() or 0
+            parts_size = db.execute(text(
+                "SELECT COALESCE(SUM(br.contentlength), 0) FROM binaryresource br "
+                "JOIN partiteration_binres pib ON br.fullname = pib.attachedfile_fullname "
+                "WHERE pib.workspace_id = :ws"
+            ), {"ws": ws}).scalar() or 0
+            result[ws] = docs_size + parts_size
+        return result
+
+    def get_users_stats(self, db: Session, login: str) -> dict:
+        ws_list = self._get_admin_workspaces(db, login)
+        result = {}
+        for ws in ws_list:
+            result[ws] = db.execute(text(
+                "SELECT COUNT(*) FROM userdata WHERE workspace_id=:ws"
+            ), {"ws": ws}).scalar() or 0
+        return result
+
+    def get_documents_stats(self, db: Session, login: str) -> dict:
+        ws_list = self._get_admin_workspaces(db, login)
+        result = {}
+        for ws in ws_list:
+            result[ws] = db.execute(text(
+                "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:ws"
+            ), {"ws": ws}).scalar() or 0
+        return result
+
+    def get_products_stats(self, db: Session, login: str) -> dict:
+        ws_list = self._get_admin_workspaces(db, login)
+        result = {}
+        for ws in ws_list:
+            result[ws] = db.execute(text(
+                "SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:ws"
+            ), {"ws": ws}).scalar() or 0
+        return result
+
+    def get_parts_stats(self, db: Session, login: str) -> dict:
+        ws_list = self._get_admin_workspaces(db, login)
+        result = {}
+        for ws in ws_list:
+            result[ws] = db.execute(text(
+                "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:ws"
+            ), {"ws": ws}).scalar() or 0
+        return result
 
 
 account_service = AccountService()

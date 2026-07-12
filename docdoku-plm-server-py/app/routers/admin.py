@@ -2,7 +2,6 @@
 from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_global_admin
 from app.core.exceptions import (
@@ -13,7 +12,8 @@ from app.schemas.admin import (
     AdminAccountDTO, DiskUsageDTO, WorkspaceDTO,
     PlatformOptionsDTO, IndexStatusDTO,
 )
-from app.services.workspace_deletion import cascade_delete_workspace
+from app.services.account_manager import account_service
+from app.services.workspace_manager import workspace_service
 from app.services.platform_options_manager import platform_options_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -48,15 +48,7 @@ def _workspace_to_dict(r) -> dict:
 @router.get("/admin/accounts/", include_in_schema=False)
 def list_accounts(db: Session = Depends(get_db),
                   _admin: Account = Depends(require_global_admin)):
-
-    rows = db.execute(text(
-        "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
-        "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
-        "FROM account a "
-        "LEFT JOIN userdata u ON a.login = u.login "
-        "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
-        "ORDER BY a.login"
-    )).fetchall()
+    rows = account_service.list_accounts_admin(db)
     return [_account_to_dict(r) for r in rows]
 
 
@@ -64,15 +56,7 @@ def list_accounts(db: Session = Depends(get_db),
 @router.get("/admin/accounts/{login}/", include_in_schema=False)
 def get_account(login: str, db: Session = Depends(get_db),
                 _admin: Account = Depends(require_global_admin)):
-
-    r = db.execute(text(
-        "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
-        "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
-        "FROM account a "
-        "LEFT JOIN userdata u ON a.login = u.login "
-        "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
-        "WHERE a.login = :login"
-    ), {"login": login}).fetchone()
+    r = account_service.get_account_admin(db, login)
     if not r:
         raise EntityNotFoundException("AccountNotFoundException", login)
     return _account_to_dict(r)
@@ -82,38 +66,7 @@ def get_account(login: str, db: Session = Depends(get_db),
 @router.put("/admin/accounts/{login}/", include_in_schema=False)
 def update_account(login: str, body: dict, db: Session = Depends(get_db),
                    _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT login FROM account WHERE login = :login"
-    ), {"login": login}).fetchone()
-    if not existing:
-        raise EntityNotFoundException("AccountNotFoundException", login)
-
-    updates = {}
-    if "email" in body:
-        updates["email"] = body["email"]
-    if "language" in body:
-        updates["language"] = body["language"]
-    if "enabled" in body:
-        updates["enabled"] = body["enabled"]
-    if "name" in body:
-        updates["name"] = body["name"]
-
-    if updates:
-        set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-        db.execute(text(
-            f"UPDATE account SET {set_clause} WHERE login = :login"
-        ), {**updates, "login": login})
-        db.commit()
-
-    r = db.execute(text(
-        "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
-        "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
-        "FROM account a "
-        "LEFT JOIN userdata u ON a.login = u.login "
-        "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
-        "WHERE a.login = :login"
-    ), {"login": login}).fetchone()
+    r = account_service.update_account_admin(db, login, body)
     return _account_to_dict(r)
 
 
@@ -121,45 +74,7 @@ def update_account(login: str, body: dict, db: Session = Depends(get_db),
 @router.delete("/admin/accounts/{login}/", status_code=204, include_in_schema=False)
 def delete_account(login: str, db: Session = Depends(get_db),
                    _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT login FROM account WHERE login = :login"
-    ), {"login": login}).fetchone()
-    if not existing:
-        raise EntityNotFoundException("AccountNotFoundException", login)
-
-    # 关 FK 触发器，安全清理所有引用 account.login 的关联表
-    db.execute(text("SET LOCAL session_replication_role='replica'"))
-
-    # 组织和 GCM
-    db.execute(text("DELETE FROM organization_account WHERE account_login = :login"), {"login": login})
-    db.execute(text("DELETE FROM gcmaccount WHERE account_login = :login"), {"login": login})
-    # 密码恢复请求 / OAuth
-    db.execute(text("DELETE FROM passwordrecoveryrequest WHERE login = :login"), {"login": login})
-    db.execute(text("DELETE FROM providedaccount WHERE login = :login"), {"login": login})
-    # 工作区成员 + 用户组用户
-    db.execute(text("DELETE FROM workspaceusermembership WHERE member_login = :login"), {"login": login})
-    db.execute(text("DELETE FROM usergroup_user WHERE user_login = :login"), {"login": login})
-    # 角色
-    db.execute(text("DELETE FROM role_user WHERE user_login = :login"), {"login": login})
-    # 标签订阅
-    db.execute(text("DELETE FROM tagusersubscription WHERE subscriber_login = :login"), {"login": login})
-    # 迭代/状态变更订阅
-    db.execute(text("DELETE FROM iterationchangesubscription WHERE subscriber_login = :login"), {"login": login})
-    db.execute(text("DELETE FROM statechangesubscription WHERE subscriber_login = :login"), {"login": login})
-    # 工作区管理权——由该用户管理的 workspace 置空 admin_login
-    db.execute(text("UPDATE workspace SET admin_login = NULL WHERE admin_login = :login"), {"login": login})
-    # 凭据
-    db.execute(text("DELETE FROM credential WHERE login = :login"), {"login": login})
-    # userdata
-    db.execute(text("DELETE FROM userdata WHERE login = :login"), {"login": login})
-    # 用户组映射
-    db.execute(text("DELETE FROM usergroupmapping WHERE login = :login"), {"login": login})
-    # 账号本身
-    db.execute(text("DELETE FROM account WHERE login = :login"), {"login": login})
-
-    db.execute(text("SET LOCAL session_replication_role='origin'"))
-    db.commit()
+    account_service.delete_account_cascade(db, login)
 
 
 # ============ Workspace CRUD ============
@@ -168,11 +83,7 @@ def delete_account(login: str, db: Session = Depends(get_db),
 @router.get("/admin/workspaces/", include_in_schema=False)
 def list_workspaces(db: Session = Depends(get_db),
                     _admin: Account = Depends(require_global_admin)):
-
-    rows = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace ORDER BY id"
-    )).fetchall()
+    rows = workspace_service.list_workspaces_admin(db)
     return [_workspace_to_dict(r) for r in rows]
 
 
@@ -180,13 +91,7 @@ def list_workspaces(db: Session = Depends(get_db),
 @router.get("/admin/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),
                   _admin: Account = Depends(require_global_admin)):
-
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not r:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
+    r = workspace_service.get_workspace_admin(db, ws)
     return _workspace_to_dict(r)
 
 
@@ -194,32 +99,7 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
 @router.put("/admin/workspaces/{ws}/", include_in_schema=False)
 def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
                      _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not existing:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-
-    updates = {}
-    if "description" in body:
-        updates["description"] = body["description"]
-    if "enabled" in body:
-        updates["enabled"] = body["enabled"]
-    if "folderLocked" in body:
-        updates["folderlocked"] = body["folderLocked"]
-
-    if updates:
-        set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-        db.execute(text(
-            f"UPDATE workspace SET {set_clause} WHERE id = :id"
-        ), {**updates, "id": ws})
-        db.commit()
-
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
+    r = workspace_service.update_workspace_admin(db, ws, body)
     return _workspace_to_dict(r)
 
 
@@ -227,13 +107,8 @@ def update_workspace(ws: str, body: dict, db: Session = Depends(get_db),
 @router.delete("/admin/workspaces/{ws}/", status_code=204, include_in_schema=False)
 def delete_workspace(ws: str, db: Session = Depends(get_db),
                      _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
-    if not existing:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-    cascade_delete_workspace(db, ws)
+    workspace_service.get_workspace_admin(db, ws)  # 存在性校验
+    workspace_service.delete_workspace(db, ws)
 
 
 # ============ Platform Options ============
@@ -273,95 +148,39 @@ def put_platform_options(body: dict, db: Session = Depends(get_db),
 
 # ============ Stats ============
 
-def _get_admin_workspaces(db: Session, login: str) -> list[str]:
-    """返回当前用户管理的 workspace 列表（全局 admin 看全部）。"""
-    is_global = db.execute(text(
-        "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": login}).scalar() > 0
-    if is_global:
-        rows = db.execute(text("SELECT id FROM workspace ORDER BY id")).fetchall()
-        return [r[0] for r in rows]
-    rows = db.execute(text(
-        "SELECT id FROM workspace WHERE admin_login=:l ORDER BY id"
-    ), {"l": login}).fetchall()
-    return [r[0] for r in rows]
-
-
 @router.get("/admin/disk-usage-stats", response_model=Dict[str, int])
 @router.get("/admin/disk-usage-stats/", include_in_schema=False)
 def admin_disk_usage_stats(db: Session = Depends(get_db),
-_admin: Account = Depends(require_global_admin)):
-    admin_ws = _get_admin_workspaces(db, current_user.login)
-    result = {}
-    for ws in admin_ws:
-        docs_size = db.execute(text(
-            "SELECT COALESCE(SUM(br.contentlength), 0) FROM binaryresource br "
-            "JOIN documentiteration_binres dib ON br.fullname = dib.attachedfile_fullname "
-            "WHERE dib.workspace_id = :ws"
-        ), {"ws": ws}).scalar() or 0
-        parts_size = db.execute(text(
-            "SELECT COALESCE(SUM(br.contentlength), 0) FROM binaryresource br "
-            "JOIN partiteration_binres pib ON br.fullname = pib.attachedfile_fullname "
-            "WHERE pib.workspace_id = :ws"
-        ), {"ws": ws}).scalar() or 0
-        result[ws] = docs_size + parts_size
-    return result
+                           current_user: Account = Depends(get_current_user)):
+    return account_service.get_disk_usage_stats(db, current_user.login)
 
 
 @router.get("/admin/users-stats", response_model=Dict[str, int])
 @router.get("/admin/users-stats/", include_in_schema=False)
 def admin_users_stats(db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    admin_ws = _get_admin_workspaces(db, current_user.login)
-    result = {}
-    for ws in admin_ws:
-        count = db.execute(text(
-            "SELECT COUNT(*) FROM userdata WHERE workspace_id=:ws"
-        ), {"ws": ws}).scalar() or 0
-        result[ws] = count
-    return result
+    return account_service.get_users_stats(db, current_user.login)
 
 
 @router.get("/admin/documents-stats", response_model=Dict[str, int])
 @router.get("/admin/documents-stats/", include_in_schema=False)
 def admin_documents_stats(db: Session = Depends(get_db),
                           current_user: Account = Depends(get_current_user)):
-    admin_ws = _get_admin_workspaces(db, current_user.login)
-    result = {}
-    for ws in admin_ws:
-        count = db.execute(text(
-            "SELECT COUNT(*) FROM documentrevision WHERE workspace_id=:ws"
-        ), {"ws": ws}).scalar() or 0
-        result[ws] = count
-    return result
+    return account_service.get_documents_stats(db, current_user.login)
 
 
 @router.get("/admin/products-stats", response_model=Dict[str, int])
 @router.get("/admin/products-stats/", include_in_schema=False)
 def admin_products_stats(db: Session = Depends(get_db),
                          current_user: Account = Depends(get_current_user)):
-    admin_ws = _get_admin_workspaces(db, current_user.login)
-    result = {}
-    for ws in admin_ws:
-        count = db.execute(text(
-            "SELECT COUNT(*) FROM configurationitem WHERE workspace_id=:ws"
-        ), {"ws": ws}).scalar() or 0
-        result[ws] = count
-    return result
+    return account_service.get_products_stats(db, current_user.login)
 
 
 @router.get("/admin/parts-stats", response_model=Dict[str, int])
 @router.get("/admin/parts-stats/", include_in_schema=False)
 def admin_parts_stats(db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
-    admin_ws = _get_admin_workspaces(db, current_user.login)
-    result = {}
-    for ws in admin_ws:
-        count = db.execute(text(
-            "SELECT COUNT(*) FROM partrevision WHERE workspace_id=:ws"
-        ), {"ws": ws}).scalar() or 0
-        result[ws] = count
-    return result
+    return account_service.get_parts_stats(db, current_user.login)
 
 
 # ============ Index ============
@@ -391,19 +210,7 @@ def get_index(db: Session = Depends(get_db),
 def enable_workspace(ws: str, enabled: bool = Query(True),
                      db: Session = Depends(get_db),
                      _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :w"
-    ), {"w": ws}).fetchone()
-    if not existing:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-    db.execute(text("UPDATE workspace SET enabled = :e WHERE id = :w"),
-               {"e": enabled, "w": ws})
-    db.commit()
-    r = db.execute(text(
-        "SELECT id, description, enabled, folderlocked, admin_login "
-        "FROM workspace WHERE id = :id"
-    ), {"id": ws}).fetchone()
+    r = workspace_service.enable_workspace_admin(db, ws, enabled)
     return _workspace_to_dict(r)
 
 
@@ -412,21 +219,5 @@ def enable_workspace(ws: str, enabled: bool = Query(True),
 def enable_account(login: str, enabled: bool = Query(True),
                    db: Session = Depends(get_db),
                    _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT login FROM account WHERE login = :login"
-    ), {"login": login}).fetchone()
-    if not existing:
-        raise EntityNotFoundException("AccountNotFoundException", login)
-    db.execute(text("UPDATE account SET enabled = :e WHERE login = :l"),
-               {"e": enabled, "l": login})
-    db.commit()
-    r = db.execute(text(
-        "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
-        "CASE WHEN m.groupname IS NOT NULL THEN true ELSE false END AS is_admin "
-        "FROM account a "
-        "LEFT JOIN userdata u ON a.login = u.login "
-        "LEFT JOIN usergroupmapping m ON a.login = m.login AND m.groupname = 'admin' "
-        "WHERE a.login = :login"
-    ), {"login": login}).fetchone()
+    r = account_service.enable_account_admin(db, login, enabled)
     return _account_to_dict(r)

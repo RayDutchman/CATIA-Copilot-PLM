@@ -127,6 +127,63 @@ class WorkspaceService:
         db.commit()
         return self.get_workspace(db, ws)
 
+    # ============================================================
+    # Admin endpoints
+    # ============================================================
+
+    def list_workspaces_admin(self, db: Session) -> list:
+        return db.execute(text(
+            "SELECT id, description, enabled, folderlocked, admin_login "
+            "FROM workspace ORDER BY id"
+        )).fetchall()
+
+    def get_workspace_admin(self, db: Session, ws: str):
+        row = db.execute(text(
+            "SELECT id, description, enabled, folderlocked, admin_login "
+            "FROM workspace WHERE id = :id"
+        ), {"id": ws}).fetchone()
+        if not row:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("WorkspaceNotFoundException", ws)
+        return row
+
+    def update_workspace_admin(self, db: Session, ws: str, body: dict):
+        existing = db.execute(text(
+            "SELECT id FROM workspace WHERE id = :id"
+        ), {"id": ws}).fetchone()
+        if not existing:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("WorkspaceNotFoundException", ws)
+
+        updates = {}
+        if "description" in body:
+            updates["description"] = body["description"]
+        if "enabled" in body:
+            updates["enabled"] = body["enabled"]
+        if "folderLocked" in body:
+            updates["folderlocked"] = body["folderLocked"]
+
+        if updates:
+            set_clause = ", ".join(f"{k} = :{k}" for k in updates)
+            db.execute(text(
+                f"UPDATE workspace SET {set_clause} WHERE id = :id"
+            ), {**updates, "id": ws})
+            db.commit()
+
+        return self.get_workspace_admin(db, ws)
+
+    def enable_workspace_admin(self, db: Session, ws: str, enabled: bool):
+        existing = db.execute(text(
+            "SELECT id FROM workspace WHERE id = :w"
+        ), {"w": ws}).fetchone()
+        if not existing:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("WorkspaceNotFoundException", ws)
+        db.execute(text("UPDATE workspace SET enabled = :e WHERE id = :w"),
+                   {"e": enabled, "w": ws})
+        db.commit()
+        return self.get_workspace_admin(db, ws)
+
     def get_workspace_front_options(self, db: Session, ws: str) -> dict:
         """读取 workspacefrontoptions + 列配置（对齐 Payara getWorkspaceFrontOptions）。"""
         part_cols = db.execute(text(
