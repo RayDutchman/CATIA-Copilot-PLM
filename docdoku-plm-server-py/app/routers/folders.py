@@ -142,8 +142,7 @@ def delete(ws: str, folder_path: str,
 def list_folder_docs(ws: str, folder_id: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    from app.routers.documents import _doc_to_dict
-    return [_doc_to_dict(db, r, current_user.login) for r in svc.list_documents_in_folder(db, ws, folder_id)]
+    return [svc.build_revision_dto(db, r, current_user.login) for r in svc.list_documents_in_folder(db, ws, folder_id)]
 
 
 @router.post("/workspaces/{ws}/folders/{folder_id:path}/documents", status_code=201)
@@ -174,6 +173,5 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
         if getattr(rev, "acl_id", None) != new_acl_id:
             rev.acl_id = new_acl_id
     db.commit()
-    from app.routers.documents import _doc_to_dict
-    return _doc_to_dict(db, rev, current_user.login)
+    return svc.build_revision_dto(db, rev, current_user.login)
 

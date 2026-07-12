@@ -15,6 +15,8 @@ from app.core.exceptions import (
     DocumentRevisionAlreadyExistsException, FolderNotFoundException,
 )
 from app.services.indexer_manager import indexer_manager
+from app.models.auth import Account
+from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
 
 
 class DocumentService:
@@ -1291,3 +1293,619 @@ class DocumentService:
             return owner != user_login
         except (ValueError, IndexError):
             return False
+
+    # ========== DTO 构建 & 路由辅助方法 ==========
+
+    @staticmethod
+    def get_account_dto(db, login, ws):
+        """查 Account 表取真实 name/email/language。"""
+        if not login:
+            return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws or ""}
+        acc = db.query(Account).filter(Account.login == login).first()
+        return {
+            "login": login,
+            "name": acc.name if acc and acc.name else login,
+            "email": acc.email if acc else None,
+            "language": acc.language if acc else None,
+            "workspaceId": ws or "",
+        }
+
+    @staticmethod
+    def build_route_path(db, workspace_id, complete_path):
+        """根据 location_completepath 查询 pathdatamaster 表构建 routePath 列表。"""
+        if not complete_path:
+            return []
+        components = complete_path.strip("/").split("/")
+        if not components or components == [""]:
+            return []
+        result = []
+        accumulated = ""
+        for seg in components:
+            accumulated += "/" + seg
+            row = db.execute(sql_text(
+                "SELECT id, path FROM pathdatamaster WHERE path=:p LIMIT 1"
+            ), {"p": accumulated}).first()
+            if row:
+                result.append({"id": row[0], "path": row[1]})
+            else:
+                result.append({"path": accumulated})
+        return result
+
+    def _query_instance_attributes(self, db, ws, did, ver, it):
+        """查询指定迭代的 instanceAttributes（含值字段）。"""
+        attr_rows = db.execute(sql_text(
+            "SELECT ia.name, ia.mandatory, ia.locked, "
+            "ia.booleanvalue, ia.datevalue, ia.indexvalue, "
+            "ia.numbervalue, ia.textvalue, ia.longtextvalue, ia.urlvalue "
+            "FROM documentiteration_attribute dia "
+            "JOIN instanceattribute ia ON ia.id = dia.instanceattribute_id "
+            "WHERE dia.workspace_id=:ws AND dia.documentmaster_id=:did "
+            "AND dia.documentrevision_version=:ver AND dia.iteration=:it "
+            "ORDER BY dia.attribute_order"
+        ), {"ws": ws, "did": did, "ver": ver, "it": it}).fetchall()
+        return [dict(row._mapping) for row in attr_rows]
+
+    def _query_linked_documents(self, db, ws, did, ver, it):
+        """查询指定迭代的 linkedDocuments（扁平引用列表）。"""
+        doc_rows = db.execute(sql_text(
+            "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
+            "dl.target_docrevision_version, dl.commentdata "
+            "FROM documentiteration_documentlink didl "
+            "JOIN documentlink dl ON dl.id = didl.documentlink_id "
+            "WHERE didl.workspace_id=:ws AND didl.documentmaster_id=:did "
+            "AND didl.documentrevision_version=:ver AND didl.iteration=:it"
+        ), {"ws": ws, "did": did, "ver": ver, "it": it}).fetchall()
+        return [{
+            "id": row.id,
+            "workspaceId": row.target_workspace_id,
+            "documentMasterId": row.target_documentmaster_id,
+            "documentMasterVersion": row.target_docrevision_version,
+            "commentLink": row.commentdata,
+        } for row in doc_rows]
+
+    def _query_attached_files(self, db, ws, did, ver, it):
+        """查询指定迭代的 attachedFiles（含 BinaryResource 信息）。"""
+        from app.models.part import BinaryResource
+        attached_rows = db.execute(sql_text(
+            "SELECT attachedfile_fullname FROM documentiteration_binres "
+            "WHERE workspace_id=:ws AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver AND iteration=:iter"
+        ), {"ws": ws, "did": did, "ver": ver, "iter": it}).fetchall()
+        attached_files = []
+        for ar in attached_rows:
+            br = db.query(BinaryResource).filter(
+                BinaryResource.full_name == ar[0]).first()
+            if br:
+                attached_files.append({
+                    "fullName": br.full_name,
+                    "contentLength": br.content_length or 0,
+                    "lastModified": str(br.last_modified) if br.last_modified else None,
+                })
+            else:
+                attached_files.append({"fullName": ar[0]})
+        return attached_files
+
+    def _build_iteration_dict(self, db, rev, it, acl_data):
+        """构建单个 iteration 的 dict。"""
+        ws = it.workspace_id
+        did = it.documentmaster_id
+        ver = it.documentrevision_version
+        its = it.iteration
+        return {
+            "id": f"{did}-{ver}-{its}",
+            "iteration": its,
+            "workspaceId": ws,
+            "documentMasterId": did,
+            "documentRevisionVersion": ver,
+            "version": rev.version,
+            "title": rev.title,
+            "revisionNote": it.revision_note,
+            "creationDate": str(it.creation_date) if it.creation_date else None,
+            "modificationDate": str(it.modification_date) if it.modification_date else None,
+            "checkInDate": str(it.check_in_date) if it.check_in_date else None,
+            "instanceAttributes": self._query_instance_attributes(db, ws, did, ver, its),
+            "attachedFiles": self._query_attached_files(db, ws, did, ver, its),
+            "linkedDocuments": self._query_linked_documents(db, ws, did, ver, its),
+            "author": self.get_account_dto(db, it.author_login, ws),
+            "documentRevision": {
+                "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
+                "workspaceId": rev.workspace_id,
+                "version": rev.version,
+                "documentMasterId": f"{rev.documentmaster_id}-{rev.version}",
+                "status": None,
+                "publicShared": False,
+                "acl": acl_data or {},
+                "attributesLocked": False,
+                "checkOutUser": None,
+                "checkOutDate": None,
+                "releaseAuthor": None,
+                "releaseDate": None,
+                "iterationSubscription": False,
+                "stateSubscription": False,
+                "commentLink": None,
+            },
+        }
+
+    def build_revision_dto(self, db, rev, current_user_login=None):
+        """构建完整的 DocumentRevision DTO dict（对标原 router 层的 _doc_to_dict）。"""
+        _PERM_MAP = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+        acl_id = getattr(rev, "acl_id", None)
+        acl_data = None
+        if acl_id and db:
+            acl = db.query(ACL).filter(ACL.id == acl_id).first()
+            if acl:
+                user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+                group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+                acl_data = {
+                    "userEntries": [{"key": e.principal_login, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in user_entries],
+                    "groupEntries": [{"key": e.principal_id, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in group_entries],
+                    "userEntriesMap": {e.principal_login: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in user_entries},
+                    "userGroupEntriesMap": {e.principal_id: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in group_entries},
+                }
+
+        iterations = []
+        for it in (rev.iterations or []):
+            iterations.append(self._build_iteration_dict(db, rev, it, acl_data))
+
+        iter_sub = None
+        state_sub = None
+        if db and current_user_login:
+            iter_sub = db.execute(sql_text(
+                "SELECT 1 FROM iterationchangesubscription WHERE documentmaster_id=:did "
+                "AND documentmaster_workspace_id=:ws AND documentrevision_version=:ver "
+                "AND subscriber_login=:login AND subscriber_workspace_id=:sws LIMIT 1"
+            ), {"did": rev.documentmaster_id, "ws": rev.workspace_id, "ver": rev.version,
+                "login": current_user_login, "sws": rev.workspace_id}).scalar()
+            state_sub = db.execute(sql_text(
+                "SELECT 1 FROM statechangesubscription WHERE documentmaster_id=:did "
+                "AND documentmaster_workspace_id=:ws AND documentrevision_version=:ver "
+                "AND subscriber_login=:login AND subscriber_workspace_id=:sws LIMIT 1"
+            ), {"did": rev.documentmaster_id, "ws": rev.workspace_id, "ver": rev.version,
+                "login": current_user_login, "sws": rev.workspace_id}).scalar()
+
+        dict_fields = {
+            "id": f"{rev.documentmaster_id}-{rev.version}",
+            "version": rev.version,
+            "workspaceId": rev.workspace_id,
+            "documentMasterId": rev.documentmaster_id,
+            "title": rev.title,
+            "description": rev.description,
+            "status": {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}.get(rev.status, "WIP"),
+            "creationDate": str(rev.creation_date) if rev.creation_date else None,
+            "checkOutDate": str(rev.check_out_date) if rev.check_out_date else None,
+            "releaseDate": str(rev.release_date) if rev.release_date else None,
+            "obsoleteDate": str(rev.obsolete_date) if rev.obsolete_date else None,
+            "lastIteration": rev.last_iteration_number,
+            "lastIterationNumber": rev.last_iteration_number,
+            "documentIterations": iterations,
+            "tags": [],
+            "path": rev.location_completepath,
+            "routePath": rev.location_completepath,
+            "acl": acl_data or {},
+            "publicShared": bool(getattr(rev, "public_shared", False)),
+            "attributesLocked": False,
+            "commentLink": None,
+            "iterationSubscription": iter_sub is not None,
+            "stateSubscription": state_sub is not None,
+            "releaseAuthor": None,
+            "obsoleteAuthor": None,
+            "type": rev.document_master.type if rev.document_master else None,
+            "author": self.get_account_dto(db, rev.author_login, rev.workspace_id),
+        }
+        if rev.checkout_user_login:
+            dict_fields["checkOutUser"] = self.get_account_dto(
+                db, rev.checkout_user_login,
+                rev.checkout_user_workspace_id or rev.workspace_id,
+            )
+        if rev.release_user_login:
+            dict_fields["releaseAuthor"] = self.get_account_dto(
+                db, rev.release_user_login, rev.workspace_id,
+            )
+        if rev.obsolete_user_login:
+            dict_fields["obsoleteAuthor"] = self.get_account_dto(
+                db, rev.obsolete_user_login, rev.workspace_id,
+            )
+        for k in ("description",):
+            dict_fields.setdefault(k, "")
+
+        wf_id = getattr(rev, "workflow_id", None)
+        dict_fields["workflowId"] = wf_id
+        if wf_id and db:
+            wf_row = db.execute(sql_text(
+                "SELECT id, finallifecyclestate, aborteddate FROM workflow WHERE id=:wid"
+            ), {"wid": wf_id}).first()
+            if wf_row:
+                act = db.execute(sql_text(
+                    "SELECT lifecyclestate FROM activity "
+                    "WHERE workflow_id=:wid AND dtype!='org.docdoku.plm.server.core.workflow.ParallelActivity' "
+                    "ORDER BY step ASC"
+                ), {"wid": wf_id}).first()
+                lcs = act[0] if act else wf_row[1]
+                dict_fields["lifeCycleState"] = lcs
+                wf_dict = {
+                    "id": wf_id,
+                    "finalLifeCycleState": wf_row[1],
+                    "abortedDate": str(wf_row[2]) if wf_row[2] else None,
+                    "activities": [],
+                    "currentStep": 0,
+                }
+                act_rows = db.execute(sql_text(
+                    "SELECT step, dtype, lifecyclestate, taskstocomplete FROM activity "
+                    "WHERE workflow_id=:wid ORDER BY step ASC"
+                ), {"wid": wf_id}).fetchall()
+                current_step = 0
+                for a in act_rows:
+                    tasks = db.execute(sql_text(
+                        "SELECT num, title, instructions, status, worker_login, "
+                        "worker_workspace_id, duration, signature, closuredate, "
+                        "closurecomment, startdate, targetiteration "
+                        "FROM task WHERE workflow_id=:wid AND activity_step=:step "
+                        "ORDER BY num ASC"
+                    ), {"wid": wf_id, "step": a[0]}).fetchall()
+                    task_list = []
+                    all_completed = True
+                    for t in tasks:
+                        worker = None
+                        if t[4]:
+                            worker = self.get_account_dto(db, t[4], t[5] or rev.workspace_id)
+                        task_list.append({
+                            "num": t[0], "title": t[1], "instructions": t[2],
+                            "status": t[3], "worker": worker, "duration": t[6],
+                            "signature": t[7],
+                            "closureDate": str(t[8]) if t[8] else None,
+                            "closureComment": t[9],
+                            "startDate": str(t[10]) if t[10] else None,
+                            "targetIteration": t[11],
+                        })
+                        if t[3] not in ("APPROVED", "CLOSED"):
+                            all_completed = False
+                    wf_dict["activities"].append({
+                        "step": a[0], "type": a[1], "lifeCycleState": a[2],
+                        "tasksToComplete": a[3], "tasks": task_list,
+                    })
+                    if all_completed and current_step < len(act_rows):
+                        current_step += 1
+                wf_dict["currentStep"] = current_step
+                dict_fields["workflow"] = wf_dict
+        dict_fields.setdefault("lifeCycleState", None)
+        dict_fields.setdefault("workflow", None)
+
+        if db:
+            tag_rows = db.execute(sql_text(
+                "SELECT tag_label FROM documentrevision_tag "
+                "WHERE documentmaster_workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver"
+            ), {"ws": rev.workspace_id, "did": rev.documentmaster_id, "ver": rev.version}).fetchall()
+            dict_fields["tags"] = [tr[0] for tr in tag_rows]
+        return dict_fields
+
+    def get_aborted_workflows(self, db, ws, doc_id, ver):
+        """查询已终止的工作流列表。"""
+        rev = self.get_revision(db, ws, doc_id, ver)
+        workflow_id = getattr(rev, "workflow_id", None)
+        if not workflow_id:
+            return []
+        rows = db.execute(sql_text(
+            "SELECT id, aborteddate, finallifecyclestate FROM workflow "
+            "WHERE id=:wid AND aborteddate IS NOT NULL"
+        ), {"wid": workflow_id}).fetchall()
+        result = []
+        for r in rows:
+            activities = db.execute(sql_text(
+                "SELECT step, dtype, lifecyclestate, taskstocomplete FROM activity "
+                "WHERE workflow_id=:wid ORDER BY step ASC"
+            ), {"wid": r[0]}).fetchall()
+            activity_list = []
+            for a in activities:
+                tasks = db.execute(sql_text(
+                    "SELECT num, title, instructions, status, worker_login, "
+                    "worker_workspace_id, duration, signature, closuredate, "
+                    "closurecomment, startdate, targetiteration "
+                    "FROM task WHERE workflow_id=:wid AND activity_step=:step "
+                    "ORDER BY num ASC"
+                ), {"wid": r[0], "step": a[0]}).fetchall()
+                task_list = []
+                for t in tasks:
+                    worker = None
+                    if t[4]:
+                        worker = self.get_account_dto(db, t[4], t[5] or ws)
+                    task_list.append({
+                        "num": t[0], "title": t[1], "instructions": t[2],
+                        "status": t[3], "worker": worker, "duration": t[6],
+                        "signature": t[7],
+                        "closureDate": str(t[8]) if t[8] else None,
+                        "closureComment": t[9],
+                        "startDate": str(t[10]) if t[10] else None,
+                        "targetIteration": t[11],
+                    })
+                activity_list.append({
+                    "step": a[0], "type": a[1], "lifeCycleState": a[2],
+                    "tasksToComplete": a[3], "tasks": task_list,
+                })
+            result.append({
+                "id": r[0],
+                "abortedDate": str(r[1]) if r[1] else None,
+                "finalLifeCycleState": r[2],
+                "activities": activity_list,
+            })
+        return result
+
+    def get_inverse_document_links(self, db, ws, doc_id, ver, current_user_login=None):
+        """查询反向文档链接（哪些文档引用了当前文档）。"""
+        rows = db.execute(sql_text(
+            "SELECT di.workspace_id, di.documentmaster_id, di.documentrevision_version, "
+            "di.iteration, dl.id AS link_id, dl.target_documentmaster_id, "
+            "dl.target_docrevision_version, dl.target_workspace_id, dl.commentdata "
+            "FROM documentiteration_documentlink didl "
+            "JOIN documentlink dl ON didl.documentlink_id = dl.id "
+            "JOIN documentiteration di ON "
+            "di.workspace_id=didl.workspace_id AND di.documentmaster_id=didl.documentmaster_id "
+            "AND di.documentrevision_version=didl.documentrevision_version "
+            "AND di.iteration=didl.iteration "
+            "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+            "AND dl.target_docrevision_version=:ver"
+        ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+        seen = set()
+        result = []
+        for r in rows:
+            key = (r[0], r[1], r[2])
+            if key in seen:
+                continue
+            seen.add(key)
+            rev = self.get_revision(db, r[0], r[1], r[2])
+            result.append(self.build_revision_dto(db, rev, current_user_login))
+        return result
+
+    def get_inverse_part_links(self, db, ws, doc_id, ver):
+        """查询反向零件链接（哪些零件引用了当前文档）。"""
+        rows = db.execute(sql_text(
+            "SELECT pi.workspace_id, pi.partmaster_partnumber, pi.partrevision_version, "
+            "pi.iteration, dl.id AS link_id, dl.target_documentmaster_id, "
+            "dl.target_docrevision_version, dl.target_workspace_id "
+            "FROM partiteration_documentlink pidl "
+            "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
+            "JOIN partiteration pi ON "
+            "pi.workspace_id=pidl.workspace_id AND pi.partmaster_partnumber=pidl.partmaster_partnumber "
+            "AND pi.partrevision_version=pidl.partrevision_version AND pi.iteration=pidl.iteration "
+            "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+            "AND dl.target_docrevision_version=:ver"
+        ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+        from app.services.product_manager import ProductService
+        from app.services.part_mapper import map_revision
+        psvc = ProductService()
+        seen = set()
+        result = []
+        for r in rows:
+            key = (r[0], r[1], r[2])
+            if key in seen:
+                continue
+            seen.add(key)
+            pr = psvc.get_revision(db, r[0], r[1], r[2])
+            result.append(map_revision(pr, db).model_dump())
+        return result
+
+    def get_inverse_product_links(self, db, ws, doc_id, ver):
+        """查询反向产品实例链接（哪些产品实例引用了当前文档）。"""
+        rows = db.execute(sql_text(
+            "SELECT DISTINCT pidl.workspace_id, pidl.prdinstancemaster_serialnumber, "
+            "pidl.configurationitem_id, pidl.iteration, "
+            "pii.iterationnote, pii.creationdate, pii.author_login, pii.author_workspace_id "
+            "FROM prdinstiteration_documentlink pidl "
+            "JOIN documentlink dl ON pidl.documentlink_id = dl.id "
+            "LEFT JOIN productinstanceiteration pii ON "
+            "pii.workspace_id=pidl.workspace_id AND pii.configurationitem_id=pidl.configurationitem_id "
+            "AND pii.prdinstancemaster_serialnumber=pidl.prdinstancemaster_serialnumber "
+            "AND pii.iteration=pidl.iteration "
+            "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+            "AND dl.target_docrevision_version=:ver"
+        ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+        result = []
+        for r in rows:
+            result.append({
+                "workspaceId": r[0],
+                "serialNumber": r[1],
+                "configurationItemId": r[2],
+                "instanceIteration": r[3],
+                "iterationNote": r[4] or "",
+                "creationDate": str(r[5]) if r[5] else None,
+                "author": self.get_account_dto(db, r[6], r[7] or ws) if r[6] else None,
+            })
+        return result
+
+    def get_inverse_path_links(self, db, ws, doc_id, ver):
+        """查询反向路径数据链接（哪些路径数据引用了当前文档）。"""
+        rows = db.execute(sql_text(
+            "SELECT DISTINCT pdm.id AS path_data_id, pdm.path "
+            "FROM pathdataiteration_documentlink pdl "
+            "JOIN documentlink dl ON pdl.documentlink_id = dl.id "
+            "JOIN pathdatamaster pdm ON pdm.id = pdl.pathdatamaster_id "
+            "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
+            "AND dl.target_docrevision_version=:ver"
+        ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+        from app.services.product_structure import ProductStructureService
+        psvc = ProductStructureService()
+        result = []
+        for r in rows:
+            pdm_id, path_str = r[0], r[1]
+            dto = {"id": pdm_id, "path": path_str}
+            pipd_row = db.execute(sql_text(
+                "SELECT configurationitem_id, prdinstancemaster_serialnumber "
+                "FROM prdinstiteration_pathdatamstr "
+                "WHERE pathdatamaster_id=:pid LIMIT 1"
+            ), {"pid": pdm_id}).first()
+            if pipd_row:
+                ci_id = pipd_row[0]
+                dto["serialNumber"] = pipd_row[1]
+                try:
+                    part_links = psvc.decode_path(db, ws, ci_id, path_str)
+                    dto["partLinksList"] = {"partLinks": part_links}
+                except Exception:
+                    dto["partLinksList"] = {"partLinks": []}
+            else:
+                dto["serialNumber"] = None
+                dto["partLinksList"] = {"partLinks": []}
+            result.append(dto)
+        return result
+
+    def build_iteration_dto_after_update(self, db, rev, doc_iter, user_login):
+        """update_iteration 后的 DTO 组装（返回单个 iteration 的 dict）。"""
+        target_it = next((it for it in rev.iterations if it.iteration == doc_iter), None)
+        if target_it is None:
+            raise EntityNotFoundException("DocumentIterationNotFoundException",
+                                          rev.documentmaster_id, rev.version, str(doc_iter))
+        ws = rev.workspace_id
+        doc_id = rev.documentmaster_id
+        ver = rev.version
+
+        attached_files = self._query_attached_files(db, ws, doc_id, ver, doc_iter)
+
+        linked_rows = db.execute(sql_text(
+            "SELECT dl.id, dl.target_workspace_id, dl.target_documentmaster_id, "
+            "dl.target_docrevision_version, dl.commentdata "
+            "FROM documentiteration_documentlink didl "
+            "JOIN documentlink dl ON didl.documentlink_id = dl.id "
+            "WHERE didl.workspace_id=:ws AND didl.documentmaster_id=:did "
+            "AND didl.documentrevision_version=:ver AND didl.iteration=:iter"
+        ), {"ws": ws, "did": doc_id, "ver": ver, "iter": doc_iter}).fetchall()
+        linked_documents = []
+        for lr in linked_rows:
+            try:
+                linked_rev = self.get_revision(db, lr[1], lr[2], lr[3])
+                ld = self.build_revision_dto(db, linked_rev, user_login)
+                ld["commentLink"] = lr[4] or ""
+                linked_documents.append(ld)
+            except Exception:
+                linked_documents.append({
+                    "workspaceId": lr[1], "documentMasterId": lr[2],
+                    "version": lr[3], "commentLink": lr[4] or "",
+                })
+
+        instance_attrs = self._query_instance_attributes(db, ws, doc_id, ver, doc_iter)
+
+        return {
+            "id": f"{rev.documentmaster_id}-{rev.version}-{doc_iter}",
+            "iteration": doc_iter,
+            "workspaceId": rev.workspace_id,
+            "documentMasterId": rev.documentmaster_id,
+            "documentRevisionVersion": rev.version,
+            "version": rev.version,
+            "title": rev.title,
+            "revisionNote": target_it.revision_note,
+            "creationDate": str(target_it.creation_date) if target_it.creation_date else None,
+            "modificationDate": str(target_it.modification_date) if target_it.modification_date else None,
+            "checkInDate": str(target_it.check_in_date) if target_it.check_in_date else None,
+            "instanceAttributes": instance_attrs,
+            "attachedFiles": attached_files,
+            "linkedDocuments": linked_documents,
+            "author": self.get_account_dto(db, target_it.author_login, target_it.workspace_id),
+            "documentRevision": {
+                "id": f"{rev.documentmaster_id}-{rev.version}-{rev.version}",
+                "workspaceId": rev.workspace_id,
+                "version": rev.version,
+                "documentMasterId": f"{rev.documentmaster_id}-{rev.version}",
+                "status": None, "publicShared": False, "acl": {},
+                "attributesLocked": False, "checkOutUser": None,
+                "checkOutDate": None, "releaseAuthor": None,
+                "releaseDate": None, "iterationSubscription": False,
+                "stateSubscription": False, "commentLink": None,
+            },
+        }
+
+    def update_acl(self, db, ws, doc_id, ver, user_login, body):
+        """更新文档 ACL（对齐 Java updateDocumentRevisionACL）。"""
+        from app.services.factory.acl_factory import apply_acl
+        dr = self.get_revision(db, ws, doc_id, ver)
+        is_admin = db.execute(sql_text(
+            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+        ), {"l": user_login}).first() is not None
+        is_author = dr.author_login == user_login
+        if not is_admin and not is_author:
+            raise AccessRightException("AccessRightException", user_login)
+        user_entries = body.get("userEntries", {})
+        group_entries = body.get("groupEntries", {})
+        has_entries = bool(user_entries or group_entries)
+        if has_entries:
+            acl_id = getattr(dr, "acl_id", None)
+            new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+            if dr.acl_id != new_acl_id:
+                dr.acl_id = new_acl_id
+                db.commit()
+        else:
+            acl_id = getattr(dr, "acl_id", None)
+            if acl_id:
+                db.execute(sql_text("DELETE FROM acluserentry WHERE acl_id=:aid"), {"aid": acl_id})
+                db.execute(sql_text("DELETE FROM aclusergroupentry WHERE acl_id=:aid"), {"aid": acl_id})
+                dr.acl_id = None
+                db.commit()
+
+    def _check_doc_file_writable(self, db, ws, doc_id, ver, iteration, user_login):
+        """检查用户是否对文档迭代文件有写权限（已签出且是最新迭代）。"""
+        dr = db.query(DocumentRevision).filter(
+            DocumentRevision.workspace_id == ws,
+            DocumentRevision.documentmaster_id == doc_id,
+            DocumentRevision.version == ver,
+        ).first()
+        if dr is None:
+            raise NotAllowedException("NotAllowedException4")
+        if dr.checkout_user_login != user_login:
+            raise NotAllowedException("NotAllowedException4")
+        if dr.last_iteration_number != iteration:
+            raise NotAllowedException("NotAllowedException4")
+
+    def delete_document_file(self, db, ws, doc_id, ver, iteration, filename, user_login):
+        """删除文档迭代中的文件（含 vault 文件系统操作）。"""
+        from app.models.part import BinaryResource
+        from app.core.config import settings
+        from pathlib import Path
+
+        self._check_doc_file_writable(db, ws, doc_id, ver, iteration, user_login)
+        full_name = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{filename}"
+
+        db.execute(document_iteration_binres.delete().where(
+            document_iteration_binres.c.workspace_id == ws,
+            document_iteration_binres.c.documentmaster_id == doc_id,
+            document_iteration_binres.c.documentrevision_version == ver,
+            document_iteration_binres.c.iteration == iteration,
+            document_iteration_binres.c.attachedfile_fullname == full_name,
+        ))
+        br = db.query(BinaryResource).filter(BinaryResource.full_name == full_name).first()
+        if br:
+            db.delete(br)
+        try:
+            vault_path = Path(settings.VAULT_PATH) / full_name
+            if vault_path.exists():
+                vault_path.unlink()
+        except Exception:
+            pass
+        db.commit()
+
+    def rename_document_file(self, db, ws, doc_id, ver, iteration, old_name, new_name, user_login):
+        """重命名文档迭代中的文件（含 vault rename）。"""
+        from app.models.part import BinaryResource
+        from app.core.config import settings
+        from pathlib import Path
+
+        self._check_doc_file_writable(db, ws, doc_id, ver, iteration, user_login)
+        old_full = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{old_name}"
+        new_full = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{new_name}"
+
+        br = db.query(BinaryResource).filter(BinaryResource.full_name == old_full).first()
+        if br:
+            br.full_name = new_full
+        db.execute(document_iteration_binres.update().where(
+            document_iteration_binres.c.workspace_id == ws,
+            document_iteration_binres.c.documentmaster_id == doc_id,
+            document_iteration_binres.c.documentrevision_version == ver,
+            document_iteration_binres.c.iteration == iteration,
+            document_iteration_binres.c.attachedfile_fullname == old_full,
+        ).values(attachedfile_fullname=new_full))
+        try:
+            old_path = Path(settings.VAULT_PATH) / old_full
+            new_path = Path(settings.VAULT_PATH) / new_full
+            if old_path.exists():
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                old_path.rename(new_path)
+        except Exception:
+            pass
+        db.commit()
+        return {"fullName": new_full, "name": new_name}

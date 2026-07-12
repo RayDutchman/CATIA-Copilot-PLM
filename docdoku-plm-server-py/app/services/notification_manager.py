@@ -87,6 +87,56 @@ class NotificationService:
         return [{"login": r[0], "onIterationChange": r[1], "onStateChange": r[2],
                  "workspaceId": ws} for r in rows]
 
+    def subscribe_iteration_change(self, db: Session, ws: str, doc_id: str,
+                                     ver: str, user_login: str):
+        """订阅文档迭代变更通知。"""
+        db.execute(text(
+            "INSERT INTO iterationchangesubscription "
+            "(documentmaster_id, documentrevision_version, documentmaster_workspace_id, "
+            "subscriber_login, subscriber_workspace_id) "
+            "VALUES (:did, :ver, :ws, :login, :sws) "
+            "ON CONFLICT (documentmaster_id, documentrevision_version, "
+            "documentmaster_workspace_id, subscriber_login, subscriber_workspace_id) "
+            "DO NOTHING"),
+            {"did": doc_id, "ver": ver, "ws": ws, "login": user_login, "sws": ws})
+        db.commit()
+
+    def unsubscribe_iteration_change(self, db: Session, ws: str, doc_id: str,
+                                       ver: str, user_login: str):
+        """取消文档迭代变更通知订阅。"""
+        db.execute(text(
+            "DELETE FROM iterationchangesubscription "
+            "WHERE documentmaster_id=:did AND documentrevision_version=:ver "
+            "AND documentmaster_workspace_id=:ws AND subscriber_login=:login "
+            "AND subscriber_workspace_id=:sws"),
+            {"did": doc_id, "ver": ver, "ws": ws, "login": user_login, "sws": ws})
+        db.commit()
+
+    def subscribe_state_change(self, db: Session, ws: str, doc_id: str,
+                                 ver: str, user_login: str):
+        """订阅文档状态变更通知。"""
+        db.execute(text(
+            "INSERT INTO statechangesubscription "
+            "(documentmaster_id, documentrevision_version, documentmaster_workspace_id, "
+            "subscriber_login, subscriber_workspace_id) "
+            "VALUES (:did, :ver, :ws, :login, :sws) "
+            "ON CONFLICT (documentmaster_id, documentrevision_version, "
+            "documentmaster_workspace_id, subscriber_login, subscriber_workspace_id) "
+            "DO NOTHING"),
+            {"did": doc_id, "ver": ver, "ws": ws, "login": user_login, "sws": ws})
+        db.commit()
+
+    def unsubscribe_state_change(self, db: Session, ws: str, doc_id: str,
+                                   ver: str, user_login: str):
+        """取消文档状态变更通知订阅。"""
+        db.execute(text(
+            "DELETE FROM statechangesubscription "
+            "WHERE documentmaster_id=:did AND documentrevision_version=:ver "
+            "AND documentmaster_workspace_id=:ws AND subscriber_login=:login "
+            "AND subscriber_workspace_id=:sws"),
+            {"did": doc_id, "ver": ver, "ws": ws, "login": user_login, "sws": ws})
+        db.commit()
+
     def _to_dict(self, row) -> dict:
         cols = row._mapping.keys() if hasattr(row, "_mapping") else []
         return {k: row[k] for k in cols}

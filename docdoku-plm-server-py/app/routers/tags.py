@@ -22,9 +22,8 @@ doc_svc = DocumentService()
 
 
 def _build_doc_dto(dr, db: Session, current_user_login=None) -> dict:
-    """组装文档修订版 DTO，使用统一的 _doc_to_dict 确保字段完整。"""
-    from app.routers.document import _doc_to_dict
-    return _doc_to_dict(db, dr, current_user_login)
+    """组装文档修订版 DTO，委托 DocumentService 构建。"""
+    return doc_svc.build_revision_dto(db, dr, current_user_login)
 
 
 @router.get("/workspaces/{workspace_id}/tags")

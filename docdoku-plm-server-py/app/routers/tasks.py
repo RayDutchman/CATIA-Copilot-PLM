@@ -30,8 +30,8 @@ def _parse_task_id(task_id: str):
 
 
 def _doc_to_dict(db, rev, current_user_login=None):
-    from app.routers.document import _doc_to_dict as _doc_full
-    return _doc_full(db, rev, current_user_login)
+    from app.services.document_manager import DocumentService
+    return DocumentService().build_revision_dto(db, rev, current_user_login)
 
 
 def _part_to_dict(db: Session, rev):
