@@ -1,6 +1,6 @@
 """组织管理端点。"""
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -197,6 +197,7 @@ def remove_member(
 def move_member(
     org_name: str,
     body: dict,
+    direction: str = Query(...),
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
@@ -210,6 +211,8 @@ def move_member(
     login = body.get("login", "").strip()
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
+    if direction not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="Invalid direction, must be 'up' or 'down'")
     members = db.execute(text(
         "SELECT account_login, account_order FROM organization_account "
         "WHERE organization_name = :org ORDER BY account_order"
@@ -221,17 +224,22 @@ def move_member(
             break
     if idx is None:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
-    if idx == 0:
-        return {"status": "ok"}
-    prev_login, prev_order = members[idx - 1]
+    if direction == "up":
+        if idx == 0:
+            return Response(status_code=204)
+        swap_login, swap_order = members[idx - 1]
+    else:  # down
+        if idx == len(members) - 1:
+            return Response(status_code=204)
+        swap_login, swap_order = members[idx + 1]
     cur_order = members[idx][1]
     db.execute(text(
         "UPDATE organization_account SET account_order = :ord "
         "WHERE organization_name = :org AND account_login = :login"
-    ), {"ord": prev_order, "org": org_name, "login": login})
+    ), {"ord": swap_order, "org": org_name, "login": login})
     db.execute(text(
         "UPDATE organization_account SET account_order = :ord "
         "WHERE organization_name = :org AND account_login = :login"
-    ), {"ord": cur_order, "org": org_name, "login": prev_login})
+    ), {"ord": cur_order, "org": org_name, "login": swap_login})
     db.commit()
-    return {"status": "ok"}
+    return Response(status_code=204)

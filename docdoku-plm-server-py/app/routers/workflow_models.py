@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -130,8 +130,8 @@ def delete_model(ws: str, model_id: str, db: Session = Depends(get_db),
     workflow_service.delete_model(db, ws, model_id, user_login=current_user.login)
 
 
-@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl", response_model=WorkflowModelDTO)
-@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl/", include_in_schema=False)
+@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl", status_code=204)
+@router.put(f"{PREFIX}/workflow-models/{{model_id}}/acl/", status_code=204, include_in_schema=False)
 def update_model_acl(ws: str, model_id: str, body: dict, db: Session = Depends(get_db),
                       current_user: Account = Depends(get_current_user)):
     m = workflow_service.get_model(db, ws, model_id)
@@ -140,4 +140,4 @@ def update_model_acl(ws: str, model_id: str, body: dict, db: Session = Depends(g
                            body.get("groupEntries", {}))
     m.acl_id = new_acl_id
     db.commit()
-    return _model_to_dict(m, db)
+    return Response(status_code=204)

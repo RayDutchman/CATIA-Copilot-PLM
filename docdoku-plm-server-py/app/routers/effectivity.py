@@ -46,6 +46,10 @@ def _effectivity_to_dto(eff) -> dict:
         "description": d.get("description", ""),
         "configurationItemNumber": d.get("configurationitem_id"),
         "workspaceId": d.get("configurationitem_workspace_id"),
+        "configurationItemKey": {
+            "workspace": d.get("configurationitem_workspace_id"),
+            "id": d.get("configurationitem_id"),
+        },
     }
     if dtype == "DateBasedEffectivity":
         dto["typeEffectivity"] = "DATEBASEDEFFECTIVITY"
@@ -194,6 +198,28 @@ def put_effectivity(
     if eff is None:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("EffectivityNotFoundException", str(id))
+
+    # 类型分派校验：下限字段不可清空（对齐 Java updateEffectivity → updateXxxEffectivity）
+    dtype = eff.dtype
+    if not dtype and body.get("typeEffectivity"):
+        type_eff = body.get("typeEffectivity", "").upper()
+        dtype_map = {
+            "DATEBASEDEFFECTIVITY": "DateBasedEffectivity",
+            "SERIALNUMBERBASEDEFFECTIVITY": "SerialNumberBasedEffectivity",
+            "LOTBASEDEFFECTIVITY": "LotBasedEffectivity",
+        }
+        dtype = dtype_map.get(type_eff, "DateBasedEffectivity")
+
+    if dtype == "DateBasedEffectivity":
+        if "startDate" in body and not body.get("startDate"):
+            raise CreationException("startDate is required for DateBasedEffectivity")
+    elif dtype == "SerialNumberBasedEffectivity":
+        if "startNumber" in body and not body.get("startNumber"):
+            raise CreationException("startNumber is required for SerialNumberBasedEffectivity")
+    elif dtype == "LotBasedEffectivity":
+        if "startLotId" in body and not body.get("startLotId"):
+            raise CreationException("startLotId is required for LotBasedEffectivity")
+
     if "name" in body:
         eff.name = body["name"]
     if "description" in body:

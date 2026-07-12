@@ -1,6 +1,6 @@
 """里程碑（Milestone）端点路由。"""
 from typing import Optional, List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from app.schemas.change import MilestoneDTO, ChangeRequestDTO, ChangeOrderDTO
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
@@ -140,4 +140,4 @@ def set_milestone_acl(ws: str, milestone_id: int, body: dict,
                            body.get("groupEntries", {}))
     item.acl_id = new_acl_id
     db.commit()
-    return {"aclId": new_acl_id}
+    return Response(status_code=204)

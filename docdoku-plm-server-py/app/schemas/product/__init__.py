@@ -32,8 +32,8 @@ class ProductBaselineDetailDTO(BaseModel):
     hasObsoletePartRevisions: bool = False
     configurationItemLatestRevision: Optional[str] = None
     baselinedParts: List[BaselinedPartDTO] = []
-    substituteLinks: List[dict] = []
-    optionalUsageLinks: List[dict] = []
+    substituteLinks: List[str] = []
+    optionalUsageLinks: List[str] = []
     pathToPathLinks: List[dict] = []
     substitutesParts: List[dict] = []
     optionalsParts: List[dict] = []

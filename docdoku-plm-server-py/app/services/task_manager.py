@@ -212,6 +212,20 @@ class TaskService:
             if not self._is_potential_worker(db, ws, user_login, wf_id, step, num):
                 raise NotAllowedException("NotAllowedException41")
 
+        # checkedOut 防护——对齐 Java checkTaskAccess 的 isCheckedOut 判断
+        doc_row = db.execute(text(
+            "SELECT checkoutuser_login FROM documentrevision "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if doc_row and doc_row[0] is not None:
+            raise NotAllowedException("NotAllowedException16")
+        part_row = db.execute(text(
+            "SELECT checkoutuser_login FROM partrevision "
+            "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
+        ), {"wf_id": wf_id, "ws": ws}).first()
+        if part_row and part_row[0] is not None:
+            raise NotAllowedException("NotAllowedException17")
+
         status = 2 if action.upper() == "APPROVE" else 3
         db.execute(text(
             "UPDATE task SET status = :s, worker_login = :wl, worker_workspace_id = :wws, "
@@ -219,6 +233,11 @@ class TaskService:
             "WHERE workflow_id = :wf_id AND activity_step = :step AND num = :num"
         ), {"s": status, "wl": user_login, "wws": ws, "c": comment, "sig": signature,
             "wf_id": wf_id, "step": step, "num": num})
+
+        # TODO: 审批通过通知——对齐 Java sendApproval/sendStateNotification
+        #   当前 app/services/notifier.py 仅有索引通知方法，无 sendApproval/sendStateNotification。
+        #   需实现：若 holder 为文档且活动步骤变化→sendStateNotification；然后 sendApproval(ws, runningTasks, holder)。
+        #   详见 DocumentWorkflowManagerBean L116-133 / PartWorkflowManagerBean L115-119。
 
         # 审批通过时：推进活动（start next tasks）
         workflow_completed = False
@@ -233,6 +252,14 @@ class TaskService:
         relaunched = None
         if action.upper() == "REJECT":
             relaunched = self._relaunch_workflow(db, ws, wf_id, step, num)
+
+            # TODO: 拒绝后 relaunch 通知——对齐 Java sendApproval (+ relaunched notifications)
+            #   当前 app/services/notifier.py 无对应接口。
+            #   需实现：
+            #     notifier.sendApproval(ws, relaunchedRunningTasks, holder)
+            #     若 holder 为文档→sendDocumentRevisionWorkflowRelaunchedNotification
+            #     若 holder 为零件→sendPartRevisionWorkflowRelaunchedNotification
+            #   详见 DocumentWorkflowManagerBean L154-161 / PartWorkflowManagerBean L140-147。
 
         holder_type = None
         holder_reference = None

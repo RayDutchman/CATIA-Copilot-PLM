@@ -73,8 +73,8 @@ def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
             db, ws, b.configurationitem_id
         ),
         "baselinedParts": _query_baselined_parts(db, b.partcollection_id) if b.partcollection_id else [],
-        "substituteLinks": _query_substitute_links(db, ws, b.partcollection_id),
-        "optionalUsageLinks": _query_optional_links(db, ws, b.partcollection_id),
+        "substituteLinks": _baseline_substitute_paths(db, b.id),
+        "optionalUsageLinks": _baseline_optional_paths(db, b.id),
         "pathToPathLinks": _query_path_to_path_links(db, ws, b.id),
         "optionalsParts": _decode_paths_to_part_links(db, ws, b.configurationitem_id, _baseline_optional_paths(db, b.id)),
     }
@@ -94,8 +94,8 @@ def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
         "hasObsoletePartRevisions": _has_obsolete_parts(db, bl.partcollection_id),
         "configurationItemLatestRevision": _ci_latest_revision(db, ws, bl.configurationitem_id),
         "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
-        "substituteLinks": _query_substitute_links(db, ws, bl.partcollection_id),
-        "optionalUsageLinks": _query_optional_links(db, ws, bl.partcollection_id),
+        "substituteLinks": _baseline_substitute_paths(db, bl.id),
+        "optionalUsageLinks": _baseline_optional_paths(db, bl.id),
         "pathToPathLinks": _query_path_to_path_links(db, ws, bl.id),
         "substitutesParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_substitute_paths(db, bl.id)),
         "optionalsParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_optional_paths(db, bl.id)),

@@ -99,6 +99,8 @@ class WorkflowService:
                           creationdate=datetime.utcnow(),
                           author_login=user_login, author_workspace_id=ws)
         db.add(m)
+        step_to_id = {}  # {step: activitymodel_id}，用于 relaunchStep 两步解析
+        relaunch_info = []  # [(activitymodel_id, relaunch_step)]
         if activity_models:
             for am in activity_models:
                 am_obj = ActivityModel(
@@ -111,6 +113,10 @@ class WorkflowService:
                 )
                 db.add(am_obj)
                 db.flush()
+                step_to_id[am.get("step", 0)] = am_obj.id
+                relaunch_step = am.get("relaunchStep")
+                if relaunch_step is not None:
+                    relaunch_info.append((am_obj.id, relaunch_step))
                 for task in am.get("tasks", []):
                     db.add(TaskModel(
                         num=task.get("num", 0),
@@ -121,6 +127,14 @@ class WorkflowService:
                         role_workspace_id=task.get("role", {}).get("workspaceId") if task.get("role") else None,
                         role_name=task.get("role", {}).get("name") if task.get("role") else None,
                     ))
+            # 写入 activitymodel_relaunch 表（对齐 Java extractActivityModelFromDTO）
+            for am_id, relaunch_step in relaunch_info:
+                target_am_id = step_to_id.get(relaunch_step)
+                if target_am_id is not None:
+                    db.execute(text(
+                        "INSERT INTO activitymodel_relaunch (activitymodel_id, relaunchactivitymodel_id) "
+                        "VALUES (:am_id, :target_id)"
+                    ), {"am_id": am_id, "target_id": target_am_id})
         db.commit()
         db.refresh(m)
         return m
@@ -134,11 +148,18 @@ class WorkflowService:
             self._check_write_access(db, m.acl_id, user_login, workspace_id=ws)
         m.finalLifecycleState = final_state
         if activity_models is not None:
+            # 先清旧 relaunch 行（FK 无 CASCADE，需在删 ActivityModel 前清理）
+            db.execute(text(
+                "DELETE FROM activitymodel_relaunch WHERE activitymodel_id IN ("
+                "SELECT id FROM activitymodel WHERE workflowmodel_id = :mid AND workspace_id = :ws)"
+            ), {"mid": model_id, "ws": ws})
             # 删除旧 ActivityModel（级联删除旧 TaskModel）
             db.query(ActivityModel).filter(
                 ActivityModel.workflowmodel_id == model_id,
                 ActivityModel.workspace_id == ws,
             ).delete()
+            step_to_id = {}
+            relaunch_info = []
             for am in activity_models:
                 am_obj = ActivityModel(
                     step=am.get("step", 0),
@@ -150,6 +171,10 @@ class WorkflowService:
                 )
                 db.add(am_obj)
                 db.flush()
+                step_to_id[am.get("step", 0)] = am_obj.id
+                relaunch_step = am.get("relaunchStep")
+                if relaunch_step is not None:
+                    relaunch_info.append((am_obj.id, relaunch_step))
                 for task in am.get("tasks", []):
                     db.add(TaskModel(
                         num=task.get("num", 0),
@@ -160,6 +185,14 @@ class WorkflowService:
                         role_workspace_id=task.get("role", {}).get("workspaceId") if task.get("role") else None,
                         role_name=task.get("role", {}).get("name") if task.get("role") else None,
                     ))
+            # 写入 activitymodel_relaunch 表（对齐 Java extractActivityModelFromDTO）
+            for am_id, relaunch_step in relaunch_info:
+                target_am_id = step_to_id.get(relaunch_step)
+                if target_am_id is not None:
+                    db.execute(text(
+                        "INSERT INTO activitymodel_relaunch (activitymodel_id, relaunchactivitymodel_id) "
+                        "VALUES (:am_id, :target_id)"
+                    ), {"am_id": am_id, "target_id": target_am_id})
         db.commit()
         db.refresh(m)
         return m
@@ -404,9 +437,18 @@ class WorkflowService:
         db.commit()
         logger.info("Workflow %s instantiated in workspace %s", wf_id, ws)
         # TODO: 缺少审批通知——对齐 Java WorkflowManagerBean.instantiateWorkflow L359
-        #   notifier.sendApproval(workspaceId, runningTasks, workspaceWorkflow)
-        #   当前 app/services/notifier.py 仅有索引通知方法，无 sendApproval。
-        #   需实现：遍历当前 runningTasks，向每个 task 的 worker(user) 发送审批邮件。
+        #   Java 做法：notifier.sendApproval(ws, runningTasks, workspaceWorkflow)
+        #     - runningTasks: 当前 status=1 (IN_PROGRESS) 的 task，查询 task 表 WHERE status=1 AND workflow_id=:wf_id
+        #     - 遍历每个 runningTask: 取出 worker_login → 查 Account 取 email/language
+        #     - 调用 notifier 发审批通知邮件（主题:"审批通知"、含任务标题/说明/workflow 链接）
+        #   当前 app/services/notifier.py 仅有 bulk index 通知方法，无 sendApproval。
+        #   栈内可用设施:
+        #     - SMTP 可用 smtp:1025 (MailHog)，notifier._send_email 可复用
+        #     - GCM sender (gcm/gcm_sender.py) 可推送设备通知
+        #   待实现（不能改 notifier.py 时最小切入）：
+        #     1. 查 runningTasks = db.execute("SELECT t.*, a.account_email FROM task t JOIN task_user tu ... JOIN account a ... WHERE t.status=1 AND t.workflow_id=:wf_id")
+        #     2. 逐 task worker 发 SMTP 邮件（复用 notifier._send_email 或 notifier.py 新增 sendApproval）
+        #   注意：此通知不是阻塞操作——send 失败只打 log，不影响实例化流程。
         return {"id": ww_id, "workspaceId": ws, "workflowId": wf_id}
 
     def get_workspace_workflow(self, db: Session, ws: str, ww_id: str) -> dict:
