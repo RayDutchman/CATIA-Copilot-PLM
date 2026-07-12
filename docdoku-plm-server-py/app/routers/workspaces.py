@@ -393,63 +393,14 @@ def get_workspace(ws: str, db: Session = Depends(get_db),
 def create_workspace(body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user),
                      userLogin: str = Query(None)):
-    # 检查平台策略：ADMIN_VALIDATION 时仅管理员可创建，且 workspace 默认 disabled
-    strategy_row = db.execute(text(
-        "SELECT workspacecreationstrategy FROM platformoptions LIMIT 1"
-    )).first()
-    is_admin_validation = strategy_row is not None and strategy_row[0] == 1
-    if is_admin_validation:
-        is_admin = db.execute(text(
-            "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-        ), {"l": current_user.login}).first()
-        if not is_admin:
-            raise AccessRightException("AccessRightException", current_user.login)
+    # 业务逻辑归属 workspace_manager（tracker S-029 WorkspaceManagerBean → workspace_manager.py）
     ws_id = body.get("id", "").strip()
-    if not ws_id:
-        raise NotAllowedException("NotAllowedException9", ws_id)
-
-    # 命名约定校验（对齐 Java WorkspaceManagerBean.createWorkspace）
-    if not is_valid_name(ws_id):
-        raise NotAllowedException("NotAllowedException9", ws_id)
-
-    existing = db.execute(text(
-        "SELECT id FROM workspace WHERE id = :id"
-    ), {"id": ws_id}).fetchone()
-    if existing:
-        raise EntityAlreadyExistsException("WorkspaceAlreadyExistsException", ws_id)
-
     admin = userLogin or current_user.login
-    desc = body.get("description", "")
-    folder_locked = body.get("folderLocked", False)
-    enabled = not is_admin_validation  # ADMIN_VALIDATION → false，否则 true
-
-    db.execute(text(
-        "INSERT INTO workspace (id, description, enabled, folderlocked, admin_login) "
-        "VALUES (:id, :desc, :enabled, :folder_locked, :admin)"
-    ), {"id": ws_id, "desc": desc, "enabled": enabled,
-        "folder_locked": folder_locked, "admin": admin})
-
-    # Payara 对齐: createWorkspace → createUser + addUserMembership
-    db.execute(text(
-        "INSERT INTO userdata (login, workspace_id) VALUES (:login, :ws)"
-    ), {"login": admin, "ws": ws_id})
-    db.execute(text(
-        "INSERT INTO workspaceusermembership "
-        "(workspace_id, member_login, member_workspace_id) "
-        "VALUES (:ws, :login, :ws) "
-        "ON CONFLICT DO NOTHING"
-    ), {"ws": ws_id, "login": admin})
-    db.commit()
-
-    indexer_manager.create_index(ws_id)  # 对标 createWorkspace:157
-
-    return {
-        "id": ws_id,
-        "description": desc,
-        "enabled": enabled,
-        "folderLocked": folder_locked,
-        "admin": admin,
-    }
+    return workspace_service.create_workspace(
+        db, ws_id, admin_login=admin, current_user_login=current_user.login,
+        description=body.get("description", ""),
+        folder_locked=body.get("folderLocked", False),
+    )
 
 
 @router.put("/workspaces/{ws}", response_model=WorkspaceDTO)

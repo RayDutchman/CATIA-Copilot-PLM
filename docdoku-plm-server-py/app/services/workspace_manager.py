@@ -27,31 +27,72 @@ class WorkspaceService:
         return dict(row._mapping)
 
     def create_workspace(self, db: Session, ws_id: str,
-                          admin_login: str, description: str = "",
+                          admin_login: str, current_user_login: str = None,
+                          description: str = "",
                           folder_locked: bool = False) -> dict:
+        """创建工作区（对齐 Payara WorkspaceManagerBean.createWorkspace）。
+
+        含：ADMIN_VALIDATION 策略校验 + 命名校验 + workspace INSERT +
+        createUser(userdata) + addUserMembership(workspaceusermembership) + ES 索引。
+        """
+        from app.core.exceptions import (
+            AccessRightException, NotAllowedException, EntityAlreadyExistsException,
+        )
+        from app.models.util.naming_convention import is_valid_name
+
+        # 平台策略：ADMIN_VALIDATION(=1) 时仅管理员可创建，且 workspace 默认 disabled
+        strategy_row = db.execute(text(
+            "SELECT workspacecreationstrategy FROM platformoptions LIMIT 1"
+        )).first()
+        is_admin_validation = strategy_row is not None and strategy_row[0] == 1
+        if is_admin_validation and current_user_login is not None:
+            is_admin = db.execute(text(
+                "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+            ), {"l": current_user_login}).first()
+            if not is_admin:
+                raise AccessRightException("AccessRightException", current_user_login)
+
+        if not ws_id:
+            raise NotAllowedException("NotAllowedException9", ws_id)
+        # 命名约定校验
+        if not is_valid_name(ws_id):
+            raise NotAllowedException("NotAllowedException9", ws_id)
+
         existing = db.execute(text(
-            "SELECT 1 FROM workspace WHERE id = :id"
+            "SELECT id FROM workspace WHERE id = :id"
         ), {"id": ws_id}).first()
         if existing:
-            from app.core.exceptions import EntityAlreadyExistsException
             raise EntityAlreadyExistsException("WorkspaceAlreadyExistsException", ws_id)
 
+        enabled = not is_admin_validation  # ADMIN_VALIDATION → false，否则 true
+
         db.execute(text(
-            "INSERT INTO workspace (id, admin_login, description, folderlocked, enabled) "
-            "VALUES (:id, :al, :d, :fl, true)"
-        ), {"id": ws_id, "al": admin_login, "d": description, "fl": folder_locked})
+            "INSERT INTO workspace (id, description, enabled, folderlocked, admin_login) "
+            "VALUES (:id, :desc, :enabled, :folder_locked, :admin)"
+        ), {"id": ws_id, "desc": description, "enabled": enabled,
+            "folder_locked": folder_locked, "admin": admin_login})
+
+        # Payara 对齐: createWorkspace → createUser + addUserMembership
+        db.execute(text(
+            "INSERT INTO userdata (login, workspace_id) VALUES (:login, :ws)"
+        ), {"login": admin_login, "ws": ws_id})
+        db.execute(text(
+            "INSERT INTO workspaceusermembership "
+            "(workspace_id, member_login, member_workspace_id) "
+            "VALUES (:ws, :login, :ws) "
+            "ON CONFLICT DO NOTHING"
+        ), {"ws": ws_id, "login": admin_login})
         db.commit()
 
-        # 创建 ES 索引
+        # 创建 ES 索引（对标 createWorkspace:157）
         try:
             from app.services.indexer_manager import indexer_manager
             indexer_manager.create_index(ws_id)
         except Exception:
             pass
 
-        return {"id": ws_id, "adminLogin": admin_login,
-                "description": description, "folderLocked": folder_locked,
-                "enabled": True}
+        return {"id": ws_id, "description": description, "enabled": enabled,
+                "folderLocked": folder_locked, "admin": admin_login}
 
     def delete_workspace(self, db: Session, ws: str) -> None:
         """完整级联删除工作区（对齐 WorkspaceDAO.removeWorkspace）。"""
