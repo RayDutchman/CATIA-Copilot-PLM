@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-07-12 — fix: 第4轮审计修复（2 CRITICAL + 13 HIGH + 16 MED 全部闭环）
+
+> 按 `docs/migration/audit-round4/FIX-PLAN.md` 分 4 批执行（延续分支 `fix/audit-remediation`）。全程 pytest **282 passed / 1 skipped 零回归**；CRITICAL 经 GD50 造数据复测；权限项经 non-admin(alice)/ws-admin(test1)/global-admin(admin) smoke 对拍。镜像已 rebuild 持久化。22 LOW 及已知计划外项不列入（用户确认"修到 MED"）。
+
+- **Batch1（2 CRITICAL, `0d087a1`）**：
+  - **P2-14**：`path_data_service._attach_master_to_instance` INSERT 列名 `iteration`→`prdinstanceiteration_iteration`（创建 PathData 必 500）。复测 PathDataMaster create 201。
+  - **P3-11**：`product_structure.create_baseline` 替代/可选链接（路径字符串）当 dict 处理且写错表 → 改写 `productbaseline_substitutelink.substitutelinks`/`productbaseline_optionallink.optionalusagelinks`（对齐 Java @ElementCollection）。复测 baseline create 201 + links round-trip。
+- **Batch2（6 HIGH 权限系统性缺口, `84d9229`）**：P1-13 零件 remove_tag、P4-NEW1/2/3 文档 mark_obsolete/tags/create_document、P5-19 用户组&成员 7 端点、P5-07-REG admin stats/index 8 端点、P7-14 PathData 导入 canWrite——统一补 check_write_access / _check_workspace_admin / require_global_admin（对齐 Payara）。
+- **Batch3（7 功能 HIGH, `c69d251`）**：P5-18 setUserAccess UPSERT→SELECT-then-UPDATE(非成员→400)、P6-17 holderType 单→复数、P8-11 notification list 去 ackauthor_login 过滤(恒空修复)、P6-18 assignedUsers 填充、P2-15/P1-14+P8-12 硬编码 HTTPException→领域异常、P1-12 create_new_version 描述写正确新版本、P2-06 configSpec 补 configurationitem_id 过滤。
+- **Batch4（16 MED + 事务, `d46e7ea`）**：P2-12/P5-16→204、P5-08 去 WorkspaceDTO 的 admin 字段(含 schema+admin.py)、P5-20 去多余 membership、P3-03 effectivity 强制下限字段、P3-10 baseline P2P decode_path、P8-06 LOV 第3检查、P3-12 删死代码、P3-09 delete_effectivity FK 守卫、P7-12 import 幂等、P4-NEW4 模板 attachedFiles、**P7-15 checkout/checkin 增 auto_commit 参数 + import_into_parts 单事务提交/回滚（对齐 Java bulkPartUpdate）**。
+- **主 agent 修正的 subagent 隐患**：① Batch4 P8-03 改 204 破坏 test → 回退 200+DTO（LOW 超范围）；② P5-08 根因在 WorkspaceDTO schema 声明 admin 字段（extra=forbid）→ 补删 schema+admin.py 多余字段（否则 admin 端点 500）。
+- **未修（保留，报告已说明）**：P2-08（linkType 重构风险高）、P1-06（status NULL 待 Payara 对拍）、P8-03（LOW）、22 LOW、邮件族 P6-01/P6-08、P5-12、P5-21。
+
+---
+
+## 2026-07-12 — docs: 第4轮全量审计（代码对比 + 回归复核）完成
+
+> 编排 8 域 explore subagent 分 2 波并行审计**第3轮重构后**代码（分支 `fix/audit-remediation`）。产出 `docs/migration/audit-round4/`（00-index + 8 域报告）。**只审计不修复**。pytest 基线确认 282 passed / 1 skipped。
+
+- **总计 2 CRITICAL / 13 HIGH / 16 MED / 22 LOW**（主 agent 用 psql/读码直接核实所有 CRITICAL + 关键 HIGH）。
+- **2 CRITICAL（均为前两轮未覆盖的写入路径盲区）**：
+  - **P2-14**：`path_data_service.py:316-323` INSERT `prdinstiteration_pathdatamstr` 用列名 `iteration`，实际为 `prdinstanceiteration_iteration` → 创建/编辑 PathData 必 500。
+  - **P3-11**：`product_structure.py:947-964` create_baseline 把 substituteLinks/optionalUsageLinks（路径字符串）当 dict 调 `.get()` 且写错表（`partsubstitutelink`/`UPDATE partusagelink` 而非 `productbaseline_substitutelink`/`_optionallink`）→ 传非空链接创建基线必 500。
+- **HIGH 主线：权限系统性缺口**（第3轮统一 Depends/迁移 service 时遗漏）——P1-13 remove_tag、P4-NEW1 mark_obsolete、P4-NEW2 文档 tags、P5-19 用户组/成员 7 端点、P5-07-REG stats/index 8 端点、P7-14 PathData 导入 canWrite 均缺写/admin 权限检查。
+- **回归/副作用**：P5-18（P5-04 修 membership 引入 UPSERT→FK 500）、P2-15/P1-14（迁 service 带入硬编码 HTTPException）、P6-17（holderType 单复数 vs Java 复数）、P8-11（notification 用 ackauthor_login 过滤未读恒空）。
+- **闭环确认**：第2轮 6 CRITICAL + 29 HIGH 绝大多数已被第3轮修复（域4 全 14 项、域6 P6-02/03、域2 P2-01~10、域3 P3-01/02/03、域5 P5-01/02 等）。
+- 机器脚本线索：`check_hardcoded_exceptions` 命中 2 真问题（product_manager.py:1895/2007）；SQL/DTO 脚本告警均为已知误报（id 自增 / ON CONFLICT DO UPDATE SET / CreationDTO 误映射）。
+
+---
+
 ## 2026-07-12 — fix: 恢复 pytest 绿（DB 清空后重建种子）+ 3 处对齐修复
 
 > 环境 DB 被清空（GD50 及数据丢失）导致 84 pytest 失败。重建种子 + 3 处代码/测试对齐后 **pytest 282 passed / 1 skipped / 0 failed（全量含 test_vault）**。

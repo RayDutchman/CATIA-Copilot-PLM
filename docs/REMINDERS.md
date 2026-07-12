@@ -8,6 +8,12 @@
 
 > 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限修复合集，并**新增 Query 自定义查询执行引擎 + Importer 属性导入域（分支 feat/py-query-execution-engine）**。**剩余功能域**：① WebSocket /ws 403 修复；② 种子脚本修复（解阻 10 个 pytest 失败）。本文件只保留**跨领域非迁移**待办。
 
+### 🔴 第四轮全量审计（代码对比 + 回归复核，2026-07-12，见 docs/migration/audit-round4/00-index.md）
+
+> **✅ 修复全部完成（2026-07-12）**：2 CRITICAL + 13 HIGH + 16 MED 分 4 批闭环，commit `0d087a1`/`84d9229`/`c69d251`/`d46e7ea`。pytest 282 passed / 1 skipped 零回归，CRITICAL 经 GD50 造数据复测，权限项经 non-admin/admin smoke 对拍，镜像已 rebuild 持久化。详见 `audit-round4/FIX-PLAN.md` 执行结果表。
+>
+> **未修（保留，用户确认"修到 MED"）**：P2-08（linkType PSFilterVisitor 重构，风险高）；P1-06（status NULL→"WIP"，需 Payara 对拍 null 序列化后再定，当前 DB 无 NULL status 记录）；P8-03（acknowledge 204，LOW+测试依赖）；**22 LOW**；已知计划外项：P6-01/P6-08 审批邮件（邮件族排期见 loose-ends 第八节）、P5-12 put_index ES 桩、P5-21 delete_account 级联不全。
+
 ### 🆕 Checklist #15 路由/服务接线审计 (audit-round3, 2026-07-12)
 
 > **✅ Batch 1 已完成**：消除跨路由重复逻辑 + Payara 对齐权限检查。
