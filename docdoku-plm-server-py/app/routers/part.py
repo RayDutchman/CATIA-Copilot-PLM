@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
-    PartIterationNotFoundException, AccessRightException,
+    PartIterationNotFoundException, AccessRightException, NotAllowedException,
     PartMasterNotFoundException, BaselineNotFoundException, WrongInputException,
 )
 from app.models.auth import Account
@@ -335,7 +335,7 @@ def delete_part_file_subresource(
     pr = svc.get_revision(db, workspace_id, number, version)
     if not pr or pr.checkout_user_login != current_user.login \
             or pr.last_iteration_number != iteration:
-        raise HTTPException(403, "Not authorized to modify this iteration")
+        raise NotAllowedException("NotAllowedException4")
     full_name = f"{workspace_id}/parts/{number}/{version}/{iteration}/{sub_type}/{file_name}"
 
     if sub_type == "nativecad":
@@ -675,8 +675,7 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     )
 
     if bp is None:
-        # 对齐 Java: filter 返回空列表 → 404
-        raise HTTPException(404, "Part not found in baseline")
+        raise PartMasterNotFoundException("PartMasterNotFoundException", pn)
 
     pi = (
         db.query(PartIteration)
@@ -690,8 +689,9 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     )
 
     if pi is None:
-        # 对齐 Java: filter 返回空列表 → 404
-        raise HTTPException(404, "Part iteration not found in baseline")
+        raise PartIterationNotFoundException(
+            "PartIterationNotFoundException", pn,
+            bp.target_partrevision_version, bp.target_iteration)
 
     # 对齐 Java PartsResource.filterPartMasterInBaseline: 返回单个 PartIterationDTO
     return map_iteration(pi, db)
