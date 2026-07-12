@@ -375,7 +375,12 @@ def get_latest_revision(
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    pr = svc.get_latest_revision(db, workspace_id, part_number)
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    pr = svc.get_latest_revision(db, workspace_id, part_number,
+                                 current_user_login=current_user.login,
+                                 is_admin=is_admin)
     return map_revision(pr, db)
 
 

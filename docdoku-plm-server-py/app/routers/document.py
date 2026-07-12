@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
-from app.core.exceptions import DocumentRevisionNotFoundException
+from app.core.exceptions import AccessRightException, DocumentRevisionNotFoundException
 from app.services.document_manager import DocumentService
 from app.services.factory.acl_factory import apply_acl, check_write_access
 from app.schemas.document import DocumentRevisionDTO
@@ -496,12 +496,30 @@ def inverse_path_link(ws: str, doc_key: str, iteration: int,
         "WHERE dl.target_workspace_id=:ws AND dl.target_documentmaster_id=:did "
         "AND dl.target_docrevision_version=:ver"
     ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+    from app.services.product_structure import ProductStructureService
+    psvc = ProductStructureService()
     result = []
     for r in rows:
-        result.append({
-            "id": r[0],
-            "path": r[1],
-        })
+        pdm_id, path_str = r[0], r[1]
+        dto = {"id": pdm_id, "path": path_str}
+        # 对齐 Java: findProductByPathMaster → serialNumber + decodePath → partLinksList
+        pipd_row = db.execute(sql_text(
+            "SELECT configurationitem_id, prdinstancemaster_serialnumber "
+            "FROM prdinstiteration_pathdatamstr "
+            "WHERE pathdatamaster_id=:pid LIMIT 1"
+        ), {"pid": pdm_id}).first()
+        if pipd_row:
+            ci_id = pipd_row[0]
+            dto["serialNumber"] = pipd_row[1]
+            try:
+                part_links = psvc.decode_path(db, ws, ci_id, path_str)
+                dto["partLinksList"] = {"partLinks": part_links}
+            except Exception:
+                dto["partLinksList"] = {"partLinks": []}
+        else:
+            dto["serialNumber"] = None
+            dto["partLinksList"] = {"partLinks": []}
+        result.append(dto)
     return result
 
 
@@ -736,11 +754,29 @@ def update_doc_acl(ws: str, doc_key: str, body: dict,
                    current_user: Account = Depends(get_current_user)):
     doc_id, version = _split_doc_key(doc_key)
     dr = svc.get_revision(db, ws, doc_id, version)
-    acl_id = getattr(dr, "acl_id", None)
-    new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
-    if dr.acl_id != new_acl_id:
-        dr.acl_id = new_acl_id
-        db.commit()
+    # 对齐 Java updateDocumentRevisionACL: 需 admin 或作者权限（两个 EJB 内部均检查）
+    is_admin = db.execute(sql_text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first() is not None
+    is_author = dr.author_login == current_user.login
+    if not is_admin and not is_author:
+        raise AccessRightException("AccessRightException", current_user.login)
+    user_entries = body.get("userEntries", {})
+    group_entries = body.get("groupEntries", {})
+    has_entries = bool(user_entries or group_entries)
+    if has_entries:
+        acl_id = getattr(dr, "acl_id", None)
+        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+        if dr.acl_id != new_acl_id:
+            dr.acl_id = new_acl_id
+            db.commit()
+    else:
+        acl_id = getattr(dr, "acl_id", None)
+        if acl_id:
+            db.execute(sql_text("DELETE FROM acluserentry WHERE acl_id=:aid"), {"aid": acl_id})
+            db.execute(sql_text("DELETE FROM aclusergroupentry WHERE acl_id=:aid"), {"aid": acl_id})
+            dr.acl_id = None
+            db.commit()
     return Response(status_code=204)
 
 
@@ -751,7 +787,7 @@ def move_document(ws: str, doc_key: str, body: dict,
                   db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
     folder_path = body.get("path", "")
-    return _doc_to_dict(db, svc.move_document(db, ws, doc_id, ver, folder_path), current_user.login)
+    return _doc_to_dict(db, svc.move_document(db, ws, doc_id, ver, folder_path, current_user.login), current_user.login)
 
 
 @router.get("/workspaces/{ws}/documents/{doc_key}/share")

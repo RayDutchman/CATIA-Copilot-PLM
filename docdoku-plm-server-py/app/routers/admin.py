@@ -260,7 +260,9 @@ def _from_strategy(val: str) -> int:
 
 @router.get("/admin/platform-options", response_model=PlatformOptionsDTO)
 @router.get("/admin/platform-options/", include_in_schema=False)
-def get_platform_options(db: Session = Depends(get_db)):
+def get_platform_options(db: Session = Depends(get_db),
+                         current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     row = db.execute(text(
         "SELECT workspacecreationstrategy, registrationstrategy "
         "FROM platformoptions LIMIT 1"
@@ -408,7 +410,9 @@ def put_index(ws: str, db: Session = Depends(get_db),
 # 保持旧 GET /admin/index 兼容
 @router.get("/admin/index", response_model=IndexStatusDTO)
 @router.get("/admin/index/", include_in_schema=False)
-def get_index():
+def get_index(db: Session = Depends(get_db),
+              current_user: Account = Depends(get_current_user)):
+    _require_admin(db, current_user)
     return {"inProgress": False}
 
 

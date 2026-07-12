@@ -120,7 +120,7 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/group-access/", include_in_schema=False)
 def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    """设置工作组访问权限"""
+    """设置工作组访问权限。对齐 Java WorkspaceResource.setGroupAccess → 返回 WorkspaceUserGroupMemberShipDTO（workspaceId/memberId/readOnly）"""
     group_id = body.get("member", {}).get("id", "") or body.get("memberId", "")
     if not group_id:
         raise NotAllowedException("NotAllowedException9", group_id)
@@ -138,7 +138,7 @@ def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
         "DO UPDATE SET readonly = :ro2"
     ), {"ws": ws, "gid": group_id, "ro": read_only, "ro2": read_only})
     db.commit()
-    return {"status": "ok"}
+    return {"workspaceId": ws, "memberId": group_id, "readOnly": read_only}
 
 
 # ============ 工作组 tag 订阅 ============

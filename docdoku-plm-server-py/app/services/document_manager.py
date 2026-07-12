@@ -671,7 +671,10 @@ class DocumentService:
         return pr
 
     def undo_checkout(self, db, ws, doc_id, ver, user_login):
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login != user_login:
             raise NotAllowedException("NotAllowedException19")
         if len(pr.iterations) <= 1:
@@ -751,7 +754,10 @@ class DocumentService:
         return pr
 
     def release(self, db, ws, doc_id, ver, user_login):
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
+        if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login:
             raise NotAllowedException("NotAllowedException63")
         if not pr.iterations:
@@ -1016,9 +1022,12 @@ class DocumentService:
             DocumentRevision.checkout_user_login.isnot(None),
         ).count()
 
-    def move_document(self, db, ws, doc_id, ver, folder_path):
+    def move_document(self, db, ws, doc_id, ver, folder_path, user_login=None):
         """移动文档到指定文件夹（更新 location_completepath）。"""
+        from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, ws, doc_id, ver)
+        if user_login and not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
+            raise AccessRightException("AccessRightException", user_login)
         pr.location_completepath = folder_path
         db.commit()
         db.refresh(pr)
@@ -1081,6 +1090,14 @@ class DocumentService:
             Folder.completepath == completepath).first()
         if folder is None:
             raise FolderNotFoundException("FolderNotFoundException", completepath)
+        # 对齐 Java deleteFolder: isAnotherUserHomeFolder / isRoot / isHome 保护
+        if current_user_login:
+            if self._is_root_folder(completepath):
+                raise NotAllowedException("NotAllowedException21")
+            if self._is_home_folder(completepath):
+                raise NotAllowedException("NotAllowedException21")
+            if self._is_another_user_home_folder(current_user_login, completepath):
+                raise NotAllowedException("NotAllowedException21")
         # 级联删除文件夹内所有文档
         docs = db.query(DocumentRevision).filter(
             DocumentRevision.location_completepath.like(f"{completepath}%")
@@ -1164,6 +1181,11 @@ class DocumentService:
                        {"id": iat_id})
 
         if t.acl_id is not None:
+            # 先删子表，两个 FK 均无 CASCADE
+            db.execute(sql_text("DELETE FROM acluserentry WHERE acl_id=:acl_id"),
+                       {"acl_id": t.acl_id})
+            db.execute(sql_text("DELETE FROM aclusergroupentry WHERE acl_id=:acl_id"),
+                       {"acl_id": t.acl_id})
             db.execute(sql_text("DELETE FROM acl WHERE id=:acl_id"),
                        {"acl_id": t.acl_id})
 
@@ -1229,3 +1251,37 @@ class DocumentService:
         last_char = current[-1]
         if last_char == "Z": return current + "A"
         return current[:-1] + chr(ord(last_char) + 1)
+
+    @staticmethod
+    def _is_root_folder(completepath: str) -> bool:
+        """对齐 Java Folder.isRoot(): completePath 不含 '/'。"""
+        return "/" not in completepath
+
+    @staticmethod
+    def _is_home_folder(completepath: str) -> bool:
+        """对齐 Java Folder.isHome(): 最后一个 '/' 后首字符是 '~'。"""
+        try:
+            idx = completepath.rindex("/")
+            return completepath[idx + 1] == "~"
+        except (ValueError, IndexError):
+            return False
+
+    @staticmethod
+    def _is_another_user_home_folder(user_login: str, completepath: str) -> bool:
+        """对齐 Java isAnotherUserHomeFolder: 是 private 文件夹且 owner != user。
+        isPrivate: 第一个 '/' 后的字符是 '~'。
+        getOwner: 在 firstSlash+2 到 nextSlash(或末尾) 间提取 owner login。"""
+        if not user_login:
+            return False
+        try:
+            idx = completepath.index("/")
+            if completepath[idx + 1] != "~":
+                return False
+            owner_start = idx + 2
+            owner_end = completepath.find("/", owner_start)
+            if owner_end == -1:
+                owner_end = len(completepath)
+            owner = completepath[owner_start:owner_end]
+            return owner != user_login
+        except (ValueError, IndexError):
+            return False

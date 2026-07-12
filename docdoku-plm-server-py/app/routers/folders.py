@@ -80,11 +80,25 @@ def move_folder(ws: str, folder_id: str, body: dict,
                 db: Session = Depends(get_db)):
     _check_workspace_write_access(db, ws, current_user.login)
     from app.models.document import Folder, DocumentRevision
+    from app.core.exceptions import NotAllowedException
     from fastapi import HTTPException
     folder = db.query(Folder).filter(Folder.completepath == folder_id).first()
     if not folder:
         raise FolderNotFoundException("FolderNotFoundException", folder_id)
+    # 对齐 Java moveFolder: isAnotherUserHomeFolder / isRoot / isHome → NotAllowedException21
+    if svc._is_root_folder(folder_id):
+        raise NotAllowedException("NotAllowedException21")
+    if svc._is_home_folder(folder_id):
+        raise NotAllowedException("NotAllowedException21")
+    if svc._is_another_user_home_folder(current_user.login, folder_id):
+        raise NotAllowedException("NotAllowedException21")
     new_parent = body.get("parentFolder", ws)
+    # 对齐 Java moveFolder: 目标父路径 workspace 必须等于当前 workspace
+    def _parse_workspace_id(path: str) -> str:
+        idx = path.find("/")
+        return path[:idx] if idx != -1 else path
+    if _parse_workspace_id(new_parent) != ws:
+        raise NotAllowedException("NotAllowedException23")
     old_prefix = folder.completepath
     old_name = old_prefix.split('/')[-1]
     new_path = f"{new_parent}/{old_name}" if new_parent else old_name

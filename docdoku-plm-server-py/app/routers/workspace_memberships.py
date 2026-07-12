@@ -58,12 +58,29 @@ def list_user_memberships(ws: str, db: Session = Depends(get_db),
     return user_mgmt_service.list_memberships(db, ws)
 
 
-@router.get(f"{PREFIX}/memberships/users/me", response_model=List[WorkspaceMembershipDTO])
+@router.get(f"{PREFIX}/memberships/users/me", response_model=WorkspaceMembershipDTO)
 @router.get(f"{PREFIX}/memberships/users/me/", include_in_schema=False)
 def my_memberships(ws: str, db: Session = Depends(get_db),
                    current_user: Account = Depends(get_current_user)):
-    all_m = user_mgmt_service.list_memberships(db, ws)
-    return [m for m in all_m if m["member"]["login"] == current_user.login]
+    """获取当前用户在工作区中的成员关系。对齐 Java getWorkspaceSpecificUserMemberShips → 返回单个 WorkspaceUserMemberShipDTO（workspaceId/member/readOnly，无 permission 字段）"""
+    row = db.execute(text(
+        "SELECT wm.readonly "
+        "FROM workspaceusermembership wm "
+        "WHERE wm.workspace_id = :ws AND wm.member_login = :l AND wm.member_workspace_id = :ws"
+    ), {"ws": ws, "l": current_user.login}).fetchone()
+    acc = db.query(Account).filter(Account.login == current_user.login).first()
+    read_only = bool(row[0]) if row else True
+    return {
+        "workspaceId": ws,
+        "member": {
+            "login": current_user.login,
+            "name": acc.name or "" if acc else "",
+            "email": acc.email or "" if acc else "",
+            "language": acc.language or "" if acc else "",
+            "workspaceId": ws,
+        },
+        "readOnly": read_only,
+    }
 
 
 @router.get(f"{PREFIX}/memberships/usergroups", response_model=List[WorkspaceUserGroupMembershipDTO])
@@ -133,12 +150,12 @@ def remove_user(ws: str, body: dict, db: Session = Depends(get_db),
 def remove_from_group(ws: str, gid: str, body: dict,
                        db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
-    """从工作组移除用户"""
+    """从工作组移除用户。对齐 Java WorkspaceResource.removeUserFromGroup → 返回被操作 UserGroupDTO"""
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
     group = db.execute(text(
-        "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
+        "SELECT id, workspace_id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": gid, "ws": ws}).fetchone()
     if not group:
         raise EntityNotFoundException("UserGroupNotFoundException", gid)
@@ -146,7 +163,7 @@ def remove_from_group(ws: str, gid: str, body: dict,
         "DELETE FROM usergroupmapping WHERE login = :l AND groupname = :g"
     ), {"l": login, "g": gid})
     db.commit()
-    return _group_to_dict(user_mgmt_service.list_groups(db, ws)[0])
+    return {"id": group.id, "workspaceId": group.workspace_id}
 
 
 @router.put(f"{PREFIX}/admin", response_model=WorkspaceDTO)
@@ -210,19 +227,20 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
     对齐 Java WorkspaceResource.setUserAccess → UserManagerBean.grantUserAccess：
     - 前端发送 {login, membership: "READ_ONLY"|"FULL_ACCESS"}
     - 只写 workspaceusermembership.readonly，不触及 account.enabled（全局字段）
+    - 返回更新后的 UserDTO（login/name/email/language/workspaceId/membership）
+    - membership 为 null → 400
     """
     _check_workspace_admin(db, ws, current_user)
     login = body.get("member", {}).get("login", "") or body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
 
-    # 对齐 Java UserDTO.getMembership() == WorkspaceMembership.READ_ONLY
+    # 对齐 Java UserDTO.getMembership() == null → 400
     membership = body.get("membership", "")
-    if membership:
-        read_only = (membership == "READ_ONLY")
-    else:
-        # 兼容旧的 readOnly 布尔字段（向后兼容）
-        read_only = body.get("readOnly", False)
+    if not membership:
+        raise NotAllowedException("NotAllowedException9", login)
+
+    read_only = (membership == "READ_ONLY")
 
     db.execute(text(
         "INSERT INTO workspaceusermembership "
@@ -231,5 +249,23 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
         "ON CONFLICT (workspace_id, member_login, member_workspace_id) "
         "DO UPDATE SET readonly = :ro2"
     ), {"ws": ws, "l": login, "ro": read_only, "ro2": read_only})
+
+    # 对齐 Java grantUserAccess 返回 null → 400：确认 membership 记录存在
+    mem_row = db.execute(text(
+        "SELECT 1 FROM workspaceusermembership "
+        "WHERE workspace_id = :ws AND member_login = :l AND member_workspace_id = :ws"
+    ), {"ws": ws, "l": login}).fetchone()
+    if not mem_row:
+        raise NotAllowedException("NotAllowedException9", login)
+
     db.commit()
-    return {"status": "ok"}
+
+    acc = db.query(Account).filter(Account.login == login).first()
+    return {
+        "login": login,
+        "name": acc.name or "" if acc else "",
+        "email": acc.email or "" if acc else "",
+        "language": acc.language or "" if acc else "",
+        "workspaceId": ws,
+        "membership": membership,
+    }

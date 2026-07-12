@@ -85,7 +85,9 @@ class ProductService:
         return pr
 
     def get_latest_revision(self, db: Session, workspace_id: str,
-                            number: str) -> PartRevision:
+                            number: str,
+                            current_user_login: str = None,
+                            is_admin: bool = False) -> PartRevision:
         master = (
             db.query(PartMaster)
             .filter(PartMaster.workspace_id == workspace_id,
@@ -94,7 +96,14 @@ class ProductService:
         )
         if master is None or not master.revisions:
             raise PartMasterNotFoundException("PartMasterNotFoundException", number)
-        return master.last_revision
+        pr = master.last_revision
+        if current_user_login:
+            self._check_workspace_member(db, workspace_id, current_user_login)
+            # ACL 读权限检查（对齐 Java checkPartRevisionReadAccess → hasPartRevisionReadAccess）
+            from app.services.factory.acl_factory import check_read_access
+            if not check_read_access(db, pr.acl_id, current_user_login, is_admin, workspace_id):
+                raise AccessRightException("AccessRightException", current_user_login)
+        return pr
 
     def search_numbers(self, db: Session, workspace_id: str,
                        q: str, limit: int = 8,
