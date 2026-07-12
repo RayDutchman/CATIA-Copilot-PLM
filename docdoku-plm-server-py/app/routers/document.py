@@ -115,6 +115,27 @@ def _doc_to_dict(db, rev, current_user_login=None):
                 "documentMasterVersion": row.target_docrevision_version,
                 "commentLink": row.commentdata,
             } for row in doc_rows]
+        # 查询 attachedFiles（复用 update_iteration 的查询模式）
+        attached_files = []
+        if db is not None:
+            attached_rows = db.execute(sql_text(
+                "SELECT attachedfile_fullname FROM documentiteration_binres "
+                "WHERE workspace_id=:ws AND documentmaster_id=:did "
+                "AND documentrevision_version=:ver AND iteration=:iter"
+            ), {"ws": it.workspace_id, "did": it.documentmaster_id,
+                "ver": it.documentrevision_version, "iter": it.iteration}).fetchall()
+            for ar in attached_rows:
+                from app.models.part import BinaryResource
+                br = db.query(BinaryResource).filter(
+                    BinaryResource.full_name == ar[0]).first()
+                if br:
+                    attached_files.append({
+                        "fullName": br.full_name,
+                        "contentLength": br.content_length or 0,
+                        "lastModified": str(br.last_modified) if br.last_modified else None,
+                    })
+                else:
+                    attached_files.append({"fullName": ar[0]})
         it_dict = {
             "id": f"{rev.documentmaster_id}-{rev.version}-{it.iteration}",
             "iteration": it.iteration,
@@ -128,7 +149,7 @@ def _doc_to_dict(db, rev, current_user_login=None):
             "modificationDate": str(it.modification_date) if it.modification_date else None,
             "checkInDate": str(it.check_in_date) if it.check_in_date else None,
             "instanceAttributes": instance_attrs,
-            "attachedFiles": [],
+            "attachedFiles": attached_files,
             "linkedDocuments": linked_docs,
             "author": _get_user_info(db, it.author_login, it.workspace_id),
             "documentRevision": {

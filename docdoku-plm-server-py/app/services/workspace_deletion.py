@@ -277,6 +277,14 @@ def cascade_delete_workspace(db: Session, ws: str) -> None:
     br_prefix = ws.replace("_", "\\_").replace("%", "\\%") + "/%"
     _del("DELETE FROM binaryresource WHERE fullname LIKE :p ESCAPE '\\'", p=br_prefix)
 
+    # ── 16c. Folder ──
+    like_pattern = ws + "/%"
+    _del("UPDATE folder SET parentfolder_completepath=NULL "
+         "WHERE parentfolder_completepath=:ws OR parentfolder_completepath LIKE :like ESCAPE '\\'",
+         ws=ws, like=like_pattern)
+    _del("DELETE FROM folder WHERE completepath=:ws OR completepath LIKE :like ESCAPE '\\'",
+         ws=ws, like=like_pattern)
+
     # ── 17. 工作区本身 ──
     db.execute(text("DELETE FROM workspace WHERE id = :id"), {"id": ws})
 

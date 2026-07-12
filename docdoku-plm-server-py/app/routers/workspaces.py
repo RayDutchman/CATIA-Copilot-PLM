@@ -1,9 +1,11 @@
 """工作区 CRUD 端点。"""
+from pathlib import Path
 from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.exceptions import (
@@ -19,6 +21,7 @@ from app.schemas.admin import (
     FrontOptionsDTO, BackOptionsDTO, ReachableUserDTO,
 )
 from app.schemas.misc import TagDTO, LOVDTO, LOVValueDTO
+from app.services.indexer_manager import indexer_manager
 from app.services.workspace_manager import workspace_service
 from app.services.workspace_deletion import cascade_delete_workspace
 

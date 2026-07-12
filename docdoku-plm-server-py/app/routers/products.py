@@ -94,7 +94,7 @@ def search_ci_numbers(ws: str, q: str = Query(""),
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
     cis = svc.search_numbers(db, ws, q)
-    return [_ci_to_dict(db, c) for c in cis]
+    return [_ci_to_dict(c, db) for c in cis]
 
 
 @router.post("/workspaces/{ws}/products", status_code=201, response_model=ConfigurationItemDTO)

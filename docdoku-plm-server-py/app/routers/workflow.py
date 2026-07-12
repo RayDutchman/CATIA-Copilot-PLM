@@ -25,6 +25,66 @@ def _check_workspace_access(db: Session, ws: str, login: str):
         raise AccessRightException("AccessRightException", login)
 
 
+def _enrich_activity_dicts(db: Session, workflow_id: int,
+                           activity_dicts: list) -> tuple:
+    """填充 WorkflowActivityDTO 的 complete/stopped/inProgress/toDo/relaunchStep，
+    对齐 Java ActivityDozerConverter。返回 (enriched_activity_dicts, current_step)。"""
+    current_step = 0
+    step_reached_incomplete = False
+
+    for ad in activity_dicts:
+        step = ad["step"]
+        dtype = (ad.get("type") or "").upper()
+        tasks_to_complete = ad.get("tasksToComplete") or 0
+
+        status_rows = db.execute(text(
+            "SELECT status FROM task "
+            "WHERE workflow_id = :wf AND activity_step = :step"
+        ), {"wf": workflow_id, "step": step}).fetchall()
+        statuses = [r[0] for r in status_rows]
+        total = len(statuses)
+        approved = sum(1 for s in statuses if s == 2)
+        rejected = sum(1 for s in statuses if s == 3)
+        not_to_be_done = sum(1 for s in statuses if s == 4)
+        in_progress_count = sum(1 for s in statuses if s == 1)
+
+        is_sequential = "SEQUENTIAL" in dtype
+        if is_sequential:
+            is_stopped = rejected > 0
+            is_complete = total > 0 and (approved + not_to_be_done) == total
+        else:
+            if tasks_to_complete > 0:
+                is_stopped = (total - rejected) < tasks_to_complete
+                is_complete = (approved + not_to_be_done) >= tasks_to_complete
+            else:
+                is_stopped = rejected > 0
+                is_complete = total > 0
+
+        is_in_progress = bool(
+            not is_complete and not is_stopped and in_progress_count > 0
+        )
+        is_to_do = not_to_be_done == 0
+
+        relaunch = db.execute(text(
+            "SELECT relaunch_step FROM activity_relaunch "
+            "WHERE activity_step = :step AND activity_workflow_id = :wf"
+        ), {"step": step, "wf": workflow_id}).first()
+
+        ad["complete"] = approved
+        ad["stopped"] = is_stopped
+        ad["inProgress"] = is_in_progress
+        ad["toDo"] = is_to_do
+        ad["relaunchStep"] = relaunch[0] if relaunch else None
+
+        if not step_reached_incomplete:
+            if is_complete:
+                current_step += 1
+            else:
+                step_reached_incomplete = True
+
+    return activity_dicts, current_step
+
+
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}", response_model=WorkflowDTO)
 @router.get(f"{PREFIX}/workflow-instances/{{workflow_id}}/", include_in_schema=False)
 def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
@@ -48,12 +108,14 @@ def get_instance(ws: str, workflow_id: int, db: Session = Depends(get_db),
             "tasksToComplete": a.taskstocomplete,
             "tasks": task_dicts,
         })
+    activity_dicts, current_step = _enrich_activity_dicts(
+        db, workflow_id, activity_dicts)
     return {
         "id": w.id,
         "abortedDate": w.aborteddate.isoformat() + "Z" if w.aborteddate else None,
         "finalLifecycleState": w.finallifecyclestate,
         "activities": activity_dicts,
-        "currentStep": 0,
+        "currentStep": current_step,
     }
 
 
@@ -82,7 +144,17 @@ def get_workspace_workflow(ws: str, id: str, db: Session = Depends(get_db),
                            current_user: Account = Depends(get_current_user)):
     """获取 workspace_workflow 实例详情（含 activities/tasks 嵌套）"""
     _check_workspace_access(db, ws, current_user.login)
-    return workflow_service.get_workspace_workflow(db, ws, id)
+    result = workflow_service.get_workspace_workflow(db, ws, id)
+    wf = result.get("workflow", {})
+    if wf:
+        wf_id = wf.get("id")
+        activities = wf.get("activities", [])
+        if wf_id is not None and activities:
+            activities, current_step = _enrich_activity_dicts(
+                db, wf_id, activities)
+            wf["activities"] = activities
+            wf["currentStep"] = current_step
+    return result
 
 
 @router.post(f"{PREFIX}/workspace-workflows", status_code=201, response_model=WorkspaceWorkflowDTO)

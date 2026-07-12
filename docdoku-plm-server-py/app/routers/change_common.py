@@ -223,9 +223,17 @@ def _set_affected_documents(db: Session, ws: str, item_id: int,
         doc_split = doc_key.rsplit("-", 1)
         dm_id = doc_split[0] if len(doc_split) == 2 else doc_key
         ver = doc_split[1] if len(doc_split) == 2 else "A"
+        iteration = doc_data.get("iteration")
+        if iteration is None:
+            iteration = db.scalar(sql_text(
+                "SELECT MAX(iteration) FROM documentiteration "
+                "WHERE documentmaster_id = :did "
+                "AND documentrevision_version = :ver "
+                "AND workspace_id = :ws"
+            ), {"did": dm_id, "ver": ver, "ws": ws}) or 1
         db.execute(sql_text(
             f"INSERT INTO {table_name} ({id_column}, documentmaster_workspace_id, "
             f"documentmaster_id, documentrevision_version, iteration) "
-            f"VALUES (:iid, :ws, :did, :ver, 1)"
-        ), {"iid": item_id, "ws": ws, "did": dm_id, "ver": ver})
+            f"VALUES (:iid, :ws, :did, :ver, :iter)"
+        ), {"iid": item_id, "ws": ws, "did": dm_id, "ver": ver, "iter": iteration})
     db.commit()
