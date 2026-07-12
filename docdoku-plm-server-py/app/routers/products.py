@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.core.exceptions import ConfigurationItemNotFoundException
 from app.models.product import ProductInstanceMaster
 from app.services.product_structure import ProductStructureService
 from app.services.product_manager import ProductService
@@ -202,11 +203,13 @@ def path_choices(ws: str, ci_id: str,
                  type: str = Query(""),
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
-    """返回 CI 下已存在的路径数据列表。CI 不存在则返回空列表。"""
-    try:
-        return svc.get_path_choices(db, ws, ci_id)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to retrieve path choices")
+    """返回 CI 下已存在的路径数据列表。CI 不存在则返回 404（对齐 Java getConfigurationItem）。"""
+    exists = db.execute(text(
+        "SELECT 1 FROM configurationitem WHERE workspace_id=:ws AND id=:ci"
+    ), {"ws": ws, "ci": ci_id}).first()
+    if not exists:
+        raise ConfigurationItemNotFoundException("ConfigurationItemNotFoundException", ci_id)
+    return svc.get_path_choices(db, ws, ci_id)
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/versions-choices")

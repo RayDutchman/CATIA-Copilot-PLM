@@ -62,7 +62,7 @@ class ProductStructureService:
             "designItemName": name,
             "designItemLatestVersion": latest_version,
             "author": self._build_user_dto(db, ci.author_login, ci.workspace_id),
-            "creationDate": format_iso_date(ci.creation_date),
+            "creationDate": None,
             "hasModificationNotification": self._has_modification_notification(
                 db, ci.workspace_id, ci.partmaster_partnumber
             ) if ci.partmaster_partnumber else False,
@@ -395,7 +395,6 @@ class ProductStructureService:
             raise EntityNotFoundException("PartMasterNotFoundException", part_number)
         ci = ConfigurationItem(
             workspace_id=ws, id=ci_id, description=description,
-            creation_date=datetime.utcnow(),
             partmaster_workspace_id=ws, partmaster_partnumber=part_number,
             author_workspace_id=ws, author_login=user_login)
         db.add(ci); db.commit(); db.refresh(ci)

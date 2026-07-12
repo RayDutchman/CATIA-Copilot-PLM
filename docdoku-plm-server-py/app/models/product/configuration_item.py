@@ -13,7 +13,6 @@ class ConfigurationItem(Base):
     workspace_id = Column(String, primary_key=True)
     id = Column(String, primary_key=True)
     description = Column(Text)
-    creation_date = Column("creationdate", DateTime)
     partmaster_workspace_id = Column(String)
     partmaster_partnumber = Column(String)
     author_workspace_id = Column(String)
