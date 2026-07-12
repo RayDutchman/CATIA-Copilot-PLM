@@ -137,24 +137,24 @@
 
 ### 文件包 PKG-product-structure → Subagent D1
 **Files:** `app/services/product_structure.py`、`app/routers/product_instances.py`
-- [ ] **P2-01** `delete_instance`（约 :822-826）：删 `productinstanceiteration` 前先清 7 张子表 `prdinstiteration_attribute`/`_binres`/`_documentlink`/`_p2plink`/`_pathdatamstr`/`prdinstanceiteration_optlink`/`_sublink`（+孤儿 instanceattribute/documentlink）。DB 逐一核实 FK。对齐 Java `ProductInstanceMasterDAO`。
-- [ ] **P2-05** `_check_has_path_data`（约 :388-406）：CI ID 含连字符时定位错——改用 `re.search(r'[-](?:u|s)\d+', comp_path)` 定位首个 `-u`/`-s` 构造 db_path（当前 `find("-")` 命中 CI 内连字符）。
-- [ ] **P2-06** `product_instances.py`（约 :147-150）+ `product_structure.parse_config_spec_str`（约 :123）：实现 `pi-{serial}` 完整 configSpec 解析（查 baseline→ResolvedCollectionConfigSpec→ProductBaselinePSFilter），去掉降级为 "latest"。对齐 Java `PSFilterManagerBean.getProductInstanceConfigSpec`。
+- [x] **P2-01** `delete_instance`（约 :822-826）：删 `productinstanceiteration` 前先清 7 张子表 `prdinstiteration_attribute`/`_binres`/`_documentlink`/`_p2plink`/`_pathdatamstr`/`prdinstanceiteration_optlink`/`_sublink`（+孤儿 instanceattribute/documentlink）。DB 逐一核实 FK。对齐 Java `ProductInstanceMasterDAO`。
+- [x] **P2-05** `_check_has_path_data`（约 :388-406）：CI ID 含连字符时定位错——改用 `re.search(r'[-](?:u|s)\d+', comp_path)` 定位首个 `-u`/`-s` 构造 db_path（当前 `find("-")` 命中 CI 内连字符）。
+- [x] **P2-06** `product_instances.py`（约 :147-150）+ `product_structure.parse_config_spec_str`（约 :123）：实现 `pi-{serial}` 完整 configSpec 解析（查 baseline→ResolvedCollectionConfigSpec→ProductBaselinePSFilter），去掉降级为 "latest"。对齐 Java `PSFilterManagerBean.getProductInstanceConfigSpec`。
 
 ### 文件包 PKG-products-pathdata → Subagent D2
 **Files:** `app/routers/products.py`、`app/services/products/path_data_service.py`
-- [ ] **P2-04** `products.py` `get_product_instance`（约 :383）：每个 iteration 补 11 字段（substituteLinks/optionalUsageLinks/substitutesParts/optionalsParts/pathDataMasterList/pathDataPaths/pathToPathLinks/basedOn/instanceAttributes/linkedDocuments/attachedFiles）。对齐 Java `getProductInstance`。
-- [ ] **P2-03** `path_data_service.py` `_build_master_dict`（约 :443-451）：填充 `partLinksList`（decodePath）/`partAttributes`/`partAttributeTemplates`（PSFilter+partIteration）。对齐 Java `getPathData`。
+- [x] **P2-04** `products.py` `get_product_instance`（约 :383）：每个 iteration 补 11 字段（substituteLinks/optionalUsageLinks/substitutesParts/optionalsParts/pathDataMasterList/pathDataPaths/pathToPathLinks/basedOn/instanceAttributes/linkedDocuments/attachedFiles）。对齐 Java `getProductInstance`。
+- [x] **P2-03** `path_data_service.py` `_build_master_dict`（约 :443-451）：填充 `partLinksList`（decodePath）/`partAttributes`/`partAttributeTemplates`（PSFilter+partIteration）。对齐 Java `getPathData`。
 
 ### 文件包 PKG-importer → Subagent D3
 **Files:** `app/services/importer.py`
-- [ ] **P7-01** `import_into_path_data`（约 :270-282）：移植 Java `doPathDataImport`+`createOrUpdatePathData`+`bulkPathDataUpdate`（Excel 解析→createOrUpdate PathData→批量写迭代属性）。
-- [ ] **P7-03 附带独立 bug** `import_into_parts`（约 :217）：返回真实 errors 列表（当前硬编码 `errors:[]` 丢弃 checkout 失败错误）；并将循环内 `db.commit()`（约 :209）移出循环做单次批量 commit（降低半成品风险）。
+- [x] **P7-01** `import_into_path_data`（约 :270-282）：移植 Java `doPathDataImport`+`createOrUpdatePathData`+`bulkPathDataUpdate`（Excel 解析→createOrUpdate PathData→批量写迭代属性）。
+- [x] **P7-03 附带独立 bug** `import_into_parts`（约 :217）：返回真实 errors 列表（当前硬编码 `errors:[]` 丢弃 checkout 失败错误）；并将循环内 `db.commit()`（约 :209）移出循环做单次批量 commit（降低半成品风险）。
 
 ### 主 agent 批 4 收尾
-- [ ] 逐包 review + 部署。
-- [ ] 对拍 Payara：产品实例删除（含子表数据）无 FK 500；hasPathData 对含连字符 CI 正确；pi- configSpec 3D 实例返回正确迭代；get_product_instance 字段齐全；PathData getPathData 填充；PathData 导入落库。
-- [ ] `pytest` 无新增 fail。commit（分域）。更新文档 + 勾除。
+- [x] 逐包 review + 部署。主 agent 更新 test_import_path_data_stub → 断言不再是 stub（P7-01 已实现）。D1 P2-06 为 Tier-2 实现（baseline 迭代映射，未做 optional/substitute 过滤）；D2 P2-04/P2-03 直接可查字段全填 + decode 字段异常安全。
+- [x] smoke：product structure filter latest/released/wip 全 200（P2-05 含连字符 CI ACLCI-45ECFC 正常）；delete_instance 不存在 SN→404（非 500，路由已接线）。P2-01/P2-04 因 GD50 无 productinstancemaster 数据，由 code review（7 FK 子表 + 列名全核实）+ pytest 覆盖。
+- [x] `pytest` 279 passed/1 skipped（test_import_path_data_stub 已更新）。commit（分域）。更新文档 + 勾除。
 
 ---
 

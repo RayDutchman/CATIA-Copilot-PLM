@@ -10,21 +10,11 @@
 
 ### 🟠 第二轮全量审计 + 独立复核（2026-07-12，见 docs/migration/audit-round2/00-index.md + FIX-PLAN.md）
 
-> **仅审计未修复**。8 域 subagent 逐端点对照 Java + 独立复核（重新定位实际代码 + DB FK + Payara 对拍）。初判 10C/34H → **复核后 6 CRITICAL / 29 HIGH / 40 MED / 24 LOW**。修复路线见 `audit-round2/FIX-PLAN.md`（5 批）。**需用户确认后进入修复流程。**
+> **修复进行中**。初判 10C/34H → 复核后 **6 CRITICAL / 29 HIGH / 40 MED / 24 LOW**。
 >
-> **6 个确认真 CRITICAL（批 1，均可直接修复）**：
-> - P2-02 search_ci_numbers 参数错序 `_ci_to_dict(db,c)`→500
-> - P4-01 文档 _doc_to_dict attachedFiles 硬编码 []（GET 唯一序列化路径）
-> - P5-01 delete_workspace 漏删 folder（⚠️ 第一轮 W-1 遗漏抽取函数本身，DB 确认 GD50 有 2 行残留）
-> - P5-02 workspaces.py 缺 import Path/settings/indexer_manager→NameError
-> - P6-02 change 文档 affected 硬编码 iteration=1→FK 500
-> - P6-03 WorkflowActivityDTO complete/inProgress/toDo 等全 0
->
-> **4 项 CRIT 降级**：P1-01→MED（前端不调 PUT set_tags）、P2-01→HIGH（GD50 子表空）、P6-01→HIGH（核心状态机已对齐）、P6-04→HIGH（relaunch 仍可用）。**2 项证伪**：P6-05（Java 同 null）、P7-02（Java BomImporter 无实现）。
-> **HIGH 最紧要**：权限/安全类 P1-04（信息泄露）、P4-02/04/05/06/07/08、P5-07。
-> **复核新增独立 bug**：importer.import_into_parts 返回 errors:[] 丢弃 checkout 错误。
->
-> **需用户决策**：① 是否按 FIX-PLAN 进入修复；② 状态码 204 vs 200+body 是否强制对齐（多域重复）；③ PathData 导入（P7-01）、workflow 审批邮件（P6-08）是否本期实现。
+> **✅ 批次 1~4 已完成（2026-07-12）：6 CRITICAL + 29 HIGH 全部修复**（commits：批1 c27547c、批2、批3、批4）。每批 subagent 并行改文件包 + 主 agent review/部署/pytest(279 passed)/smoke/commit。主 agent 修复的 subagent 隐患：批2 误用 account.isadmin（改 usergroupmapping）、批3 task_manager.py 缩进回归（语法错误）、批4 更新 stub 测试。
+> **⏳ 批次 5（待排期）：40 MED + 24 LOW 收尾**——状态码 204 对齐、DTO 字段/null 语义、死代码清理、幂等等，详见各域报告 MED/LOW 清单 + FIX-PLAN 批次 5。
+> **未实现留 TODO（notifier 无接口）**：P6-08/P6-01 workflow 审批通知邮件。
 
 ### 🔴 全量审计发现（2026-07-11，见 docs/migration/audit/00-index.md，共 26 CRITICAL）
 

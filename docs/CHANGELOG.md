@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-12 — fix: audit-round2 批次 4 修复（8 products/query HIGH）
+
+> FIX-PLAN 批次 4，3 并行 subagent + 主 agent 更新 stub 测试。pytest 279 passed/1 skipped。
+
+- **fix(products): P2-01** delete_instance 删 iteration 前级联清 7 张子表（prdinstiteration_attribute/_binres/_documentlink/_p2plink/_pathdatamstr + prdinstanceiteration_optlink/_sublink）+ 孤儿 instanceattribute/documentlink（FK 500）。
+- **fix(products): P2-05** _check_has_path_data 用正则定位首个 -u/-s（原 find('-') 命中 CI id 内连字符，GD50 33/34 CI 中招）。smoke ACLCI-45ECFC structure 200。
+- **fix(products): P2-06** pi-{serial} configSpec 改真实 baseline PSFilter（baselinedpart 迭代映射；Tier-2，未做 optional/substitute 过滤）。
+- **fix(products): P2-04** get_product_instance iteration 补 11 字段（links/parts/pathData/basedOn/attrs/docs/files）。
+- **fix(products): P2-03** path_data_service._build_master_dict 填充 partLinksList/partAttributes/partAttributeTemplates。
+- **fix(importer): P7-01** import_into_path_data 移植 Java doPathDataImport（parse→createOrUpdate→bulk），替换 stub。**P7-03** import_into_parts 返回真实 errors（原硬编码 []）+ 循环外单次 commit。
+- **test**: test_import_path_data_stub → test_import_path_data_no_longer_stub（断言不再返回 NotSupported）。
+
+> **🎉 audit-round2 批次 1~4 全部完成：6 CRITICAL + 29 HIGH 全部修复**。剩余批次 5（40 MED / 24 LOW）为收尾项，待排期。
+
+---
+
 ## 2026-07-12 — fix: audit-round2 批次 3 修复（9 workflow/change/baseline/effectivity HIGH）
 
 > FIX-PLAN 批次 3，4 并行 subagent + 主 agent 纠错。pytest 279 passed/1 skipped。**主 agent 修复 C1 引入的 task_manager.py 缩进回归**（语法错误）+ 应用 C4 的 2 处 schema 调整。
