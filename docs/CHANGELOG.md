@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-07-12 — docs: 迁移代码第二轮全量审计 + 独立复核 + FIX-PLAN（audit-round2，仅审计不修复）
+
+> 编排 8 域 explore subagent 分 2 波并行，逐端点对照 Java 源 + information_schema 核实 + GD50 验证，主 agent 汇总定级；随后再派 8 域 subagent **独立复核**（重新定位实际 Python + Payara Java + DB FK，裁决真实性/降级/证伪）。聚焦**代码对比**。产出 `docs/migration/audit-round2/`（00-index + 01~08 域报告，每条 CRIT/HIGH 含复核裁决行 + FIX-PLAN.md）。**未做任何代码修复。**
+
+- **docs(audit-round2)**：初判 10 CRITICAL / 34 HIGH → **独立复核后修订为 6 CRITICAL / 29 HIGH / 40 MED / 24 LOW**。
+  - **6 个确认真 CRITICAL（可直接修复）**：C1 search_ci_numbers 参数错序→500（P2-02）；C2 文档 _doc_to_dict attachedFiles 硬编码 []（P4-01）；C3 delete_workspace 漏删 folder 表（P5-01）；C4 workspaces.py 缺 import→NameError（P5-02）；C5 change 文档 affected 硬编码 iteration=1→FK 500（P6-02）；C6 WorkflowActivityDTO 状态字段全 0（P6-03）。
+  - **4 项 CRIT 降级**：P1-01→MED（前端不调 PUT set_tags）、P2-01→HIGH（GD50 子表当前空）、P6-01→HIGH（核心状态机已对齐，缺通知/防护）、P6-04→HIGH（relaunch 仍可用）。
+  - **2 项证伪**：P6-05（Java 同为 null）、P7-02（Java BomImporter 无实现，doBomImport 死代码）。
+  - **复核纠正原报告 2 处 Java 断言不准**：P6-01（Java 无 releaseDocument）、P7-03（Java 非全成全败）；新增独立 bug：importer.import_into_parts 返回 errors:[] 丢弃 checkout 错误。
+  - HIGH 集中在权限/安全（P1-04 信息泄露、P4-02/04/05/06/07/08、P5-07）+ DTO 返回结构 + configSpec/pathData 功能。
+- **docs(澄清误报)**：ProductBaselineCreationDTO author 422 / PathDataIterationCreationDTO partLinksList 422 / DELETE /roles STUB / PUT /workflow-models STUB / dtype 写入设计分歧 — 均核实为**假报**；importer.py:40-43 docstring 过时。
+- **docs(FIX-PLAN)**：`audit-round2/FIX-PLAN.md` 定 5 修复批次（批1=6 CRITICAL；批2=权限/安全 HIGH；批3=workflow/change/baseline/effectivity HIGH；批4=products/query HIGH；批5=MED/LOW 收尾），附文件所有权矩阵（防写冲突）+ SOP。
+- pytest 基线保持 282 passed / 1 skipped（本轮未改代码）。
+
+---
+
 ## 2026-07-12 — fix: EFFECTIVE_* 基线 config-spec 激活 + 有效性判别值/异常码对齐 Payara
 
 > 用户决策「Payara 对齐 / 单一入口」后，将原本死代码的 config-spec 有效性基线路径激活为 EFFECTIVE_DATE/SERIAL/LOT 的实际实现。在线对拍 Payara(:8001) 过程中连带发现并修复两处更深层的 Payara 差异（有效性判别值、异常 HTTP 码）。pytest **282 passed / 1 skipped**。已重建 back-py 镜像并 recreate 持久化。
