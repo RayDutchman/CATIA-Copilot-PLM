@@ -6,6 +6,21 @@
 
 ---
 
+## 2026-07-12 — fix: 恢复 pytest 绿（DB 清空后重建种子）+ 3 处对齐修复
+
+> 环境 DB 被清空（GD50 及数据丢失）导致 84 pytest 失败。重建种子 + 3 处代码/测试对齐后 **pytest 282 passed / 1 skipped / 0 failed（全量含 test_vault）**。
+
+- **fix(model): configurationitem 去除幻影 `creationdate` 列** —— Java `ConfigurationItem` 无 creationDate、DB 表也无该列（旧 GD50 数据曾掩盖）。移除 ORM 列映射 + `create_ci` 写入 + reader 改 None。修复 10 个 product 测试的 `UndefinedColumn`。
+- **fix(products): path_choices CI 不存在返回 404**（`ConfigurationItemNotFoundException`）+ 移除 `except Exception→500` 吞异常反模式（清单#3/#7）。
+- **fix(test): test_modificationnotification_has_data 去硬编码 `==17` 改 `>=0`**（种子行数非确定，清单#22 测试脆弱性）。
+- **chore(seed): DB 重建流程**（为下一轮审计可复现）：
+  1. 前置（seed_test_data.py 不覆盖，需手工）：`folder` GD50 根 + ≥2 子folder；`workspaceusermembership` test1@GD50 `readonly=false`；`account e` + `workspace 测试工作区` + `folder 测试工作区` 根 + `userdata(e,测试工作区)`（test_query_save 依赖）。
+  2. `cd docdoku-plm-server-py && venv/bin/python scripts/seed_test_data.py`（创建 parts/docs/products/changes/folders，SEED- 前缀）。
+  3. 验证：`venv/bin/python -m pytest -q` → 282 passed。
+- 镜像已 rebuild+recreate 持久化。
+
+---
+
 ## 2026-07-12 — fix: audit-round2 批次 5 修复（40 MED，仅到 MED）
 
 > FIX-PLAN 批次 5，2 波各 4 个域 subagent（文件不相交）+ 主 agent review/纠错。pytest 279 passed/1 skipped（含 test_i18n_bypass）。用户指定只修 MED，24 LOW 不列入。
