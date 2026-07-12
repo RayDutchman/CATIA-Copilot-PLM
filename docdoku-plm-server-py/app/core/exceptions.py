@@ -64,6 +64,14 @@ class SharedEntityNotFoundException(EntityNotFoundException):
     pass
 
 
+class SharedEntityPasswordRequiredException(NotAllowedException):
+    pass
+
+
+class SharedEntityExpiredException(EntityNotFoundException):
+    pass
+
+
 # ============================================================
 # NotFoundException → EntityNotFoundException
 # ============================================================

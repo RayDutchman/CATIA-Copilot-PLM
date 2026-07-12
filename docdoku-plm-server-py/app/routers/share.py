@@ -10,6 +10,7 @@ from app.core.deps import bearer_scheme
 from app.core.exceptions import (
     AccessRightException, EntityNotFoundException, NotAllowedException,
     PartRevisionNotFoundException, SharedEntityNotFoundException,
+    SharedEntityPasswordRequiredException, SharedEntityExpiredException,
     WorkspaceNotFoundException,
 )
 from app.schemas.misc import SharedDocumentDTO, SharedPartDTO
@@ -59,11 +60,12 @@ def get_shared_documents(uuid: str,
                          response: Response,
                          password: str | None = Header(None),
                          db: Session = Depends(get_db)):
-    status, entity = share_service.get_shared_entity(db, uuid, password)
-    if status == "password-required":
+    try:
+        entity = share_service.get_shared_entity(db, uuid, password)
+    except SharedEntityPasswordRequiredException:
         raise HTTPException(status_code=403, detail={"forbidden": "password-protected"},
                             headers={"Reason-Phrase": "password-protected"})
-    if status == "expired":
+    except SharedEntityExpiredException:
         raise HTTPException(status_code=404, detail={"forbidden": "entity-expired"},
                             headers={"Reason-Phrase": "entity-expired"})
     if entity.dtype != "SharedDocument":
@@ -95,11 +97,12 @@ def get_shared_parts(uuid: str,
                      response: Response,
                      password: str | None = Header(None),
                      db: Session = Depends(get_db)):
-    status, entity = share_service.get_shared_entity(db, uuid, password)
-    if status == "password-required":
+    try:
+        entity = share_service.get_shared_entity(db, uuid, password)
+    except SharedEntityPasswordRequiredException:
         raise HTTPException(status_code=403, detail={"forbidden": "password-protected"},
                             headers={"Reason-Phrase": "password-protected"})
-    if status == "expired":
+    except SharedEntityExpiredException:
         raise HTTPException(status_code=404, detail={"forbidden": "entity-expired"},
                             headers={"Reason-Phrase": "entity-expired"})
     if entity.dtype != "SharedPart":

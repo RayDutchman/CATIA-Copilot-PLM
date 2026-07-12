@@ -43,13 +43,12 @@ class ShareService:
         """获取共享实体，含密码校验和过期检查（自动删除过期的）。
 
         Returns:
-            (status, entity) 元组:
-            - ("ok", Row): 实体可用
-            - ("password-required", None): 密码保护且未提供或密码错误
-            - ("expired", None): 共享链接已过期（已自动删除 DB 行）
+            SQLAlchemy Row 对象
 
         Raises:
             SharedEntityNotFoundException: UUID 不存在
+            SharedEntityPasswordRequiredException: 密码保护且未提供或密码错误
+            SharedEntityExpiredException: 共享链接已过期
         """
         entity = db.execute(text(
             "SELECT uuid, dtype, entity_workspace_id, password, expiredate, "
@@ -64,7 +63,8 @@ class ShareService:
 
         if entity.password is not None:
             if password is None or hashlib.md5(password.encode()).hexdigest() != entity.password:
-                return ("password-required", None)
+                from app.core.exceptions import SharedEntityPasswordRequiredException
+                raise SharedEntityPasswordRequiredException("SharedEntityNotFoundException", uuid)
 
         if entity.expiredate is not None:
             now = datetime.now(timezone.utc)
@@ -72,9 +72,10 @@ class ShareService:
             if expire < now:
                 db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
                 db.commit()
-                return ("expired", None)
+                from app.core.exceptions import SharedEntityExpiredException
+                raise SharedEntityExpiredException("SharedEntityNotFoundException", uuid)
 
-        return ("ok", entity)
+        return entity
 
     def get_shared_document_row(self, db: Session, entity):
         """根据共享实体查询文档详情（documentrevision JOIN documentmaster）。
