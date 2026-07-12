@@ -93,28 +93,27 @@ async def send_result(token: str, workspace_id: str, part_number: str,
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.put(url, json=payload, headers=headers)
         if resp.status_code in (401, 403):
-            # JWT 过期是已知风险：token 来自上传时的用户会话，长时间转换后可能失效。
-            # 根治方案是后端为转换回调提供 service-to-service 鉴权（不依赖用户 JWT）。
-            # 目前记录 CRITICAL 并抛出，调用方负责决策（不清理 temp_dir，保留供手工补救）。
+            # JWT expiry is a known risk — token is from upload session, may expire during long conversion.
+            # Root fix: backend should provide service-to-service auth for conversion callbacks.
             raise RuntimeError(
-                f"Callback 鉴权失败 HTTP {resp.status_code}（JWT 可能已过期）: "
+                f"Callback auth failed HTTP {resp.status_code} (JWT may have expired): "
                 f"{resp.text[:200]}"
             )
         if resp.status_code not in (200, 204):
             raise RuntimeError(
-                f"Callback 失败 HTTP {resp.status_code}: {resp.text[:200]}"
+                f"Callback failed HTTP {resp.status_code}: {resp.text[:200]}"
             )
-    logger.info("Callback 成功 → %s-%s", part_number, part_version)
+    logger.info("Callback OK: %s-%s", part_number, part_version)
 
 
 async def send_error(token: str, workspace_id: str, part_number: str,
                      part_version: str, error_msg: str) -> None:
-    """将错误结果回调给后端，让后端把 conversion 标记为 succeed=false。"""
+    """Send error result to backend to mark conversion as failed."""
     payload = {"errorOutput": error_msg}
     try:
         await send_result(token, workspace_id, part_number, part_version, payload)
     except Exception as e:
-        logger.error("发送错误回调也失败: %s", e)
+        logger.error("Error callback also failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -140,12 +139,12 @@ async def handle_order(order: dict) -> None:
         number = key["partMasterNumber"]
         ver    = key["partRevisionVersion"]
     except (KeyError, TypeError) as e:
-        logger.error("ConversionOrder 缺少必要字段，跳过: %s", e)
+        logger.error("ConversionOrder missing required fields, skipped: %s", e)
         return
 
     token = order.get("userToken", "")
     if not token:
-        logger.error("消息缺少 userToken，无法回调后端，跳过 %s-%s", number, ver)
+        logger.error("Missing userToken, skipping %s-%s", number, ver)
         return
 
     binary = order.get("binaryResource", {})
@@ -154,12 +153,12 @@ async def handle_order(order: dict) -> None:
 
     ext = Path(file_name).suffix.lstrip(".").lower()
     if ext not in ALL_EXTENSIONS:
-        logger.warning("不支持的文件类型 %s，跳过 %s-%s", ext, number, ver)
+        logger.warning("Unsupported file type %s, skipping %s-%s", ext, number, ver)
         return
 
     input_path = get_virtual_path(full_name)
     if not os.path.exists(input_path):
-        msg = f"Vault 文件不存在: {input_path}"
+        msg = f"Vault file not found: {input_path}"
         logger.error(msg)
         await send_error(token, ws, number, ver, msg)
         return
@@ -168,7 +167,7 @@ async def handle_order(order: dict) -> None:
     temp_uuid = str(uuid.uuid4())
     temp_dir  = Path(CONVERSIONS_PATH) / temp_uuid
     temp_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("开始转换: %s-%s  tempDir=%s", number, ver, temp_uuid)
+    logger.info("Conversion started: %s-%s  tempDir=%s", number, ver, temp_uuid)
 
     glb_uuid     = str(uuid.uuid4())
     glb_filename = glb_uuid + ".glb"
@@ -177,7 +176,7 @@ async def handle_order(order: dict) -> None:
     try:
         result = convert(input_path, glb_path)
         logger.info(
-            "转换完成: %s-%s  solid=%d  bbox=%s",
+            "LOD 0 done: %s-%s  solid=%d  bbox=%s",
             number, ver, result["solid_count"],
             [round(v, 2) for v in result["bbox"]],
         )
@@ -185,7 +184,7 @@ async def handle_order(order: dict) -> None:
         err_str = str(e)
         # 空几何体视为成功跳过（对齐后端 ConverterBean 逻辑）
         if "no geometry generated" in err_str.lower():
-            logger.info("空几何体（纯约束件），标记 succeed=true 跳过: %s-%s", number, ver)
+            logger.info("Empty geometry, marking succeed=true: %s-%s", number, ver)
             await send_result(token, ws, number, ver, {
                 "tempDir":           temp_uuid,
                 "convertedFileLODs": {},
@@ -194,11 +193,11 @@ async def handle_order(order: dict) -> None:
             # 空几何体无 GLB 文件，直接清理空临时目录
             shutil.rmtree(str(temp_dir), ignore_errors=True)
         else:
-            logger.error("转换失败: %s-%s  错误=%s", number, ver, err_str)
+            logger.error("Conversion failed: %s-%s  error=%s", number, ver, err_str)
             await send_error(token, ws, number, ver, err_str)
         return
     except Exception as e:
-        logger.exception("转换异常: %s-%s", number, ver)
+        logger.exception("Conversion exception: %s-%s", number, ver)
         await send_error(token, ws, number, ver, str(e))
         return
 
@@ -211,7 +210,6 @@ async def handle_order(order: dict) -> None:
     # 单个 LOD 失败不阻塞主流程，降级为已有 LOD 集合
     converted_lods: dict = {"0": glb_filename}
     LOD_SPECS = [("1", 0.30), ("2", 1.00)]
-    ref_size = os.path.getsize(glb_path)
     for lod_key, lod_deflection in LOD_SPECS:
         lod_uuid = str(uuid.uuid4())
         lod_filename = lod_uuid + ".glb"
@@ -220,14 +218,13 @@ async def handle_order(order: dict) -> None:
             convert(input_path, lod_path, deflection=lod_deflection, angular=0.5)
             lod_size = os.path.getsize(lod_path)
             logger.info(
-                "LOD %s 生成完成: %s-%s  deflection=%.2f  size=%dKB (%.0f%% of LOD0)",
+                "LOD %s done: %s-%s  deflection=%.2f  size=%dKB",
                 lod_key, number, ver, lod_deflection,
                 lod_size // 1024,
-                100.0 * lod_size / ref_size if ref_size > 0 else 0,
             )
             converted_lods[lod_key] = lod_filename
         except Exception as lod_err:
-            logger.warning("LOD %s 生成失败，降级: %s", lod_key, lod_err)
+            logger.warning("LOD %s generation failed, degraded: %s", lod_key, lod_err)
 
     # 构造 ConversionResultDTO payload（与后端 Dozer 反序列化契约对齐）
     # - tempDir:           仅 UUID 目录名，后端会用 serverConfig.conversionsPath 拼成绝对路径
@@ -244,12 +241,12 @@ async def handle_order(order: dict) -> None:
         # 回调成功后清理临时目录（后端已完成文件读取并存入 vault）
         try:
             shutil.rmtree(str(temp_dir), ignore_errors=True)
-            logger.info("临时目录已清理: %s", temp_uuid)
+            logger.info("Temp dir cleaned: %s", temp_uuid)
         except Exception as e:
-            logger.warning("清理临时目录失败（不影响结果）: %s", e)
+            logger.warning("Failed to clean temp dir: %s", e)
     except Exception as e:
         # 保留 temp_dir：callback 失败时后端未读取文件，保留供 PendingConversionsCleaner 或手工补救
-        logger.error("Callback 失败: %s-%s  %s", number, ver, e)
+        logger.error("Callback failed: %s-%s  %s", number, ver, e)
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +255,7 @@ async def handle_order(order: dict) -> None:
 
 async def main_loop() -> None:
     logger.info(
-        "启动转换服务  bootstrap=%s  topic=%s  group=%s",
+        "Starting conversion service  bootstrap=%s  topic=%s  group=%s",
         KAFKA_BOOTSTRAP, KAFKA_TOPIC, KAFKA_GROUP_ID,
     )
     logger.info("VAULT_PATH=%s  CONVERSIONS_PATH=%s  ENDPOINT=%s",
@@ -283,17 +280,17 @@ async def main_loop() -> None:
     )
 
     await consumer.start()
-    logger.info("Kafka 消费者已启动，等待消息...")
+    logger.info("Kafka consumer started, waiting for messages...")
     try:
         async for msg in consumer:
             logger.info(
-                "收到消息  partition=%s  offset=%s",
+                "Message received  partition=%s  offset=%s",
                 msg.partition, msg.offset,
             )
             try:
                 order = json.loads(msg.value.decode("utf-8"))
             except Exception as e:
-                logger.error("JSON 解析失败，跳过  offset=%s  错误=%s", msg.offset, e)
+                logger.error("JSON parse failed, skipped  offset=%s  error=%s", msg.offset, e)
                 try:
                     await consumer.commit()
                 except Exception:
@@ -303,7 +300,7 @@ async def main_loop() -> None:
             try:
                 await handle_order(order)
             except Exception:
-                logger.exception("handle_order 未预期异常  offset=%s", msg.offset)
+                logger.exception("Unhandled exception in handle_order  offset=%s", msg.offset)
             finally:
                 # 无论处理是否成功，提交 offset 避免无限重试同一条损坏消息。
                 # commit() 失败（如 Kafka 临时不可用）只记录警告，不终止消费循环。
@@ -311,7 +308,7 @@ async def main_loop() -> None:
                     await consumer.commit()
                 except Exception as commit_err:
                     logger.warning(
-                        "offset 提交失败（下次轮询时重试）  offset=%s  错误=%s",
+                        "Offset commit failed (retry on next poll)  offset=%s  error=%s",
                         msg.offset, commit_err,
                     )
     finally:
