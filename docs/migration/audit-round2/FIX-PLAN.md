@@ -30,6 +30,7 @@
 | **3** | P2 workflow/change/baseline/effectivity HIGH | 9 | 4 | 批 2 | 状态码/DTO/校验对拍 Payara |
 | **4** | P3 products 结构/实例 + query HIGH | 8 | 3 | 批 3 | configSpec/pathData/importer 对拍 |
 | **5** | MED/LOW 收尾 | 40 MED + 24 LOW | 按域报告分包 | 批 4 | pytest + 抽样对拍 |
+| **6** | 邮件通知族全量迁移（planned，对齐 NotifierBean） | 9 方法族 | 按文件分包 | 批 5 | pytest + MailHog(:8003) 验证 |
 
 > 每批 = 一个会话粒度。主 agent 在批内：① 派 subagent 并行改文件包 → ② 回收后逐包 code review → ③ 部署 → ④ 统一验证 → ⑤ commit → ⑥ 更新 CHANGELOG/REMINDERS + 勾除本文件。
 
@@ -176,6 +177,37 @@
   > commits: 批5波1、`part.py i18n fix`、批5波2。
 
 > **🎉 audit-round2 批次 1~5 全部完成**：6 CRITICAL + 29 HIGH + 40 MED 已处理；24 LOW 未列入本轮（用户指定只修到 MED）。
+
+---
+
+## 批次 6：邮件通知族全量迁移（planned，用户选 B — 对齐 Payara `NotifierBean`）
+
+> **来源**：P6-08/P6-01 审计发现的审批邮件缺口，深查确认为**系统性缺口**（详见 `docs/migration/loose-ends.md` 第八节）。Payara `NotifierBean` 经 `mail/docdokuSMTP`→MailHog 真实发信；Python `app/services/notifier.py` 已有 `_send_email`(smtp:1025 MailHog) 基础设施，仅迁移了 bulk-indexation。**决策：整族补全，彻底对齐 Payara（非仅审批）。**
+> **状态：待实施**（本次仅登记计划，未写代码）。
+
+### 待实现方法 + 触发点接线（对照 `NotifierBean` public API）
+- [ ] **NB-1 sendApproval**（doc/part/workspaceWorkflow）：`workflow_manager.instantiate_workflow`（P6-08 锚点）+ `task_manager.process_task` approve/reject-relaunch（P6-01 锚点）；收件人 = running task worker email。
+- [ ] **NB-2 sendStateNotification**：文档审批推进且 step 变化 → 发订阅者。
+- [ ] **NB-3 sendIterationNotification**：新迭代 checkin（document_manager / product_manager）→ 发迭代订阅者。
+- [ ] **NB-4 sendTagged / sendUntagged**（doc+part）：打/去标签 → 发标签订阅者（`tagusersubscription`/`tagusergroupsubscription`）。
+- [ ] **NB-5 sendPasswordRecovery**：`auth` 恢复端点（P8-04 已写 `passwordrecoveryrequest` token，补发信）。
+- [ ] **NB-6 sendWorkspaceDeletionNotification / ...ErrorNotification**：`workspace_deletion` 成功/失败。
+- [ ] **NB-7 send{Part,Document,Workspace}WorkflowRelaunchedNotification**：拒绝 + relaunch 后。
+- [ ] **NB-8 sendWorkspaceIndexationSuccess / Failure**：单工作区重建索引（bulk 版已迁移）。
+- [ ] **NB-9 sendCredential**：新建账户下发凭据。
+
+### 文件包建议（供后续编排；跨批次可与既有文件重叠，串行执行）
+- PKG-notifier（核心）：`app/services/notifier.py`（新增各 send_* 方法 + i18n 模板）
+- PKG-wire-workflow：`app/services/workflow_manager.py`、`app/services/task_manager.py`（NB-1/NB-7）
+- PKG-wire-content：`app/services/document_manager.py`、`app/services/product_manager.py`（NB-3/NB-4）
+- PKG-wire-misc：`app/routers/auth.py`（NB-5）、`app/services/workspace_deletion.py`（NB-6）、`app/services/indexer_manager.py`（NB-8）、`app/services/account_manager.py`（NB-9）
+
+### 约束
+- 复用 `notifier._send_email`（MailHog）；正文对齐 Java `sendXxxToUser` 模板 + i18n；**全部 best-effort（try/except+log，不阻断主流程）**，与 Payara `@Asynchronous`/吞异常语义一致。
+- 验证：触发后查 MailHog（:8003）收件箱；pytest 无新增 fail。
+
+### 主 agent 批 6 收尾（待办）
+- [ ] 派 subagent 实现 + 接线 → review → 部署 → pytest + MailHog 验证 → commit → 更新文档。
 
 ---
 
