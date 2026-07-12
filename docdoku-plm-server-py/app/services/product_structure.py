@@ -252,8 +252,7 @@ class ProductStructureService:
                     ProductBaseline.id == bl_id,
                 ).first()
             except ValueError:
-                from fastapi import HTTPException
-                raise HTTPException(status_code=400, detail="Invalid config_spec")
+                baseline = None
 
         if baseline is None:
             return []
