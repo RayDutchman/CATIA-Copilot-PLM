@@ -4,10 +4,66 @@
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.models.part import PartMaster, PartRevision
 
 
 class CascadeActionService:
     """级联操作服务。遍历组件树，逐级执行操作。"""
+
+    def collect_ci_parts(self, svc, db: Session, ws: str, ci_id: str,
+                         config_spec=None, path=None, user_login=None,
+                         diverge=False) -> list[PartRevision]:
+        """递归收集 CI 装配结构中的所有 PartRevision（去重）。CI 不存在时返回空列表。"""
+        ci = svc.get_ci(db, ws, ci_id)
+        root_pn = ci.partmaster_partnumber
+        if path and path != '-1':
+            decoded = svc.decode_path(db, ws, ci_id, path)
+            if decoded:
+                root_pn = decoded[-1]["number"]
+        master = db.query(PartMaster).filter(
+            PartMaster.workspace_id == ws,
+            PartMaster.number == root_pn,
+        ).first()
+        if not master or not master.revisions:
+            return []
+        seen: set = set()
+        collected: list[PartRevision] = []
+        ps_filter = None
+        if config_spec:
+            ps_filter = svc.parse_config_spec_str(config_spec, db=db,
+                                                  user_login=user_login, diverge=diverge)
+
+        def collect(rev: PartRevision):
+            key = (rev.workspace_id, rev.partmaster_partnumber, rev.version)
+            if key in seen:
+                return
+            seen.add(key)
+            collected.append(rev)
+            last_it = rev.last_iteration
+            if last_it:
+                for link in (last_it.components or []):
+                    child_master = db.query(PartMaster).filter(
+                        PartMaster.workspace_id == link.component_workspace_id,
+                        PartMaster.number == link.component_partnumber,
+                    ).first()
+                    if not child_master:
+                        continue
+                    if ps_filter:
+                        filtered = ps_filter.filter_part_iterations(child_master)
+                        child_rev = filtered[0].revision if filtered else None
+                    else:
+                        child_rev = child_master.last_revision
+                    if child_rev:
+                        collect(child_rev)
+
+        if ps_filter:
+            filtered = ps_filter.filter_part_iterations(master)
+            root_rev = filtered[0].revision if filtered else master.last_revision
+        else:
+            root_rev = master.last_revision
+        if root_rev:
+            collect(root_rev)
+        return collected
 
     def _traverse_components(self, db: Session, ws: str, pn: str, pv: str) -> list:
         """收集子树所有零件修订（BFS 遍历）。"""

@@ -1,11 +1,8 @@
 """共享文档/零件端点（公开访问，无需认证）。"""
-import hashlib
-from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Header, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from jose import JWTError
 from app.core.database import get_db
 from app.core.security import create_token, verify_token, create_entity_token
@@ -15,11 +12,9 @@ from app.core.exceptions import (
     PartRevisionNotFoundException, SharedEntityNotFoundException,
     WorkspaceNotFoundException,
 )
-from app.models.auth import Account
-from app.models.document import DocumentRevision
-from app.models.part import PartRevision
 from app.schemas.misc import SharedDocumentDTO, SharedPartDTO
 from app.models.util.date_utils import format_iso_date
+from app.services.share_manager import share_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -29,12 +24,12 @@ _STATUS_MAP = {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}
 def _get_author_dto(db: Session, login: str | None, ws: str) -> dict:
     if not login:
         return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws}
-    acc = db.query(Account).filter(Account.login == login).first()
+    info = share_service.get_account_info(db, login)
     return {
-        "login": login,
-        "name": acc.name if acc else login,
-        "email": acc.email if acc else None,
-        "language": acc.language if acc else None,
+        "login": info["login"],
+        "name": info["name"],
+        "email": info["email"],
+        "language": info["language"],
         "workspaceId": ws,
     }
 
@@ -55,53 +50,7 @@ def _get_optional_login(
 
 def _check_workspace_member(db: Session, login: str, ws: str):
     """对齐 Payara checkWorkspaceReadAccess：验证工作区启用且用户是成员。"""
-    row = db.execute(text(
-        "SELECT enabled FROM workspace WHERE id = :w"
-    ), {"w": ws}).first()
-    if not row:
-        raise WorkspaceNotFoundException("WorkspaceNotFoundException", ws)
-    if not bool(row[0]):
-        from app.core.exceptions import WorkspaceNotEnabledException
-        raise WorkspaceNotEnabledException("WorkspaceNotEnabledException", ws)
-    member = db.execute(text(
-        "SELECT 1 FROM userdata WHERE login=:l AND workspace_id=:w"
-    ), {"l": login, "w": ws}).first()
-    if not member:
-        raise EntityNotFoundException("UserNotFoundException", login)
-
-
-def _get_shared_entity(uuid: str, password: str | None, db: Session):
-    entity = db.execute(text(
-        "SELECT uuid, dtype, entity_workspace_id, password, expiredate, "
-        "partmaster_partnumber, partrevision_version, "
-        "documentmaster_id, documentrevision_version "
-        "FROM sharedentity WHERE uuid = :uuid"
-    ), {"uuid": uuid}).fetchone()
-
-    if not entity:
-        raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
-
-    if entity.password is not None:
-        if password is None or hashlib.md5(password.encode()).hexdigest() != entity.password:
-            raise HTTPException(
-                status_code=403,
-                detail={"forbidden": "password-protected"},
-                headers={"Reason-Phrase": "password-protected"},
-            )
-
-    if entity.expiredate is not None:
-        now = datetime.now(timezone.utc)
-        expire = entity.expiredate.replace(tzinfo=timezone.utc) if entity.expiredate.tzinfo is None else entity.expiredate
-        if expire < now:
-            db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
-            db.commit()
-            raise HTTPException(
-                status_code=404,
-                detail={"forbidden": "entity-expired"},
-                headers={"Reason-Phrase": "entity-expired"},
-            )
-
-    return entity
+    share_service.check_workspace_member(db, login, ws)
 
 
 @router.get("/shared/{uuid}/documents", response_model=SharedDocumentDTO)
@@ -110,23 +59,11 @@ def get_shared_documents(uuid: str,
                          response: Response,
                          password: str | None = Header(None),
                          db: Session = Depends(get_db)):
-    entity = _get_shared_entity(uuid, password, db)
+    entity = share_service.get_shared_entity(db, uuid, password)
     if entity.dtype != "SharedDocument":
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
-    doc = db.execute(text(
-        "SELECT d.title, d.description, d.status, d.author_login, d.creationdate, "
-        "dm.type, d.version, dm.id AS documentmaster_id, d.workspace_id "
-        "FROM documentrevision d "
-        "JOIN documentmaster dm ON dm.workspace_id = d.workspace_id "
-        "AND dm.id = d.documentmaster_id "
-        "WHERE d.workspace_id = :ws AND d.documentmaster_id = :dmid "
-        "AND d.version = :ver"
-    ), {
-        "ws": entity.entity_workspace_id,
-        "dmid": entity.documentmaster_id,
-        "ver": entity.documentrevision_version,
-    }).fetchone()
+    doc = share_service.get_shared_document_row(db, entity)
 
     if not doc:
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
@@ -152,23 +89,11 @@ def get_shared_parts(uuid: str,
                      response: Response,
                      password: str | None = Header(None),
                      db: Session = Depends(get_db)):
-    entity = _get_shared_entity(uuid, password, db)
+    entity = share_service.get_shared_entity(db, uuid, password)
     if entity.dtype != "SharedPart":
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
-    part = db.execute(text(
-        "SELECT pr.description, pr.status, pr.author_login, pr.creationdate, "
-        "pm.type, pm.name, pm.partnumber, pr.version, pr.workspace_id "
-        "FROM partrevision pr "
-        "JOIN partmaster pm ON pm.workspace_id = pr.workspace_id "
-        "AND pm.partnumber = pr.partmaster_partnumber "
-        "WHERE pr.workspace_id = :ws AND pr.partmaster_partnumber = :pn "
-        "AND pr.version = :ver"
-    ), {
-        "ws": entity.entity_workspace_id,
-        "pn": entity.partmaster_partnumber,
-        "ver": entity.partrevision_version,
-    }).fetchone()
+    part = share_service.get_shared_part_row(db, entity)
 
     if not part:
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
@@ -198,11 +123,7 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
     public_shared=True 时可公开访问；
     public_shared=False 时若已认证可正常访问，否则返回 403。
     """
-    doc = db.query(DocumentRevision).filter(
-        DocumentRevision.workspace_id == ws,
-        DocumentRevision.documentmaster_id == doc_id,
-        DocumentRevision.version == ver,
-    ).first()
+    doc = share_service.get_document_revision(db, ws, doc_id, ver)
 
     if not doc:
         raise EntityNotFoundException("DocumentRevisionNotFoundException", doc_id, ver)
@@ -236,11 +157,7 @@ def get_public_shared_part(ws: str, pn: str, ver: str,
     public_shared=True 时可公开访问；
     public_shared=False 时若已认证可正常访问，否则返回 403。
     """
-    part = db.query(PartRevision).filter(
-        PartRevision.workspace_id == ws,
-        PartRevision.partmaster_partnumber == pn,
-        PartRevision.version == ver,
-    ).first()
+    part = share_service.get_part_revision(db, ws, pn, ver)
 
     if not part:
         raise PartRevisionNotFoundException("PartRevisionNotFoundException", pn, ver)

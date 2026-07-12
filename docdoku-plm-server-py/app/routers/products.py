@@ -12,6 +12,7 @@ from app.models.product import ConfigurationItem, ProductInstanceMaster, Product
 from app.models.part import PartMaster, PartRevision, PartIteration
 from app.services.product_structure import ProductStructureService
 from app.services.product_manager import ProductService
+from app.services.cascade_action_manager import cascade_action_service
 from app.schemas.product import ConfigurationItemDTO, ProductInstanceDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -612,71 +613,6 @@ def path_to_path_links_detail(ws: str, pid: str, source: str, target: str,
 _part_svc = ProductService()
 
 
-def _collect_ci_parts(db: Session, ws: str, ci_id: str,
-                       config_spec=None, path=None, user_login=None,
-                       diverge=False) -> list[PartRevision]:
-    """递归收集 CI 装配结构中的所有 PartRevision（去重）。CI 不存在时返回空列表。
-    支持按 configSpec 选择迭代，按 path 定位起始子树。
-    """
-    ci = svc.get_ci(db, ws, ci_id)
-    root_pn = ci.partmaster_partnumber
-
-    # 若提供 path（非空且非 -1），定位起始子树
-    if path and path != '-1':
-        decoded = svc.decode_path(db, ws, ci_id, path)
-        if decoded:
-            # 取最后一段的 number 作为遍历根
-            root_pn = decoded[-1]["number"]
-
-    master = db.query(PartMaster).filter(
-        PartMaster.workspace_id == ws,
-        PartMaster.number == root_pn,
-    ).first()
-    if not master or not master.revisions:
-        return []
-    seen: set[tuple] = set()
-    collected: list[PartRevision] = []
-
-    # 解析 configSpec → PS filter
-    ps_filter = None
-    if config_spec:
-        ps_filter = svc.parse_config_spec_str(config_spec, db=db, user_login=user_login, diverge=diverge)
-
-    def collect(rev: PartRevision):
-        key = (rev.workspace_id, rev.partmaster_partnumber, rev.version)
-        if key in seen:
-            return
-        seen.add(key)
-        collected.append(rev)
-        last_it = rev.last_iteration
-        if last_it:
-            for link in (last_it.components or []):
-                child_master = db.query(PartMaster).filter(
-                    PartMaster.workspace_id == link.component_workspace_id,
-                    PartMaster.number == link.component_partnumber,
-                ).first()
-                if not child_master:
-                    continue
-                if ps_filter:
-                    # 用 filter 选择迭代而非硬编码 last_revision
-                    filtered = ps_filter.filter_part_iterations(child_master)
-                    child_rev = filtered[0].revision if filtered else None
-                else:
-                    child_rev = child_master.last_revision
-                if child_rev:
-                    collect(child_rev)
-
-    # 选择根 revision
-    if ps_filter:
-        filtered = ps_filter.filter_part_iterations(master)
-        root_rev = filtered[0].revision if filtered else master.last_revision
-    else:
-        root_rev = master.last_revision
-    if root_rev:
-        collect(root_rev)
-    return collected
-
-
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout")
 @router.put("/workspaces/{ws}/products/{ci_id}/cascade-checkout/", include_in_schema=False)
 def cascade_checkout(ws: str, ci_id: str,
@@ -684,9 +620,10 @@ def cascade_checkout(ws: str, ci_id: str,
                       path: Optional[str] = Query(None),
                       current_user: Account = Depends(get_current_user),
                       db: Session = Depends(get_db)):
-    parts = _collect_ci_parts(db, ws, ci_id,
-                               config_spec=configSpec, path=path,
-                               user_login=current_user.login)
+    parts = cascade_action_service.collect_ci_parts(
+        svc, db, ws, ci_id,
+        config_spec=configSpec, path=path,
+        user_login=current_user.login)
     checked_out = []
     errors = []
     for pr in parts:
@@ -708,9 +645,10 @@ def cascade_checkin(ws: str, ci_id: str,
                      path: Optional[str] = Query(None),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    parts = _collect_ci_parts(db, ws, ci_id,
-                               config_spec=configSpec, path=path,
-                               user_login=current_user.login)
+    parts = cascade_action_service.collect_ci_parts(
+        svc, db, ws, ci_id,
+        config_spec=configSpec, path=path,
+        user_login=current_user.login)
     checked_in = []
     errors = []
     for pr in parts:
@@ -733,9 +671,10 @@ def cascade_undocheckout(ws: str, ci_id: str,
                           path: Optional[str] = Query(None),
                           current_user: Account = Depends(get_current_user),
                           db: Session = Depends(get_db)):
-    parts = _collect_ci_parts(db, ws, ci_id,
-                               config_spec=configSpec, path=path,
-                               user_login=current_user.login)
+    parts = cascade_action_service.collect_ci_parts(
+        svc, db, ws, ci_id,
+        config_spec=configSpec, path=path,
+        user_login=current_user.login)
     undone = []
     errors = []
     for pr in parts:

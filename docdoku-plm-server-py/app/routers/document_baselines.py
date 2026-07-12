@@ -6,9 +6,10 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.exceptions import BaselineNotFoundException
+from app.core.exceptions import BaselineNotFoundException, NotAllowedException
 from app.models.auth import Account
 from app.schemas.document import DocumentBaselineDTO
+from app.services.documents.document_baseline_manager import document_baseline_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -23,23 +24,10 @@ def _baseline_type_name(t):
     return _BASELINE_TYPE.get(t, "LATEST")
 
 
-def _baselined_documents(db: Session, baseline_id: int) -> list:
-    docs = db.execute(sql_text(
-        "SELECT bd.target_documentmaster_id, bd.target_docrevision_version, bd.target_iteration "
-        "FROM baselineddocument bd WHERE bd.documentcollection_id = "
-        "(SELECT documentcollection_id FROM documentbaseline WHERE id = :bid) "
-        "ORDER BY bd.target_documentmaster_id"
-    ), {"bid": baseline_id}).fetchall()
-    return [
-        {"documentMasterId": d[0], "version": d[1], "iteration": d[2]}
-        for d in docs
-    ]
-
-
-def _baseline_to_dict(db: Session, r, ws: str, *, with_docs: bool = True) -> dict:
-    """r 列顺序: id, name, description, type, creationdate, author_login, author_workspace_id"""
-    author_login = r[5] or ""
-    # 查 Account 表填充真实姓名
+def _format_baseline(baseline: dict, db: Session, ws: str, *,
+                     with_docs: bool = True) -> dict:
+    """将 service 返回的 baseline dict 格式化为前端响应格式。"""
+    author_login = baseline.get("authorLogin", "")
     author_name = author_login
     if author_login:
         acc = db.execute(sql_text(
@@ -48,72 +36,63 @@ def _baseline_to_dict(db: Session, r, ws: str, *, with_docs: bool = True) -> dic
         if acc and acc[0]:
             author_name = acc[0]
     return {
-        "id": r[0],
-        "name": r[1] or "",
-        "description": r[2] or "",
-        "type": _baseline_type_name(r[3]),
-        "creationDate": r[4].isoformat() + "Z" if r[4] else None,
+        "id": baseline["id"],
+        "name": baseline.get("name", ""),
+        "description": baseline.get("description", ""),
+        "type": _baseline_type_name(baseline.get("type")),
+        "creationDate": baseline["creationDate"].isoformat() + "Z"
+        if baseline.get("creationDate") else None,
         "author": {
             "login": author_login,
             "name": author_name,
-            "workspaceId": r[6] or ws,
+            "workspaceId": baseline.get("authorWorkspaceId", ws),
         },
-        "baselinedDocuments": _baselined_documents(db, r[0]) if with_docs else [],
+        "baselinedDocuments": document_baseline_service.get_baselined_documents(
+            db, baseline["id"]) if with_docs else [],
     }
 
 
-def _get_baseline_row(db: Session, ws: str, baseline_id: int):
-    return db.execute(sql_text(
-        "SELECT db.id, db.name, db.description, db.type, "
-        "db.creationdate, db.author_login, db.author_workspace_id "
-        "FROM documentbaseline db WHERE db.id = :bid"
-    ), {"bid": baseline_id}).fetchone()
-
-
-@router.get("/workspaces/{ws}/document-baselines", response_model=List[DocumentBaselineDTO])
+@router.get("/workspaces/{ws}/document-baselines",
+            response_model=List[DocumentBaselineDTO])
 @router.get("/workspaces/{ws}/document-baselines/", include_in_schema=False)
 def list_doc_baselines(ws: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    rows = db.execute(sql_text(
-        "SELECT DISTINCT db.id, db.name, db.description, db.type, "
-        "db.creationdate, db.author_login, db.author_workspace_id "
-        "FROM documentbaseline db "
-        "JOIN baselineddocument bd ON db.documentcollection_id = bd.documentcollection_id "
-        "WHERE bd.target_workspace_id = :ws "
-        "ORDER BY db.id"
-    ), {"ws": ws}).fetchall()
-    return [_baseline_to_dict(db, r, ws) for r in rows]
+    baselines = document_baseline_service.get_baselines(db, ws)
+    return [_format_baseline(b, db, ws) for b in baselines]
 
 
 @router.get("/workspaces/{ws}/document-baselines/{baseline_id}-light",
             response_model=DocumentBaselineDTO)
-@router.get("/workspaces/{ws}/document-baselines/{baseline_id}-light/", include_in_schema=False)
+@router.get("/workspaces/{ws}/document-baselines/{baseline_id}-light/",
+            include_in_schema=False)
 def get_doc_baseline_light(ws: str, baseline_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
     """对齐 Java getBaselineLight：不含 baselinedDocuments 明细。"""
-    r = _get_baseline_row(db, ws, baseline_id)
-    if not r:
+    b = document_baseline_service.get_baseline(db, ws, baseline_id)
+    if not b:
         raise BaselineNotFoundException("BaselineNotFoundException", str(baseline_id))
-    return _baseline_to_dict(db, r, ws, with_docs=False)
+    return _format_baseline(b, db, ws, with_docs=False)
 
 
 @router.get("/workspaces/{ws}/document-baselines/{baseline_id}",
             response_model=DocumentBaselineDTO)
-@router.get("/workspaces/{ws}/document-baselines/{baseline_id}/", include_in_schema=False)
+@router.get("/workspaces/{ws}/document-baselines/{baseline_id}/",
+            include_in_schema=False)
 def get_doc_baseline(ws: str, baseline_id: int,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     """对齐 Java getBaseline：含 baselinedDocuments 明细。"""
-    r = _get_baseline_row(db, ws, baseline_id)
-    if not r:
+    b = document_baseline_service.get_baseline(db, ws, baseline_id)
+    if not b:
         raise BaselineNotFoundException("BaselineNotFoundException", str(baseline_id))
-    return _baseline_to_dict(db, r, ws, with_docs=True)
+    return _format_baseline(b, db, ws, with_docs=True)
 
 
 @router.post("/workspaces/{ws}/document-baselines", status_code=201)
-@router.post("/workspaces/{ws}/document-baselines/", status_code=201, include_in_schema=False)
+@router.post("/workspaces/{ws}/document-baselines/", status_code=201,
+             include_in_schema=False)
 def create_doc_baseline(ws: str, body: dict,
                         current_user: Account = Depends(get_current_user),
                         db: Session = Depends(get_db)):
@@ -127,6 +106,7 @@ def create_doc_baseline(ws: str, body: dict,
     else:
         bl_type = raw_type
 
+    # ── 文档过滤逻辑（业务规则）──
     seen = set()
     accepted = []
     for doc in baselined_docs:
@@ -175,71 +155,36 @@ def create_doc_baseline(ws: str, body: dict,
         accepted.append((dm_id, version, iteration))
 
     if not accepted:
-        from app.core.exceptions import NotAllowedException
         raise NotAllowedException("NotAllowedException66")
 
-    result = db.execute(sql_text(
-        "INSERT INTO documentcollection (creationdate, author_workspace_id, author_login) "
-        "VALUES (:now, :ws, :login) RETURNING id"
-    ), {"now": now, "ws": ws, "login": current_user.login})
-    collection_id = result.fetchone()[0]
+    # ── 委托 service 创建 ──
+    result = document_baseline_service.create_baseline(
+        db, ws, body.get("name", ""), body.get("description", ""),
+        bl_type, accepted, current_user.login)
 
-    result = db.execute(sql_text(
-        "INSERT INTO documentbaseline (creationdate, description, name, type, "
-        "author_workspace_id, author_login, documentcollection_id) "
-        "VALUES (:now, :desc, :name, :type, :ws, :login, :col_id) RETURNING id"
-    ), {
-        "now": now, "desc": body.get("description", ""),
-        "name": body.get("name", ""), "type": bl_type,
-        "ws": ws, "login": current_user.login, "col_id": collection_id
-    })
-    baseline_id = result.fetchone()[0]
-
-    for dm_id, version, iteration in accepted:
-        db.execute(sql_text(
-            "INSERT INTO baselineddocument (target_iteration, documentcollection_id, "
-            "target_documentmaster_id, target_docrevision_version, target_workspace_id) "
-            "VALUES (:iter, :col_id, :dm_id, :ver, :ws)"
-        ), {
-            "iter": iteration,
-            "col_id": collection_id,
-            "dm_id": dm_id,
-            "ver": version,
-            "ws": ws
-        })
-
-    db.commit()
-
-    docs = db.execute(sql_text(
-        "SELECT bd.target_documentmaster_id, bd.target_docrevision_version, bd.target_iteration "
-        "FROM baselineddocument bd WHERE bd.documentcollection_id = :cid "
-        "ORDER BY bd.target_documentmaster_id"
-    ), {"cid": collection_id}).fetchall()
     return {
-        "id": baseline_id, "name": body.get("name", ""),
+        "id": result["id"],
+        "name": body.get("name", ""),
         "description": body.get("description", ""),
         "type": _baseline_type_name(bl_type),
-        "creationDate": now.isoformat() + "Z",
-        "author": {"login": current_user.login, "name": current_user.name or current_user.login, "workspaceId": ws},
+        "creationDate": result["creationDate"].isoformat() + "Z",
+        "author": {
+            "login": current_user.login,
+            "name": current_user.name or current_user.login,
+            "workspaceId": ws,
+        },
         "baselinedDocuments": [
-            {"documentMasterId": d[0], "version": d[1], "iteration": d[2]}
-            for d in docs
+            {"documentMasterId": dm_id, "version": version, "iteration": iteration}
+            for dm_id, version, iteration in accepted
         ],
     }
 
 
-@router.delete("/workspaces/{ws}/document-baselines/{baseline_id}", status_code=204)
-@router.delete("/workspaces/{ws}/document-baselines/{baseline_id}/", status_code=204, include_in_schema=False)
+@router.delete("/workspaces/{ws}/document-baselines/{baseline_id}",
+               status_code=204)
+@router.delete("/workspaces/{ws}/document-baselines/{baseline_id}/",
+               status_code=204, include_in_schema=False)
 def delete_doc_baseline(ws: str, baseline_id: int,
                         current_user: Account = Depends(get_current_user),
                         db: Session = Depends(get_db)):
-    baseline = db.execute(sql_text(
-        "SELECT documentcollection_id FROM documentbaseline WHERE id = :bid"
-    ), {"bid": baseline_id}).fetchone()
-    if not baseline:
-        raise BaselineNotFoundException("BaselineNotFoundException", str(baseline_id))
-    collection_id = baseline[0]
-    db.execute(sql_text("DELETE FROM baselineddocument WHERE documentcollection_id = :cid"), {"cid": collection_id})
-    db.execute(sql_text("DELETE FROM documentbaseline WHERE id = :bid"), {"bid": baseline_id})
-    db.execute(sql_text("DELETE FROM documentcollection WHERE id = :cid"), {"cid": collection_id})
-    db.commit()
+    document_baseline_service.delete_baseline(db, ws, baseline_id)

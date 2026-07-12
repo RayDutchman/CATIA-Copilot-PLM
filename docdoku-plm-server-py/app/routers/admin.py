@@ -14,6 +14,7 @@ from app.schemas.admin import (
     PlatformOptionsDTO, IndexStatusDTO,
 )
 from app.services.workspace_deletion import cascade_delete_workspace
+from app.services.platform_options_manager import platform_options_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
@@ -253,42 +254,20 @@ def _from_strategy(val: str) -> int:
 @router.get("/admin/platform-options/", include_in_schema=False)
 def get_platform_options(db: Session = Depends(get_db),
                          _admin: Account = Depends(require_global_admin)):
-
-    row = db.execute(text(
-        "SELECT workspacecreationstrategy, registrationstrategy "
-        "FROM platformoptions LIMIT 1"
-    )).first()
-    if row:
-        return {
-            "workspaceCreationStrategy": _to_strategy(row[0]),
-            "registrationStrategy": _to_strategy(row[1]),
-        }
-    return {"workspaceCreationStrategy": "NONE", "registrationStrategy": "NONE"}
+    opts = platform_options_service.get_platform_options(db)
+    return {
+        "workspaceCreationStrategy": _to_strategy(opts.get("workspacecreationstrategy")),
+        "registrationStrategy": _to_strategy(opts.get("registrationstrategy")),
+    }
 
 
 @router.put("/admin/platform-options", response_model=PlatformOptionsDTO)
 @router.put("/admin/platform-options/", include_in_schema=False)
 def put_platform_options(body: dict, db: Session = Depends(get_db),
                         _admin: Account = Depends(require_global_admin)):
-
-    existing = db.execute(text(
-        "SELECT id FROM platformoptions LIMIT 1"
-    )).first()
-    ws = _from_strategy(body.get("workspaceCreationStrategy", "NONE"))
-    rs = _from_strategy(body.get("registrationStrategy", "NONE"))
-    if existing:
-        db.execute(text(
-            "UPDATE platformoptions SET "
-            "workspacecreationstrategy = :wcs, "
-            "registrationstrategy = :rs"
-        ), {"wcs": ws, "rs": rs})
-    else:
-        db.execute(text(
-            "INSERT INTO platformoptions "
-            "(id, workspacecreationstrategy, registrationstrategy) "
-            "VALUES (1, :wcs, :rs)"
-        ), {"wcs": ws, "rs": rs})
-    db.commit()
+    ws_val = _from_strategy(body.get("workspaceCreationStrategy", "NONE"))
+    rs_val = _from_strategy(body.get("registrationStrategy", "NONE"))
+    platform_options_service.upsert_platform_options(db, ws_val, rs_val)
     return get_platform_options(db)
 
 

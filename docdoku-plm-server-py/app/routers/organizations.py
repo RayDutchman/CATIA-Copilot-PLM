@@ -11,11 +11,15 @@ from app.core.exceptions import (
 )
 from app.models.auth import Account
 from app.schemas.misc import OrganizationDTO, OrganizationMemberResultDTO
+from app.services.organization_manager import organization_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 
 def _org_to_dict(r) -> dict:
+    if isinstance(r, dict):
+        return {"name": r["name"], "description": r.get("description") or "",
+                "owner": r.get("owner_login")}
     return {"name": r[0], "description": r[1] or "",
             "owner": r[2] if len(r) > 2 else None}
 
@@ -28,15 +32,11 @@ def list_organizations(
     current_user: Account = Depends(get_current_user),
 ):
     """返回当前用户的组织（Java 为 'my organization' 模型）。无组织时返回 204。"""
-    r = db.execute(text(
-        "SELECT o.name, o.description, o.owner_login FROM organization o "
-        "JOIN organization_account oa ON o.name = oa.organization_name "
-        "WHERE oa.account_login = :login"
-    ), {"login": current_user.login}).fetchone()
-    if not r:
+    org = organization_service.list_user_organizations(db, current_user.login)
+    if not org:
         response.status_code = 204
         return None
-    return _org_to_dict(r)
+    return _org_to_dict(org)
 
 
 @router.post("/organizations", status_code=201, response_model=OrganizationDTO)
@@ -49,19 +49,9 @@ def create_organization(
     name = body.get("name", "").strip()
     if not name:
         raise CreationException("NotAllowedException9", name)
-    existing = db.execute(text(
-        "SELECT name FROM organization WHERE name = :name"
-    ), {"name": name}).fetchone()
-    if existing:
-        raise CreationException("OrganizationAlreadyExistsException", name)
     description = body.get("description", "")
     owner = current_user.login
-    db.execute(text(
-        "INSERT INTO organization (name, description, owner_login) "
-        "VALUES (:name, :description, :owner)"
-    ), {"name": name, "description": description, "owner": owner})
-    db.commit()
-    return {"name": name, "description": description, "owner": owner}
+    return organization_service.create_organization(db, name, description, owner)
 
 
 @router.get("/organizations/{org_name}", response_model=OrganizationDTO)
@@ -71,12 +61,10 @@ def get_organization(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    r = db.execute(text(
-        "SELECT name, description, owner_login FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
-    if not r:
+    org = organization_service.get_org_by_name(db, org_name)
+    if not org:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
-    return _org_to_dict(r)
+    return _org_to_dict(org)
 
 
 @router.put("/organizations/{org_name}", response_model=OrganizationDTO)
@@ -87,22 +75,15 @@ def update_organization(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    existing = db.execute(text(
-        "SELECT name, owner_login FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
+    existing = organization_service.get_org_by_name(db, org_name)
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
-    if current_user.login != existing[1]:
+    if current_user.login != existing["owner_login"]:
         raise AccessRightException("AccessRightException", current_user.login)
     description = body.get("description", "")
-    db.execute(text(
-        "UPDATE organization SET description = :description WHERE name = :name"
-    ), {"description": description, "name": org_name})
-    db.commit()
-    r = db.execute(text(
-        "SELECT name, description, owner_login FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
-    return _org_to_dict(r)
+    organization_service.update_organization_desc(db, org_name, description)
+    org = organization_service.get_org_by_name(db, org_name)
+    return _org_to_dict(org)
 
 
 @router.delete("/organizations/{org_name}", status_code=204)
@@ -112,20 +93,12 @@ def delete_organization(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    existing = db.execute(text(
-        "SELECT name, owner_login FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
+    existing = organization_service.get_org_by_name(db, org_name)
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
-    if current_user.login != existing[1]:
+    if current_user.login != existing["owner_login"]:
         raise AccessRightException("AccessRightException", current_user.login)
-    db.execute(text(
-        "DELETE FROM organization_account WHERE organization_name = :name"
-    ), {"name": org_name})
-    db.execute(text(
-        "DELETE FROM organization WHERE name = :name"
-    ), {"name": org_name})
-    db.commit()
+    organization_service.delete_org(db, org_name)
 
 
 @router.put("/organizations/{org_name}/add-member")
@@ -136,9 +109,7 @@ def add_member(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    existing = db.execute(text(
-        "SELECT name FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
+    existing = organization_service.get_org_by_name(db, org_name)
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
@@ -149,23 +120,9 @@ def add_member(
     ), {"login": login}).fetchone()
     if not user:
         raise EntityNotFoundException("AccountNotFoundException", login)
-    existing_member = db.execute(text(
-        "SELECT account_login FROM organization_account "
-        "WHERE organization_name = :org AND account_login = :login"
-    ), {"org": org_name, "login": login}).fetchone()
-    if existing_member:
-        return {"status": "already_member"}
-    max_order = db.execute(text(
-        "SELECT COALESCE(MAX(account_order), 0) FROM organization_account "
-        "WHERE organization_name = :org"
-    ), {"org": org_name}).scalar()
-    db.execute(text(
-        "INSERT INTO organization_account "
-        "(organization_name, account_login, account_order) "
-        "VALUES (:org, :login, :ord)"
-    ), {"org": org_name, "login": login, "ord": max_order + 1})
-    db.commit()
-    return {"status": "ok"}
+    if organization_service.add_member(db, org_name, login):
+        return {"status": "ok"}
+    return {"status": "already_member"}
 
 
 @router.put("/organizations/{org_name}/remove-member")
@@ -176,19 +133,13 @@ def remove_member(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    existing = db.execute(text(
-        "SELECT name FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
+    existing = organization_service.get_org_by_name(db, org_name)
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
     login = body.get("login", "").strip()
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
-    db.execute(text(
-        "DELETE FROM organization_account "
-        "WHERE organization_name = :org AND account_login = :login"
-    ), {"org": org_name, "login": login})
-    db.commit()
+    organization_service.remove_member(db, org_name, login)
     return {"status": "ok"}
 
 
@@ -201,22 +152,17 @@ def move_member(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    existing = db.execute(text(
-        "SELECT name, owner_login FROM organization WHERE name = :name"
-    ), {"name": org_name}).fetchone()
+    existing = organization_service.get_org_by_name(db, org_name)
     if not existing:
         raise EntityNotFoundException("OrganizationNotFoundException", org_name)
-    if current_user.login != existing[1]:
+    if current_user.login != existing["owner_login"]:
         raise AccessRightException("AccessRightException", current_user.login)
     login = body.get("login", "").strip()
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
     if direction not in ("up", "down"):
         raise HTTPException(status_code=400, detail="Invalid direction, must be 'up' or 'down'")
-    members = db.execute(text(
-        "SELECT account_login, account_order FROM organization_account "
-        "WHERE organization_name = :org ORDER BY account_order"
-    ), {"org": org_name}).fetchall()
+    members = organization_service.get_members_ordered(db, org_name)
     idx = None
     for i, (l, _) in enumerate(members):
         if l == login:
@@ -233,13 +179,5 @@ def move_member(
             return Response(status_code=204)
         swap_login, swap_order = members[idx + 1]
     cur_order = members[idx][1]
-    db.execute(text(
-        "UPDATE organization_account SET account_order = :ord "
-        "WHERE organization_name = :org AND account_login = :login"
-    ), {"ord": swap_order, "org": org_name, "login": login})
-    db.execute(text(
-        "UPDATE organization_account SET account_order = :ord "
-        "WHERE organization_name = :org AND account_login = :login"
-    ), {"ord": cur_order, "org": org_name, "login": swap_login})
-    db.commit()
+    organization_service.swap_member_order(db, org_name, login, cur_order, swap_login, swap_order)
     return Response(status_code=204)

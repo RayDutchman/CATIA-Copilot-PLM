@@ -1,109 +1,157 @@
-"""Webhook 管理——对标 Payara WebhookManagerBean。
-
-管理 Webhook 的 CRUD 和配置。
-"""
+"""Webhook 管理——对标 Payara WebhookManagerBean。"""
+from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from app.models.workflow import Webhook, WebhookApp
+from app.core.exceptions import WebhookNotFoundException
 
 
 class WebhookService:
     """Webhook 管理服务。"""
 
+    def list_webhooks(self, db: Session, ws: str) -> List[Tuple[Webhook, Optional[WebhookApp]]]:
+        hooks = db.query(Webhook).filter(Webhook.workspace_id == ws).all()
+        results = []
+        for h in hooks:
+            app = db.query(WebhookApp).filter(
+                WebhookApp.id == h.webhookapp_id).first() if h.webhookapp_id else None
+            results.append((h, app))
+        return results
+
+    def get_webhook(self, db: Session, ws: str,
+                     webhook_id: int) -> Tuple[Webhook, Optional[WebhookApp]]:
+        w = db.query(Webhook).filter(
+            Webhook.id == webhook_id,
+            Webhook.workspace_id == ws).first()
+        if not w:
+            raise WebhookNotFoundException(
+                "WebhookNotFoundException", str(webhook_id))
+        app = db.query(WebhookApp).filter(
+            WebhookApp.id == w.webhookapp_id).first() if w.webhookapp_id else None
+        return (w, app)
+
     def create_webhook(self, db: Session, ws: str, name: str,
-                        active: bool = True) -> dict:
-        result = db.execute(text(
-            "INSERT INTO webhook (workspace_id, name, active) "
-            "VALUES (:ws, :n, :a) RETURNING id"
-        ), {"ws": ws, "n": name, "a": active})
-        wid = result.fetchone()[0]
+                        active: bool = True,
+                        app_data: dict | None = None) -> Tuple[Webhook, WebhookApp]:
+        app_data = app_data or {}
+        app = WebhookApp(
+            dtype=app_data.get("dtype", "SIMPLE_HTTP"),
+            uri=app_data.get("uri", ""),
+            method=app_data.get("method", "POST"),
+            auth=app_data.get("auth"),
+            awsaccount=app_data.get("awsAccount"),
+            awssecret=app_data.get("awsSecret"),
+            region=app_data.get("region"),
+            topicarn=app_data.get("topicArn"),
+        )
+        db.add(app)
+        db.flush()
+        w = Webhook(
+            name=name, workspace_id=ws,
+            active=active, webhookapp_id=app.id)
+        db.add(w)
         db.commit()
-        return {"id": wid, "workspaceId": ws, "name": name, "active": active}
-
-    def get_webhooks(self, db: Session, ws: str) -> list:
-        rows = db.execute(text(
-            "SELECT * FROM webhook WHERE workspace_id = :ws"
-        ), {"ws": ws}).fetchall()
-        return [dict(r._mapping) for r in rows]
-
-    def get_webhook(self, db: Session, ws: str, webhook_id: int) -> dict:
-        row = db.execute(text(
-            "SELECT * FROM webhook WHERE workspace_id = :ws AND id = :id"
-        ), {"ws": ws, "id": webhook_id}).first()
-        if not row:
-            from app.core.exceptions import EntityNotFoundException
-            raise EntityNotFoundException("WebhookNotFoundException", str(webhook_id))
-        return dict(row._mapping)
+        db.refresh(w)
+        db.refresh(app)
+        return (w, app)
 
     def update_webhook(self, db: Session, ws: str, webhook_id: int,
-                        name: str, active: bool) -> dict:
-        db.execute(text(
-            "UPDATE webhook SET name = :n, active = :a "
-            "WHERE workspace_id = :ws AND id = :id"
-        ), {"n": name, "a": active, "ws": ws, "id": webhook_id})
+                        data: dict) -> Tuple[Webhook, Optional[WebhookApp]]:
+        w, app = self.get_webhook(db, ws, webhook_id)
+        if "name" in data:
+            w.name = data["name"]
+        if "active" in data:
+            w.active = data["active"]
+        app_data = data.get("webhookApp", {})
+        if app_data:
+            if app is None:
+                app = WebhookApp()
+                db.add(app)
+                db.flush()
+                w.webhookapp_id = app.id
+            if "method" in app_data:
+                app.method = app_data["method"]
+            if "uri" in app_data:
+                app.uri = app_data["uri"]
+            if "dtype" in app_data:
+                app.dtype = app_data["dtype"]
+            if "auth" in app_data:
+                app.auth = app_data["auth"]
+            if "awsAccount" in app_data:
+                app.awsaccount = app_data["awsAccount"]
+            if "awsSecret" in app_data:
+                app.awssecret = app_data["awsSecret"]
+            if "region" in app_data:
+                app.region = app_data["region"]
+            if "topicArn" in app_data:
+                app.topicarn = app_data["topicArn"]
         db.commit()
-        return self.get_webhook(db, ws, webhook_id)
+        db.refresh(w)
+        if app:
+            db.refresh(app)
+        return (w, app)
 
     def delete_webhook(self, db: Session, ws: str, webhook_id: int) -> None:
-        db.execute(text(
-            "DELETE FROM webhook WHERE workspace_id = :ws AND id = :id"
-        ), {"ws": ws, "id": webhook_id})
+        w, app = self.get_webhook(db, ws, webhook_id)
+        if app:
+            db.delete(app)
+        db.delete(w)
         db.commit()
 
-    def get_active_webhooks(self, db: Session, ws: str) -> list:
-        rows = db.execute(text(
-            "SELECT * FROM webhook WHERE workspace_id = :ws AND active = true"
-        ), {"ws": ws}).fetchall()
-        return [dict(r._mapping) for r in rows]
+    def get_active_webhooks(self, db: Session, ws: str) -> List[Tuple[Webhook, Optional[WebhookApp]]]:
+        hooks = db.query(Webhook).filter(
+            Webhook.workspace_id == ws,
+            Webhook.active.is_(True)).all()
+        results = []
+        for h in hooks:
+            app = db.query(WebhookApp).filter(
+                WebhookApp.id == h.webhookapp_id).first() if h.webhookapp_id else None
+            results.append((h, app))
+        return results
 
     def configure_simple_webhook(self, db: Session, ws: str,
                                   webhook_id: int, method: str, uri: str,
-                                  authorization: str = "") -> dict:
-        # webhookapp 单表继承，dtype 判别符 = 'SimpleWebhookApp'；webhook.webhookapp_id 关联
-        wh = db.execute(text(
-            "SELECT webhookapp_id FROM webhook WHERE id = :id AND workspace_id = :ws"
-        ), {"id": webhook_id, "ws": ws}).first()
-        app_id = wh[0] if wh else None
-        if app_id:
-            db.execute(text(
-                "UPDATE webhookapp SET dtype = 'SimpleWebhookApp', method = :m, "
-                "uri = :u, auth = :a WHERE id = :aid"
-            ), {"m": method, "u": uri, "a": authorization, "aid": app_id})
+                                  authorization: str = "") -> Tuple[Webhook, WebhookApp]:
+        w, app = self.get_webhook(db, ws, webhook_id)
+        if app:
+            app.dtype = "SimpleWebhookApp"
+            app.method = method
+            app.uri = uri
+            app.auth = authorization
         else:
-            result = db.execute(text(
-                "INSERT INTO webhookapp (dtype, method, uri, auth) "
-                "VALUES ('SimpleWebhookApp', :m, :u, :a) RETURNING id"
-            ), {"m": method, "u": uri, "a": authorization})
-            app_id = result.fetchone()[0]
-            db.execute(text(
-                "UPDATE webhook SET webhookapp_id = :aid WHERE id = :id AND workspace_id = :ws"
-            ), {"aid": app_id, "id": webhook_id, "ws": ws})
+            app = WebhookApp(
+                dtype="SimpleWebhookApp", method=method,
+                uri=uri, auth=authorization)
+            db.add(app)
+            db.flush()
+            w.webhookapp_id = app.id
         db.commit()
-        return {"type": "simple", "webhookId": webhook_id, "method": method, "uri": uri}
+        db.refresh(w)
+        db.refresh(app)
+        return (w, app)
 
     def configure_sns_webhook(self, db: Session, ws: str,
                                webhook_id: int, topic_arn: str, region: str,
-                               aws_account: str, aws_secret: str) -> dict:
-        wh = db.execute(text(
-            "SELECT webhookapp_id FROM webhook WHERE id = :id AND workspace_id = :ws"
-        ), {"id": webhook_id, "ws": ws}).first()
-        app_id = wh[0] if wh else None
-        if app_id:
-            db.execute(text(
-                "UPDATE webhookapp SET dtype = 'SNSWebhookApp', topicarn = :ta, region = :r, "
-                "awsaccount = :aa, awssecret = :asec WHERE id = :aid"
-            ), {"ta": topic_arn, "r": region, "aa": aws_account,
-                "asec": aws_secret, "aid": app_id})
+                               aws_account: str,
+                               aws_secret: str) -> Tuple[Webhook, WebhookApp]:
+        w, app = self.get_webhook(db, ws, webhook_id)
+        if app:
+            app.dtype = "SNSWebhookApp"
+            app.topicarn = topic_arn
+            app.region = region
+            app.awsaccount = aws_account
+            app.awssecret = aws_secret
         else:
-            result = db.execute(text(
-                "INSERT INTO webhookapp (dtype, topicarn, region, awsaccount, awssecret) "
-                "VALUES ('SNSWebhookApp', :ta, :r, :aa, :asec) RETURNING id"
-            ), {"ta": topic_arn, "r": region, "aa": aws_account, "asec": aws_secret})
-            app_id = result.fetchone()[0]
-            db.execute(text(
-                "UPDATE webhook SET webhookapp_id = :aid WHERE id = :id AND workspace_id = :ws"
-            ), {"aid": app_id, "id": webhook_id, "ws": ws})
+            app = WebhookApp(
+                dtype="SNSWebhookApp", topicarn=topic_arn,
+                region=region, awsaccount=aws_account,
+                awssecret=aws_secret)
+            db.add(app)
+            db.flush()
+            w.webhookapp_id = app.id
         db.commit()
-        return {"type": "sns", "webhookId": webhook_id, "topicArn": topic_arn, "region": region}
+        db.refresh(w)
+        db.refresh(app)
+        return (w, app)
 
 
 webhook_service = WebhookService()

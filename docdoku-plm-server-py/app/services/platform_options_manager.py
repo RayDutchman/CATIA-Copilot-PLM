@@ -29,11 +29,27 @@ class PlatformOptionsService:
         ), {"s": strategy})
         db.commit()
 
-    def set_registration_strategy(self, db: Session, strategy: str) -> None:
-        db.execute(text(
-            "UPDATE platformoptions SET registrationstrategy = :s"
-        ), {"s": strategy})
+    def upsert_platform_options(self, db: Session,
+                                 workspace_creation_strategy: int,
+                                 registration_strategy: int) -> dict:
+        """INSERT 或 UPDATE platformoptions 行，返回最新的选项 dict。"""
+        existing = db.execute(text(
+            "SELECT id FROM platformoptions LIMIT 1"
+        )).first()
+        if existing:
+            db.execute(text(
+                "UPDATE platformoptions SET "
+                "workspacecreationstrategy = :wcs, "
+                "registrationstrategy = :rs"
+            ), {"wcs": workspace_creation_strategy, "rs": registration_strategy})
+        else:
+            db.execute(text(
+                "INSERT INTO platformoptions "
+                "(id, workspacecreationstrategy, registrationstrategy) "
+                "VALUES (1, :wcs, :rs)"
+            ), {"wcs": workspace_creation_strategy, "rs": registration_strategy})
         db.commit()
+        return self.get_platform_options(db)
 
 
 platform_options_service = PlatformOptionsService()

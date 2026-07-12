@@ -1,13 +1,11 @@
 from typing import List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_workspace_admin
-from app.core.exceptions import AccessRightException, WebhookNotFoundException
+from app.core.deps import require_workspace_admin
 from app.models.auth import Account
-from app.models.workflow import Webhook, WebhookApp
 from app.schemas.misc import WebhookDTO
+from app.services.webhook_manager import webhook_service
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
@@ -42,8 +40,8 @@ def _webhook_to_dict(w, app=None) -> dict:
 def list_webhooks(ws: str, db: Session = Depends(get_db),
                   _admin: Account = Depends(require_workspace_admin)):
 
-    hooks = db.query(Webhook).filter(Webhook.workspace_id == ws).all()
-    return [_webhook_to_dict(h) for h in hooks]
+    hooks = webhook_service.list_webhooks(db, ws)
+    return [_webhook_to_dict(w, app) for w, app in hooks]
 
 
 @router.get(f"{PREFIX}/webhooks/{{webhook_id}}", response_model=WebhookDTO)
@@ -51,11 +49,8 @@ def list_webhooks(ws: str, db: Session = Depends(get_db),
 def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
                 _admin: Account = Depends(require_workspace_admin)):
 
-    w = db.query(Webhook).filter(Webhook.id == webhook_id,
-                                  Webhook.workspace_id == ws).first()
-    if not w:
-        raise WebhookNotFoundException("WebhookNotFoundException", str(webhook_id))
-    return _webhook_to_dict(w)
+    w, app = webhook_service.get_webhook(db, ws, webhook_id)
+    return _webhook_to_dict(w, app)
 
 
 @router.post(f"{PREFIX}/webhooks", status_code=201, response_model=WebhookDTO)
@@ -63,18 +58,12 @@ def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
 def create_webhook(ws: str, body: dict, db: Session = Depends(get_db),
                    _admin: Account = Depends(require_workspace_admin)):
 
-    app_data = body.get("webhookApp", {})
-    app = WebhookApp(dtype=app_data.get("dtype", "SIMPLE_HTTP"),
-                     uri=app_data.get("uri", ""),
-                     method=app_data.get("method", "POST"),
-                     auth=app_data.get("auth"))
-    db.add(app)
-    db.flush()
-    w = Webhook(name=body.get("name", ""), workspace_id=ws,
-                active=body.get("active", True), webhookapp_id=app.id)
-    db.add(w)
-    db.commit()
-    db.refresh(w)
+    w, app = webhook_service.create_webhook(
+        db, ws,
+        name=body.get("name", ""),
+        active=body.get("active", True),
+        app_data=body.get("webhookApp", {}),
+    )
     return _webhook_to_dict(w, app)
 
 
@@ -83,17 +72,7 @@ def create_webhook(ws: str, body: dict, db: Session = Depends(get_db),
 def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
                    _admin: Account = Depends(require_workspace_admin)):
 
-    w = db.query(Webhook).filter(Webhook.id == webhook_id,
-                                  Webhook.workspace_id == ws).first()
-    if w:
-        app_id = w.webhookapp_id
-        db.delete(w)
-        db.flush()
-        if app_id:
-            app = db.query(WebhookApp).filter(WebhookApp.id == app_id).first()
-            if app:
-                db.delete(app)
-        db.commit()
+    webhook_service.delete_webhook(db, ws, webhook_id)
 
 
 @router.put(f"{PREFIX}/webhooks/{{webhook_id}}", response_model=WebhookDTO)
@@ -101,26 +80,5 @@ def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
 def update_webhook(ws: str, webhook_id: int, body: dict, db: Session = Depends(get_db),
                    _admin: Account = Depends(require_workspace_admin)):
 
-    w = db.query(Webhook).filter(Webhook.id == webhook_id,
-                                  Webhook.workspace_id == ws).first()
-    if not w:
-        raise WebhookNotFoundException("WebhookNotFoundException", str(webhook_id))
-    if "name" in body:
-        w.name = body["name"]
-    if "active" in body:
-        w.active = body["active"]
-    app_data = body.get("webhookApp", {})
-    app = None
-    if app_data:
-        app = db.query(WebhookApp).filter(WebhookApp.id == w.webhookapp_id).first()
-        if app:
-            if "method" in app_data:
-                app.method = app_data["method"]
-            if "uri" in app_data:
-                app.uri = app_data["uri"]
-    db.commit()
-    db.refresh(w)
-    if app:
-        db.refresh(app)
+    w, app = webhook_service.update_webhook(db, ws, webhook_id, body)
     return _webhook_to_dict(w, app)
-
