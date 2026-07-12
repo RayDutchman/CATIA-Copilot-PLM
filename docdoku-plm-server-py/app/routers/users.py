@@ -16,19 +16,6 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
-def _check_is_admin(db: Session, ws: str, current_user: Account):
-    is_global_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first()
-    if is_global_admin:
-        return
-    is_ws_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": ws, "l": current_user.login}).first()
-    if not is_ws_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
-
-
 def _user_to_dict(u):
     return {"login": u["login"], "workspaceId": u["workspaceId"],
             "name": u.get("name", ""), "email": u.get("email", ""),
@@ -123,7 +110,7 @@ def user_tag_subscription_put(ws: str, login: str, tagName: str,
                                body: dict = None,
                                db: Session = Depends(get_db),
                                current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+
     acc = db.query(Account).filter(Account.login == login).first()
     if not acc:
         raise UserNotFoundException("UserNotFoundException", login)
@@ -150,7 +137,7 @@ def user_tag_subscription_put(ws: str, login: str, tagName: str,
 def user_tag_subscription_delete(ws: str, login: str, tagName: str,
                                  db: Session = Depends(get_db),
                                  current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+
     db.execute(text(
         "DELETE FROM tagusersubscription "
         "WHERE tag_workspace_id = :ws AND tag_label = :tag "

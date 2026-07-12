@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import verify_token, create_token, should_refresh_token
 from app.models.auth import Account
-from app.core.exceptions import WorkspaceNotEnabledException, EntityNotFoundException
+from app.core.exceptions import WorkspaceNotEnabledException, EntityNotFoundException, AccessRightException
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -63,3 +63,33 @@ def get_current_user(
             if not is_admin and not is_ws_admin and not is_group_member:
                 raise EntityNotFoundException("UserNotFoundException", account.login)
     return account
+
+
+def require_global_admin(
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Account:
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if not is_admin:
+        raise AccessRightException("AccessRightException", current_user.login)
+    return current_user
+
+
+def require_workspace_admin(
+    ws: str,
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Account:
+    is_admin = db.execute(text(
+        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+    ), {"l": current_user.login}).first()
+    if is_admin:
+        return current_user
+    is_ws_admin = db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": ws, "l": current_user.login}).first()
+    if not is_ws_admin:
+        raise AccessRightException("AccessRightException", current_user.login)
+    return current_user

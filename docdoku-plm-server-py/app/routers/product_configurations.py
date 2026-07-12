@@ -8,7 +8,8 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.product import ProductConfiguration
 from app.services.product_structure import ProductStructureService
-from app.services.factory.acl_factory import apply_acl
+from app.services.factory.acl_factory import apply_acl, build_acl_dict
+from app.models.util.date_utils import format_iso_date
 from app.schemas.product import ProductConfigurationDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -28,36 +29,6 @@ def _get_user_dto(db: Session, login: str, ws: str) -> dict:
     name = acc.name if (acc and acc.name) else login
     _NAME_CACHE[login] = name
     return {"login": login, "name": name, "email": None, "language": None, "workspaceId": ws}
-
-
-def _fmt_date(d) -> str | None:
-    if d is None:
-        return None
-    return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
-
-
-def _build_acl(db: Session, acl_id: int) -> dict | None:
-    if not acl_id or not db:
-        return None
-    from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
-    acl = db.query(ACL).filter(ACL.id == acl_id).first()
-    if not acl:
-        return None
-    user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
-    group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
-    _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
-    return {
-        "userEntries": [
-            {"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")}
-            for e in user_entries
-        ],
-        "groupEntries": [
-            {"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")}
-            for e in group_entries
-        ],
-        "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
-        "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
-    }
 
 
 def _config_substitute_paths(db: Session, config_id: int) -> list:
@@ -102,8 +73,8 @@ def _config_to_dict(cfg, db) -> dict:
         "configurationItemId": cfg.configurationitem_id,
         "description": cfg.description or "",
         "author": _get_user_dto(db, cfg.author_login, ws),
-        "acl": _build_acl(db, cfg.acl_id) or {},
-        "creationDate": _fmt_date(cfg.creation_date),
+        "acl": build_acl_dict(db, cfg.acl_id) or {},
+        "creationDate": format_iso_date(cfg.creation_date),
         "substituteLinks": sub_paths,
         "optionalUsageLinks": opt_paths,
         "substitutesParts": _decode_paths(db, ws, cfg.configurationitem_id, sub_paths),

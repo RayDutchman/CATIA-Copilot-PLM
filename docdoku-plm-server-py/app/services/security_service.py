@@ -4,12 +4,33 @@ from app.models.security import Role, role_user, role_usergroup
 from app.core.exceptions import (
     EntityAlreadyExistsException, EntityConstraintException,
     EntityNotFoundException, RoleAlreadyExistsException,
-    RoleNotFoundException,
+    RoleNotFoundException, AccessRightException,
 )
 from sqlalchemy import text
 
 
 class SecurityService:
+    def _check_workspace_write_access(self, db: Session, ws: str, user_login: str):
+        """对齐 Payara UserManagerBean.checkWorkspaceWriteAccess: workspace admin 或非只读成员可写。"""
+        admin_row = db.execute(text(
+            "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+        ), {"w": ws, "l": user_login}).first()
+        if admin_row:
+            return
+        member = db.execute(text(
+            "SELECT 1 FROM workspaceusermembership "
+            "WHERE workspace_id=:w AND member_login=:l AND readonly=false"
+        ), {"w": ws, "l": user_login}).first()
+        if not member:
+            group_member = db.execute(text(
+                "SELECT 1 FROM workspaceusergroupmembership wgm "
+                "JOIN usergroupmapping ugm ON wgm.member_id=ugm.groupname "
+                "WHERE wgm.workspace_id=:w AND ugm.login=:l "
+                "AND wgm.readonly=false"
+            ), {"w": ws, "l": user_login}).first()
+            if not group_member:
+                raise AccessRightException("AccessRightException", user_login)
+
     def list_roles(self, db: Session, ws: str) -> list[Role]:
         return db.query(Role).filter(Role.workspace_id == ws).all()
 
@@ -28,8 +49,11 @@ class SecurityService:
         return result
 
     def create_role(self, db: Session, ws: str, name: str,
+                    user_login: str = "",
                     default_users: list | None = None,
                     default_groups: list | None = None) -> Role:
+        if user_login:
+            self._check_workspace_write_access(db, ws, user_login)
         existing = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if existing:
             raise RoleAlreadyExistsException("RoleAlreadyExistsException", name)
@@ -41,15 +65,20 @@ class SecurityService:
         return role
 
     def update_role(self, db: Session, ws: str, name: str,
+                    user_login: str = "",
                     default_users: list | None = None,
                     default_groups: list | None = None) -> Role:
+        if user_login:
+            self._check_workspace_write_access(db, ws, user_login)
         role = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if not role:
             raise RoleNotFoundException("RoleNotFoundException", name)
         self._update_role_assignments(db, ws, name, default_users, default_groups)
         return role
 
-    def delete_role(self, db: Session, ws: str, name: str):
+    def delete_role(self, db: Session, ws: str, name: str, user_login: str = ""):
+        if user_login:
+            self._check_workspace_write_access(db, ws, user_login)
         role = db.query(Role).filter(Role.name == name, Role.workspace_id == ws).first()
         if not role:
             raise RoleNotFoundException("RoleNotFoundException", name)

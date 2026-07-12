@@ -16,19 +16,6 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
-def _check_is_admin(db: Session, ws: str, current_user: Account):
-    is_global_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first()
-    if is_global_admin:
-        return
-    is_ws_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": ws, "l": current_user.login}).first()
-    if not is_ws_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
-
-
 def _group_to_dict(g):
     return {"id": g.id, "workspaceId": g.workspace_id}
 
@@ -45,8 +32,9 @@ def list_groups(ws: str, db: Session = Depends(get_db),
 @router.post(f"{PREFIX}/groups", status_code=201, response_model=UserGroupDTO)
 @router.post(f"{PREFIX}/groups/", status_code=201, include_in_schema=False)
 def create_group(ws: str, body: dict, db: Session = Depends(get_db),
+                 
                  current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+
     g = user_mgmt_service.create_group(db, ws, body.get("id", ""))
     return _group_to_dict(g)
 
@@ -54,8 +42,9 @@ def create_group(ws: str, body: dict, db: Session = Depends(get_db),
 @router.delete(f"{PREFIX}/groups/{{group_id}}", status_code=204)
 @router.delete(f"{PREFIX}/groups/{{group_id}}/", status_code=204, include_in_schema=False)
 def delete_group(ws: str, group_id: str, db: Session = Depends(get_db),
+                 
                  current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+
     user_mgmt_service.delete_group(db, ws, group_id)
 
 
@@ -75,6 +64,7 @@ def get_users_in_group(ws: str, group_id: str, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/enable-group")
 @router.put(f"{PREFIX}/enable-group/", include_in_schema=False)
 def enable_group(ws: str, body: dict, db: Session = Depends(get_db),
+                 
                  current_user: Account = Depends(get_current_user)):
     """启用工作组：写入 workspaceusergroupmembership 表"""
     group_id = body.get("id", "")
@@ -119,6 +109,7 @@ def disable_group(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/group-access")
 @router.put(f"{PREFIX}/group-access/", include_in_schema=False)
 def set_group_access(ws: str, body: dict, db: Session = Depends(get_db),
+                     
                      current_user: Account = Depends(get_current_user)):
     """设置工作组访问权限。对齐 Java WorkspaceResource.setGroupAccess → 返回 WorkspaceUserGroupMemberShipDTO（workspaceId/memberId/readOnly）"""
     group_id = body.get("member", {}).get("id", "") or body.get("memberId", "")
@@ -169,8 +160,9 @@ def group_tag_subscriptions(ws: str, groupId: str, db: Session = Depends(get_db)
 def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
                                 body: dict = None,
                                 db: Session = Depends(get_db),
+                                
                                 current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+
     group = db.execute(text(
         "SELECT id FROM usergroup WHERE id = :gid AND workspace_id = :ws"
     ), {"gid": groupId, "ws": ws}).fetchone()
@@ -198,8 +190,9 @@ def group_tag_subscription_put(ws: str, groupId: str, tagName: str,
 @router.delete(f"{PREFIX}/groups/{{groupId}}/tag-subscriptions/{{tagName}}/", status_code=204, include_in_schema=False)
 def group_tag_subscription_delete(ws: str, groupId: str, tagName: str,
                                    db: Session = Depends(get_db),
+                                   
                                    current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+
     db.execute(text(
         "DELETE FROM tagusergroupsubscription "
         "WHERE tag_workspace_id = :ws AND tag_label = :tag "

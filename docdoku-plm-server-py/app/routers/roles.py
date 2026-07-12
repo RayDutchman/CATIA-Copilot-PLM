@@ -14,20 +14,6 @@ router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
 
 
-def _check_is_admin(db: Session, ws: str, current_user: Account):
-    """验证当前用户是全局管理员或工作区管理员，否则 403。"""
-    is_global_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first()
-    if is_global_admin:
-        return
-    is_ws_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": ws, "l": current_user.login}).first()
-    if not is_ws_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
-
-
 def _role_to_dict(r, db: Session) -> dict:
     from sqlalchemy import text
     users = db.execute(text(
@@ -66,9 +52,10 @@ def list_roles_in_use(ws: str, db: Session = Depends(get_db),
 @router.post(f"{PREFIX}/roles", status_code=201, response_model=RoleDTO)
 @router.post(f"{PREFIX}/roles/", status_code=201, include_in_schema=False)
 def create_role(ws: str, body: dict, db: Session = Depends(get_db),
-                current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+                                current_user: Account = Depends(get_current_user)):
+
     r = security_service.create_role(db, ws, body.get("name", ""),
+                                     current_user.login,
                                      body.get("defaultAssignedUsers"),
                                      body.get("defaultAssignedGroups"))
     return _role_to_dict(r, db)
@@ -77,9 +64,10 @@ def create_role(ws: str, body: dict, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/roles/{{name}}", response_model=RoleDTO)
 @router.put(f"{PREFIX}/roles/{{name}}/", include_in_schema=False)
 def update_role(ws: str, name: str, body: dict, db: Session = Depends(get_db),
-                current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
+                                current_user: Account = Depends(get_current_user)):
+
     r = security_service.update_role(db, ws, name,
+                                     current_user.login,
                                      body.get("defaultAssignedUsers"),
                                      body.get("defaultAssignedGroups"))
     return _role_to_dict(r, db)
@@ -88,7 +76,7 @@ def update_role(ws: str, name: str, body: dict, db: Session = Depends(get_db),
 @router.delete(f"{PREFIX}/roles/{{name}}", status_code=204)
 @router.delete(f"{PREFIX}/roles/{{name}}/", status_code=204, include_in_schema=False)
 def delete_role(ws: str, name: str, db: Session = Depends(get_db),
-                current_user: Account = Depends(get_current_user)):
-    _check_is_admin(db, ws, current_user)
-    security_service.delete_role(db, ws, name)
+                                current_user: Account = Depends(get_current_user)):
+
+    security_service.delete_role(db, ws, name, current_user.login)
 

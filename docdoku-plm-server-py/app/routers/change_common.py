@@ -6,7 +6,8 @@ from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder
 from app.models.security import AclUserEntry, AclUserGroupEntry
 from app.core.exceptions import AccessRightException
-from app.services.factory.acl_factory import check_write_access, check_read_access
+from app.services.factory.acl_factory import check_write_access, check_read_access, build_acl_dict
+from app.models.util.date_utils import format_iso_date
 
 _NAME_CACHE: dict = {}
 
@@ -25,21 +26,6 @@ def _get_user_name(db: Session, login: str) -> str:
     name = acc.name if (acc and acc.name) else login
     _NAME_CACHE[key] = name
     return name
-
-
-def _get_acl_dict(db: Session, acl_id: int | None) -> dict | None:
-    if acl_id is None:
-        return None
-    user_rows = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
-    group_rows = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
-    return {
-        "id": acl_id,
-        "enabled": True,
-        "userEntries": [{"key": r.principal_login, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")} for r in user_rows],
-        "groupEntries": [{"key": r.principal_id, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")} for r in group_rows],
-        "userEntriesMap": {r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN") for r in user_rows},
-        "userGroupEntriesMap": {r.principal_id: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN") for r in group_rows},
-    }
 
 
 def _check_workspace_access(db: Session, ws: str, login: str):
@@ -64,7 +50,7 @@ def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Acc
     creation_date = None
     cd = getattr(item, "creation_date", None)
     if cd:
-        creation_date = cd.strftime("%Y-%m-%dT%H:%M:%S.") + f"{cd.microsecond // 1000:03d}Z"
+        creation_date = format_iso_date(cd)
 
     name = getattr(item, "name", getattr(item, "title", ""))
 
@@ -80,7 +66,7 @@ def _item_to_dict(item, db: Optional[Session] = None, current_user: Optional[Acc
                                       workspace_id=getattr(item, "workspace_id", None))
 
     data = dict(
-        acl=_get_acl_dict(db, getattr(item, "acl_id", None)) or {},
+        acl=build_acl_dict(db, getattr(item, "acl_id", None), include_id=True) or {},
         affectedDocuments=[],
         affectedParts=[],
         assignee=assignee_login or None,

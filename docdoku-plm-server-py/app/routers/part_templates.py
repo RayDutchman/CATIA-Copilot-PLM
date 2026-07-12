@@ -13,7 +13,7 @@ from app.core.exceptions import (
 )
 from app.models.part import PartMaster, PartMasterTemplate
 from app.models.security import AclUserEntry, AclUserGroupEntry
-from app.services.factory.acl_factory import apply_acl
+from app.services.factory.acl_factory import apply_acl, build_acl_dict
 from app.schemas.part import PartTemplateDTO, GeneratedIdDTO, AclIdDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -30,20 +30,6 @@ def _list_template_files(db: Session, workspace_id: str, template_id: str) -> st
         from pathlib import Path
         return Path(row[0]).name
     return None
-
-
-def _build_acl(db: Session, acl_id: int) -> dict | None:
-    if not acl_id:
-        return None
-    user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
-    group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
-    _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
-    return {
-        "userEntries": [{"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in user_entries],
-        "groupEntries": [{"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in group_entries],
-        "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
-        "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
-    }
 
 
 def _build_template_attrs(db: Session, workspace_id: str, template_id: str) -> list[dict]:
@@ -257,7 +243,7 @@ def list_part_templates(workspace_id: str,
             "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
             "creationDate": t.creation_date.isoformat() if t.creation_date else None,
             "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-            "acl": _build_acl(db, t.acl_id) or {},
+            "acl": build_acl_dict(db, t.acl_id) or {},
             "workflowModelId": t.workflowmodel_id,
             "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
             "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
@@ -291,7 +277,7 @@ def get_part_template(workspace_id: str, template_id: str,
         "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
         "creationDate": t.creation_date.isoformat() if t.creation_date else None,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "acl": _build_acl(db, t.acl_id) or {},
+        "acl": build_acl_dict(db, t.acl_id) or {},
         "workflowModelId": t.workflowmodel_id,
         "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
         "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
@@ -344,7 +330,7 @@ def create_part_template(workspace_id: str,
         "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
         "creationDate": t.creation_date.isoformat() if t.creation_date else None,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "acl": _build_acl(db, t.acl_id) or {},
+        "acl": build_acl_dict(db, t.acl_id) or {},
         "workflowModelId": t.workflowmodel_id,
         "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
         "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),
@@ -390,7 +376,7 @@ def update_part_template(workspace_id: str, template_id: str,
         "author": _build_author(db, t.author_login, t.author_workspace_id or t.workspace_id),
         "creationDate": t.creation_date.isoformat() if t.creation_date else None,
         "modificationDate": t.modification_date.isoformat() if t.modification_date else None,
-        "acl": _build_acl(db, t.acl_id) or {},
+        "acl": build_acl_dict(db, t.acl_id) or {},
         "workflowModelId": t.workflowmodel_id,
         "attributeTemplates": _build_template_attrs(db, workspace_id, t.id),
         "attributeInstanceTemplates": _build_instance_attr_templates(db, workspace_id, t.id),

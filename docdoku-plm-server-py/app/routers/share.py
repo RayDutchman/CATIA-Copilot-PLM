@@ -19,16 +19,11 @@ from app.models.auth import Account
 from app.models.document import DocumentRevision
 from app.models.part import PartRevision
 from app.schemas.misc import SharedDocumentDTO, SharedPartDTO
+from app.models.util.date_utils import format_iso_date
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 
 _STATUS_MAP = {0: "WIP", 1: "RELEASED", 2: "OBSOLETE"}
-
-
-def _fmt_date(d) -> str | None:
-    if d is None:
-        return None
-    return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
 
 
 def _get_author_dto(db: Session, login: str | None, ws: str) -> dict:
@@ -147,7 +142,7 @@ def get_shared_documents(uuid: str,
         "description": doc.description,
         "status": _STATUS_MAP.get(doc.status, "WIP"),
         "author": _get_author_dto(db, doc.author_login, doc.workspace_id),
-        "creationDate": _fmt_date(doc.creationdate),
+        "creationDate": format_iso_date(doc.creationdate),
     }
 
 
@@ -189,7 +184,7 @@ def get_shared_parts(uuid: str,
         "description": part.description,
         "status": _STATUS_MAP.get(part.status, "WIP"),
         "author": _get_author_dto(db, part.author_login, part.workspace_id),
-        "creationDate": _fmt_date(part.creationdate),
+        "creationDate": format_iso_date(part.creationdate),
     }
 
 
@@ -227,7 +222,7 @@ def get_public_shared_document(ws: str, doc_id: str, ver: str,
         "description": doc.description,
         "status": _STATUS_MAP.get(doc.status, "WIP"),
         "author": _get_author_dto(db, doc.author_login, doc.workspace_id),
-        "creationDate": _fmt_date(doc.creation_date),
+        "creationDate": format_iso_date(doc.creation_date),
     }
 
 
@@ -265,5 +260,5 @@ def get_public_shared_part(ws: str, pn: str, ver: str,
         "description": part.description,
         "status": _STATUS_MAP.get(part.status, "WIP"),
         "author": _get_author_dto(db, part.author_login, part.workspace_id),
-        "creationDate": _fmt_date(part.creation_date),
+        "creationDate": format_iso_date(part.creation_date),
     }

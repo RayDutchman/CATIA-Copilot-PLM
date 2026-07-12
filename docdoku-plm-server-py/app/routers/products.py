@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app.models.util.date_utils import format_iso_date
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
@@ -30,12 +31,6 @@ def _get_user_dto(db: Session, login: str, ws: str) -> dict:
     name = acc.name if (acc and acc.name) else login
     _NAME_CACHE[login] = name
     return {"login": login, "name": name, "email": None, "language": None, "workspaceId": ws}
-
-
-def _fmt_date(d) -> str | None:
-    if d is None:
-        return None
-    return d.strftime("%Y-%m-%dT%H:%M:%S.") + f"{d.microsecond // 1000:03d}Z"
 
 
 def _p2p_svc_lazy(db, ws: str, ci_id: str) -> list:
@@ -219,8 +214,8 @@ def _build_instance_master_dict(db: Session, inst: ProductInstanceMaster) -> dic
         iterations_list.append({
             "iteration": it_num,
             "iterationNote": it.iteration_note,
-            "creationDate": _fmt_date(it.creation_date),
-            "modificationDate": _fmt_date(it.modification_date),
+            "creationDate": format_iso_date(it.creation_date),
+            "modificationDate": format_iso_date(it.modification_date),
             "author": _get_user_dto(db, it.author_login, ws),
             "substituteLinks": substitute_links,
             "optionalUsageLinks": optional_links,
@@ -267,7 +262,7 @@ def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
         "designItemName": name,
         "designItemLatestVersion": latest_version,
         "author": _get_user_dto(db, ci.author_login, ci.workspace_id),
-        "creationDate": _fmt_date(ci.creation_date),
+        "creationDate": format_iso_date(ci.creation_date),
         "hasModificationNotification": svc._has_modification_notification(
             db, ci.workspace_id, ci.partmaster_partnumber
         ) if ci.partmaster_partnumber else False,
@@ -491,8 +486,8 @@ def last_release(ws: str, ci_id: str,
         "author": author_name,
         "authorLogin": rev.part_master.author_login or "",
         "checkOutUser": chk_user,
-        "checkOutDate": _fmt_date(rev.check_out_date),
-        "releaseDate": _fmt_date(rev.release_date),
+        "checkOutDate": format_iso_date(rev.check_out_date),
+        "releaseDate": format_iso_date(rev.release_date),
         "standardPart": rev.part_master.standard_part or False,
         "assembly": bool(last_it and last_it.components),
         "workspaceId": ws,

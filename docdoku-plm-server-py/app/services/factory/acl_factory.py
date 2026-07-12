@@ -46,6 +46,47 @@ def apply_acl(db: Session, acl_id: int | None,
     return acl_id
 
 
+_PERMISSION_NAMES = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+
+
+def build_acl_dict(db: Session, acl_id: int | None, *, include_id: bool = False) -> dict | None:
+    """构建 ACL 字典，统一供路由层使用。
+
+    :param acl_id: ACL id，为 None 则返回 None
+    :param include_id: 为 True 时额外输出 "id" 和 "enabled" 字段
+    :return: dict | None
+    """
+    if acl_id is None:
+        return None
+    acl = db.query(ACL).filter(ACL.id == acl_id).first()
+    if not acl:
+        return None
+    user_rows = db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).all()
+    group_rows = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).all()
+    result: dict = {
+        "userEntries": [
+            {"key": r.principal_login, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")}
+            for r in user_rows
+        ],
+        "groupEntries": [
+            {"key": r.principal_id, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")}
+            for r in group_rows
+        ],
+        "userEntriesMap": {
+            r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
+            for r in user_rows
+        },
+        "userGroupEntriesMap": {
+            r.principal_id: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
+            for r in group_rows
+        },
+    }
+    if include_id:
+        result["id"] = acl_id
+        result["enabled"] = True
+    return result
+
+
 def check_read_access(db: Session, acl_id: int | None,
                       user_login: str, is_admin: bool,
                       workspace_id: str | None = None) -> bool:

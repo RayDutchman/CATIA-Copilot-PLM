@@ -9,9 +9,10 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.models.change import ChangeIssue, ChangeRequest, ChangeOrder, Milestone
 from app.services.change_manager import ChangeService
-from app.services.factory.acl_factory import apply_acl, check_write_access
+from app.services.factory.acl_factory import apply_acl, check_write_access, build_acl_dict
+from app.models.util.date_utils import format_iso_date
 from app.routers.change_common import (
-    _item_to_dict, _get_acl_dict, _check_workspace_access,
+    _item_to_dict, _check_workspace_access,
 )
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -42,9 +43,9 @@ def _milestone_to_dict(ms, db: Optional[Session] = None, current_user: Optional[
 
     dd = getattr(ms, "due_date", None)
     data = dict(
-        acl=_get_acl_dict(db, getattr(ms, "acl_id", None)) or {},
+        acl=build_acl_dict(db, getattr(ms, "acl_id", None), include_id=True) or {},
         description=getattr(ms, "description", "") or "",
-        dueDate=dd.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dd.microsecond // 1000:03d}Z" if dd else None,
+        dueDate=format_iso_date(dd),
         id=ms.id,
         numberOfOrders=numberOfOrders,
         numberOfRequests=numberOfRequests,

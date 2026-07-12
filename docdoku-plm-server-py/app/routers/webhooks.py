@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_workspace_admin
 from app.core.exceptions import AccessRightException, WebhookNotFoundException
 from app.models.auth import Account
 from app.models.workflow import Webhook, WebhookApp
@@ -11,20 +11,6 @@ from app.schemas.misc import WebhookDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
-
-
-def _check_is_admin_or_workspace_admin(db: Session, ws: str, current_user: Account):
-    """验证当前用户是全局管理员或工作区管理员，否则 403。"""
-    is_global_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first()
-    if is_global_admin:
-        return
-    is_ws_admin = db.execute(text(
-        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-    ), {"w": ws, "l": current_user.login}).first()
-    if not is_ws_admin:
-        raise AccessRightException("AccessRightException", current_user.login)
 
 
 def _appname_from_dtype(dtype: str | None) -> str:
@@ -54,8 +40,8 @@ def _webhook_to_dict(w, app=None) -> dict:
 @router.get(f"{PREFIX}/webhooks", response_model=List[WebhookDTO])
 @router.get(f"{PREFIX}/webhooks/", include_in_schema=False)
 def list_webhooks(ws: str, db: Session = Depends(get_db),
-                  current_user: Account = Depends(get_current_user)):
-    _check_is_admin_or_workspace_admin(db, ws, current_user)
+                  _admin: Account = Depends(require_workspace_admin)):
+
     hooks = db.query(Webhook).filter(Webhook.workspace_id == ws).all()
     return [_webhook_to_dict(h) for h in hooks]
 
@@ -63,8 +49,8 @@ def list_webhooks(ws: str, db: Session = Depends(get_db),
 @router.get(f"{PREFIX}/webhooks/{{webhook_id}}", response_model=WebhookDTO)
 @router.get(f"{PREFIX}/webhooks/{{webhook_id}}/", include_in_schema=False)
 def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
-                current_user: Account = Depends(get_current_user)):
-    _check_is_admin_or_workspace_admin(db, ws, current_user)
+                _admin: Account = Depends(require_workspace_admin)):
+
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if not w:
@@ -75,8 +61,8 @@ def get_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
 @router.post(f"{PREFIX}/webhooks", status_code=201, response_model=WebhookDTO)
 @router.post(f"{PREFIX}/webhooks/", status_code=201, include_in_schema=False)
 def create_webhook(ws: str, body: dict, db: Session = Depends(get_db),
-                   current_user: Account = Depends(get_current_user)):
-    _check_is_admin_or_workspace_admin(db, ws, current_user)
+                   _admin: Account = Depends(require_workspace_admin)):
+
     app_data = body.get("webhookApp", {})
     app = WebhookApp(dtype=app_data.get("dtype", "SIMPLE_HTTP"),
                      uri=app_data.get("uri", ""),
@@ -95,8 +81,8 @@ def create_webhook(ws: str, body: dict, db: Session = Depends(get_db),
 @router.delete(f"{PREFIX}/webhooks/{{webhook_id}}", status_code=204)
 @router.delete(f"{PREFIX}/webhooks/{{webhook_id}}/", status_code=204, include_in_schema=False)
 def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
-                   current_user: Account = Depends(get_current_user)):
-    _check_is_admin_or_workspace_admin(db, ws, current_user)
+                   _admin: Account = Depends(require_workspace_admin)):
+
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if w:
@@ -113,8 +99,8 @@ def delete_webhook(ws: str, webhook_id: int, db: Session = Depends(get_db),
 @router.put(f"{PREFIX}/webhooks/{{webhook_id}}", response_model=WebhookDTO)
 @router.put(f"{PREFIX}/webhooks/{{webhook_id}}/", include_in_schema=False)
 def update_webhook(ws: str, webhook_id: int, body: dict, db: Session = Depends(get_db),
-                   current_user: Account = Depends(get_current_user)):
-    _check_is_admin_or_workspace_admin(db, ws, current_user)
+                   _admin: Account = Depends(require_workspace_admin)):
+
     w = db.query(Webhook).filter(Webhook.id == webhook_id,
                                   Webhook.workspace_id == ws).first()
     if not w:
