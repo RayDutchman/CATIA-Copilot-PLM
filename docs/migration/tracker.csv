@@ -169,32 +169,32 @@ M-167,Model,util,P0B,已完成,core/util/Tools.java,models/util/tools.py,,
 S-001,Service,,P2A,已完成,AccountManagerBean.java,account_manager.py,,
 S-002,Service,,P2B,已完成,ActivityCheckerInterceptor.java,activity_checker.py,,
 S-003,Service,,P2,已完成,BinaryStorageManagerBean.java,binary_storage.py,,
-S-004,Service,,P2B,已完成,CascadeActionManagerBean.java,cascade_action_manager.py,,
+S-004,Service,,P2B,已激活,CascadeActionManagerBean.java,cascade_action_manager.py,,Batch2 激活: collect_ci_parts 从 products.py 迁入
 S-005,Service,,P2,已完成,ChangeManagerBean.java,change_manager.py,,
 S-006,Service,,P2B,已完成,ContextManagerBean.java,context_manager.py,,
 S-007,Service,,P2,已完成,ConverterBean.java,converter.py,,
-S-008,Service,,P2,已完成,DocumentManagerBean.java,document_manager.py,,
+S-008,Service,,P2,已扩展,DocumentManagerBean.java,document_manager.py,,Batch3+6: +build_revision_dto/update_acl/file_ops/tag_crud/folder等20+方法
 S-009,Service,,P2B,已完成,EffectivityManagerBean.java,effectivity_manager.py,,
 S-010,Service,,P2,已完成,EntityManagerProducer.java,core/database.py,,
 S-011,Service,,P2B,已完成,ImporterBean.java,importer.py,,
 S-012,Service,,P2B,已完成,LOVManagerBean.java,lov_manager.py,,
-S-013,Service,,P2,已完成,NotificationManagerBean.java,notification_manager.py,,
+S-013,Service,,P2,已扩展,NotificationManagerBean.java,notification_manager.py,,Batch3+6: +subscribe/unsubscribe + build_notification_dto
 S-014,Service,,P2,已完成,NotifierBean.java,notifier.py,,
 S-015,Service,,P2B,已完成,OAuthManagerBean.java,oauth_manager.py,,
 S-016,Service,,P2B,已完成,OnDemandConverterBean.java,ondemand_converter.py,,
-S-017,Service,,P2B,已完成,OrganizationManagerBean.java,organization_manager.py,,
+S-017,Service,,P2B,已激活,OrganizationManagerBean.java,organization_manager.py,,Batch2 激活: 28处内联DB从organizations.py迁入
 S-018,Service,,P2B,已完成,PSFilterManagerBean.java,psfilter_manager.py,,
 S-019,Service,,P2B,已完成,PendingConversionsCleaner.java,pending_conversions_cleaner.py,,
 S-020,Service,,P2B,已完成,PlatformHealthManagerBean.java,platform_health_manager.py,,
-S-021,Service,,P2B,已完成,PlatformOptionsManagerBean.java,platform_options_manager.py,,
-S-022,Service,,P2,已完成,ProductManagerBean.java,product_manager.py,,
+S-021,Service,,P2B,已激活,PlatformOptionsManagerBean.java,platform_options_manager.py,,Batch2 激活: upsert从admin.py迁入
+S-022,Service,,P2,已扩展,ProductManagerBean.java,product_manager.py,,Batch4+6: +publish/update_acl/used_by/templates等18+方法
 S-023,Service,,P2B,已完成,PublicEntityManagerBean.java,public_entity_manager.py,,
-S-024,Service,,P2B,已完成,ShareManagerBean.java,share_manager.py,,
-S-025,Service,,P2A,已完成,TaskManagerBean.java,task_manager.py,,
-S-026,Service,,P2,已完成,UserManagerBean.java,user_manager.py,,
-S-027,Service,,P2B,已完成,WebhookManagerBean.java,webhook_manager.py,,
-S-028,Service,,P2,已完成,WorkflowManagerBean.java,workflow_manager.py,,
-S-029,Service,,P2B,已完成,WorkspaceManagerBean.java,workspace_manager.py,,
+S-024,Service,,P2B,已激活,ShareManagerBean.java,share_manager.py,,Batch2 激活: 10处内联DB从share.py迁入
+S-025,Service,,P2A,已扩展,TaskManagerBean.java,task_manager.py,,Batch6: +holder解析/worker查询/get_task_dto等8个方法
+S-026,Service,,P2,已扩展,UserManagerBean.java,user_manager.py,,Batch6: +group_mgmt/membership/GCM/stats等26个方法
+S-027,Service,,P2B,已激活,WebhookManagerBean.java,webhook_manager.py,,Batch2 激活: ORM操作从webhooks.py迁入
+S-028,Service,,P2,已扩展,WorkflowManagerBean.java,workflow_manager.py,,Batch6: +enrich_activity_dicts
+S-029,Service,,P2B,已扩展,WorkspaceManagerBean.java,workspace_manager.py,,Batch5+6: +admin CRUD/stats/LOV管理等11个方法
 S-030,Service,configuration,P2B,已完成,configuration/PSFilterVisitor.java,configuration/ps_filter_visitor.py,,
 S-031,Service,configuration,P2B,已完成,configuration/PSFilterVisitorCallbacks.java,configuration/ps_filter_visitor_callbacks.py,,
 S-032,Service,configuration,P2B,已完成,configuration/filter/LatestCheckedInPSFilter.java,configuration/latest_checked_in_ps_filter.py,,
@@ -229,8 +229,8 @@ S-060,Service,listeners,P2B,已完成,listeners/notifications/SubscriptionManage
 S-061,Service,listeners,P2B,已完成,listeners/workflow/RoleManager.java,listeners/role_manager.py,,
 S-062,Service,products,P2B,已完成,products/PartWorkflowManagerBean.java,products/part_workflow_manager.py,,
 S-063,Service,products,P2B,已完成,products/ProductBaselineManagerBean.java,products/product_baseline_manager.py,,
-S-064,Service,products,P2B,已完成,products/ProductInstanceManagerBean.java,products/product_instance_manager.py,,
-S-065,Service,documents,P2B,已完成,documents/DocumentBaselineManagerBean.java,documents/document_baseline_manager.py,,
+S-064,Service,products,P2B,已激活,products/ProductInstanceManagerBean.java,products/product_instance_manager.py,,Batch2激活+Batch4扩展: _build_instance_master_dict等迁入
+S-065,Service,documents,P2B,已激活,documents/DocumentBaselineManagerBean.java,documents/document_baseline_manager.py,,Batch2 激活: 17处内联DB从document_baselines.py迁入
 S-066,Service,documents,P2B,已完成,documents/DocumentWorkflowManagerBean.java,documents/document_workflow_manager.py,,
 S-067,Service,hooks,P2B,已完成,hooks/SNSWebhookRunner.java,hooks/sns_webhook_runner.py,,
 S-068,Service,hooks,P2B,已完成,hooks/SimpleWebhookRunner.java,hooks/simple_webhook_runner.py,,

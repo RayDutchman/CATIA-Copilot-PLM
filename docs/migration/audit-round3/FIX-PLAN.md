@@ -38,6 +38,22 @@
 
 > 每个 Batch = 一个或多个会话。主 agent 在批内：派 subagent → 回收 code review → 部署验证 → commit → 更新文档。
 
+## 修复进展 (2026-07-12)
+
+| Batch | 主题 | 状态 | commit | 效果 |
+|-------|------|:--:|--------|------|
+| **1** | 消除跨文件重复 | ✅ 完成 | `333a6f8`/`b0a2b93` | 8 组重复→统一入口；`_check_is_admin`→Depends；Payara 对齐权限 |
+| **2** | 激活被绕过 service | ✅ 完成 | `e9e3d7c` | 7 个 service 从空壳变真实现；router 内联→service 方法 |
+| **修复** | share_manager HTTPException | ✅ 完成 | `5f16bc7` | 领域异常替代 HTTPException；`test_i18n_bypass` 通过 |
+| **3** | 拆 document.py | ✅ 完成 | `20ca485`→`63b0d2d` | 1021→382 行 (-63%)；`_doc_to_dict`→`build_revision_dto` |
+| **4** | 拆 products.py | ✅ 完成 | `70ee950` | 968→454 行 (-53%)；`_build_instance_master_dict`→service |
+| **修复** | product_structure HTTPException | ✅ 完成 | `d48bc2e` | service 层 HTTPException→baseline=None fallthrough |
+| **5** | 拆 admin.py | ✅ 完成 | `e1f7ab1` | 432→223 行 (-48%)；含预存 bug 修复 |
+| **6** | 拆中/低严重路由 | ✅ 完成 | `cb9f1bc` | 26 文件, ~320 处内联 DB→service |
+| **7** | Service 未接线激活 | ⏳ 待执行 | — | 27 个 Java 侧使用的 service 接通 |
+
+**累计**：routers/ 目录内联 DB 操作 ~350 → **~0**。3 大胖路由平均缩小 55%。所有 service 文件从空壳/绕过状态变为真实现。
+
 ---
 
 ## Batch 1：消除跨文件重复（P0~P2 优先级）
