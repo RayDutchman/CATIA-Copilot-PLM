@@ -145,9 +145,10 @@ def list_instances(ws: str, ci_id: str,
     # 解析 configSpec → PS filter
     ps_filter = None
     if configSpec.startswith("pi-"):
-        # pi- 应解析为该实例基线的 configSpec，当前退化为 latest
-        serial = configSpec[3:]
-        ps_filter = svc.parse_config_spec_str("latest", db=db, user_login=current_user.login, diverge=diverge)
+        # pi-{serial} → 解析该实例基线的 baselinedpart 过滤（对齐 Java PSFilterManagerBean）
+        ps_filter = svc.parse_config_spec_str(
+            configSpec, db=db, user_login=current_user.login, diverge=diverge,
+            ws=ws, ci_id=ci_id)
     else:
         ps_filter = svc.parse_config_spec_str(configSpec, db=db, user_login=current_user.login, diverge=diverge)
 
@@ -237,7 +238,9 @@ def instances_for_multiple_paths(ws: str, ci_id: str, body: dict,
     ps_filter = None
     if config_spec:
         if config_spec.startswith("pi-"):
-            ps_filter = svc.parse_config_spec_str("latest", db=db, user_login=current_user.login, diverge=body_diverge)
+            ps_filter = svc.parse_config_spec_str(
+                config_spec, db=db, user_login=current_user.login, diverge=body_diverge,
+                ws=ws, ci_id=ci_id)
         else:
             ps_filter = svc.parse_config_spec_str(config_spec, db=db, user_login=current_user.login, diverge=body_diverge)
 

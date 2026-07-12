@@ -191,10 +191,10 @@ class TestBomStub:
 
 
 class TestPathDataStub:
-    """PathData 导入 stub 测试。"""
+    """PathData 导入已实现（P7-01），不再是 stub。"""
 
-    def test_import_path_data_stub(self, db, tmp_path):
-        """import_into_path_data 返回 succeed False + NotSupported。"""
+    def test_import_path_data_no_longer_stub(self, db, tmp_path):
+        """import_into_path_data 已实现：dummy 非法 xlsx → 解析失败，但不再返回 NotSupported stub。"""
         file_path = str(tmp_path / "path.xlsx")
         Path(file_path).write_bytes(b"dummy")
 
@@ -203,8 +203,10 @@ class TestPathDataStub:
             user_login=USER,
         )
 
+        # 非法 Excel 无法解析 → succeed False
         assert result["succeed"] is False
-        assert any("NotSupported" in e for e in result["errors"])
+        # 但不再是 NotSupported 桩（P7-01 已移植 Java doPathDataImport）
+        assert not any("NotSupported" in e for e in result["errors"])
 
 #
 # 注意：test_revision_note_written 被跳过——

@@ -440,14 +440,83 @@ class PathDataService:
                 "instanceAttributes": attrs,
             })
 
+        # 对齐 Java getPathData：填充 partLinksList / partAttributes / partAttributeTemplates
+        part_links_list = None
+        part_attrs = []
+        part_attr_templates = []
+        last_pn = None
+        last_pv = None
+        try:
+            from app.services.product_structure import ProductStructureService
+            _svc = ProductStructureService()
+            decoded = _svc.decode_path(db, ws, ci_id, master["path"])
+            if decoded:
+                part_links_list = {"partLinks": decoded}
+                full_id = decoded[-1].get("fullId", "")
+                parts = full_id.rsplit("/", 2) if full_id else []
+                if len(parts) == 3:
+                    last_pn = parts[1]
+                    last_pv = parts[2]
+        except Exception:
+            pass
+
+        if last_pn and last_pv:
+            # 用 WIP 策略取最新 iteration（对标 parse_config_spec_str("pi-...") → WIPPSFilter）
+            it_row = db.execute(text(
+                "SELECT MAX(pi.iteration) FROM partiteration pi "
+                "JOIN partrevision pr ON pr.workspace_id=pi.workspace_id "
+                "AND pr.partmaster_partnumber=pi.partmaster_partnumber "
+                "AND pr.version=pi.partrevision_version "
+                "WHERE pi.workspace_id=:ws AND pi.partmaster_partnumber=:pn "
+                "AND pi.partrevision_version=:pv"
+            ), {"ws": ws, "pn": last_pn, "pv": last_pv}).first()
+            last_iteration = it_row[0] if it_row else None
+
+            if last_iteration:
+                attr_rows = db.execute(text(
+                    "SELECT ia.id, ia.name, ia.mandatory, ia.locked, ia.booleanvalue, "
+                    "ia.datevalue, ia.indexvalue, ia.numbervalue, ia.textvalue, "
+                    "ia.longtextvalue, ia.urlvalue "
+                    "FROM instanceattribute ia "
+                    "JOIN partiteration_attribute pia ON pia.instanceattribute_id = ia.id "
+                    "WHERE pia.workspace_id=:ws AND pia.partmaster_partnumber=:pn "
+                    "AND pia.partrevision_version=:pv AND pia.iteration=:it "
+                    "ORDER BY pia.attribute_order"
+                ), {"ws": ws, "pn": last_pn, "pv": last_pv,
+                    "it": last_iteration}).fetchall()
+                part_attrs = [{
+                    "id": r[0], "name": r[1], "mandatory": r[2], "locked": r[3],
+                    "booleanValue": r[4],
+                    "dateValue": str(r[5]) if r[5] else None,
+                    "indexValue": r[6], "numberValue": r[7],
+                    "textValue": r[8], "longTextValue": r[9], "urlValue": r[10],
+                } for r in attr_rows]
+
+                tmpl_rows = db.execute(text(
+                    "SELECT iat.id, iat.name, iat.mandatory, iat.locked, iat.dtype, "
+                    "iat.attributetype, iat.lov_name, iat.lov_workspace_id "
+                    "FROM instanceattributetemplate iat "
+                    "JOIN partiteration_pathdata_attr pipa "
+                    "  ON pipa.instanceattribute_template_id = iat.id "
+                    "WHERE pipa.workspace_id=:ws AND pipa.partmaster_partnumber=:pn "
+                    "AND pipa.partrevision_version=:pv AND pipa.iteration=:it "
+                    "ORDER BY pipa.attribute_order"
+                ), {"ws": ws, "pn": last_pn, "pv": last_pv,
+                    "it": last_iteration}).fetchall()
+                part_attr_templates = [{
+                    "id": r[0], "name": r[1], "mandatory": r[2], "locked": r[3],
+                    "typeName": r[4], "attributeType": r[5],
+                    "lovName": r[6], "lovWorkspaceId": r[7],
+                } for r in tmpl_rows]
+
         return {
             "id": master_id,
             "path": master["path"],
             "serialNumber": sn,
-            "partLinksList": None,
+            "partLinksList": part_links_list,
             "pathDataIterations": iterations,
-            "partAttributes": [],
-            "partAttributeTemplates": [],
+            "partAttributes": part_attrs,
+            "partAttributeTemplates": part_attr_templates,
         }
 
     def _iter_row_to_dict(self, row) -> dict:

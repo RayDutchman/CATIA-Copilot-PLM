@@ -1,4 +1,5 @@
 """产品结构服务：ConfigurationItem CRUD + ComponentDTO 递归 + decodePath。"""
+import re
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -97,14 +98,15 @@ class ProductStructureService:
 
     @staticmethod
     def parse_config_spec_str(config_spec_str: str, db: Session = None,
-                               user_login: str = None, diverge: bool = False):
+                               user_login: str = None, diverge: bool = False,
+                               ws: str = None, ci_id: str = None):
         """将 configSpec 字符串解析为 ProductStructureFilter 或 ProductConfigSpec 对象。
 
         对齐 Payara ProductManagerBean.getConfigSpec(configSpecType, workspaceId)：
         - "latest"        → LatestCheckedInPSFilter
         - "released"      → LatestReleasedPSFilter
         - "wip"           → WIPPSFilter
-        - "pi-{serial}"   → 产品实例 configSpec（暂用 wip fallback）
+        - "pi-{serial}"   → 产品实例基线过滤（需 db+ws+ci_id，否则降级 WIP）
         - 整数字符串      → 基线 ID → ResolvedCollectionConfigSpec（需 DB 查询）
         若无法识别则返回 None（全量遍历）。
         """
@@ -121,7 +123,12 @@ class ProductStructureService:
             from app.services.configuration.filter.wip_ps_filter import WIPPSFilter
             return WIPPSFilter(user_login=user_login or "", diverge=diverge)
         if val.startswith("pi-"):
-            # 产品实例规格：暂用 wip fallback
+            serial = config_spec_str.strip()[3:]
+            # 优先级：有 db+ws+ci_id → 真实解析 baselinedpart 过滤
+            if db and ws and ci_id:
+                return ProductStructureService._resolve_pi_config_spec(
+                    db, ws, ci_id, serial, user_login, diverge)
+            # 无 DB 上下文时降级为 WIP（而非 latest，因 pi 实例语义更接近 WIP）
             from app.services.configuration.filter.wip_ps_filter import WIPPSFilter
             return WIPPSFilter(user_login=user_login or "", diverge=diverge)
         # 尝试解析为基线 ID
@@ -388,18 +395,18 @@ class ProductStructureService:
     def _check_has_path_data(self, db: Session, ws: str, comp_path: str) -> bool:
         """检查组件路径是否有 PathDataMaster 记录。
 
-        comp_path 格式：{ci_id}-u2-u5（如 "BIKE-u2-u5"）。
+        comp_path 格式：{ci_id}-u2-u5（如 "BIKE-u2-u5" 或 "ACLCI-45ECFC-u2"）。
         pathdatamaster.path 存储的是 "-1-u2-u5"（Java 格式，以 -1 为根节点）。
-        需要将 {ci_id} 前缀替换为 -1 再查询。
+        用正则定位首个 -u{id} 或 -s{id}（而非第一个 -），避免 CI ID 含连字符时定位错误。
+        对齐 Java ProductResource.createComponentDTO() → getPathAsString 的路径格式。
         """
         if not comp_path or "-u" not in comp_path and "-s" not in comp_path:
             return False
-        # 取第一个 - 后的部分（"-u2-u5"），拼上 "-1" 前缀
-        dash_idx = comp_path.find("-")
-        if dash_idx == -1:
+        # 定位首个 -u{id} 或 -s{id}，而非第一个连字符（CI ID 可能含 -）
+        m = re.search(r'-(?:u|s)\d+', comp_path)
+        if not m:
             return False
-        suffix = comp_path[dash_idx:]  # 形如 "-u2-u5"
-        db_path = "-1" + suffix       # 形如 "-1-u2-u5"
+        db_path = "-1" + comp_path[m.start():]
         row = db.execute(text(
             "SELECT 1 FROM pathdatamaster WHERE path = :p LIMIT 1"
         ), {"p": db_path}).first()
@@ -819,8 +826,161 @@ class ProductStructureService:
             ProductInstanceMaster.serialnumber == serial).first()
         if inst is None:
             raise EntityNotFoundException("ProductInstanceMasterNotFoundException", serial)
+
+        where = {"ws": ws, "ci": ci_id, "sn": serial}
+
+        # 1. 收集 instanceattribute 关联 ID（用于后续孤儿清理）
+        attr_rows = db.execute(text(
+            "SELECT instanceattribute_id FROM prdinstiteration_attribute "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"
+        ), where).fetchall()
+        attr_ids = [r[0] for r in attr_rows]
+
+        # 2. 收集 documentlink 关联 ID（用于后续孤儿清理）
+        doclink_rows = db.execute(text(
+            "SELECT documentlink_id FROM prdinstiteration_documentlink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"
+        ), where).fetchall()
+        doclink_ids = [r[0] for r in doclink_rows]
+
+        # 3. 删除 7 张 FK 子表（FK 均为 NO ACTION，须先删）
+        db.execute(text("DELETE FROM prdinstiteration_attribute "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        db.execute(text("DELETE FROM prdinstiteration_binres "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        db.execute(text("DELETE FROM prdinstiteration_documentlink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        db.execute(text("DELETE FROM prdinstiteration_p2plink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        db.execute(text("DELETE FROM prdinstiteration_pathdatamstr "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        db.execute(text("DELETE FROM prdinstanceiteration_optlink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        db.execute(text("DELETE FROM prdinstanceiteration_sublink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn"), where)
+
+        # 4. 清理孤儿 instanceattribute（对齐 _replace_instance_attributes 模式）
+        for oid in attr_ids:
+            still_ref = db.execute(text(
+                "SELECT 1 FROM prdinstiteration_attribute "
+                "WHERE instanceattribute_id=:id LIMIT 1"
+            ), {"id": oid}).first()
+            if not still_ref:
+                db.execute(text("DELETE FROM instanceattribute WHERE id=:id"), {"id": oid})
+
+        # 5. 清理孤儿 documentlink
+        for dlid in doclink_ids:
+            still_ref = db.execute(text(
+                "SELECT 1 FROM prdinstiteration_documentlink "
+                "WHERE documentlink_id=:id LIMIT 1"
+            ), {"id": dlid}).first()
+            if not still_ref:
+                db.execute(text("DELETE FROM documentlink WHERE id=:id"), {"id": dlid})
+
+        # 6. 删除 iteration → master
         db.execute(text("DELETE FROM productinstanceiteration WHERE "
             "workspace_id=:ws AND configurationitem_id=:ci AND "
-            "prdinstancemaster_serialnumber=:sn"),
-            {"ws": ws, "ci": ci_id, "sn": serial})
+            "prdinstancemaster_serialnumber=:sn"), where)
         db.delete(inst); db.commit()
+
+    @staticmethod
+    def _resolve_pi_config_spec(db: Session, ws: str, ci_id: str, serial: str,
+                                 user_login: str = None, diverge: bool = False):
+        """解析 pi-{serial} configSpec：通过实例基线获取 baselinedpart 过滤。
+
+        对齐 Java PSFilterManagerBean.getProductInstanceConfigSpec →
+        new ResolvedCollectionConfigSpec(productII)。
+
+        实现程度（Tier 2 / 退化策略较"latest"更接近）：
+        - 查询 ProductInstanceMaster → 末迭代 → partcollection_id
+        - 从 baselinedpart 构建 (workspace, partnumber) → (version, iteration) 映射
+        - 返回 _BaselineBasedPSFilter：每个 PartMaster 返回基线的特定迭代（非"latest"）
+        - 未实现：optionalUsageLinks / substituteLinks 过滤（ResolvedCollection 完整解析）
+        """
+        from app.models.product import ProductInstanceIteration
+
+        inst_master = db.query(ProductInstanceMaster).filter(
+            ProductInstanceMaster.workspace_id == ws,
+            ProductInstanceMaster.serialnumber == serial,
+        ).first()
+        if not inst_master:
+            # 实例不存在 → 降级 latest
+            from app.services.configuration.filter.latest_checked_in_ps_filter import LatestCheckedInPSFilter
+            return LatestCheckedInPSFilter(diverge=diverge)
+
+        last_it = db.query(ProductInstanceIteration).filter(
+            ProductInstanceIteration.workspace_id == ws,
+            ProductInstanceIteration.prdinstancemaster_serialnumber == serial,
+        ).order_by(ProductInstanceIteration.iteration.desc()).first()
+        if not last_it or not last_it.partcollection_id:
+            from app.services.configuration.filter.latest_checked_in_ps_filter import LatestCheckedInPSFilter
+            return LatestCheckedInPSFilter(diverge=diverge)
+
+        pc_id = last_it.partcollection_id
+        bp_rows = db.execute(text(
+            "SELECT target_workspace_id, target_partmaster_partnumber, "
+            "target_partrevision_version, target_iteration "
+            "FROM baselinedpart WHERE partcollection_id = :pcid"
+        ), {"pcid": pc_id}).fetchall()
+
+        if not bp_rows:
+            from app.services.configuration.filter.latest_checked_in_ps_filter import LatestCheckedInPSFilter
+            return LatestCheckedInPSFilter(diverge=diverge)
+
+        baseline_map = {}
+        for r in bp_rows:
+            key = (r[0], r[1])  # (workspace_id, partnumber)
+            baseline_map[key] = (r[2], r[3])  # (version, iteration)
+
+        return _BaselineBasedPSFilter(baseline_map, diverge)
+
+
+class _BaselineBasedPSFilter:
+    """基于基线化零件集合的 PSFilter（Tier-2 实现，优于 "latest" 降级）。
+
+    每个 PartMaster 返回其基线化时的特定 PartIteration。
+    未实现 optionalUsageLinks / substituteLinks 过滤（返回名义链接）。
+    对齐 Java ResolvedCollectionConfigSpec 的 filterPartIteration 基线查找部分。
+    """
+
+    def __init__(self, baseline_map: dict, diverge: bool = False):
+        self._baseline_map = baseline_map  # (ws, pn) → (version, iteration)
+        self.diverge = diverge
+
+    def filter_part_iterations(self, part_master) -> list:
+        key = (part_master.workspace_id, part_master.number)
+        target = self._baseline_map.get(key)
+        if not target:
+            return []
+        ver, it = target
+        for rev in (part_master.revisions or []):
+            if rev.version == ver:
+                for iteration in (rev.iterations or []):
+                    if iteration.iteration == it:
+                        return [iteration]
+        return []
+
+    def filter_links(self, path: list) -> list:
+        if not path:
+            return []
+        nominal = path[-1]
+        result = [nominal]
+        if self.diverge and getattr(nominal, 'substitutes', None):
+            for sub in nominal.substitutes:
+                result.append(sub)
+        return result

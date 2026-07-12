@@ -2,8 +2,9 @@
 
 处理 Excel/BOM 等批量导入的编排层：
 - import_into_parts: 解析 excel → per-part 权限/签出检查 → 属性合并 → dtype-aware 写入
+- import_into_path_data: 解析 excel → Phase1 查实例+属性合并 → Phase2 批量写 PathData
 - dry_run_import_into_parts: 预览哪些零件将被 checkout
-- import_into_path_data / import_bom / dry_run_import_bom: stub（未实现）
+- import_bom / dry_run_import_bom: stub（未实现）
 """
 from __future__ import annotations
 
@@ -17,6 +18,8 @@ from app.models.product.part_master import PartMaster
 from app.services.importers.attributes_importer_utils import (
     TOKEN_TO_DTYPE as _TOKEN_TO_DTYPE,
     TOKEN_TO_VALUECOL as _TOKEN_TO_VALUECOL,
+    DTYPE_TO_TOKEN,
+    MergedAttribute,
     load_existing_attributes, merge_attributes, would_change,
 )
 
@@ -88,6 +91,53 @@ def _write_iteration_attributes(db, ws, pn, ver, iteration, merged):
             "ws": ws, "pn": pn, "ver": ver, "it": iteration,
             "aid": attr_id, "order": order,
         })
+
+
+def _merged_attrs_to_dicts(attrs: list) -> list[dict]:
+    """将 MergedAttribute 列表转为 path_data_service 期望的 dict 格式。"""
+    result: list[dict] = []
+    for a in attrs:
+        d = {
+            "name": a.name,
+            "mandatory": a.mandatory,
+            "locked": a.locked,
+            "dtype": TOKEN_TO_DTYPE.get(a.type, "InstanceTextAttribute"),
+        }
+        if a.type == "BOOLEAN":
+            d["booleanValue"] = a.value
+        elif a.type == "DATE":
+            d["dateValue"] = a.value
+        elif a.type == "LOV":
+            d["indexValue"] = a.value
+        elif a.type == "NUMBER":
+            d["numberValue"] = a.value
+        elif a.type == "LONG_TEXT":
+            d["longTextValue"] = str(a.value) if a.value is not None else None
+        else:  # TEXT, URL
+            d["textValue"] = str(a.value) if a.value is not None else None
+        result.append(d)
+    return result
+
+
+def _freeze_path_data(pds, db, ws: str, ci_id: str, sn: str, master_id: int):
+    """auto_freeze：用当前最后迭代属性追加一个新迭代（快照冻结）。
+
+    对齐 Java bulkPathDataUpdate 中 autoFreeze 分支：
+    productInstanceManager.addNewPathDataIteration(
+        ..., cloneAttributes(pathDataMaster.getLastIteration().getInstanceAttributes()),
+        null, null, null)
+    """
+    max_it = db.execute(text(
+        "SELECT MAX(iteration) FROM pathdataiteration "
+        "WHERE pathdatamaster_id=:mid"
+    ), {"mid": master_id}).first()
+    last_iter = max_it[0] if max_it and max_it[0] else 1
+
+    frozen_attrs = pds.get_attributes_for_iteration(db, master_id, last_iter)
+    pds.add_new_path_data_iteration(
+        db, ws, ci_id, sn, master_id,
+        frozen_attrs, None,
+    )
 
 
 # ── 服务类 ─────────────────────────────────────────────────────────────────
@@ -206,7 +256,8 @@ class ImporterService:
                         "WHERE workspace_id=:ws AND partmaster_partnumber=:pn "
                         "AND partrevision_version=:ver AND iteration=:it"
                     ), {"n": revision_note, "ws": ws, "pn": number, "ver": version, "it": target_it})
-                db.commit()
+                # flush 确保同会话内后续操作可见（commit 统一在循环外）
+                db.flush()
 
             if auto_checkin and did_checkout and pr.checkout_user_login == user_login:
                 try:
@@ -214,7 +265,11 @@ class ImporterService:
                 except NotAllowedException as e:
                     warnings.append(f"CheckinFailed: {number}: {e}")
 
-        return {"succeed": True, "errors": [], "warnings": warnings}
+        # 单次批量提交属性写入（替代逐零件 commit，降低半成品风险）
+        # 注意：svc.checkout/checkin 各自内部已有独立 commit，并非完全原子
+        db.commit()
+
+        return {"succeed": len(errors) == 0, "errors": errors, "warnings": warnings}
 
     def dry_run_import_into_parts(
         self, db: Session, ws: str, file_path: str,
@@ -274,11 +329,138 @@ class ImporterService:
         auto_freeze: bool = False,
         permissive_update: bool = False,
     ) -> dict:
-        """批量导入路径数据（暂未实现）。"""
+        """批量导入路径数据，对齐 Payara ImporterBean.doPathDataImport。
+
+        编排流程：
+        1. 解析 excel（pathdata 模式：前三列 ctx.productId/ctx.serialNumber/pm.number）
+        2. Phase 1（createOrUpdatePathData）：逐行查产物实例→查/建 PathDataMaster→属性合并
+        3. Phase 2（bulkPathDataUpdate）：逐行写 PathDataMaster/Iteration + auto_freeze
+        """
+        from app.services.importers.excel_parser import parse_excel
+        from app.services.products.path_data_service import path_data_service
+
+        # 1) 解析 excel
+        with open(file_path, "rb") as f:
+            data = f.read()
+        result = parse_excel(data, "pathdata")
+        errors = list(result.errors)
+        warnings = list(result.warnings)
+
+        pds = path_data_service
+
+        # 2) Phase 1: createOrUpdatePathData —— 逐行验证 + 属性合并
+        to_write: list[tuple] = []  # (ci_id, sn, path, merged_attrs, note, existing_master_id|None)
+
+        for row in result.parts:
+            ci_id = row.product_id
+            sn = row.serial_number
+            pd_path = row.number  # 第三列 pm.number = 路径标识
+
+            if not ci_id or not sn:
+                errors.append(
+                    f"MissingPathDataContext: path='{pd_path}' "
+                    f"missing productId or serialNumber"
+                )
+                continue
+
+            # 检查产物实例是否存在
+            inst_iter = db.execute(text(
+                "SELECT iteration FROM productinstanceiteration "
+                "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+                "  AND prdinstancemaster_serialnumber=:sn "
+                "ORDER BY iteration DESC LIMIT 1"
+            ), {"ws": ws, "ci": ci_id, "sn": sn}).first()
+
+            if not inst_iter:
+                errors.append(f"ProductInstanceMasterNotFound: {ci_id}/{sn}")
+                continue
+
+            # TODO: 补 canWrite 实例级写权限检查（Java productInstanceManager.canWrite）
+            # 当前仅验证实例存在，未阻断无权限用户写入
+
+            # 查找已存在的 PathDataMaster
+            existing_master = pds.get_path_data_by_path(db, ws, ci_id, sn, pd_path)
+
+            if existing_master:
+                # ── 已存在 PathDataMaster → 加载最后迭代属性，合并 ──
+                master_id = existing_master["id"]
+                max_it_row = db.execute(text(
+                    "SELECT MAX(iteration) FROM pathdataiteration "
+                    "WHERE pathdatamaster_id=:mid"
+                ), {"mid": master_id}).first()
+                last_iter = max_it_row[0] if max_it_row and max_it_row[0] else 1
+
+                existing_rows = db.execute(text(
+                    "SELECT ia.dtype, ia.name, ia.mandatory, ia.locked, "
+                    "ia.textvalue, ia.longtextvalue, ia.numbervalue, ia.datevalue, "
+                    "ia.booleanvalue, ia.urlvalue, ia.indexvalue "
+                    "FROM pathdataiteration_attribute pdia "
+                    "JOIN instanceattribute ia ON ia.id = pdia.instanceattribute_id "
+                    "WHERE pdia.pathdatamaster_id=:mid "
+                    "  AND pdia.pathdata_iteration=:it "
+                    "ORDER BY pdia.attribute_order"
+                ), {"mid": master_id, "it": last_iter}).fetchall()
+
+                existing_attrs: list[MergedAttribute] = []
+                for erow in existing_rows:
+                    dtype = erow.dtype or "InstanceTextAttribute"
+                    token = DTYPE_TO_TOKEN.get(dtype, "TEXT")
+                    col = TOKEN_TO_VALUECOL.get(token, "textvalue")
+                    value = getattr(erow, col, None) if hasattr(erow, col) else None
+                    existing_attrs.append(MergedAttribute(
+                        name=erow.name, type=token, value=value,
+                        mandatory=bool(erow.mandatory), locked=bool(erow.locked),
+                    ))
+
+                merged = merge_attributes(
+                    db, ws, existing_attrs, row.attributes, pd_path, errors,
+                )
+                to_write.append((ci_id, sn, pd_path, merged, revision_note, master_id))
+            else:
+                # ── 新建 PathDataMaster —— 从空列表合并（触发新建模式） ──
+                merged = merge_attributes(
+                    db, ws, [], row.attributes, pd_path, errors,
+                )
+                to_write.append((ci_id, sn, pd_path, merged, revision_note, None))
+
+        # 有任何错误就不写库（对齐 Java：errors.size()>0 → 直接返回）
+        if errors:
+            return {"succeed": False, "errors": errors, "warnings": warnings}
+
+        # 3) Phase 2: bulkPathDataUpdate
+        for ci_id, sn, pd_path, attrs, note, existing_master_id in to_write:
+            try:
+                attr_dicts = _merged_attrs_to_dicts(attrs)
+
+                if existing_master_id is not None:
+                    # 已有 master → 追加新迭代
+                    pds.add_new_path_data_iteration(
+                        db, ws, ci_id, sn, existing_master_id,
+                        attr_dicts, note,
+                    )
+                    if auto_freeze:
+                        _freeze_path_data(pds, db, ws, ci_id, sn, existing_master_id)
+                else:
+                    # 新建 master + 首迭代
+                    pds.create_path_data_master(
+                        db, ws, ci_id, sn, pd_path,
+                        attr_dicts, note,
+                    )
+                    if auto_freeze:
+                        new_master = pds.get_path_data_by_path(db, ws, ci_id, sn, pd_path)
+                        if new_master:
+                            _freeze_path_data(pds, db, ws, ci_id, sn, new_master["id"])
+            except Exception as e:
+                msg = f"PathDataUpdateFailed: {ci_id}/{sn}/{pd_path}: {e}"
+                if permissive_update:
+                    warnings.append(msg)
+                else:
+                    errors.append(msg)
+
         return {
-            "succeed": False,
-            "errors": ["NotSupported: import_into_path_data import not implemented"],
-            "warnings": [],
+            "succeed": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
         }
 
     def import_bom(
