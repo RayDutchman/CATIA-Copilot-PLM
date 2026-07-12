@@ -1,12 +1,10 @@
 """共享管理——对标 Payara ShareManagerBean。
 
-管理文档/零件的公开共享链接。
-"""
+管理文档/零件的公开共享链接。"""
 import hashlib
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from fastapi import HTTPException
 
 
 class ShareService:
@@ -45,12 +43,13 @@ class ShareService:
         """获取共享实体，含密码校验和过期检查（自动删除过期的）。
 
         Returns:
-            SQLAlchemy Row 对象（可通过 .dtype, .entity_workspace_id 等访问列）
+            (status, entity) 元组:
+            - ("ok", Row): 实体可用
+            - ("password-required", None): 密码保护且未提供或密码错误
+            - ("expired", None): 共享链接已过期（已自动删除 DB 行）
 
         Raises:
             SharedEntityNotFoundException: UUID 不存在
-            HTTPException(403): 密码保护但未提供或密码错误
-            HTTPException(404): 共享链接已过期
         """
         entity = db.execute(text(
             "SELECT uuid, dtype, entity_workspace_id, password, expiredate, "
@@ -65,11 +64,7 @@ class ShareService:
 
         if entity.password is not None:
             if password is None or hashlib.md5(password.encode()).hexdigest() != entity.password:
-                raise HTTPException(
-                    status_code=403,
-                    detail={"forbidden": "password-protected"},
-                    headers={"Reason-Phrase": "password-protected"},
-                )
+                return ("password-required", None)
 
         if entity.expiredate is not None:
             now = datetime.now(timezone.utc)
@@ -77,13 +72,9 @@ class ShareService:
             if expire < now:
                 db.execute(text("DELETE FROM sharedentity WHERE uuid = :uuid"), {"uuid": uuid})
                 db.commit()
-                raise HTTPException(
-                    status_code=404,
-                    detail={"forbidden": "entity-expired"},
-                    headers={"Reason-Phrase": "entity-expired"},
-                )
+                return ("expired", None)
 
-        return entity
+        return ("ok", entity)
 
     def get_shared_document_row(self, db: Session, entity):
         """根据共享实体查询文档详情（documentrevision JOIN documentmaster）。

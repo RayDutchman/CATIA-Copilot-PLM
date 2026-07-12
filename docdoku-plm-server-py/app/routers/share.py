@@ -59,7 +59,13 @@ def get_shared_documents(uuid: str,
                          response: Response,
                          password: str | None = Header(None),
                          db: Session = Depends(get_db)):
-    entity = share_service.get_shared_entity(db, uuid, password)
+    status, entity = share_service.get_shared_entity(db, uuid, password)
+    if status == "password-required":
+        raise HTTPException(status_code=403, detail={"forbidden": "password-protected"},
+                            headers={"Reason-Phrase": "password-protected"})
+    if status == "expired":
+        raise HTTPException(status_code=404, detail={"forbidden": "entity-expired"},
+                            headers={"Reason-Phrase": "entity-expired"})
     if entity.dtype != "SharedDocument":
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
@@ -89,7 +95,13 @@ def get_shared_parts(uuid: str,
                      response: Response,
                      password: str | None = Header(None),
                      db: Session = Depends(get_db)):
-    entity = share_service.get_shared_entity(db, uuid, password)
+    status, entity = share_service.get_shared_entity(db, uuid, password)
+    if status == "password-required":
+        raise HTTPException(status_code=403, detail={"forbidden": "password-protected"},
+                            headers={"Reason-Phrase": "password-protected"})
+    if status == "expired":
+        raise HTTPException(status_code=404, detail={"forbidden": "entity-expired"},
+                            headers={"Reason-Phrase": "entity-expired"})
     if entity.dtype != "SharedPart":
         raise SharedEntityNotFoundException("SharedEntityNotFoundException", uuid)
 
