@@ -1,13 +1,16 @@
 """产品端点路由（ConfigurationItem CRUD + 产品实例）。"""
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.core.exceptions import ConfigurationItemNotFoundException
+from app.core.exceptions import (
+    ConfigurationItemNotFoundException,
+    ProductInstanceMasterNotFoundException,
+)
 from app.models.product import ProductInstanceMaster
 from app.services.product_structure import ProductStructureService
 from app.services.product_manager import ProductService
@@ -108,7 +111,7 @@ def filter_structure(ws: str, ci_id: str,
                                             is_admin=is_admin,
                                             link_type=linkType, diverge=diverge)
     if not result:
-        raise HTTPException(status_code=404, detail="Product structure not found for this configuration item")
+        raise ConfigurationItemNotFoundException("ConfigurationItemNotFoundException", ci_id)
     return result[0]
 
 
@@ -168,7 +171,7 @@ def get_product_instance(ws: str, sn: str,
         ProductInstanceMaster.serialnumber == sn,
     ).first()
     if not inst:
-        raise HTTPException(404, "Product instance not found")
+        raise ProductInstanceMasterNotFoundException("ProductInstanceMasterNotFoundException", sn)
     return product_instance_service.build_master_dto(db, inst, svc=svc)
 
 
@@ -193,8 +196,8 @@ def last_release(ws: str, ci_id: str,
     """返回 CI 根零件的最新已发布版本。"""
     try:
         return svc.get_last_release_dto(db, ws, ci_id)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        raise
 
 
 @router.get("/workspaces/{ws}/products/{ci_id}/path-choices")

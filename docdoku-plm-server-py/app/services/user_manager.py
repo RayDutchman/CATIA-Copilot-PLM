@@ -6,6 +6,7 @@ from app.core.exceptions import (
     EntityNotFoundException, EntityConstraintException,
     UserAlreadyExistsException, UserGroupAlreadyExistsException,
     UserGroupNotFoundException, UserNotActiveException,
+    NotAllowedException,
 )
 
 
@@ -373,13 +374,16 @@ class UserMgmtService:
         db.commit()
 
     def set_user_access(self, db: Session, ws: str, login: str, read_only: bool) -> dict:
+        row = db.execute(text(
+            "SELECT 1 FROM workspaceusermembership "
+            "WHERE workspace_id = :ws AND member_login = :l AND member_workspace_id = :ws"
+        ), {"ws": ws, "l": login}).fetchone()
+        if not row:
+            raise NotAllowedException("NotAllowedException9", login)
         db.execute(text(
-            "INSERT INTO workspaceusermembership "
-            "(workspace_id, member_login, member_workspace_id, readonly) "
-            "VALUES (:ws, :l, :ws, :ro) "
-            "ON CONFLICT (workspace_id, member_login, member_workspace_id) "
-            "DO UPDATE SET readonly = :ro2"
-        ), {"ws": ws, "l": login, "ro": read_only, "ro2": read_only})
+            "UPDATE workspaceusermembership SET readonly = :ro "
+            "WHERE workspace_id = :ws AND member_login = :l AND member_workspace_id = :ws"
+        ), {"ws": ws, "l": login, "ro": read_only})
         db.commit()
         acc = db.query(Account).filter(Account.login == login).first()
         return {

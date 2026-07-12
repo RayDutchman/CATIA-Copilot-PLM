@@ -189,12 +189,11 @@ def new_version_part(workspace_id: str, part_key: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    svc.create_new_version(db, workspace_id, number, version, current_user.login)
-    if body.get("description"):
-        svc.set_new_version_description(db, workspace_id, number, version,
-                                         body["description"])
+    svc.create_new_version(db, workspace_id, number, version, current_user.login,
+                           description=body.get("description") or None)
     # TODO: newVersion 尚缺 workflowModelId/acl/roleMapping 传递（service.create_new_version 暂不支持）。
-    #       对应 Java PartResource.createNewPartVersion(PartCreationDTO: description/workflowModelId/acl/roleMapping)。
+    #       对应 Java PartResource.createNewPartVersion(PartCreationDTO: description/workflowModelId/acl/roleMapping)
+    #       → ProductManagerBean.createPartRevision 在创建新版本后 setDescription/workflow/acl（:2282-2328）。
     #       需扩展 product_manager.create_new_version 支持 workflowModelId/acl_id/roleMapping 参数。
 
 

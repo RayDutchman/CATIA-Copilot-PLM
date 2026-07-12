@@ -1,14 +1,13 @@
 """零件业务逻辑服务：CRUD、签出签入、装配同步。"""
 from datetime import datetime
 from typing import Optional
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.core.exceptions import (
     AccessRightException, EntityConstraintException,
     EntityNotFoundException, NotAllowedException,
     PartMasterNotFoundException, PartRevisionNotFoundException,
     PartIterationNotFoundException,
-    WorkspaceNotEnabledException,
+    WorkspaceNotEnabledException, WrongInputException,
 )
 from app.models.part import (
     PartMaster, PartRevision, PartIteration,
@@ -1069,7 +1068,7 @@ class ProductService:
         return pr
 
     def create_new_version(self, db: Session, ws: str, pn: str, ver: str,
-                           user_login: str) -> PartRevision:
+                           user_login: str, description: str = None) -> PartRevision:
         from app.core.exceptions import NotAllowedException, EntityAlreadyExistsException, PartRevisionAlreadyExistsException
         pr = self.get_revision(db, ws, pn, ver)
         if pr.checkout_user_login:
@@ -1091,7 +1090,8 @@ class ProductService:
                 "PartRevisionAlreadyExistsException", pn, new_ver)
         new_pr = PartRevision(
             workspace_id=ws, partmaster_partnumber=pn, version=new_ver,
-            description=pr.description, status=0, creation_date=now,
+            description=description if description else pr.description,
+            status=0, creation_date=now,
             author_workspace_id=ws, author_login=user_login,
             checkout_user_workspace_id=ws, checkout_user_login=user_login,
             check_out_date=now,
@@ -1888,7 +1888,6 @@ class ProductService:
 
     def retry_conversion(self, db: Session, workspace_id: str, number: str,
                          version: str, iteration: int) -> tuple:
-        from fastapi import HTTPException
         pi = db.query(PartIteration).filter(
             PartIteration.workspace_id == workspace_id,
             PartIteration.partmaster_partnumber == number,
@@ -1896,7 +1895,7 @@ class ProductService:
             PartIteration.iteration == iteration,
         ).first()
         if pi is None or pi.native_cad_file is None:
-            raise HTTPException(400, "No native CAD file uploaded")
+            raise WrongInputException("WrongInputException")
         br = pi.native_cad_file
         filename = br.full_name.split("/")[-1] if br.full_name else "unknown"
         conv = self.get_conversion(db, workspace_id, number, version, iteration)
@@ -2002,13 +2001,12 @@ class ProductService:
 
     def get_leaf_instances(self, db: Session, workspace_id: str,
                            part_key: str) -> list[dict]:
-        from fastapi import HTTPException
         from app.services.file_export.instance_body_writer_tools import (
             identity_matrix, collect_leaf_instances,
         )
         parts = part_key.rsplit("-", 1)
         if len(parts) != 2:
-            raise HTTPException(400, "partKey 格式应为 {number}-{version}，如 GD50_Frame-A")
+            raise WrongInputException("WrongInputException")
         part_number, version = parts
 
         pi = db.query(PartIteration).filter(

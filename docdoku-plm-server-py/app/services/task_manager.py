@@ -43,13 +43,13 @@ class TaskService:
             "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
         ), {"wf_id": wf_id, "ws": ws}).first()
         if part:
-            return "part", part[0], part[1]
+            return "parts", part[0], part[1]
         ww = db.execute(text(
             "SELECT id FROM workspace_workflow "
             "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
         ), {"wf_id": wf_id, "ws": ws}).first()
         if ww:
-            return "workspace-workflow", ww[0], None
+            return "workspace-workflows", ww[0], None
         return None, None, None
 
     def _lookup_worker(self, db: Session, worker_login: str, worker_ws: str) -> dict:
@@ -157,6 +157,15 @@ class TaskService:
                 "holderReference": holder_reference,
                 "holderVersion": holder_version,
                 "workspaceId": ws,
+                "assignedUsers": [
+                    {"login": u[0], "name": u[1], "email": u[2] or "", "workspaceId": u[3]}
+                    for u in db.execute(text(
+                        "SELECT tu.user_login, COALESCE(a.name, tu.user_login), a.email, tu.user_workspace_id "
+                        "FROM task_user tu "
+                        "LEFT JOIN account a ON a.login = tu.user_login "
+                        "WHERE tu.workflow_id = :wf AND tu.activity_step = :step AND tu.task_num = :num"
+                    ), {"wf": wf_id, "step": t[10], "num": t[0]}).fetchall()
+                ],
                 "assignedGroups": [
                     {"id": g[0], "workspaceId": g[1]}
                     for g in db.execute(text(
@@ -195,6 +204,15 @@ class TaskService:
             "workspaceId": ws,
             "workflowId": _wf_id,
             "activityStep": activity_step,
+            "assignedUsers": [
+                {"login": u[0], "name": u[1], "email": u[2] or "", "workspaceId": u[3]}
+                for u in db.execute(text(
+                    "SELECT tu.user_login, COALESCE(a.name, tu.user_login), a.email, tu.user_workspace_id "
+                    "FROM task_user tu "
+                    "LEFT JOIN account a ON a.login = tu.user_login "
+                    "WHERE tu.workflow_id = :wf AND tu.activity_step = :step AND tu.task_num = :num"
+                ), {"wf": _wf_id, "step": activity_step, "num": t[0]}).fetchall()
+            ],
             "assignedGroups": [
                 {"id": g[0], "workspaceId": g[1]}
                 for g in db.execute(text(
@@ -563,7 +581,7 @@ class TaskService:
             "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
         ), {"wf_id": wf_id, "ws": ws}).first()
         if part:
-            holder_type = "part"
+            holder_type = "parts"
             holder_ref, holder_ver = part[0], part[1]
         else:
             doc = db.execute(text(
@@ -579,7 +597,7 @@ class TaskService:
                     "WHERE workflow_id = :wf_id AND workspace_id = :ws LIMIT 1"
                 ), {"wf_id": wf_id, "ws": ws}).first()
                 if ww:
-                    holder_type = "workspace-workflow"
+                    holder_type = "workspace-workflows"
                     holder_ref = ww[0]
                     holder_ww_id = ww[0]
                 else:
@@ -633,7 +651,7 @@ class TaskService:
         ), {"wf_id": wf_id})
 
         # 5. 归档旧 workflow
-        if holder_type == "part":
+        if holder_type == "parts":
             db.execute(text(
                 "INSERT INTO part_aborted_workflow "
                 "(partmaster_partnumber, partmaster_workspace_id, "
@@ -647,7 +665,7 @@ class TaskService:
                 "documentrevision_version, workflow_id) "
                 "VALUES (:dm, :ws, :v, :wf_id)"
             ), {"dm": holder_ref, "ws": ws, "v": holder_ver, "wf_id": wf_id})
-        elif holder_type == "workspace-workflow":
+        elif holder_type == "workspace-workflows":
             db.execute(text(
                 "INSERT INTO workspace_aborted_workflow "
                 "(workspace_workflow_id, workspace_workflow_workspace_id, workflow_id) "
@@ -655,7 +673,7 @@ class TaskService:
             ), {"wwid": holder_ww_id, "ws": ws, "wf_id": wf_id})
 
         # 6. 重关联 holder 到新 workflow
-        if holder_type == "part":
+        if holder_type == "parts":
             db.execute(text(
                 "UPDATE partrevision SET workflow_id = :new_id "
                 "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :v"
@@ -665,7 +683,7 @@ class TaskService:
                 "UPDATE documentrevision SET workflow_id = :new_id "
                 "WHERE workspace_id = :ws AND documentmaster_id = :dm AND version = :v"
             ), {"new_id": new_wf_id, "ws": ws, "dm": holder_ref, "v": holder_ver})
-        elif holder_type == "workspace-workflow":
+        elif holder_type == "workspace-workflows":
             db.execute(text(
                 "UPDATE workspace_workflow SET workflow_id = :new_id WHERE id = :wwid"
             ), {"new_id": new_wf_id, "wwid": holder_ww_id})

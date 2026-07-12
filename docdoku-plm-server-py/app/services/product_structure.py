@@ -1489,6 +1489,7 @@ class ProductStructureService:
 
         inst_master = db.query(ProductInstanceMaster).filter(
             ProductInstanceMaster.workspace_id == ws,
+            ProductInstanceMaster.configurationitem_id == ci_id,
             ProductInstanceMaster.serialnumber == serial,
         ).first()
         if not inst_master:
@@ -1498,6 +1499,7 @@ class ProductStructureService:
 
         last_it = db.query(ProductInstanceIteration).filter(
             ProductInstanceIteration.workspace_id == ws,
+            ProductInstanceIteration.configurationitem_id == ci_id,
             ProductInstanceIteration.prdinstancemaster_serialnumber == serial,
         ).order_by(ProductInstanceIteration.iteration.desc()).first()
         if not last_it or not last_it.partcollection_id:

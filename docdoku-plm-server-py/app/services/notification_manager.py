@@ -23,11 +23,10 @@ class NotificationService:
         return n
 
     def list_for_user(self, db: Session, ws: str, login: str) -> list:
-        """列出用户未读通知，按 ackauthor_login 过滤以避免跨用户泄漏。"""
+        """列出工作空间内所有未读通知（ModificationNotification 表无收件人列，按 workspace + acknowledged=False 返回）。"""
         return db.query(ModificationNotification).filter(
             ModificationNotification.impacted_workspace_id == ws,
             ModificationNotification.acknowledged == False,
-            ModificationNotification.ackauthor_login == login,
         ).all()
 
     # ========== Tag 订阅管理（P1 stubs） ==========
