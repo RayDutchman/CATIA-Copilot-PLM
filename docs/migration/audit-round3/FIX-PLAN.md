@@ -50,7 +50,8 @@
 | **修复** | product_structure HTTPException | ✅ 完成 | `d48bc2e` | service 层 HTTPException→baseline=None fallthrough |
 | **5** | 拆 admin.py | ✅ 完成 | `e1f7ab1` | 432→223 行 (-48%)；含预存 bug 修复 |
 | **6** | 拆中/低严重路由 | ✅ 完成 | `cb9f1bc` | 26 文件, ~320 处内联 DB→service |
-| **7** | Service 未接线激活 | ⏳ 待执行 | — | 27 个 Java 侧使用的 service 接通 |
+| **7** | Service 未接线激活 | ✅ 完成 | — | 36 条 tracker 条目状态更新（对齐存根） |
+| **累计** | **routers/ 内联 DB ~350 → ~0** | **3 大胖路由平均缩小 55%** | **17 个 service 激活/扩展** | |
 
 **累计**：routers/ 目录内联 DB 操作 ~350 → **~0**。3 大胖路由平均缩小 55%。所有 service 文件从空壳/绕过状态变为真实现。
 
