@@ -40,7 +40,6 @@ def _row_to_dict(r) -> dict:
         "description": r[1] or "",
         "enabled": bool(r[2]) if r[2] is not None else True,
         "folderLocked": bool(r[3]) if r[3] is not None else False,
-        "admin": r[4] or "",
     }
 
 

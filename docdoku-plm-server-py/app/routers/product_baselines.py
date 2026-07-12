@@ -60,45 +60,47 @@ def _ci_latest_revision(db: Session, ws: str, ci_id: str) -> str | None:
 def _bl_summary_dict(b: ProductBaseline, db: Session) -> dict:
     """构建基线列表摘要（含 hasObsoletePartRevisions + configurationItemLatestRevision）。"""
     ws = b.configurationitem_workspace_id
+    ci_id = b.configurationitem_id
     return {
         "id": b.id,
         "name": b.name,
         "type": _type_name(b.type),
-        "configurationItemId": b.configurationitem_id,
+        "configurationItemId": ci_id,
         "author": _get_user(db, b.author_login or "", ws),
         "creationDate": b.creation_date.isoformat() + "Z" if b.creation_date else None,
         "description": b.description or "",
         "hasObsoletePartRevisions": _has_obsolete_parts(db, b.partcollection_id),
         "configurationItemLatestRevision": _ci_latest_revision(
-            db, ws, b.configurationitem_id
+            db, ws, ci_id
         ),
         "baselinedParts": _query_baselined_parts(db, b.partcollection_id) if b.partcollection_id else [],
         "substituteLinks": _baseline_substitute_paths(db, b.id),
         "optionalUsageLinks": _baseline_optional_paths(db, b.id),
-        "pathToPathLinks": _query_path_to_path_links(db, ws, b.id),
-        "optionalsParts": _decode_paths_to_part_links(db, ws, b.configurationitem_id, _baseline_optional_paths(db, b.id)),
+        "pathToPathLinks": _query_path_to_path_links(db, ws, ci_id, b.id),
+        "optionalsParts": _decode_paths_to_part_links(db, ws, ci_id, _baseline_optional_paths(db, b.id)),
     }
 
 
 def _bl_detail_dict(bl: ProductBaseline, db: Session) -> dict:
     """构建基线详情（完整字段，含 substitutesParts + optionalsParts）。"""
     ws = bl.configurationitem_workspace_id
+    ci_id = bl.configurationitem_id
     return {
         "id": bl.id,
         "name": bl.name,
         "type": _type_name(bl.type),
-        "configurationItemId": bl.configurationitem_id,
+        "configurationItemId": ci_id,
         "creationDate": bl.creation_date.isoformat() + "Z" if bl.creation_date else None,
         "description": bl.description or "",
         "author": _get_user(db, bl.author_login or "", ws),
         "hasObsoletePartRevisions": _has_obsolete_parts(db, bl.partcollection_id),
-        "configurationItemLatestRevision": _ci_latest_revision(db, ws, bl.configurationitem_id),
+        "configurationItemLatestRevision": _ci_latest_revision(db, ws, ci_id),
         "baselinedParts": _query_baselined_parts(db, bl.partcollection_id),
         "substituteLinks": _baseline_substitute_paths(db, bl.id),
         "optionalUsageLinks": _baseline_optional_paths(db, bl.id),
-        "pathToPathLinks": _query_path_to_path_links(db, ws, bl.id),
-        "substitutesParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_substitute_paths(db, bl.id)),
-        "optionalsParts": _decode_paths_to_part_links(db, ws, bl.configurationitem_id, _baseline_optional_paths(db, bl.id)),
+        "pathToPathLinks": _query_path_to_path_links(db, ws, ci_id, bl.id),
+        "substitutesParts": _decode_paths_to_part_links(db, ws, ci_id, _baseline_substitute_paths(db, bl.id)),
+        "optionalsParts": _decode_paths_to_part_links(db, ws, ci_id, _baseline_optional_paths(db, bl.id)),
     }
 
 
@@ -220,8 +222,12 @@ def _has_obsolete_parts(db: Session, partcollection_id: int | None) -> bool:
     return row is not None
 
 
-def _query_path_to_path_links(db: Session, ws: str, baseline_id: int = None) -> list:
+def _query_path_to_path_links(db: Session, ws: str, ci_id: str, baseline_id: int = None) -> list:
     """查询 PathToPathLink 列表。
+
+    对齐 Java ProductBaselinesResource.getPathToPathLinkInProductBaseline：
+    对每条 P2P link 分别 decode sourcePath/targetPath → LightPartLinkDTO 列表，
+    填充 sourceComponents/targetComponents。
 
     若提供 baseline_id → 通过 productbaseline_p2plink 关联表查该基线的 links。
     否则返回空（工作区维度无直接关联，只有 CI 和 baseline 维度有关联）。
@@ -234,41 +240,23 @@ def _query_path_to_path_links(db: Session, ws: str, baseline_id: int = None) -> 
         "JOIN productbaseline_p2plink pbp ON pbp.pathtopathlink_id = ppl.id "
         "WHERE pbp.productbaseline_id = :bid"
     ), {"bid": baseline_id}).fetchall()
-    return [
-        {"id": r[0], "type": r[1], "sourcePath": r[2],
-         "targetPath": r[3], "description": r[4],
-         "sourceComponents": [], "targetComponents": []}
-        for r in rows
-    ]
-
-
-def _query_substitute_links(db: Session, ws: str, partcollection_id: int | None) -> list:
-    if partcollection_id is None:
-        return []
-    rows = db.execute(sql_text(
-        "SELECT DISTINCT psl.substitute_partnumber, pm.name "
-        "FROM partusagelink pul "
-        "JOIN partsubstitutelink psl ON pul.id = psl.id "
-        "JOIN baselinedpart bp ON bp.target_workspace_id = pul.component_workspace_id "
-        "AND bp.target_partmaster_partnumber = pul.component_partnumber "
-        "LEFT JOIN partmaster pm ON pm.workspace_id = psl.substitute_workspace_id "
-        "AND pm.partnumber = psl.substitute_partnumber "
-        "WHERE bp.partcollection_id = :pc_id"
-    ), {"pc_id": partcollection_id}).fetchall()
-    return [{"partNumber": r[0], "name": r[1] or r[0]} for r in rows]
-
-
-def _query_optional_links(db: Session, ws: str, partcollection_id: int | None) -> list:
-    if partcollection_id is None:
-        return []
-    rows = db.execute(sql_text(
-        "SELECT DISTINCT pul.component_partnumber "
-        "FROM partusagelink pul "
-        "JOIN baselinedpart bp ON bp.target_workspace_id = pul.component_workspace_id "
-        "AND bp.target_partmaster_partnumber = pul.component_partnumber "
-        "WHERE bp.partcollection_id = :pc_id AND pul.optional = true"
-    ), {"pc_id": partcollection_id}).fetchall()
-    return [{"partNumber": r[0]} for r in rows]
+    result = []
+    for r in rows:
+        try:
+            source_components = svc.decode_path(db, ws, ci_id, r[2])
+        except Exception:
+            source_components = []
+        try:
+            target_components = svc.decode_path(db, ws, ci_id, r[3])
+        except Exception:
+            target_components = []
+        result.append({
+            "id": r[0], "type": r[1], "sourcePath": r[2],
+            "targetPath": r[3], "description": r[4],
+            "sourceComponents": source_components,
+            "targetComponents": target_components,
+        })
+    return result
 
 
 def _decode_paths_to_part_links(db: Session, ws: str, ci_id: str, paths: list) -> list:
@@ -390,7 +378,7 @@ def baseline_path_to_path_links_types(ws: str, pid: str, bid: int,
                                        current_user: Account = Depends(get_current_user),
                                        db: Session = Depends(get_db)):
     """获取产品基线的 PathToPathLink 类型列表。"""
-    links = _query_path_to_path_links(db, ws, bid)
+    links = _query_path_to_path_links(db, ws, pid, bid)
     types = {lk["type"] for lk in links if lk.get("type")}
     return [{"type": t} for t in types]
 
@@ -402,7 +390,7 @@ def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
                                         current_user: Account = Depends(get_current_user),
                                         db: Session = Depends(get_db)):
     """获取产品基线的 PathToPathLink（按 source/target 筛选）。"""
-    links = _query_path_to_path_links(db, ws, bid)
+    links = _query_path_to_path_links(db, ws, pid, bid)
     return [
         lk for lk in links
         if lk.get("sourcePath") == source and lk.get("targetPath") == target

@@ -169,13 +169,13 @@ def put_effectivity(
         dtype = dtype_map.get(type_eff, "DateBasedEffectivity")
 
     if dtype == "DateBasedEffectivity":
-        if "startDate" in body and not body.get("startDate"):
+        if not body.get("startDate"):
             raise CreationException("startDate is required for DateBasedEffectivity")
     elif dtype == "SerialNumberBasedEffectivity":
-        if "startNumber" in body and not body.get("startNumber"):
+        if not body.get("startNumber"):
             raise CreationException("startNumber is required for SerialNumberBasedEffectivity")
     elif dtype == "LotBasedEffectivity":
-        if "startLotId" in body and not body.get("startLotId"):
+        if not body.get("startLotId"):
             raise CreationException("startLotId is required for LotBasedEffectivity")
 
     eff = effectivity_service.update_effectivity(db, workspace_id, id, body)

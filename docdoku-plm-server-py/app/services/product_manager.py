@@ -423,7 +423,8 @@ class ProductService:
         db.commit()
 
     def checkout(self, db: Session, workspace_id: str,
-                 number: str, version: str, user_login: str) -> PartRevision:
+                 number: str, version: str, user_login: str,
+                 auto_commit: bool = True) -> PartRevision:
         from app.core.exceptions import NotAllowedException
         from app.services.factory.acl_factory import check_write_access
         pr = self.get_revision(db, workspace_id, number, version, for_update=True)
@@ -455,12 +456,16 @@ class ProductService:
         # 复制附件、几何体、子件链接到新迭代
         self._copy_iteration_files(db, workspace_id, number, version,
                                    last_iter, last_iter + 1)
-        db.commit()
+        if auto_commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(pr)
         return pr
 
     def checkin(self, db: Session, workspace_id: str,
-                number: str, version: str, user_login: str) -> PartRevision:
+                number: str, version: str, user_login: str,
+                auto_commit: bool = True) -> PartRevision:
         from app.core.exceptions import NotAllowedException
         pr = self.get_revision(db, workspace_id, number, version, for_update=True)
         if pr.checkout_user_login != user_login:
@@ -474,7 +479,10 @@ class ProductService:
         pr.checkout_user_login = None
         pr.checkout_user_workspace_id = None
         pr.check_out_date = None
-        db.commit()
+        if auto_commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(pr)
         indexer_manager.index_part_revision(pr)  # 对标 checkInPart:600
         return pr

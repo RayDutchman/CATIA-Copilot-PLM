@@ -226,7 +226,8 @@ class ImporterService:
         if errors:
             return {"succeed": False, "errors": errors, "warnings": warnings}
 
-        # 4) 写入库
+        # 4) 写入库（整体事务：对齐 Java bulkPartUpdate @TransactionAttribute(REQUIRED)）
+        # checkout/checkin 使用 auto_commit=False，由本方法统一 commit/rollback
         for number, version, merged in to_write:
             pm = db.query(PartMaster).filter(
                 PartMaster.workspace_id == ws,
@@ -237,7 +238,8 @@ class ImporterService:
             did_checkout = False
             if auto_checkout and not pr.checkout_user_login:
                 try:
-                    svc.checkout(db, ws, number, version, user_login)
+                    svc.checkout(db, ws, number, version, user_login,
+                                 auto_commit=False)
                     did_checkout = True
                 except Exception as e:
                     errors.append(f"CheckoutFailed: {number}: {e}")
@@ -262,13 +264,16 @@ class ImporterService:
 
             if auto_checkin and did_checkout and pr.checkout_user_login == user_login:
                 try:
-                    svc.checkin(db, ws, number, version, user_login)
+                    svc.checkin(db, ws, number, version, user_login,
+                                auto_commit=False)
                 except NotAllowedException as e:
                     warnings.append(f"CheckinFailed: {number}: {e}")
 
-        # 单次批量提交属性写入（替代逐零件 commit，降低半成品风险）
-        # 注意：svc.checkout/checkin 各自内部已有独立 commit，并非完全原子
-        db.commit()
+        # 整体提交或回滚（对齐 Java：任一失败则整体 rollback）
+        if errors:
+            db.rollback()
+        else:
+            db.commit()
 
         return {"succeed": len(errors) == 0, "errors": errors, "warnings": warnings}
 

@@ -194,5 +194,4 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
         "email": acc.email or "" if acc else "",
         "language": acc.language or "" if acc else "",
         "workspaceId": ws,
-        "membership": membership,
     }

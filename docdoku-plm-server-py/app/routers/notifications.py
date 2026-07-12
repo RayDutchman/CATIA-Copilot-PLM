@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
+from app.schemas.misc.modification_notification import ModificationNotificationDTO
 from app.services.notification_manager import notification_service
-from app.schemas.misc import ModificationNotificationDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"

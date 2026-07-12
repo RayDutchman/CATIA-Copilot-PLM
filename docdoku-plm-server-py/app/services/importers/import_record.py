@@ -18,11 +18,13 @@ def create_import(db: Session, import_id: str, filename: str,
 
 def complete_import(db: Session, import_id: str, succeed: bool,
                     errors: list[str], warnings: list[str]) -> None:
-    """结束导入：pending=false, succeed=:s, enddate=now；写入 error/warning 子表。"""
+    """结束导入：pending=false, succeed=:s, enddate=now；写入 error/warning 子表（幂等：先删旧记录）。"""
     now = datetime.utcnow()
     db.execute(text(
         "UPDATE import SET pending=false, succeed=:s, enddate=:now WHERE id=:id"
     ), {"id": import_id, "s": succeed, "now": now})
+    db.execute(text("DELETE FROM import_error WHERE import_id=:id"), {"id": import_id})
+    db.execute(text("DELETE FROM import_warning WHERE import_id=:id"), {"id": import_id})
     for e in errors:
         db.execute(text(
             "INSERT INTO import_error (import_id, errors) VALUES (:id, :e)"

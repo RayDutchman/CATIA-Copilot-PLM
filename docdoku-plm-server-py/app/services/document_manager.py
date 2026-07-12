@@ -1510,6 +1510,27 @@ class DocumentService:
                 attached_files.append({"fullName": ar[0]})
         return attached_files
 
+    def _query_template_attached_files(self, db, ws, template_id):
+        """查询文档模板的 attachedFiles（参照 _query_attached_files 逻辑）。"""
+        from app.models.part import BinaryResource
+        attached_rows = db.execute(sql_text(
+            "SELECT attachedfile_fullname FROM documentmastertemplate_binres "
+            "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
+        ), {"ws": ws, "tid": template_id}).fetchall()
+        result = []
+        for ar in attached_rows:
+            br = db.query(BinaryResource).filter(
+                BinaryResource.full_name == ar[0]).first()
+            if br:
+                result.append({
+                    "fullName": br.full_name,
+                    "contentLength": br.content_length or 0,
+                    "lastModified": str(br.last_modified) if br.last_modified else None,
+                })
+            else:
+                result.append({"fullName": ar[0]})
+        return result
+
     def _build_iteration_dict(self, db, rev, it, acl_data):
         """构建单个 iteration 的 dict。"""
         ws = it.workspace_id
@@ -2177,6 +2198,7 @@ class DocumentService:
                 "workspaceId": t.workspace_id,
             }
         acl = self._build_template_acl_dict(db, t.acl_id)
+        attached_files = self._query_template_attached_files(db, t.workspace_id, t.id)
         return {
             "id": t.id, "workspaceId": t.workspace_id,
             "documentType": t.document_type, "mask": t.mask,
@@ -2185,7 +2207,7 @@ class DocumentService:
             "author": author or {},
             "acl": acl or {},
             "creationDate": str(t.creation_date) if t.creation_date else None,
-            "attachedFiles": [],
+            "attachedFiles": attached_files,
             "attributeTemplates": [],
         }
 

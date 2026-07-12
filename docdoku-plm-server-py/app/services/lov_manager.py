@@ -109,16 +109,35 @@ class LOVService:
         }
 
     def is_lov_deletable(self, db: Session, ws: str, lov_name: str) -> bool:
-        """对齐 Java isLOVDeletable：检查 LOV 是否被任何模板或实际零件迭代引用。"""
+        """对齐 Java isLOVDeletable：检查 LOV 是否被任何模板或实际零件迭代引用。
+
+        三条件（对齐 Java LOVManagerBean）：
+        ① instanceattributetemplate 直接引用 (lov_name/lov_workspace_id)
+        ② partiteration_pathdata_attr → instanceattributetemplate（迭代路径数据属性模板）
+        ③ partiteration_attribute → instanceattribute → 通过 name 关联 instanceattributetemplate
+           （实际零件迭代的 InstanceListOfValuesAttribute 实例属性使用）
+        """
+        # 条件①：检查是否有模板直接引用此 LOV
         row = db.execute(text(
             "SELECT 1 FROM instanceattributetemplate "
             "WHERE lov_name = :n AND lov_workspace_id = :ws LIMIT 1"
         ), {"n": lov_name, "ws": ws}).first()
         if row:
             return False
+        # 条件②：检查 PartIteration 的路径数据属性模板是否引用此 LOV
         row = db.execute(text(
             "SELECT 1 FROM partiteration_pathdata_attr pa "
             "JOIN instanceattributetemplate iat ON iat.id = pa.instanceattribute_template_id "
+            "WHERE iat.lov_name = :n AND iat.lov_workspace_id = :ws LIMIT 1"
+        ), {"n": lov_name, "ws": ws}).first()
+        if row:
+            return False
+        # 条件③：检查实际零件迭代的实例属性（instanceattribute）是否来自引用此 LOV 的模板
+        # instanceattribute 表无 lov_name/lov_workspace_id 列，通过 name 与模板关联
+        row = db.execute(text(
+            "SELECT 1 FROM partiteration_attribute pa "
+            "JOIN instanceattribute ia ON ia.id = pa.instanceattribute_id "
+            "JOIN instanceattributetemplate iat ON iat.name = ia.name "
             "WHERE iat.lov_name = :n AND iat.lov_workspace_id = :ws LIMIT 1"
         ), {"n": lov_name, "ws": ws}).first()
         return row is None

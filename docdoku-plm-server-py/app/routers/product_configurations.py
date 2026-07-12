@@ -131,13 +131,13 @@ def create_config(ws: str, ci_id: str, body: dict,
     return {"id": cfg.id, "name": cfg.name}
 
 
-@router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}")
-@router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/", include_in_schema=False)
+@router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}", status_code=204)
+@router.delete("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/", status_code=204, include_in_schema=False)
 def delete_config(ws: str, ci_id: str, cfg_id: int,
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     svc.delete_config(db, ws, cfg_id)
-    return {"status": "deleted"}
+    return Response(status_code=204)
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/configurations/{cfg_id}/acl")

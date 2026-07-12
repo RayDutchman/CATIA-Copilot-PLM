@@ -1,6 +1,7 @@
 """管理员端点。"""
 from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_global_admin
@@ -37,8 +38,6 @@ def _workspace_to_dict(r) -> dict:
         "description": r[1] or "",
         "enabled": bool(r[2]) if r[2] is not None else True,
         "folderLocked": bool(r[3]) if r[3] is not None else False,
-        "admin": r[4] or "",
-        "creationDate": None,
     }
 
 
@@ -136,14 +135,14 @@ def get_platform_options(db: Session = Depends(get_db),
     }
 
 
-@router.put("/admin/platform-options", response_model=PlatformOptionsDTO)
-@router.put("/admin/platform-options/", include_in_schema=False)
+@router.put("/admin/platform-options", status_code=204)
+@router.put("/admin/platform-options/", status_code=204, include_in_schema=False)
 def put_platform_options(body: dict, db: Session = Depends(get_db),
                         _admin: Account = Depends(require_global_admin)):
     ws_val = _from_strategy(body.get("workspaceCreationStrategy", "NONE"))
     rs_val = _from_strategy(body.get("registrationStrategy", "NONE"))
     platform_options_service.upsert_platform_options(db, ws_val, rs_val)
-    return get_platform_options(db)
+    return Response(status_code=204)
 
 
 # ============ Stats ============

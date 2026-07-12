@@ -91,6 +91,14 @@ class EffectivityService:
 
     def delete_effectivity(self, db: Session, ws: str, part_number: str,
                             version: str, effectivity_id: int) -> None:
+        """删除有效性：先确认 effectivity 归属当前 workspace，再删 join 表 + 主表。"""
+        own = db.execute(text(
+            "SELECT 1 FROM partrevision_effectivity "
+            "WHERE effectivity_id = :id AND partmaster_workspace_id = :ws"
+        ), {"id": effectivity_id, "ws": ws}).first()
+        if not own:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("EffectivityNotFoundException", str(effectivity_id))
         db.execute(text(
             "DELETE FROM partrevision_effectivity WHERE effectivity_id = :id AND partmaster_workspace_id = :ws"
         ), {"id": effectivity_id, "ws": ws})

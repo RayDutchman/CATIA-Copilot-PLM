@@ -11,4 +11,3 @@ class WorkspaceDTO(BaseModel):
     description: Optional[str] = None
     enabled: Optional[bool] = True
     folderLocked: Optional[bool] = False
-    admin: Optional[str] = None
