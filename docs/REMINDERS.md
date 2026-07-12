@@ -8,6 +8,17 @@
 
 > 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限修复合集，并**新增 Query 自定义查询执行引擎 + Importer 属性导入域（分支 feat/py-query-execution-engine）**。**剩余功能域**：① WebSocket /ws 403 修复；② 种子脚本修复（解阻 10 个 pytest 失败）。本文件只保留**跨领域非迁移**待办。
 
+### 🆕 Checklist #15 路由/服务接线审计 (audit-round3, 2026-07-12)
+
+> **✅ Batch 1 已完成**：消除跨路由重复逻辑 + Payara 对齐权限检查。
+> - 提取 `_check_is_admin`(5个重复) → `require_global_admin`/`require_workspace_admin` Depends（deps.py）
+> - 统一 `_build_acl`/`_get_acl_dict`(3个变体) → `build_acl_dict()`（acl_factory.py）
+> - 统一 `_fmt_date`(5个重复) → `format_iso_date()`（date_utils.py）
+> - **Payara 对齐修正**：user_groups/users 删除 admin 检查（Java 无此限制）；roles 改为 service 层 write-access 检查
+> - ⚠️ 子要点 ①(参数注解) ②(路径一致性) ③(response_model) 未覆盖，需独立审计
+> - FIX-PLAN: `docs/migration/audit-round3/FIX-PLAN.md`（Batch 2~7 待执行）
+> - pytest 基线无新增失败
+
 ### 🟠 第二轮全量审计 + 独立复核（2026-07-12，见 docs/migration/audit-round2/00-index.md + FIX-PLAN.md）
 
 > **修复进行中**。初判 10C/34H → 复核后 **6 CRITICAL / 29 HIGH / 40 MED / 24 LOW**。

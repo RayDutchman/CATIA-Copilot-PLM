@@ -46,7 +46,7 @@ def _workspace_to_dict(r) -> dict:
 @router.get("/admin/accounts", response_model=List[AdminAccountDTO])
 @router.get("/admin/accounts/", include_in_schema=False)
 def list_accounts(db: Session = Depends(get_db),
-                  current_user: Account = Depends(get_current_user)):
+                  _admin: Account = Depends(require_global_admin)):
 
     rows = db.execute(text(
         "SELECT a.login, a.email, a.name, a.language, a.enabled, u.workspace_id, "
