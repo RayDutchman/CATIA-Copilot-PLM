@@ -20,6 +20,364 @@ from app.services.factory.acl_factory import apply_acl
 
 class ProductStructureService:
 
+    # ── UserDTO 辅助（内联版，避免跨文件依赖）──
+
+    @staticmethod
+    def _build_user_dto(db: Session, login: str, ws: str) -> dict:
+        if not login:
+            return {"login": "", "name": "", "email": None, "language": None, "workspaceId": ws}
+        acc = db.query(Account).filter(Account.login == login).first()
+        name = acc.name if (acc and acc.name) else login
+        return {"login": login, "name": name, "email": None, "language": None, "workspaceId": ws}
+
+    # ── CI DTO ──
+
+    def build_ci_dto(self, db: Session, ci: ConfigurationItem) -> dict:
+        """构建 ConfigurationItemDTO dict（对齐 Java）。"""
+        from app.services.products.path_to_path_service import path_to_path_service
+        from app.models.util.date_utils import format_iso_date
+        name = ""
+        latest_version = ""
+        if ci.partmaster_partnumber:
+            master = db.query(PartMaster).filter(
+                PartMaster.workspace_id == ci.workspace_id,
+                PartMaster.number == ci.partmaster_partnumber,
+            ).first()
+            if master:
+                name = master.name or ""
+            rev = db.query(PartRevision).filter(
+                PartRevision.workspace_id == ci.workspace_id,
+                PartRevision.partmaster_partnumber == ci.partmaster_partnumber,
+            ).order_by(PartRevision.creation_date.desc()).first()
+            if rev:
+                latest_version = rev.version
+        try:
+            p2p_links = path_to_path_service.get_links_for_ci(db, ci.workspace_id, ci.id)
+        except Exception:
+            p2p_links = []
+        return {
+            "id": ci.id, "workspaceId": ci.workspace_id,
+            "description": ci.description,
+            "designItemNumber": ci.partmaster_partnumber,
+            "designItemName": name,
+            "designItemLatestVersion": latest_version,
+            "author": self._build_user_dto(db, ci.author_login, ci.workspace_id),
+            "creationDate": format_iso_date(ci.creation_date),
+            "hasModificationNotification": self._has_modification_notification(
+                db, ci.workspace_id, ci.partmaster_partnumber
+            ) if ci.partmaster_partnumber else False,
+            "pathToPathLinks": p2p_links,
+        }
+
+    # ── Last Release ──
+
+    def get_last_release_dto(self, db: Session, ws: str, ci_id: str) -> dict:
+        """返回 CI 根零件的最新已发布版本 DTO。"""
+        from app.models.util.date_utils import format_iso_date
+        ci = self.get_ci(db, ws, ci_id)
+        root_pn = ci.partmaster_partnumber
+        rev = db.query(PartRevision).filter(
+            PartRevision.workspace_id == ws,
+            PartRevision.partmaster_partnumber == root_pn,
+            PartRevision.status == 1,
+        ).order_by(PartRevision.version.desc()).first()
+        if rev is None:
+            from app.core.exceptions import EntityNotFoundException
+            raise EntityNotFoundException("NoReleasedRevisionException", ci_id)
+        last_it = rev.last_iteration
+        author_name = rev.part_master.author_login or ""
+        pm_author = db.query(Account).filter(Account.login == rev.part_master.author_login).first()
+        if pm_author and pm_author.name:
+            author_name = pm_author.name
+        chk_user = None
+        if rev.checkout_user_login:
+            chk_acct = db.query(Account).filter(Account.login == rev.checkout_user_login).first()
+            chk_user = {
+                "login": rev.checkout_user_login,
+                "name": (chk_acct.name if chk_acct and chk_acct.name else rev.checkout_user_login) or "",
+                "email": chk_acct.email if chk_acct else None,
+                "language": chk_acct.language if chk_acct else None,
+                "workspaceId": rev.checkout_user_workspace_id or ws,
+            }
+        return {
+            "partKey": f"{rev.partmaster_partnumber}-{rev.version}",
+            "number": rev.partmaster_partnumber,
+            "version": rev.version,
+            "name": rev.part_master.name or "",
+            "iteration": last_it.iteration if last_it else 1,
+            "description": rev.description or "",
+            "author": author_name,
+            "authorLogin": rev.part_master.author_login or "",
+            "checkOutUser": chk_user,
+            "checkOutDate": format_iso_date(rev.check_out_date),
+            "releaseDate": format_iso_date(rev.release_date),
+            "standardPart": rev.part_master.standard_part or False,
+            "assembly": bool(last_it and last_it.components),
+            "workspaceId": ws,
+            "configurationItemId": ci_id,
+        }
+
+    # ── Path/Versions Choices ──
+
+    def get_path_choices(self, db: Session, ws: str, ci_id: str) -> list:
+        """返回 CI 下已存在的路径数据列表。"""
+        rows = db.execute(text(
+            "SELECT DISTINCT pdm.path, pdm.id FROM pathdatamaster pdm "
+            "JOIN prdinstiteration_pathdatamstr pipd ON pdm.id = pipd.pathdatamaster_id "
+            "JOIN productinstanceiteration pii ON pii.workspace_id = pipd.workspace_id "
+            "AND pii.configurationitem_id = pipd.configurationitem_id "
+            "AND pii.prdinstancemaster_serialnumber = pipd.prdinstancemaster_serialnumber "
+            "AND pii.iteration = pipd.prdinstanceiteration_iteration "
+            "JOIN productinstancemaster pim ON pim.workspace_id = pii.workspace_id "
+            "AND pim.configurationitem_id = pii.configurationitem_id "
+            "AND pim.serialnumber = pii.prdinstancemaster_serialnumber "
+            "WHERE pim.workspace_id = :ws AND pim.configurationitem_id = :ci"
+        ), {"ws": ws, "ci": ci_id}).fetchall()
+        return [{"id": r[1], "path": r[0]} for r in rows]
+
+    def get_versions_choices(self, db: Session, ws: str, ci_id: str) -> list:
+        """返回 CI 根零件的所有版本列表。"""
+        ci = self.get_ci(db, ws, ci_id)
+        root_pn = ci.partmaster_partnumber
+        revs = db.query(PartRevision).filter(
+            PartRevision.workspace_id == ws,
+            PartRevision.partmaster_partnumber == root_pn,
+        ).order_by(PartRevision.version).all()
+        result = []
+        for rev in revs:
+            last_it = rev.last_iteration
+            result.append({
+                "partNumber": rev.partmaster_partnumber,
+                "version": rev.version,
+                "iteration": last_it.iteration if last_it else 1,
+                "name": rev.part_master.name or "",
+            })
+        return result
+
+    # ── CI Path Search ──
+
+    def search_ci_paths(self, db: Session, ws: str, ci_id: str,
+                         search: str = None, config_spec: str = None,
+                         diverge: bool = False, user_login: str = None) -> list:
+        """在装配结构中递归搜索路径（对齐 Java ProductResource.searchPaths）。"""
+        import re
+        ci = self.get_ci(db, ws, ci_id)
+        root_master = (
+            db.query(PartMaster)
+            .filter(
+                PartMaster.workspace_id == ws,
+                PartMaster.number == ci.partmaster_partnumber,
+            )
+            .first()
+        )
+        if root_master is None:
+            return []
+
+        ps_filter = None
+        if config_spec:
+            ps_filter = self.parse_config_spec_str(config_spec, db=db, user_login=user_login, diverge=diverge)
+
+        try:
+            pattern = re.compile(search) if search else None
+        except re.error:
+            pattern = re.compile(re.escape(search)) if search else None
+
+        collected: list[str] = []
+
+        def walk(master, path_parts: list[str]):
+            path_str = "-".join(path_parts)
+            if pattern is None or (
+                pattern.search(master.number or "")
+                or pattern.search(master.name or "")
+                or pattern.search(path_str)
+            ):
+                if path_str:
+                    collected.append(path_str)
+
+            if not master.revisions:
+                return
+            if ps_filter:
+                filtered = ps_filter.filter_part_iterations(master)
+                last_it = filtered[0] if filtered else None
+            else:
+                last_rev = master.revisions[-1]
+                last_it = last_rev.iterations[-1] if last_rev and last_rev.iterations else None
+
+            if not last_it:
+                return
+            for link in (last_it.components or []):
+                child_master = (
+                    db.query(PartMaster)
+                    .filter(
+                        PartMaster.workspace_id == ws,
+                        PartMaster.number == link.component_partnumber,
+                    )
+                    .first()
+                )
+                if child_master:
+                    child_path = path_parts + [str(link.id)]
+                    walk(child_master, child_path)
+
+        walk(root_master, [])
+        return [{"path": p} for p in collected]
+
+    # ── CI Document Links ──
+
+    def get_ci_document_links(self, db: Session, ws: str, ci_id: str,
+                               pn: str, pv: str, pi: int, config_spec: str) -> list:
+        """获取零件迭代在指定基线中关联的文档（对齐 Java）。"""
+        from app.models.configuration.product_baseline import ProductBaseline
+        from app.models.configuration.baselined_document import BaselinedDocument
+        from app.models.configuration.product_instance_iteration import ProductInstanceIteration
+        from app.models.part import PartIteration
+        from app.models.document.document_revision import DocumentRevision
+        from app.models.document.document_link import DocumentLink
+
+        baseline = None
+        if config_spec.startswith("pi-"):
+            serial_number = config_spec[3:]
+            last_pii = db.query(ProductInstanceIteration).filter(
+                ProductInstanceIteration.workspace_id == ws,
+                ProductInstanceIteration.configurationitem_id == ci_id,
+                ProductInstanceIteration.prdinstancemaster_serialnumber == serial_number,
+            ).order_by(ProductInstanceIteration.iteration.desc()).first()
+            if last_pii and last_pii.productbaseline_id:
+                baseline = db.query(ProductBaseline).filter(
+                    ProductBaseline.id == last_pii.productbaseline_id,
+                ).first()
+        else:
+            try:
+                bl_id = int(config_spec)
+                baseline = db.query(ProductBaseline).filter(
+                    ProductBaseline.id == bl_id,
+                ).first()
+            except ValueError:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail="Invalid config_spec")
+
+        if baseline is None:
+            return []
+
+        baselined_docs = db.query(BaselinedDocument).filter(
+            BaselinedDocument.documentcollection_id == baseline.documentcollection_id,
+        ).all() if baseline.documentcollection_id else []
+
+        if not baselined_docs:
+            return []
+
+        pi_obj = db.query(PartIteration).filter(
+            PartIteration.workspace_id == ws,
+            PartIteration.partmaster_partnumber == pn,
+            PartIteration.partrevision_version == pv,
+            PartIteration.iteration == pi,
+        ).first()
+
+        if pi_obj is None:
+            return []
+
+        link_rows = db.execute(text("""
+            SELECT documentlink_id FROM partiteration_documentlink
+            WHERE workspace_id = :ws AND partmaster_partnumber = :pn
+              AND partrevision_version = :pv AND iteration = :pi
+        """), {"ws": ws, "pn": pn, "pv": pv, "pi": pi}).fetchall()
+
+        if not link_rows:
+            return []
+
+        doc_links = db.query(DocumentLink).filter(
+            DocumentLink.id.in_([r[0] for r in link_rows]),
+        ).all() if link_rows else []
+
+        result = []
+        for bd in baselined_docs:
+            target_rev = db.query(DocumentRevision).filter(
+                DocumentRevision.workspace_id == bd.target_workspace_id,
+                DocumentRevision.documentmaster_id == bd.target_documentmaster_id,
+                DocumentRevision.version == bd.target_docrevision_version,
+            ).first()
+            if target_rev is None:
+                continue
+
+            for dl in doc_links:
+                if (dl.target_workspace_id == bd.target_workspace_id
+                        and dl.target_documentmaster_id == bd.target_documentmaster_id
+                        and dl.target_docrevision_version == bd.target_docrevision_version):
+                    result.append({
+                        "documentMasterId": bd.target_documentmaster_id,
+                        "version": bd.target_docrevision_version,
+                        "title": target_rev.title or "",
+                        "iteration": bd.target_iteration,
+                        "workspaceId": bd.target_workspace_id,
+                        "commentLink": dl.comment or "",
+                    })
+
+        return result
+
+    def get_ci_document_links_wip(self, db: Session, ws: str, ci_id: str,
+                                    pn: str, config_spec: str) -> list:
+        """返回 CI 下指定零件的最新 document-links（WIP 配置规约）。"""
+        from app.models.document.document_link import DocumentLink
+
+        rev = db.query(PartRevision).filter(
+            PartRevision.workspace_id == ws,
+            PartRevision.partmaster_partnumber == pn,
+        ).order_by(PartRevision.creation_date.desc()).first()
+        if not rev:
+            return []
+        last_it = rev.last_iteration
+        if not last_it:
+            return []
+        links = db.query(DocumentLink).filter(
+            DocumentLink.workspace_id == ws,
+            DocumentLink.partmaster_partnumber == last_it.partmaster_partnumber,
+            DocumentLink.partrevision_version == last_it.partrevision_version,
+            DocumentLink.iteration == last_it.iteration,
+        ).all()
+        result = []
+        for dl in links:
+            result.append({
+                "documentMasterId": dl.targetdocumentmaster_id,
+                "documentRevisionVersion": dl.targetdocumentrevision_version,
+                "iteration": dl.target_iteration,
+                "workspaceId": ws,
+                "commentLink": dl.comment or "",
+            })
+        return result
+
+    # ── BOM Flatten ──
+
+    def flatten_bom_to_part_list(self, comp_list: list, ws: str, ci_id: str) -> list:
+        """将 ComponentDTO 树平铺为 PartRevisionDTO 列表。"""
+        parts = []
+
+        def flatten(comp, level=0):
+            parts.append({
+                "partKey": f"{comp['number']}-{comp['version']}",
+                "number": comp["number"],
+                "version": comp["version"],
+                "iteration": comp["iteration"],
+                "name": comp["name"],
+                "description": comp["description"],
+                "checkOutUser": comp.get("checkOutUser"),
+                "status": "RELEASED" if comp["released"] else ("OBSOLETE" if comp["obsolete"] else "WIP"),
+                "author": comp["author"],
+                "authorLogin": comp["authorLogin"],
+                "checkOutDate": comp.get("checkOutDate"),
+                "standardPart": comp["standardPart"],
+                "assembly": comp["assembly"],
+                "workspaceId": ws,
+                "configurationItemId": ci_id,
+                "notifications": comp.get("notifications", []),
+            })
+            for child in comp.get("components", []):
+                flatten(child, level + 1)
+
+        for comp in comp_list:
+            flatten(comp)
+        return parts
+
+    # ── CRUD ──
+
     def create_ci(self, db: Session, ws: str, ci_id: str, description: str,
                   part_number: str, user_login: str) -> ConfigurationItem:
         existing = db.query(ConfigurationItem).filter(
