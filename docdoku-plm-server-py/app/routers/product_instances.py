@@ -308,7 +308,7 @@ def update_instance_acl(ws: str, ci_id: str, sn: str, body: dict,
         inst.acl_id = None
         db.commit()
         return {"aclId": None}
-    new_acl_id = apply_acl(db, inst.acl_id, user_entries, group_entries)
+    new_acl_id = apply_acl(db, inst.acl_id, user_entries, group_entries, workspace_id=ws)
     inst.acl_id = new_acl_id
     db.commit()
     return {"aclId": new_acl_id}

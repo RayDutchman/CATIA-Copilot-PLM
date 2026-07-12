@@ -132,7 +132,8 @@ class DocumentService:
         if user_entries or user_group_entries:
             from app.services.factory.acl_factory import apply_acl
             acl_id = getattr(rev, "acl_id", None)
-            new_acl_id = apply_acl(db, acl_id or None, user_entries or {}, user_group_entries or {})
+            new_acl_id = apply_acl(db, acl_id or None, user_entries or {}, user_group_entries or {},
+                                   workspace_id=ws)
             if getattr(rev, "acl_id", None) != new_acl_id:
                 rev.acl_id = new_acl_id
 
@@ -944,7 +945,7 @@ class DocumentService:
             check_out_date=now)
         if user_entries or user_group_entries:
             from app.services.factory.acl_factory import apply_acl
-            new_acl_id = apply_acl(db, None, user_entries, user_group_entries)
+            new_acl_id = apply_acl(db, None, user_entries, user_group_entries, workspace_id=ws)
             new_pr.acl_id = new_acl_id
         db.add(new_pr); db.flush()
         new_it = DocumentIteration(
@@ -1585,8 +1586,6 @@ class DocumentService:
                 acl_data = {
                     "userEntries": [{"key": e.principal_login, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in user_entries],
                     "groupEntries": [{"key": e.principal_id, "value": _PERM_MAP.get(e.permission, "FORBIDDEN")} for e in group_entries],
-                    "userEntriesMap": {e.principal_login: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in user_entries},
-                    "userGroupEntriesMap": {e.principal_id: _PERM_MAP.get(e.permission, "FORBIDDEN") for e in group_entries},
                 }
 
         iterations = []
@@ -1972,7 +1971,7 @@ class DocumentService:
         has_entries = bool(user_entries or group_entries)
         if has_entries:
             acl_id = getattr(dr, "acl_id", None)
-            new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+            new_acl_id = apply_acl(db, acl_id, user_entries, group_entries, workspace_id=ws)
             if dr.acl_id != new_acl_id:
                 dr.acl_id = new_acl_id
                 db.commit()
@@ -2182,8 +2181,6 @@ class DocumentService:
         return {
             "userEntries": [{"key": e.principal_login, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in user_entries],
             "groupEntries": [{"key": e.principal_id, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in group_entries],
-            "userEntriesMap": {e.principal_login: perm_map.get(e.permission, "FORBIDDEN") for e in user_entries},
-            "userGroupEntriesMap": {e.principal_id: perm_map.get(e.permission, "FORBIDDEN") for e in group_entries},
         }
 
     def build_template_dto(self, db, t):
@@ -2271,7 +2268,8 @@ class DocumentService:
             from app.core.exceptions import EntityNotFoundException
             raise EntityNotFoundException("DocumentMasterTemplateNotFoundException", template_id)
         acl_id = getattr(tpl, "acl_id", None)
-        new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}))
+        new_acl_id = apply_acl(db, acl_id, body.get("userEntries", {}), body.get("groupEntries", {}),
+                               workspace_id=ws)
         if tpl.acl_id != new_acl_id:
             tpl.acl_id = new_acl_id
             db.commit()

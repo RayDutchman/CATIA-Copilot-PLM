@@ -179,13 +179,13 @@ S-010,Service,,P2,已完成,EntityManagerProducer.java,core/database.py,,
 S-011,Service,,P2B,已完成,ImporterBean.java,importer.py,,
 S-012,Service,,P2B,已完成,LOVManagerBean.java,lov_manager.py,,
 S-013,Service,,P2,已扩展,NotificationManagerBean.java,notification_manager.py,,Batch3+6: +subscribe/unsubscribe + build_notification_dto
-S-014,Service,,P2,已接线(间接),NotifierBean.java,notifier.py,,已被 indexer_manager 调用, 非 router 直连
-S-015,Service,,P2B,对齐存根,OAuthManagerBean.java,oauth_manager.py,,OAuth 当前未实现
-S-016,Service,,P2B,对齐存根,OnDemandConverterBean.java,ondemand_converter.py,,ext 层占位, 从未接入
+S-014,Service,,P2,已接线(间接),NotifierBean.java,notifier.py,,, 非 router 直连
+S-015,Service,,P2B,对齐存根,OAuthManagerBean.java,oauth_manager.py,,
+S-016,Service,,P2B,对齐存根,OnDemandConverterBean.java,ondemand_converter.py,,, 从未接入
 S-017,Service,,P2B,已激活,OrganizationManagerBean.java,organization_manager.py,,Batch2 激活: 28处内联DB从organizations.py迁入
 S-018,Service,,P2B,已完成,PSFilterManagerBean.java,psfilter_manager.py,,
 S-019,Service,,P2B,对齐存根,PendingConversionsCleaner.java,pending_conversions_cleaner.py,,Java @Schedule 定时器, Python 需 scheduler 替代
-S-020,Service,,P2B,对齐存根,PlatformHealthManagerBean.java,platform_health_manager.py,,platform.py health 端点已覆盖
+S-020,Service,,P2B,对齐存根,PlatformHealthManagerBean.java,platform_health_manager.py,,
 S-021,Service,,P2B,已激活,PlatformOptionsManagerBean.java,platform_options_manager.py,,Batch2 激活: upsert从admin.py迁入
 S-022,Service,,P2,已扩展,ProductManagerBean.java,product_manager.py,,Batch4+6: +publish/update_acl/used_by/templates等18+方法
 S-023,Service,,P2B,对齐存根,PublicEntityManagerBean.java,public_entity_manager.py,,publish/unpublish 逻辑已在各 manager 中
@@ -227,11 +227,11 @@ S-058,Service,listeners,P2B,对齐存根,listeners/documents/UserFolderManager.j
 S-059,Service,listeners,P2B,对齐存根,listeners/notifications/PartNotificationManager.java,listeners/part_notification_manager.py,,CDI @Observes 监听器, Python 不走此模式
 S-060,Service,listeners,P2B,对齐存根,listeners/notifications/SubscriptionManager.java,listeners/subscription_manager.py,,CDI @Observes 监听器, Python 不走此模式
 S-061,Service,listeners,P2B,对齐存根,listeners/workflow/RoleManager.java,listeners/role_manager.py,,CDI @Observes 监听器, Python 不走此模式
-S-062,Service,products,P2B,对齐存根,products/PartWorkflowManagerBean.java,products/part_workflow_manager.py,,零件工作流在 workflow_manager 统一处理
+S-062,Service,products,P2B,对齐存根,products/PartWorkflowManagerBean.java,products/part_workflow_manager.py,,
 S-063,Service,products,P2B,已完成,products/ProductBaselineManagerBean.java,products/product_baseline_manager.py,,
 S-064,Service,products,P2B,已激活,products/ProductInstanceManagerBean.java,products/product_instance_manager.py,,Batch2激活+Batch4扩展: _build_instance_master_dict等迁入
 S-065,Service,documents,P2B,已激活,documents/DocumentBaselineManagerBean.java,documents/document_baseline_manager.py,,Batch2 激活: 17处内联DB从document_baselines.py迁入
-S-066,Service,documents,P2B,对齐存根,documents/DocumentWorkflowManagerBean.java,documents/document_workflow_manager.py,,文档工作流在 workflow_manager 统一处理
+S-066,Service,documents,P2B,对齐存根,documents/DocumentWorkflowManagerBean.java,documents/document_workflow_manager.py,,
 S-067,Service,hooks,P2B,对齐存根,hooks/SNSWebhookRunner.java,hooks/sns_webhook_runner.py,,Java 异步 runner, 标记存根
 S-068,Service,hooks,P2B,对齐存根,hooks/SimpleWebhookRunner.java,hooks/simple_webhook_runner.py,,Java 异步 runner, 标记存根
 S-069,Service,hooks,P2B,对齐存根,hooks/WebhookRunner.java,hooks/webhook_runner.py,,Java 异步 runner, 标记存根

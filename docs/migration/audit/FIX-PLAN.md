@@ -184,7 +184,7 @@
 
 ### PKG-change → Subagent J
 **Files:** `app/routers/change_common.py`、`app/services/change_manager.py`
-- [x] **CH-1** `change_common.py:35-41`：`_get_acl_dict` 填充 `userGroupEntriesMap`（group_id→permission）。
+- [x] **CH-1** `change_common.py:35-41`：`_get_acl_dict` 填充 `groupEntries`（group_id→permission）。
 - [x] **CH-4** `change_common.py:179-183`：`_set_affected_parts` iteration 从 body 取，不硬编码 1（无则查 partiteration MAX）。
 - [x] **CH-2** `change_manager.py:141-163`：`update_item` 加白名单。✅ 主 agent 纠正：改为白名单+**静默忽略**非白名单字段（Java DTO 只提取 4 字段、前端 PUT 带 author+initiator，抛错会破坏前端 save），非「排除报错」；补 WrongInputException→400。
 - [x] **CH-5** `change_common.py:171-184`：`_set_affected_*` 补 ACL 写权限检查。✅ 主 agent 接线 issue/order/request 的 update + affected-parts/documents 路由传 user_login/is_admin（原 update 恒 403，是相对 Payara 偏差，接线后对齐 `checkChangeItemWriteAccess`）。

@@ -38,8 +38,6 @@ def _model_to_dict(m, db: Session = None) -> dict:
             acl_data = {
                 "userEntries": [{"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in user_entries],
                 "groupEntries": [{"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")} for e in group_entries],
-                "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
-                "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
             }
 
     activity_models = []
@@ -139,7 +137,8 @@ def update_model_acl(ws: str, model_id: str, body: dict, db: Session = Depends(g
     m = workflow_service.get_model(db, ws, model_id)
     new_acl_id = apply_acl(db, m.acl_id,
                            body.get("userEntries", {}),
-                           body.get("groupEntries", {}))
+                           body.get("groupEntries", {}),
+                           workspace_id=ws)
     m.acl_id = new_acl_id
     db.commit()
     return Response(status_code=204)

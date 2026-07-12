@@ -179,7 +179,8 @@ def set_order_acl(ws: str, item_id: int, body: dict,
     item = svc.get_by_id(db, ChangeOrder, ws, item_id)
     new_acl_id = apply_acl(db, item.acl_id,
                            body.get("userEntries", {}),
-                           body.get("groupEntries", {}))
+                           body.get("groupEntries", {}),
+                           workspace_id=ws)
     item.acl_id = new_acl_id
     db.commit()
     return _item_to_dict(item, db, current_user)

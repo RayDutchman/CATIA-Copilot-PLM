@@ -47,8 +47,8 @@
 - 严重级：CRITICAL
 - 类别：要点#6（权限/ACL 展示）
 - 位置：`app/routers/change_common.py:35-41`（_get_acl_dict）
-- 证据：`userGroupEntriesMap: {}` 硬编码空。Java Dozer 自动映射 groupEntries。
-- 结论与建议：填充 userGroupEntriesMap（group_id→permission）。
+- 证据：`groupEntries: []` 硬编码空。Java Dozer 自动映射 groupEntries。
+- 结论与建议：填充 groupEntries（group_id→permission）。
 
 ## 问题 CH-2 ~ CH-5（HIGH）
 - **CH-2**(要点#2)：change_manager.py:141-163 update_item 允许更新任意 key（含不可变 name），Java updateChangeIssue 只更 description/priority/category。加白名单。
@@ -92,7 +92,7 @@
 - ✅ **WF-2/WF-3/WF-4**（HIGH）：list_wwf 返回 workspace_workflow UUID id；instantiate 用 RETURNING id；WF-4 补审批通知 TODO（notifier 无 sendApproval 接口）。
 - ✅ **TASK-1**（CRITICAL）：新增 `_apply_final_lifecycle_state`，工作流完成时按 `{RELEASED:1,OBSOLETE:2}` 更新持有者 partrevision/documentrevision.status。
 - ✅ **TASK-2**（HIGH）：process_task 返回 204。
-- ✅ **CH-1**（CRITICAL）：`_get_acl_dict` 从 aclusergroupentry 填充 userGroupEntriesMap。
+- ✅ **CH-1**（CRITICAL）：`_get_acl_dict` 从 aclusergroupentry 填充 groupEntries。
 - ✅ **CH-2**（HIGH）：update_item 改为白名单+静默忽略非白名单字段（对齐 Java DTO 提取，避免破坏前端 save）；补 WrongInputException→400。
 - ✅ **CH-4**（HIGH）：affected-part iteration 用 body/MAX 实际值。
 - ✅ **CH-5**（HIGH）：_set_affected_* 补 ACL 写检查，主 agent 接线 issue/order/request 的 update+affected 路由。

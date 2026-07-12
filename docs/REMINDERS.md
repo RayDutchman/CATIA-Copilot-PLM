@@ -111,7 +111,13 @@
 
 ## 已解决（近期）
 
-- [x] **2026-07-11 删除工作区遗漏 binaryresource + vault 文件修复（back-py）**:
+- [x] **2026-07-12 P1-12 遗留 TODO 补完 + apply_acl 根本修复 + Pydantic WorkflowDTO 修复**：
+  - **P1-12 workflowModelId/acl/roleMapping 补完**：`create_new_version` 扩展签名支持三个可选参数，创建新版本后正确挂载 workflow 实例和 ACL（对照 Java ProductManagerBean.createPartRevision）。handler 解析 body 兼容前端数组格式和程序化 map 格式。
+  - **apply_acl 根本修复**：发现迁移 AI 自创 `"login:workspace_id"` key 格式与 Java 不符，导致全量 ACL 写入必 FK 500（19 个调用点中 17 个受影响，但均未被真实触发故无历史报错）。修复：`apply_acl` 新增 `workspace_id` 参数（对齐 Java ACLFactory），去掉 key split 逻辑，更新所有 17 个调用方 + 2 个测试文件。
+  - **Pydantic WorkflowDTO 修复**：commit `3e5bd5d` 加 `__future__` annotations 后 `WorkflowDTO/WorkflowActivityDTO/ActivityModelDTO` 的前向引用未被 rebuild，导致 `/openapi.json` 返回 500。补加三行 `model_rebuild()` 后恢复 200。
+  - pytest **282 passed / 1 skipped**，在线冒烟全绿（ACL newVersion + workflow+ACL newVersion DB 核实）。
+
+
   - 症状：删 GD50 工作区→重建→上传附件报 409 `文件已存在`
   - 根因：`delete_workspace` 只按 workspace_id 级联删 DB，遗漏 ① `binaryresource` 表（无 workspace_id 列，主键 fullname，残留 102 行）② vault 磁盘文件夹（从不删）；`save_attached` 查 BinaryResource DB 记录判重 → 409
   - Payara 比对：`deleteWorkspace` = removeWorkspace（BinaryResource 靠 PartIteration JPA orphanRemoval 级联）+ `deleteWorkspaceFolder`(FileUtils.deleteDirectory) + 删 ES 索引；Payara 该操作 `@Asynchronous`

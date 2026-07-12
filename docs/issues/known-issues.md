@@ -510,7 +510,7 @@
 - **修复状态：** `已修复`（2026-07-08，全部对齐 Payara Java DTO）
 - **修复方案（7 项，铁律：以 Payara `docdoku-plm-server-rest/.../dto/*.java` 为准）：**
   1. **TaskDTO** — 删除 helper 多余键 `closingDate`（Payara 仅有 `closureDate`）`services/task_manager.py`
-  2. **ACLDTO** — schema 由 `dict[str,str]` 改为 `List[ACLEntryDTO]`（{key,value}）+ getter 派生的 `userEntriesMap`/`userGroupEntriesMap`（Payara `ACLDTO.java` 序列化 4 个 JSON 属性）
+  2. **ACLDTO** — schema 由 `dict[str,str]` 改为 `List[ACLEntryDTO]`（{key,value}），对齐 Java `ACLDTO.java` 的 `userEntries`/`groupEntries`
   3. **WorkflowModelDTO** — 去掉 Payara 不存在的 `workspaceId`，改为实际字段 `reference`
   4. **TaskHolderDocDTO** — `tasks/{login}/documents` response_model 改为 `DocumentRevisionDTO`（Payara 返回精简版，`Tools.createLightDocumentRevisionDTO` 清空 tags/workflow）
   5. **ProductInstanceIterationDTO** — 删除 Payara 不存在的 `productBaselineId`（Payara 用嵌套 `basedOn`）

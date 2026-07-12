@@ -6,7 +6,28 @@
 
 ---
 
-## 2026-07-12 — fix: 第4轮审计修复（2 CRITICAL + 13 HIGH + 16 MED 全部闭环）
+## 2026-07-12 — fix: P1-12 遗留 TODO 补完 + apply_acl 根本修复 + Pydantic WorkflowDTO 修复
+
+> 分支 `fix/audit-remediation`。pytest **282 passed / 1 skipped 零回归**；GD50 在线冒烟：ACL 纯 newVersion 204 + workflow+ACL newVersion 204，DB 核实 `principal_workspace_id=GD50` + `workflow_id` 正确写入。
+
+- **feat(part): P1-12 补完 workflowModelId/acl/roleMapping 传递**
+  - `product_manager.create_new_version` 扩展签名（`workflow_model_id`/`acl_user_entries`/`acl_group_entries`/`role_mapping` 四个可选参数，默认 None 不破坏其他调用方）
+  - 创建新 PartRevision 后：有 `workflow_model_id` 则调 `WorkflowService.instantiate_workflow` 实例化工作流并写回 `partrevision.workflow_id`；有 ACL 则调 `apply_acl` 并写回 `partrevision.acl_id`（均用 UPDATE 语句隔离 helper 内部 commit）
+  - `part.py` handler 解析 body 中 `workflowModelId`/`acl`/`roleMapping` 字段（前端标准 `userEntries`/`groupEntries` 数组格式；permission 字符串/int 统一转 int）
+  - 清理 TODO 注释
+
+- **fix(security): apply_acl 对齐 Java ACLFactory.createACL，修复全量 ACL 写入必 FK 500 的根本缺陷**
+  - 根因：迁移 AI 自创 `"login:workspace_id"` key 格式（Java 原文 workspace_id 是独立参数，map key 是纯 login）；19 个调用点中 17 个传纯 login，导致 `principal_workspace_id=""` 违反 FK 约束
+  - `apply_acl(db, acl_id, user_entries, group_entries, workspace_id="")` 新增 `workspace_id` 参数，去掉 `:` 拆分逻辑，直接用 `workspace_id` 写入
+  - 更新全部 17 个调用方（routers: change_issues/change_orders/change_requests/milestones/folders/workflow_models/product_instances；services: document_manager×4/product_manager×4/product_structure×2），补传 workspace_id
+  - 更新测试（`test_acl_endpoints.py` key `"test1:GD50"→"test1"`，`test_security_service.py` 补 `workspace_id="GD50"`）
+
+- **fix(schema): 修复 Pydantic WorkflowDTO 导致 /openapi.json 500 的 forward-reference 未解析缺陷**
+  - 根因：commit `3e5bd5d` 给 schema 文件加 `from __future__ import annotations`，使 `WorkflowDTO.activities: List[WorkflowActivityDTO]` 等变为懒加载字符串注解，但 `workflow/__init__.py` 未同步补 `model_rebuild()`
+  - `workflow/__init__.py` 补加 `WorkflowActivityDTO.model_rebuild()`、`WorkflowDTO.model_rebuild()`、`ActivityModelDTO.model_rebuild()` 三行
+  - `/openapi.json` 由 500 恢复 200
+
+
 
 > 按 `docs/migration/audit-round4/FIX-PLAN.md` 分 4 批执行（延续分支 `fix/audit-remediation`）。全程 pytest **282 passed / 1 skipped 零回归**；CRITICAL 经 GD50 造数据复测；权限项经 non-admin(alice)/ws-admin(test1)/global-admin(admin) smoke 对拍。镜像已 rebuild 持久化。22 LOW 及已知计划外项不列入（用户确认"修到 MED"）。
 
@@ -58,7 +79,7 @@
 - **域1 Parts**：P1-01 set_tags 500 修复、P1-03 filter 单 PartIterationDTO+404、P1-05 removeFile subresource、P1-08 TODO、P1-09 add_tag 写权限。
 - **域2 Products**：P2-07 list_product_instances 完整 DTO、P2-08 filter linkType、P2-10 vault 路径对齐 product-instances/{sn}。
 - **域3 Baselines**：P3-04 put_effectivity 200+DTO、P3-05 delete_baseline 204。
-- **域4 Documents**：P4-03 undo admin 覆盖、P4-10 routePath String、P4-11 create_in_folder 字段透传、P4-12 attributesLocked、P4-13 修 NameError+userGroupEntriesMap、P4-14 批量 commit。
+- **域4 Documents**：P4-03 undo admin 覆盖、P4-10 routePath String、P4-11 create_in_folder 字段透传、P4-12 attributesLocked、P4-13 修 NameError+ACL 填充、P4-14 批量 commit。
 - **域5 Workspace**：P5-08 去 creationDate 噪音、P5-09 deleteWorkspace 202、P5-10 +readOnly、P5-11 getReachableUsers→UserDTO。
 - **域6 Workflow**：P6-10 list_models 权限、P6-11 assignedGroups、P6-12 STATUS_MAP +NOT_TO_BE_DONE、P6-13 change set_tags 权限接线。
 - **域7 Query/Importer**：P7-04 LOV 表头不 fall-through、P7-06 query-export 真 XLSX、P7-08 多值补空属性、P7-09 post_import pathdata 分支。
@@ -281,9 +302,9 @@
 - **TASK-1** `task_manager.py`：`_advance_activity`/`_start_activity` 改为返回 bool 标识工作流是否全部完成；新增 `_apply_final_lifecycle_state` —— 工作流完成时读 `workflow.finallifecyclestate`，按 `{RELEASED:1, OBSOLETE:2}`（对齐 `part_mapper.STATUS_MAP`）更新持有者 partrevision/documentrevision 的 `status`。对齐 Java PartRevision/DocumentRevision.getLifeCycleState 委托 workflow。
 - **TASK-2** `tasks.py` `process_task`：返回 `Response(204)`（原返回 holder 200），对齐 Java `TaskResource.java:306` noContent。
 
-### fix(change): userGroupEntriesMap / 真实 iteration / update 白名单 + ACL 写检查（CH-1,CH-2,CH-4,CH-5）
+### fix(change): ACL groupEntries 填充 / 真实 iteration / update 白名单 + ACL 写检查（CH-1,CH-2,CH-4,CH-5）
 
-- **CH-1** `change_common.py` `_get_acl_dict`：从 `aclusergroupentry` 填充 `userGroupEntriesMap`（group_id→permission），原恒空。
+- **CH-1** `change_common.py` `_get_acl_dict`：从 `aclusergroupentry` 填充 `groupEntries`（group_id→permission），原恒空。
 - **CH-4** `_set_affected_parts`：iteration 从 body 取，无则查 `partiteration` MAX（原恒硬编码 1）。已验证 iteration=2 的零件正确写 2、body 显式 1 时写 1。
 - **CH-2** `change_manager.py` `update_item`：仅应用白名单字段（description/priority/category/assignee/dueDate + milestone_id + Milestone.title），对 name/author/initiator/id 等非白名单字段**静默忽略**（不抛异常）。**关键**：Java REST 层接收完整 DTO 但只提取 4 个字段，且 Backbone 前端 save 会带 author+initiator，若抛错则前端编辑弹框全部 400 —— 主 agent 对拍 `ChangeIssuesResource.updateIssue` + `change_issue_edition.js` 后纠正 subagent 的「抛 WrongInputException」为静默忽略。
 - **CH-5** `_set_affected_parts`/`_set_affected_documents`：新增 `user_login`/`is_admin` 参，执行 `check_write_access`（对齐 Java `checkChangeItemWriteAccess:889`）；主 agent 将 issue/order/request 的 update + affected-parts/documents 6+3 个路由接线 `user_login`（原 update 路由从不传 user_login → 恒 403，是相对 Payara 的偏差，接线后恢复 Payara 行为）。
@@ -794,8 +815,8 @@
 
 ### extra=forbid 静默 500 风险修复（7 项，全部对齐 Payara Java DTO）
 - fix(dto): TaskDTO — 删除 helper 多余字段 `closingDate`（Payara TaskDTO 仅有 `closureDate`）`services/task_manager.py:46`
-- fix(dto): ACLDTO schema 对齐 Payara — `userEntries`/`groupEntries` 改为 `List[ACLEntryDTO]`（{key,value}），新增 getter 派生的 `userEntriesMap`/`userGroupEntriesMap`；新增 `ACLEntryDTO` `schemas/workflow/__init__.py`
-- fix(dto): workflow-models acl_data — `userGroupEntriesMap` 由 groupEntries 正确派生（原硬编码 `{}`）`routers/workflow_models.py:41`
+- fix(dto): ACLDTO schema 对齐 Java — `userEntries`/`groupEntries` 为 `List[ACLEntryDTO]`（{key,value}）；新增 `ACLEntryDTO` `schemas/workflow/__init__.py`
+- fix(dto): workflow-models acl_data — `groupEntries` 由 aclusergroupentry 正确派生（原硬编码 `{}`）`routers/workflow_models.py`
 - fix(dto): WorkflowModelDTO — 去掉 Payara 不存在的 `workspaceId`，改为 Payara 实际字段 `reference` `schemas/workflow/workflow_model.py:12`
 - fix(dto): TaskHolderDocDTO — `tasks/{login}/documents` 端点 response_model 改为 `DocumentRevisionDTO`（Payara 实际返回精简版 DocumentRevisionDTO），清空 tags/workflow 对齐 `Tools.createLightDocumentRevisionDTO` `routers/tasks.py:269`
 - fix(dto): ProductInstanceIterationDTO — 删除 Payara 不存在的 `productBaselineId`（Payara 用 `basedOn`）`routers/product_instances.py`、`routers/products.py`
@@ -1083,7 +1104,7 @@
 ## 2026-07-06 — document.py 作者/ACL/订阅修复
 
 - fix(py): **document.py `_doc_to_dict` 查询 Account 真实 name** — author/checkOutUser/releaseAuthor 不再用 login 填充 name，改查 account 表取 name/email/language
-- fix(py): **document.py acl 字段完整对象** — 从 `acl_id` 查 acl/acluserentry/aclusergroupentry 表构建完整 ACL 字典（userEntries/groupEntries/userEntriesMap/userGroupEntriesMap）
+- fix(py): **document.py acl 字段完整对象** — 从 `acl_id` 查 acl/acluserentry/aclusergroupentry 表构建完整 ACL 字典（userEntries/groupEntries）
 - fix(py): **document.py subscription 写 DB** — subscribe/unsubscribe 端点从 stub `{"status":"ok"}` 改为真实写入 iterationchangesubscription / statechangesubscription 表（ON CONFLICT DO NOTHING）
 - fix(py): **_doc_to_dict 签名变更** — `_doc_to_dict(rev)` → `_doc_to_dict(db, rev)`，所有调用方（document/documents/folders 路由）同步传递 db session
 

@@ -153,7 +153,7 @@
 
 - [ ] **P2-15/P1-14**：`product_manager.py:1895`（"No native CAD file uploaded"）、`:2007`（"partKey 格式应为..."）硬编码 HTTPException → 改领域异常（WrongInputException / 对应 NotFound），或将格式校验上移路由层（part.py 的 `_split_part_key` 已有）。对照 Java 确认抛哪个异常。
 - [ ] **P8-12**：`products.py:111/171/197` 路由层硬编码 HTTPException → ConfigurationItemNotFoundException / ProductInstanceMasterNotFoundException / 直接 `raise`（勿吞 str(e)）。
-- [ ] **P1-12**：`create_new_version`（:1071）扩展支持 description/workflow_model_id/acl/role_mapping 参数并写到**新版本行**；移除 router 中用旧版本号调 `set_new_version_description` 的逻辑（对齐 Java `PartResource.java:460-489` createPartRevision）。
+- [x] **P1-12**：`create_new_version`（:1071）扩展支持 description/workflow_model_id/acl/role_mapping 参数并写到**新版本行**；移除 router 中用旧版本号调 `set_new_version_description` 的逻辑（对齐 Java `PartResource.java:460-489` createPartRevision）。✅ **已完成（2026-07-12）** — 同批修复 apply_acl FK 根本缺陷 + Pydantic WorkflowDTO forward-reference。
 
 ### 主 agent Batch 3 收尾（P2-06 主 agent 亲自处理）
 - [ ] **P2-06/P2-16**（主 agent 亲改 `product_structure.py:_resolve_pi_config_spec` :1464-1512，避免与 Batch 1 冲突）：ProductInstanceMaster / ProductInstanceIteration 查询补 `configurationitem_id == ci_id`（对齐 Java `ProductInstanceMasterKey(serial, ws, ciId)` 三元组）。

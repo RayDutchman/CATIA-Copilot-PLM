@@ -22,7 +22,7 @@
 - **`extra='forbid'` 缺字段 → 422**；**`extra='ignore'` → 静默丢数据**；多余键/缺必填键/类型不符在序列化阶段抛 `ResponseValidationError` → 500（且 DB 事务可能已提交 → 数据不一致）。
 - **camelCase alias 缺失 → 422**（前端 payload 对不上）。
 - **字段类型对齐 Java 类型**：int ordinal vs enum 名（如 `type=0` → `LATEST`）、date 对象 vs ISO 字符串、`List[str]` vs `List[dict]`、单复数（`attachedFile` vs `attachedFiles`、`baselineType` vs `type`）、缺 `lifeCycleState`。
-- **getter 派生字段也会被 JSON-B 序列化**：如 `ACLDTO` 的 `userEntriesMap`/`userGroupEntriesMap`。对齐时别只看 private 字段，还要看 public getter。
+- **getter 派生字段也会被 JSON-B 序列化**：如 `ACLDTO` 的 `userEntries`/`groupEntries` 数组。对齐时别只看 private 字段，还要看 public getter。
 - **DTO 字段推导逻辑**：如 `attributeType` 由 `dtype` 判别符经 instanceof 映射、`lovName` 被 filter 清空、`matrix` 数组 vs `m00-m22` 独立字段的桥接——Java 的 Dozer converter / 手工映射逻辑要在 Python 复现，不能直接读不存在的列。
 - **验证脚本会把请求 CreationDTO 误映射到响应 DTO**，产生假 CRITICAL，需人工甄别。
 

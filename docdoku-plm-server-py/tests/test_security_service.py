@@ -28,7 +28,7 @@ def test_create_and_delete_role():
 def test_apply_acl_creates_and_updates():
     db = SessionLocal()
     try:
-        acl_id = apply_acl(db, None, {"test1:GD50": FULL_ACCESS}, {})
+        acl_id = apply_acl(db, None, {"test1": FULL_ACCESS}, {}, workspace_id="GD50")
         assert acl_id is not None
         assert check_write_access(db, acl_id, "test1", False) is True
         assert check_write_access(db, acl_id, "other", False) is False

@@ -16,6 +16,7 @@ from app.services.product_manager import ProductService
 from app.services.part_mapper import map_revision, map_iteration
 from app.services import converter
 from app.services.workflow_manager import workflow_service
+from app.services.factory.acl_factory import parse_acl_entries
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 svc = ProductService()
@@ -189,12 +190,34 @@ def new_version_part(workspace_id: str, part_key: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    svc.create_new_version(db, workspace_id, number, version, current_user.login,
-                           description=body.get("description") or None)
-    # TODO: newVersion 尚缺 workflowModelId/acl/roleMapping 传递（service.create_new_version 暂不支持）。
-    #       对应 Java PartResource.createNewPartVersion(PartCreationDTO: description/workflowModelId/acl/roleMapping)
-    #       → ProductManagerBean.createPartRevision 在创建新版本后 setDescription/workflow/acl（:2282-2328）。
-    #       需扩展 product_manager.create_new_version 支持 workflowModelId/acl_id/roleMapping 参数。
+
+    # 解析 workflowModelId / acl / roleMapping（对照 Java PartResource.createNewPartVersion）
+    workflow_model_id = body.get("workflowModelId") or None
+
+    acl_payload = body.get("acl") or {}
+    acl_user_entries = parse_acl_entries(acl_payload.get("userEntries"))
+    acl_group_entries = parse_acl_entries(acl_payload.get("groupEntries"))
+
+    # roleMapping 前端格式：[{roleName, userLogins, groupIds}]
+    # → workflow_manager 期望格式：{role_name: {users:[...], groups:[...]}}
+    role_mapping_list = body.get("roleMapping") or []
+    role_mapping = {
+        item["roleName"]: {
+            "users": item.get("userLogins") or [],
+            "groups": item.get("groupIds") or [],
+        }
+        for item in role_mapping_list
+        if item.get("roleName")
+    }
+
+    svc.create_new_version(
+        db, workspace_id, number, version, current_user.login,
+        description=body.get("description") or None,
+        workflow_model_id=workflow_model_id,
+        acl_user_entries=acl_user_entries or None,
+        acl_group_entries=acl_group_entries or None,
+        role_mapping=role_mapping or None,
+    )
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/tags",

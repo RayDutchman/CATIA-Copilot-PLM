@@ -13,7 +13,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.document_manager import DocumentService
 from app.services.notification_manager import notification_service
-from app.services.factory.acl_factory import check_write_access
+from app.services.factory.acl_factory import check_write_access, parse_acl_entries
 from app.schemas.document import DocumentRevisionDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
@@ -157,8 +157,8 @@ def new_version(ws: str, doc_key: str, body: dict = {},
     description = body.get("description")
     workflow_model_id = body.get("workflowModelId")
     acl = body.get("acl", {})
-    user_entries = acl.get("userEntriesMap") if acl else None
-    user_group_entries = acl.get("userGroupEntriesMap") if acl else None
+    user_entries = parse_acl_entries(acl.get("userEntries")) if acl else None
+    user_group_entries = parse_acl_entries(acl.get("groupEntries")) if acl else None
     role_mapping = body.get("roleMapping")
     user_role_mapping = {}
     group_role_mapping = {}

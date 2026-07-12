@@ -58,7 +58,7 @@
 | B-5 | routers/document_baselines.py:115 | 文档基线创建缺 snapshotDocuments 校验 |
 | WF-1 | routers/workflow.py:60 | aborted-workflow-list 端点语义完全错误 |
 | TASK-1 | services/task_manager.py:171 | 任务审批不更新文档/零件 lifeCycleState |
-| CH-1 | routers/change_common.py:35 | ACL userGroupEntriesMap 硬编码空字典 |
+| CH-1 | routers/change_common.py:35 | ACL groupEntries 硬编码空字典 |
 | Q-1 | services/query_executor.py:312 | 查询结果缺 checkout-by-another-user 隐藏 → 信息泄露 |
 | Q-2 | services/query_executor.py:214 | author.* 分支硬编码 acc.name，email/language 查询错列 |
 | Q-3 | routers/parts.py:501 | query-export 只有 GET 简化版，缺 POST QueryDTO + 导出已存查询 |

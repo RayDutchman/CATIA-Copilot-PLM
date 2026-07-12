@@ -22,7 +22,7 @@ def test_set_part_acl():
     client.post(f"{PREFIX}/workspaces/{WS}/parts",
                 json={"number": num, "name": "acl test part"}, headers=h)
     resp = client.put(f"{PREFIX}/workspaces/{WS}/parts/{num}-A/acl",
-                      json={"userEntries": {"test1:GD50": FULL_ACCESS},
+                      json={"userEntries": {"test1": FULL_ACCESS},
                             "groupEntries": {}},
                       headers=h)
     assert resp.status_code == 204
@@ -35,7 +35,7 @@ def test_set_doc_acl():
     client.post(f"{PREFIX}/workspaces/{WS}/documents",
                 json={"reference": ref, "title": "acl test doc"}, headers=h)
     resp = client.put(f"{PREFIX}/workspaces/{WS}/documents/{ref}-A/acl",
-                      json={"userEntries": {"test1:GD50": FULL_ACCESS},
+                      json={"userEntries": {"test1": FULL_ACCESS},
                             "groupEntries": {}},
                       headers=h)
     assert resp.status_code == 204
@@ -58,7 +58,7 @@ def test_set_config_acl():
                            json={"name": "acl test config"}, headers=h)
     cfg_id = cfg_resp.json()["id"]
     resp = client.put(f"{PREFIX}/workspaces/{WS}/products/{ci_id}/configurations/{cfg_id}/acl",
-                      json={"userEntries": {"test1:GD50": FULL_ACCESS},
+                      json={"userEntries": {"test1": FULL_ACCESS},
                             "groupEntries": {}},
                       headers=h)
     assert resp.status_code in (200, 201)
@@ -76,7 +76,7 @@ def test_set_template_acl():
                       "idGenerated": False},
                 headers=h)
     resp = client.put(f"{PREFIX}/workspaces/{WS}/document-templates/{tpl_id}/acl",
-                      json={"userEntries": {"test1:GD50": FULL_ACCESS},
+                      json={"userEntries": {"test1": FULL_ACCESS},
                             "groupEntries": {}},
                       headers=h)
     assert resp.status_code in (200, 201)

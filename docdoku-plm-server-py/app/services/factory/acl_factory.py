@@ -11,8 +11,14 @@ FULL_ACCESS = 2
 
 
 def apply_acl(db: Session, acl_id: int | None,
-              user_entries: dict, group_entries: dict) -> int:
-    """upsert ACL entries，返回 acl_id。None 则新建 ACL。"""
+              user_entries: dict, group_entries: dict,
+              workspace_id: str = "") -> int:
+    """upsert ACL entries，返回 acl_id。None 则新建 ACL。
+
+    对齐 Java ACLFactory.createACL(pWorkspaceId, userEntries, groupEntries)：
+    - user_entries / group_entries 的 key 是纯 login / group_id（无 workspace 前缀）
+    - workspace_id 由调用方显式传入，写入 principal_workspace_id
+    """
     if acl_id is None:
         acl = ACL(enabled=True)
         db.add(acl)
@@ -29,18 +35,16 @@ def apply_acl(db: Session, acl_id: int | None,
     db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).delete()
     db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).delete()
 
-    # 写新条目
+    # 写新条目（key 为纯 login/group_id，workspace_id 由参数提供）
     for login, perm in user_entries.items():
-        parts = login.split(":")
         db.add(AclUserEntry(acl_id=acl_id,
-                            principal_login=parts[0],
-                            principal_workspace_id=parts[1] if len(parts) > 1 else "",
+                            principal_login=login,
+                            principal_workspace_id=workspace_id,
                             permission=perm))
     for gid, perm in group_entries.items():
-        parts = gid.split(":")
         db.add(AclUserGroupEntry(acl_id=acl_id,
-                                 principal_id=parts[0],
-                                 principal_workspace_id=parts[1] if len(parts) > 1 else "",
+                                 principal_id=gid,
+                                 principal_workspace_id=workspace_id,
                                  permission=perm))
     db.commit()
     return acl_id
@@ -72,14 +76,6 @@ def build_acl_dict(db: Session, acl_id: int | None, *, include_id: bool = False)
             {"key": r.principal_id, "value": _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")}
             for r in group_rows
         ],
-        "userEntriesMap": {
-            r.principal_login: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
-            for r in user_rows
-        },
-        "userGroupEntriesMap": {
-            r.principal_id: _PERMISSION_NAMES.get(r.permission, "FORBIDDEN")
-            for r in group_rows
-        },
     }
     if include_id:
         result["id"] = acl_id
@@ -157,3 +153,35 @@ def check_write_access(db: Session, acl_id: int | None,
     if group_entry:
         return True
     return False
+
+
+# --------------------------------------------------------------------------- #
+# 请求体 ACL 解析工具                                                          #
+# --------------------------------------------------------------------------- #
+
+_PERM_STR_TO_INT: dict[str, int] = {"FORBIDDEN": 0, "READ_ONLY": 1, "FULL_ACCESS": 2}
+
+
+def _perm_to_int(v: int | str) -> int:
+    """将权限值统一转为 int（兼容字符串 "FULL_ACCESS" 和 int 2）。"""
+    if isinstance(v, int):
+        return v
+    return _PERM_STR_TO_INT.get(str(v).upper(), 0)
+
+
+def parse_acl_entries(entries_list: list | None) -> dict:
+    """将前端发送的 ACL 字段解析为 {login/group_id: perm_int} 字典。
+
+    对齐 Java ACLDTO：前端唯一格式为 userEntries/groupEntries 数组
+      [{key: "login", value: "FULL_ACCESS"}, ...]
+    permission value 支持字符串（"FULL_ACCESS"/"READ_ONLY"/"FORBIDDEN"）或 int。
+
+    :param entries_list: userEntries / groupEntries 数组
+    :return: {login: perm_int} 字典，可直接传给 apply_acl
+    """
+    result: dict = {}
+    for entry in (entries_list or []):
+        key = entry.get("key") or ""
+        if key:
+            result[key] = _perm_to_int(entry.get("value", 0))
+    return result

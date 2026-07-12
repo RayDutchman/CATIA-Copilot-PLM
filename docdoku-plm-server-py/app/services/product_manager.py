@@ -214,7 +214,7 @@ class ProductService:
     def create_part(self, db: Session, workspace_id: str,
                     creator_login: str, body: PartCreationDTO) -> PartRevision:
         from app.core.exceptions import EntityAlreadyExistsException, PartRevisionAlreadyExistsException
-        from app.services.factory.acl_factory import apply_acl, check_write_access
+        from app.services.factory.acl_factory import apply_acl, check_write_access, parse_acl_entries
         from sqlalchemy import text as sql_text
         # workspace 写权限检查（对齐 Java checkWorkspaceWriteAccess）
         if not check_write_access(db, None, creator_login, False, workspace_id=workspace_id):
@@ -275,12 +275,13 @@ class ProductService:
         )
         db.add(revision)
         db.flush()
-        # 处理 ACL
+        # 处理 ACL（对齐 Java ACLDTO：前端发送 userEntries/groupEntries 数组格式）
         if body.acl:
-            user_entries = body.acl.get("userEntriesMap") or {}
-            group_entries = body.acl.get("userGroupEntriesMap") or {}
+            user_entries = parse_acl_entries(body.acl.get("userEntries"))
+            group_entries = parse_acl_entries(body.acl.get("groupEntries"))
             if user_entries or group_entries:
-                new_acl_id = apply_acl(db, None, user_entries, group_entries)
+                new_acl_id = apply_acl(db, None, user_entries, group_entries,
+                                       workspace_id=workspace_id)
                 revision.acl_id = new_acl_id
         # 创建工作流：用 instantiate_workflow 创建完整 Workflow/Activity/Task 对象图
         if body.workflow_model_id:
@@ -1076,7 +1077,18 @@ class ProductService:
         return pr
 
     def create_new_version(self, db: Session, ws: str, pn: str, ver: str,
-                           user_login: str, description: str = None) -> PartRevision:
+                           user_login: str, description: str = None,
+                           workflow_model_id: str = None,
+                           acl_user_entries: dict = None,
+                           acl_group_entries: dict = None,
+                           role_mapping: dict = None) -> PartRevision:
+        """创建零件的新版本（对照 Java ProductManagerBean.createPartRevision）。
+
+        :param workflow_model_id: 工作流模型 ID（可选），传入时实例化 workflow 并挂到新版本。
+        :param acl_user_entries:  ACL 用户条目 {login: permission_str}（可选）。
+        :param acl_group_entries: ACL 用户组条目 {group_id: permission_str}（可选）。
+        :param role_mapping:      角色映射 {role_name: {users:[...], groups:[...]}}（workflow 实例化时使用）。
+        """
         from app.core.exceptions import NotAllowedException, EntityAlreadyExistsException, PartRevisionAlreadyExistsException
         pr = self.get_revision(db, ws, pn, ver)
         if pr.checkout_user_login:
@@ -1113,6 +1125,43 @@ class ProductService:
         ))
         db.commit()
         db.refresh(new_pr)
+
+        # --- 挂载 Workflow（对照 Java createPartRevision workflow 实例化逻辑）---
+        if workflow_model_id:
+            from app.services.workflow_manager import WorkflowService
+            wf_result = WorkflowService().instantiate_workflow(
+                db, ws, workflow_model_id, role_mapping or {}
+            )
+            wf_id = wf_result["workflowId"]
+            # instantiate_workflow 内部已 commit，用 UPDATE 直接写回 workflow_id
+            db.execute(
+                __import__("sqlalchemy").text(
+                    "UPDATE partrevision SET workflow_id = :wf_id "
+                    "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :ver"
+                ),
+                {"wf_id": wf_id, "ws": ws, "pn": pn, "ver": new_ver},
+            )
+            db.commit()
+            db.refresh(new_pr)
+
+        # --- 挂载 ACL（对照 Java createPartRevision setACL 逻辑）---
+        if acl_user_entries or acl_group_entries:
+            from app.services.factory.acl_factory import apply_acl
+            acl_id = apply_acl(db, None,
+                               acl_user_entries or {},
+                               acl_group_entries or {},
+                               workspace_id=ws)
+            # apply_acl 内部已 commit，用 UPDATE 直接写回 acl_id
+            db.execute(
+                __import__("sqlalchemy").text(
+                    "UPDATE partrevision SET acl_id = :acl_id "
+                    "WHERE workspace_id = :ws AND partmaster_partnumber = :pn AND version = :ver"
+                ),
+                {"acl_id": acl_id, "ws": ws, "pn": pn, "ver": new_ver},
+            )
+            db.commit()
+            db.refresh(new_pr)
+
         return new_pr
 
     def _ensure_tag(self, db: Session, ws: str, label: str) -> None:
@@ -1721,7 +1770,8 @@ class ProductService:
         acl_id = getattr(pr, "acl_id", None)
         user_entries = body.get("userEntries", {})
         group_entries = body.get("groupEntries", {})
-        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries,
+                               workspace_id=workspace_id)
         if pr.acl_id != new_acl_id:
             pr.acl_id = new_acl_id
             db.commit()
@@ -2357,7 +2407,8 @@ class ProductService:
             raise PartMasterTemplateNotFoundException("PartMasterTemplateNotFoundException", template_id)
         user_entries = body.get("userEntries", {})
         group_entries = body.get("groupEntries", {})
-        new_acl_id = apply_acl(db, t.acl_id, user_entries, group_entries)
+        new_acl_id = apply_acl(db, t.acl_id, user_entries, group_entries,
+                               workspace_id=workspace_id)
         if t.acl_id != new_acl_id:
             t.acl_id = new_acl_id
             db.commit()

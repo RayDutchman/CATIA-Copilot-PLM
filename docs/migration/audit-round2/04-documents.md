@@ -116,7 +116,7 @@
 - 类别：清单#3（NameError 崩溃）
 - 文件：`app/routers/document_templates.py:35-50`、`82-96`（list_templates/get_template）
 - Java对照：`DocumentTemplateResource.java:81-93`
-- 证据：t.acl_id 非空但 ACL 行不存在时，user_entries/group_entries 未定义 → NameError 500；且 userGroupEntriesMap 硬编码 {}。
+- 证据：t.acl_id 非空但 ACL 行不存在时，user_entries/group_entries 未定义 → NameError 500；且 groupEntries 硬编码 {}。
 - 建议修复：查询移到 if 外或 None 时置空列表。
 
 ## 问题 P4-14

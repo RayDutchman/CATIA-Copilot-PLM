@@ -76,6 +76,6 @@
 | Vault路径 | `{ws}/documents/{doc_id}/{ver}/{it}/{filename}`，无 geometry/ |
 | checkout 深拷贝 | `_copy_attached_files`/`_copy_linked_documents`/`_copy_instance_attributes` 新行 |
 | delete_revision/folder 级联 | 完整（baseline/逆链接/changeItem 约束检查 + 子表清理 + vault 物理删） |
-| DTO字段对齐 | DocumentRevisionDTO 40 字段 = Java；ACLDTO userEntriesMap/userGroupEntriesMap 已填充 |
+| DTO字段对齐 | DocumentRevisionDTO 40 字段 = Java；ACLDTO userEntries/groupEntries 已填充 |
 | 状态码 | 204(DELETE/PUT acl/subscribe)/201(create/upload/share)/200(GET/PUT) |
 | GD50冒烟 | GET /workspaces/GD50/documents → 200 |

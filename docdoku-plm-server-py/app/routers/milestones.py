@@ -130,7 +130,8 @@ def set_milestone_acl(ws: str, milestone_id: int, body: dict,
     item = svc.get_by_id(db, Milestone, ws, milestone_id)
     new_acl_id = apply_acl(db, item.acl_id,
                            body.get("userEntries", {}),
-                           body.get("groupEntries", {}))
+                           body.get("groupEntries", {}),
+                           workspace_id=ws)
     item.acl_id = new_acl_id
     db.commit()
     return Response(status_code=204)

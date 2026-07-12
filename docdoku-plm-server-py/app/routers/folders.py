@@ -8,6 +8,7 @@ from app.core.exceptions import AccessRightException
 from app.models.auth import Account
 from app.services.document_manager import DocumentService
 from app.schemas.misc import FolderDTO, FolderStatusDTO
+from app.services.factory.acl_factory import apply_acl, parse_acl_entries
 
 router = APIRouter()
 svc = DocumentService()
@@ -120,8 +121,8 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
     workflow_model_id = body.get("workflowModelId")
     acl = body.get("acl", {})
     role_mapping = body.get("roleMapping")
-    user_entries = acl.get("userEntriesMap") if acl else None
-    user_group_entries = acl.get("userGroupEntriesMap") if acl else None
+    user_entries = parse_acl_entries(acl.get("userEntries")) if acl else {}
+    user_group_entries = parse_acl_entries(acl.get("groupEntries")) if acl else {}
     rev = svc.create_document(db, ws, doc_id, title,
                                current_user.login, folder_path=folder_id,
                                template_id=template_id,
@@ -130,9 +131,8 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
     if description:
         rev.description = description
     if user_entries or user_group_entries:
-        from app.services.factory.acl_factory import apply_acl
         acl_id = getattr(rev, "acl_id", None)
-        new_acl_id = apply_acl(db, acl_id, user_entries, user_group_entries)
+        new_acl_id = apply_acl(db, acl_id, user_entries, user_group_entries, workspace_id=ws)
         if getattr(rev, "acl_id", None) != new_acl_id:
             rev.acl_id = new_acl_id
     db.commit()

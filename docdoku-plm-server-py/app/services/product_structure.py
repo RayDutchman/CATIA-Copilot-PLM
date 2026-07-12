@@ -1125,7 +1125,7 @@ class ProductStructureService:
             db.commit()
             return {"aclId": None}
         acl_id = getattr(config, "acl_id", None)
-        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries)
+        new_acl_id = apply_acl(db, acl_id, user_entries, group_entries, workspace_id=ws)
         if config.acl_id != new_acl_id:
             config.acl_id = new_acl_id
             db.commit()
@@ -1140,7 +1140,8 @@ class ProductStructureService:
         ci = self.get_ci(db, ws, ci_id)
         acl_id = None
         if acl_user_entries or acl_group_entries:
-            acl_id = apply_acl(db, None, acl_user_entries or {}, acl_group_entries or {})
+            acl_id = apply_acl(db, None, acl_user_entries or {}, acl_group_entries or {},
+                               workspace_id=ws)
         cfg = ProductConfiguration(
             name=name, description=desc,
             configurationitem_workspace_id=ws,

@@ -100,13 +100,10 @@ class ACLEntryDTO(BaseModel):
 
 
 class ACLDTO(BaseModel):
-    """对齐 Payara ACLDTO：userEntries/groupEntries 为 List<ACLEntryDTO>，
-    另有两个 getter 派生的 Map 字段（userEntriesMap/userGroupEntriesMap）。"""
+    """对齐 Java ACLDTO：userEntries/groupEntries 为 List<ACLEntryDTO>。"""
     model_config = ConfigDict(extra='forbid')
     userEntries: Optional[List[ACLEntryDTO]] = None
     groupEntries: Optional[List[ACLEntryDTO]] = None
-    userEntriesMap: Optional[dict[str, str]] = None
-    userGroupEntriesMap: Optional[dict[str, str]] = None
 
 # Re-exports from split files
 from app.schemas.workflow.activity_model import ActivityModelDTO  # noqa: E402, F401
@@ -121,3 +118,7 @@ from app.schemas.workflow.task_model import TaskModelDTO  # noqa: E402, F401
 TaskDTO.model_rebuild()
 WorkflowModelDTO.model_rebuild()
 TaskWrapperDTO.model_rebuild()
+# 补全 from __future__ import annotations 引入的懒加载前向引用（commit 3e5bd5d 引入缺失）
+WorkflowActivityDTO.model_rebuild()   # tasks: List["TaskDTO"]
+WorkflowDTO.model_rebuild()           # activities: List[WorkflowActivityDTO]
+ActivityModelDTO.model_rebuild()      # taskModels: List[TaskModelDTO]

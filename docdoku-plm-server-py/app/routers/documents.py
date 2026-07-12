@@ -7,6 +7,7 @@ from app.core.deps import get_current_user
 from app.models.auth import Account
 from app.services.document_manager import DocumentService
 from app.schemas.document import DocumentRevisionDTO
+from app.services.factory.acl_factory import parse_acl_entries
 
 router = APIRouter()
 svc = DocumentService()
@@ -127,6 +128,6 @@ def create(ws: str, body: dict,
                                workflow_model_id=workflow_model_id,
                                role_mapping=role_mapping,
                                description=description or None,
-                               user_entries=acl.get("userEntriesMap") if acl else None,
-                               user_group_entries=acl.get("userGroupEntriesMap") if acl else None)
+                               user_entries=parse_acl_entries(acl.get("userEntries")) if acl else None,
+                               user_group_entries=parse_acl_entries(acl.get("groupEntries")) if acl else None)
     return svc.build_revision_dto(db, rev, current_user.login)
