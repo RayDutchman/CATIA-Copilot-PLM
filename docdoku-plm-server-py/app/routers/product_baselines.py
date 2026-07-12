@@ -373,8 +373,8 @@ def create_baseline(ws: str, ci_id: str, body: dict,
     return _bl_summary_dict(bl, db)
 
 
-@router.delete("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}")
-@router.delete("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}/", include_in_schema=False)
+@router.delete("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}", status_code=204)
+@router.delete("/workspaces/{ws}/products/{ci_id}/baselines/{bl_id}/", status_code=204, include_in_schema=False)
 def delete_baseline(ws: str, ci_id: str, bl_id: int,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):

@@ -184,8 +184,8 @@ def get_effectivity(
     return _effectivity_to_dto(eff)
 
 
-@router.put("/workspaces/{workspace_id}/effectivities/{id}", status_code=204)
-@router.put("/workspaces/{workspace_id}/effectivities/{id}/", status_code=204, include_in_schema=False)
+@router.put("/workspaces/{workspace_id}/effectivities/{id}", status_code=200)
+@router.put("/workspaces/{workspace_id}/effectivities/{id}/", status_code=200, include_in_schema=False)
 def put_effectivity(
     workspace_id: str,
     id: int,
@@ -237,7 +237,7 @@ def put_effectivity(
     if "endLotId" in body:
         eff.end_lot = body["endLotId"]
     db.commit()
-    return Response(status_code=204)
+    return _effectivity_to_dto(eff)
 
 
 def _parse_date(value) -> datetime | None:

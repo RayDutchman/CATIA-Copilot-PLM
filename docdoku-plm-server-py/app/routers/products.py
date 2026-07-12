@@ -47,6 +47,203 @@ def _p2p_svc_lazy(db, ws: str, ci_id: str) -> list:
         return []
 
 
+def _build_instance_master_dict(db: Session, inst: ProductInstanceMaster) -> dict:
+    """构建完整 ProductInstanceMasterDTO（identifier + acl + iteration 列表）。
+
+    对齐 Java ProductInstanceMasterDTO（serialNumber/configurationItemId/identifier/
+    productInstanceIterations/acl）。P2-07：list_product_instances / list_ci_instances
+    复用此函数输出完整 DTO。
+    """
+    ws = inst.workspace_id
+    sn = inst.serialnumber
+    ci_id = inst.configurationitem_id
+
+    # ── acl ──
+    from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
+    acl_data = None
+    if inst.acl_id:
+        acl = db.query(ACL).filter(ACL.id == inst.acl_id).first()
+        if acl:
+            user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == inst.acl_id).all()
+            group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == inst.acl_id).all()
+            _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
+            acl_data = {
+                "userEntries": [
+                    {"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")}
+                    for e in user_entries
+                ],
+                "groupEntries": [
+                    {"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")}
+                    for e in group_entries
+                ],
+                "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
+                "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
+            }
+
+    # ── iterations ──
+    iterations = db.query(ProductInstanceIteration).filter(
+        ProductInstanceIteration.workspace_id == ws,
+        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
+    ).order_by(ProductInstanceIteration.iteration).all()
+
+    from app.services.products.path_to_path_service import path_to_path_service
+    from app.models.configuration.product_baseline import ProductBaseline
+
+    iterations_list = []
+    for it in iterations:
+        it_num = it.iteration
+        # substituteLinks / optionalUsageLinks / substitutesParts / optionalsParts
+        # pathDataMasterList / pathDataPaths / pathToPathLinks / basedOn
+        # instanceAttributes / linkedDocuments / attachedFiles
+        # （与 get_product_instance 中逐 iteration 填充逻辑一致）
+        sub_rows = db.execute(text(
+            "SELECT substitutelinks FROM prdinstanceiteration_sublink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        substitute_links = [r[0] for r in sub_rows if r[0]]
+
+        opt_rows = db.execute(text(
+            "SELECT optionalusagelinks FROM prdinstanceiteration_optlink "
+            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
+            "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        optional_links = [r[0] for r in opt_rows if r[0]]
+
+        substitutes_parts = []
+        for path_str in substitute_links:
+            try:
+                decoded = svc.decode_path(db, ws, ci_id, path_str)
+                if decoded:
+                    substitutes_parts.append({"partLinks": decoded})
+            except Exception:
+                pass
+
+        optionals_parts = []
+        for path_str in optional_links:
+            try:
+                decoded = svc.decode_path(db, ws, ci_id, path_str)
+                if decoded:
+                    optionals_parts.append({"partLinks": decoded})
+            except Exception:
+                pass
+
+        pdm_rows = db.execute(text(
+            "SELECT pdm.id, pdm.path FROM pathdatamaster pdm "
+            "JOIN prdinstiteration_pathdatamstr pipd ON pipd.pathdatamaster_id = pdm.id "
+            "WHERE pipd.workspace_id=:ws AND pipd.configurationitem_id=:ci "
+            "AND pipd.prdinstancemaster_serialnumber=:sn "
+            "AND pipd.prdinstanceiteration_iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        path_data_masters = [{"id": r[0], "path": r[1]} for r in pdm_rows]
+
+        path_data_paths = []
+        for pdm in path_data_masters:
+            try:
+                decoded = svc.decode_path(db, ws, ci_id, pdm["path"])
+                if decoded:
+                    path_data_paths.append({"partLinks": decoded})
+            except Exception:
+                pass
+
+        p2p_rows = db.execute(text(
+            "SELECT ppl.id, ppl.type, ppl.description, ppl.sourcepath, ppl.targetpath "
+            "FROM pathtopathlink ppl "
+            "JOIN prdinstiteration_p2plink pip ON pip.pathtopathlink_id = ppl.id "
+            "WHERE pip.workspace_id=:ws AND pip.configurationitem_id=:ci "
+            "AND pip.prdinstancemaster_serialnumber=:sn AND pip.iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        path_to_path_links = [
+            path_to_path_service._link_row_to_dict(r, db=db, ws=ws, ci_id=ci_id)
+            for r in p2p_rows
+        ]
+
+        based_on = None
+        if it.productbaseline_id:
+            baseline = db.query(ProductBaseline).filter(
+                ProductBaseline.id == it.productbaseline_id,
+            ).first()
+            if baseline:
+                based_on = {
+                    "id": baseline.id,
+                    "name": baseline.name,
+                    "description": baseline.description,
+                }
+
+        attr_rows = db.execute(text(
+            "SELECT ia.id, ia.name, ia.mandatory, ia.locked, ia.booleanvalue, "
+            "ia.datevalue, ia.indexvalue, ia.numbervalue, ia.textvalue, "
+            "ia.longtextvalue, ia.urlvalue "
+            "FROM instanceattribute ia "
+            "JOIN prdinstiteration_attribute pia ON pia.instanceattribute_id = ia.id "
+            "WHERE pia.workspace_id=:ws AND pia.configurationitem_id=:ci "
+            "AND pia.prdinstancemaster_serialnumber=:sn AND pia.iteration=:it "
+            "ORDER BY pia.attribute_order"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        instance_attrs = [{
+            "id": r[0], "name": r[1], "mandatory": r[2], "locked": r[3],
+            "booleanValue": r[4],
+            "dateValue": str(r[5]) if r[5] else None,
+            "indexValue": r[6], "numberValue": r[7],
+            "textValue": r[8], "longTextValue": r[9], "urlValue": r[10],
+        } for r in attr_rows]
+
+        doc_rows = db.execute(text(
+            "SELECT dl.id, dl.target_documentmaster_id, dl.target_docrevision_version, "
+            "dl.target_workspace_id, dl.commentdata "
+            "FROM documentlink dl "
+            "JOIN prdinstiteration_documentlink pid ON pid.documentlink_id = dl.id "
+            "WHERE pid.workspace_id=:ws AND pid.configurationitem_id=:ci "
+            "AND pid.prdinstancemaster_serialnumber=:sn AND pid.iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        linked_docs = [{
+            "id": r[0], "documentMasterId": r[1], "version": r[2],
+            "workspaceId": r[3], "commentLink": r[4] or "",
+        } for r in doc_rows]
+
+        file_rows = db.execute(text(
+            "SELECT br.fullname, br.dtype, br.contentlength, br.lastmodified, "
+            "br.quality, br.x_max, br.x_min, br.y_max, br.y_min, br.z_max, br.z_min "
+            "FROM binaryresource br "
+            "JOIN prdinstiteration_binres pib ON pib.attachedfile_fullname = br.fullname "
+            "WHERE pib.workspace_id=:ws AND pib.configurationitem_id=:ci "
+            "AND pib.prdinstancemaster_serialnumber=:sn AND pib.iteration=:it"
+        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
+        attached_files = [{
+            "fullName": r[0], "type": r[1], "contentLength": r[2],
+            "lastModified": str(r[3]) if r[3] else None,
+            "quality": r[4], "xMax": r[5], "xMin": r[6],
+            "yMax": r[7], "yMin": r[8], "zMax": r[9], "zMin": r[10],
+        } for r in file_rows]
+
+        iterations_list.append({
+            "iteration": it_num,
+            "iterationNote": it.iteration_note,
+            "creationDate": _fmt_date(it.creation_date),
+            "modificationDate": _fmt_date(it.modification_date),
+            "author": _get_user_dto(db, it.author_login, ws),
+            "substituteLinks": substitute_links,
+            "optionalUsageLinks": optional_links,
+            "substitutesParts": substitutes_parts,
+            "optionalsParts": optionals_parts,
+            "pathDataMasterList": path_data_masters,
+            "pathDataPaths": path_data_paths,
+            "pathToPathLinks": path_to_path_links,
+            "basedOn": based_on,
+            "instanceAttributes": instance_attrs,
+            "linkedDocuments": linked_docs,
+            "attachedFiles": attached_files,
+        })
+
+    return {
+        "serialNumber": sn,
+        "configurationItemId": ci_id,
+        "identifier": f"{ws}/{ci_id}-{sn}",
+        "acl": acl_data,
+        "productInstanceIterations": iterations_list,
+    }
+
+
 def _ci_to_dict(ci: ConfigurationItem, db: Session) -> dict:
     name = ""
     latest_version = ""
@@ -163,6 +360,11 @@ def filter_structure(ws: str, ci_id: str,
 def decode_path(ws: str, ci_id: str, p: str,
                 current_user: Account = Depends(get_current_user),
                 db: Session = Depends(get_db)):
+    """P2-09: 返回 LightPartLinkDTO 列表（number/name/referenceDescription/fullId）。
+
+    对齐 Java ProductResource.decodePath → LightPartLinkDTO(partNumber, partName,
+    referenceDescription, fullId)。4 字段已完全匹配，无需修改。
+    """
     return svc.decode_path(db, ws, ci_id, p)
 
 
@@ -218,10 +420,9 @@ def bom(ws: str, ci_id: str,
 def list_product_instances(ws: str,
                             current_user: Account = Depends(get_current_user),
                             db: Session = Depends(get_db)):
+    """P2-07: 返回完整 ProductInstanceMasterDTO 列表（identifier + iteration + acl）。"""
     instances = svc.list_instances(db, ws)
-    return [{"serialNumber": i.serialnumber,
-             "configurationItemId": i.configurationitem_id}
-            for i in instances]
+    return [_build_instance_master_dict(db, i) for i in instances]
 
 
 @router.get("/workspaces/{ws}/product-instances/{sn}", response_model=ProductInstanceDTO)
@@ -235,197 +436,7 @@ def get_product_instance(ws: str, sn: str,
     ).first()
     if not inst:
         raise HTTPException(404, "Product instance not found")
-    iterations = db.query(ProductInstanceIteration).filter(
-        ProductInstanceIteration.workspace_id == ws,
-        ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
-    ).order_by(ProductInstanceIteration.iteration).all()
-    # 构造 acl（复用 product_configurations 中的 _build_acl 逻辑）
-    from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
-    acl_data = None
-    if inst.acl_id:
-        acl = db.query(ACL).filter(ACL.id == inst.acl_id).first()
-        if acl:
-            user_entries = db.query(AclUserEntry).filter(AclUserEntry.acl_id == inst.acl_id).all()
-            group_entries = db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == inst.acl_id).all()
-            _PERM = {0: "FORBIDDEN", 1: "READ_ONLY", 2: "FULL_ACCESS"}
-            acl_data = {
-                "userEntries": [
-                    {"key": e.principal_login, "value": _PERM.get(e.permission, "FORBIDDEN")}
-                    for e in user_entries
-                ],
-                "groupEntries": [
-                    {"key": e.principal_id, "value": _PERM.get(e.permission, "FORBIDDEN")}
-                    for e in group_entries
-                ],
-                "userEntriesMap": {e.principal_login: _PERM.get(e.permission, "FORBIDDEN") for e in user_entries},
-                "userGroupEntriesMap": {e.principal_id: _PERM.get(e.permission, "FORBIDDEN") for e in group_entries},
-            }
-    # 逐迭代填充全量字段（对齐 Java getProductInstance）
-    ci_id = inst.configurationitem_id
-    from app.services.products.path_to_path_service import path_to_path_service
-    from app.models.configuration.product_baseline import ProductBaseline
-
-    iterations_list = []
-    for it in iterations:
-        it_num = it.iteration
-
-        # substituteLinks
-        sub_rows = db.execute(text(
-            "SELECT substitutelinks FROM prdinstanceiteration_sublink "
-            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
-            "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        substitute_links = [r[0] for r in sub_rows if r[0]]
-
-        # optionalUsageLinks
-        opt_rows = db.execute(text(
-            "SELECT optionalusagelinks FROM prdinstanceiteration_optlink "
-            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
-            "AND prdinstancemaster_serialnumber=:sn AND iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        optional_links = [r[0] for r in opt_rows if r[0]]
-
-        # substitutesParts（decode substituteLinks 路径）
-        substitutes_parts = []
-        for path_str in substitute_links:
-            try:
-                decoded = svc.decode_path(db, ws, ci_id, path_str)
-                if decoded:
-                    substitutes_parts.append({"partLinks": decoded})
-            except Exception:
-                pass
-
-        # optionalsParts（decode optionalUsageLinks 路径）
-        optionals_parts = []
-        for path_str in optional_links:
-            try:
-                decoded = svc.decode_path(db, ws, ci_id, path_str)
-                if decoded:
-                    optionals_parts.append({"partLinks": decoded})
-            except Exception:
-                pass
-
-        # pathDataMasterList
-        pdm_rows = db.execute(text(
-            "SELECT pdm.id, pdm.path FROM pathdatamaster pdm "
-            "JOIN prdinstiteration_pathdatamstr pipd ON pipd.pathdatamaster_id = pdm.id "
-            "WHERE pipd.workspace_id=:ws AND pipd.configurationitem_id=:ci "
-            "AND pipd.prdinstancemaster_serialnumber=:sn "
-            "AND pipd.prdinstanceiteration_iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        path_data_masters = [{"id": r[0], "path": r[1]} for r in pdm_rows]
-
-        # pathDataPaths（decode pathDataMasterList 路径）
-        path_data_paths = []
-        for pdm in path_data_masters:
-            try:
-                decoded = svc.decode_path(db, ws, ci_id, pdm["path"])
-                if decoded:
-                    path_data_paths.append({"partLinks": decoded})
-            except Exception:
-                pass
-
-        # pathToPathLinks
-        p2p_rows = db.execute(text(
-            "SELECT ppl.id, ppl.type, ppl.description, ppl.sourcepath, ppl.targetpath "
-            "FROM pathtopathlink ppl "
-            "JOIN prdinstiteration_p2plink pip ON pip.pathtopathlink_id = ppl.id "
-            "WHERE pip.workspace_id=:ws AND pip.configurationitem_id=:ci "
-            "AND pip.prdinstancemaster_serialnumber=:sn AND pip.iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        path_to_path_links = [
-            path_to_path_service._link_row_to_dict(r, db=db, ws=ws, ci_id=ci_id)
-            for r in p2p_rows
-        ]
-
-        # basedOn
-        based_on = None
-        if it.productbaseline_id:
-            baseline = db.query(ProductBaseline).filter(
-                ProductBaseline.id == it.productbaseline_id,
-            ).first()
-            if baseline:
-                based_on = {
-                    "id": baseline.id,
-                    "name": baseline.name,
-                    "description": baseline.description,
-                }
-
-        # instanceAttributes
-        attr_rows = db.execute(text(
-            "SELECT ia.id, ia.name, ia.mandatory, ia.locked, ia.booleanvalue, "
-            "ia.datevalue, ia.indexvalue, ia.numbervalue, ia.textvalue, "
-            "ia.longtextvalue, ia.urlvalue "
-            "FROM instanceattribute ia "
-            "JOIN prdinstiteration_attribute pia ON pia.instanceattribute_id = ia.id "
-            "WHERE pia.workspace_id=:ws AND pia.configurationitem_id=:ci "
-            "AND pia.prdinstancemaster_serialnumber=:sn AND pia.iteration=:it "
-            "ORDER BY pia.attribute_order"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        instance_attrs = [{
-            "id": r[0], "name": r[1], "mandatory": r[2], "locked": r[3],
-            "booleanValue": r[4],
-            "dateValue": str(r[5]) if r[5] else None,
-            "indexValue": r[6], "numberValue": r[7],
-            "textValue": r[8], "longTextValue": r[9], "urlValue": r[10],
-        } for r in attr_rows]
-
-        # linkedDocuments
-        doc_rows = db.execute(text(
-            "SELECT dl.id, dl.target_documentmaster_id, dl.target_docrevision_version, "
-            "dl.target_workspace_id, dl.commentdata "
-            "FROM documentlink dl "
-            "JOIN prdinstiteration_documentlink pid ON pid.documentlink_id = dl.id "
-            "WHERE pid.workspace_id=:ws AND pid.configurationitem_id=:ci "
-            "AND pid.prdinstancemaster_serialnumber=:sn AND pid.iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        linked_docs = [{
-            "id": r[0], "documentMasterId": r[1], "version": r[2],
-            "workspaceId": r[3], "commentLink": r[4] or "",
-        } for r in doc_rows]
-
-        # attachedFiles
-        file_rows = db.execute(text(
-            "SELECT br.fullname, br.dtype, br.contentlength, br.lastmodified, "
-            "br.quality, br.x_max, br.x_min, br.y_max, br.y_min, br.z_max, br.z_min "
-            "FROM binaryresource br "
-            "JOIN prdinstiteration_binres pib ON pib.attachedfile_fullname = br.fullname "
-            "WHERE pib.workspace_id=:ws AND pib.configurationitem_id=:ci "
-            "AND pib.prdinstancemaster_serialnumber=:sn AND pib.iteration=:it"
-        ), {"ws": ws, "ci": ci_id, "sn": sn, "it": it_num}).fetchall()
-        attached_files = [{
-            "fullName": r[0], "type": r[1], "contentLength": r[2],
-            "lastModified": str(r[3]) if r[3] else None,
-            "quality": r[4], "xMax": r[5], "xMin": r[6],
-            "yMax": r[7], "yMin": r[8], "zMax": r[9], "zMin": r[10],
-        } for r in file_rows]
-
-        iterations_list.append({
-            "iteration": it_num,
-            "iterationNote": it.iteration_note,
-            "creationDate": _fmt_date(it.creation_date),
-            "modificationDate": _fmt_date(it.modification_date),
-            "author": _get_user_dto(db, it.author_login, ws),
-            "substituteLinks": substitute_links,
-            "optionalUsageLinks": optional_links,
-            "substitutesParts": substitutes_parts,
-            "optionalsParts": optionals_parts,
-            "pathDataMasterList": path_data_masters,
-            "pathDataPaths": path_data_paths,
-            "pathToPathLinks": path_to_path_links,
-            "basedOn": based_on,
-            "instanceAttributes": instance_attrs,
-            "linkedDocuments": linked_docs,
-            "attachedFiles": attached_files,
-        })
-
-    return {
-        "serialNumber": inst.serialnumber,
-        "configurationItemId": inst.configurationitem_id,
-        "identifier": f"{ws}/{inst.configurationitem_id}-{inst.serialnumber}",
-        "acl": acl_data,
-        "productInstanceIterations": iterations_list,
-    }
+    return _build_instance_master_dict(db, inst)
 
 
 @router.get("/workspaces/{ws}/product-instances/{pid}/instances", response_model=List[ProductInstanceDTO])
@@ -433,10 +444,9 @@ def get_product_instance(ws: str, sn: str,
 def list_ci_instances(ws: str, pid: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
+    """P2-07: 返回完整 ProductInstanceMasterDTO 列表（identifier + iteration + acl）。"""
     instances = svc.list_instances(db, ws, pid)
-    return [{"serialNumber": i.serialnumber,
-             "configurationItemId": i.configurationitem_id}
-            for i in instances]
+    return [_build_instance_master_dict(db, i) for i in instances]
 
 
 # ── Stubs ──

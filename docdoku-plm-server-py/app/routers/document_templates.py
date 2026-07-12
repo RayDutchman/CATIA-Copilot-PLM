@@ -36,6 +36,8 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
         if t.acl_id:
             from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
             acl_obj = db.query(ACL).filter(ACL.id == t.acl_id).first()
+            user_entries = []
+            group_entries = []
             if acl_obj:
                 user_entries = db.query(AclUserEntry).filter(
                     AclUserEntry.acl_id == t.acl_id).all()
@@ -46,7 +48,7 @@ def list_templates(ws: str, current_user: Account = Depends(get_current_user),
                 "userEntries": [{"key": e.principal_login, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in user_entries],
                 "groupEntries": [{"key": e.principal_id, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in group_entries],
                 "userEntriesMap": {e.principal_login: perm_map.get(e.permission, "FORBIDDEN") for e in user_entries},
-                "userGroupEntriesMap": {},
+                "userGroupEntriesMap": {e.principal_id: perm_map.get(e.permission, "FORBIDDEN") for e in group_entries},
             }
         result.append({
             "id": t.id, "workspaceId": t.workspace_id,
@@ -82,6 +84,8 @@ def get_template(ws: str, template_id: str,
     if t.acl_id:
         from app.models.security import ACL, AclUserEntry, AclUserGroupEntry
         acl_obj = db.query(ACL).filter(ACL.id == t.acl_id).first()
+        user_entries = []
+        group_entries = []
         if acl_obj:
             user_entries = db.query(AclUserEntry).filter(
                 AclUserEntry.acl_id == t.acl_id).all()
@@ -92,7 +96,7 @@ def get_template(ws: str, template_id: str,
             "userEntries": [{"key": e.principal_login, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in user_entries],
             "groupEntries": [{"key": e.principal_id, "value": perm_map.get(e.permission, "FORBIDDEN")} for e in group_entries],
             "userEntriesMap": {e.principal_login: perm_map.get(e.permission, "FORBIDDEN") for e in user_entries},
-            "userGroupEntriesMap": {},
+            "userGroupEntriesMap": {e.principal_id: perm_map.get(e.permission, "FORBIDDEN") for e in group_entries},
         }
     return {
         "id": t.id, "workspaceId": t.workspace_id,
@@ -115,6 +119,7 @@ def create(ws: str, body: dict,
         document_type=body.get("documentType", ""),
         mask=body.get("mask", ""),
         id_generated=body.get("idGenerated", False),
+        attributes_locked=body.get("attributesLocked", False),
         user_login=current_user.login,
         workflow_model_id=body.get("workflowModelId"),
         attribute_templates=body.get("attributeTemplates", []))

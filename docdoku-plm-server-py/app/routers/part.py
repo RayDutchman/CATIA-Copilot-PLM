@@ -16,10 +16,10 @@ from app.core.exceptions import (
 from app.models.auth import Account
 from app.models.part import SharedEntity
 from app.models.product.part_iteration import PartIteration
-from app.schemas.part import PartRevisionDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO, StatusDTO, SharedPartDTO, AclIdDTO
+from app.schemas.part import PartRevisionDTO, PartIterationDTO, PartIterationUpdateDTO, ConversionDTO, ConversionResultDTO, StatusDTO, SharedPartDTO, AclIdDTO
 from app.schemas.workflow import WorkflowAbortedDTO
 from app.services.product_manager import ProductService
-from app.services.part_mapper import map_revision
+from app.services.part_mapper import map_revision, map_iteration
 from app.services import converter
 from app.services.factory.acl_factory import apply_acl
 from app.services.workflow_manager import workflow_service
@@ -200,10 +200,12 @@ def new_version_part(workspace_id: str, part_key: str,
                      db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
     pr = svc.create_new_version(db, workspace_id, number, version, current_user.login)
-    # 仅 service 已支持的字段：description 可在创建后更新；workflow/acl/roleMapping 需改 product_manager.py
     if body.get("description"):
         pr.description = body["description"]
         db.commit()
+    # TODO: newVersion 尚缺 workflowModelId/acl/roleMapping 传递（service.create_new_version 暂不支持）。
+    #       对应 Java PartResource.createNewPartVersion(PartCreationDTO: description/workflowModelId/acl/roleMapping)。
+    #       需扩展 product_manager.create_new_version 支持 workflowModelId/acl_id/roleMapping 参数。
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/tags",
@@ -215,7 +217,8 @@ def set_tags(workspace_id: str, part_key: str,
              current_user: Account = Depends(get_current_user),
              db: Session = Depends(get_db)):
     number, version = _split_part_key(part_key)
-    pr = svc.set_tags(db, workspace_id, number, version, body.get("tags", []),
+    labels = _extract_tag_labels(body)
+    pr = svc.set_tags(db, workspace_id, number, version, labels,
                       current_user_login=current_user.login)
     return map_revision(pr, db)
 
@@ -248,7 +251,8 @@ def add_tag(workspace_id: str, part_key: str,
     labels = _extract_tag_labels(body)
     pr = None
     for label in labels:
-        pr = svc.add_tag(db, workspace_id, number, version, label)
+        pr = svc.add_tag(db, workspace_id, number, version, label,
+                         current_user_login=current_user.login)
     if pr is None:
         pr = svc.get_revision(db, workspace_id, number, version)
     return map_revision(pr, db)
@@ -309,6 +313,65 @@ def share_part(workspace_id: str, part_key: str,
     db.add(entity)
     db.commit()
     return {"uuid": shared_uuid, "workspaceId": workspace_id}
+
+
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/files/{sub_type}/{file_name}",
+               status_code=204)
+@router.delete("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/files/{sub_type}/{file_name}/",
+               status_code=204, include_in_schema=False)
+def delete_part_file_subresource(
+    workspace_id: str, part_key: str, iteration: int,
+    sub_type: str, file_name: str,
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """SubResource 路径删除文件（对齐 Java PartResource.removeFile）。"""
+    from pathlib import Path
+    from app.core.config import settings
+    from app.services.factory.acl_factory import check_write_access
+    from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
+
+    number, version = _split_part_key(part_key)
+    pr = svc.get_revision(db, workspace_id, number, version)
+    if not pr or pr.checkout_user_login != current_user.login \
+            or pr.last_iteration_number != iteration:
+        raise HTTPException(403, "Not authorized to modify this iteration")
+    full_name = f"{workspace_id}/parts/{number}/{version}/{iteration}/{sub_type}/{file_name}"
+
+    if sub_type == "nativecad":
+        it = db.query(PartIteration).filter(
+            PartIteration.workspace_id == workspace_id,
+            PartIteration.partmaster_partnumber == number,
+            PartIteration.partrevision_version == version,
+            PartIteration.iteration == iteration,
+        ).first()
+        if it:
+            it.native_cad_file_fullname = None
+    elif sub_type == "attachedfiles":
+        db.execute(part_iteration_binres.delete().where(
+            part_iteration_binres.c.workspace_id == workspace_id,
+            part_iteration_binres.c.partmaster_partnumber == number,
+            part_iteration_binres.c.partrevision_version == version,
+            part_iteration_binres.c.iteration == iteration,
+            part_iteration_binres.c.attachedfile_fullname == full_name,
+        ))
+    else:
+        db.execute(part_iteration_geometry.delete().where(
+            part_iteration_geometry.c.workspace_id == workspace_id,
+            part_iteration_geometry.c.partmaster_partnumber == number,
+            part_iteration_geometry.c.partrevision_version == version,
+            part_iteration_geometry.c.iteration == iteration,
+            part_iteration_geometry.c.geometry_fullname == full_name,
+        ))
+
+    try:
+        vault_path = Path(settings.VAULT_PATH) / full_name
+        if vault_path.exists():
+            vault_path.unlink()
+    except OSError:
+        pass
+
+    db.commit()
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/publish",
@@ -581,9 +644,9 @@ def used_by_product(workspace_id: str, part_key: str,
 
 
 @router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}",
-            response_model=list[dict])
+            response_model=PartIterationDTO)
 @router.get("/workspaces/{workspace_id}/parts/{pn}/filter/{baseline_id}/",
-            response_model=list[dict], include_in_schema=False)
+            response_model=PartIterationDTO, include_in_schema=False)
 def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
@@ -612,7 +675,8 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     )
 
     if bp is None:
-        raise PartMasterNotFoundException("PartMasterNotFoundException", pn)
+        # 对齐 Java: filter 返回空列表 → 404
+        raise HTTPException(404, "Part not found in baseline")
 
     pi = (
         db.query(PartIteration)
@@ -626,11 +690,11 @@ def filter_by_baseline(workspace_id: str, pn: str, baseline_id: str,
     )
 
     if pi is None:
-        raise PartIterationNotFoundException(
-            "PartIterationNotFoundException", pn,
-            bp.target_partrevision_version, bp.target_iteration)
+        # 对齐 Java: filter 返回空列表 → 404
+        raise HTTPException(404, "Part iteration not found in baseline")
 
-    return [map_revision(pi.revision, db)]
+    # 对齐 Java PartsResource.filterPartMasterInBaseline: 返回单个 PartIterationDTO
+    return map_iteration(pi, db)
 
 
 @router.put("/workspaces/{workspace_id}/parts/{part_key}/iterations/{iteration}/conversion",

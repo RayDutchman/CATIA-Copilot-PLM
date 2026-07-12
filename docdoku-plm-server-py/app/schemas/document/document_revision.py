@@ -16,7 +16,7 @@ class DocumentRevisionDTO(BaseModel):
     status: Optional[str] = None
     tags: List[str] = []
     path: Optional[str] = None
-    routePath: list = []
+    routePath: Optional[str] = None
     acl: Optional[dict] = None
     publicShared: bool = False
     attributesLocked: bool = False

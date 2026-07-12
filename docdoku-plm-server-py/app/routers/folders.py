@@ -153,12 +153,27 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
                      db: Session = Depends(get_db)):
     doc_id = body.get("reference", "")
     title = body.get("title", "")
+    description = body.get("description", "")
     template_id = body.get("templateId")
     workflow_model_id = body.get("workflowModelId")
+    acl = body.get("acl", {})
+    role_mapping = body.get("roleMapping")
+    user_entries = acl.get("userEntriesMap") if acl else None
+    user_group_entries = acl.get("userGroupEntriesMap") if acl else None
     rev = svc.create_document(db, ws, doc_id, title,
-                              current_user.login, folder_path=folder_id,
-                              template_id=template_id,
-                              workflow_model_id=workflow_model_id)
+                               current_user.login, folder_path=folder_id,
+                               template_id=template_id,
+                               workflow_model_id=workflow_model_id,
+                               role_mapping=role_mapping)
+    if description:
+        rev.description = description
+    if user_entries or user_group_entries:
+        from app.services.factory.acl_factory import apply_acl
+        acl_id = getattr(rev, "acl_id", None)
+        new_acl_id = apply_acl(db, acl_id, user_entries, user_group_entries)
+        if getattr(rev, "acl_id", None) != new_acl_id:
+            rev.acl_id = new_acl_id
+    db.commit()
     from app.routers.documents import _doc_to_dict
     return _doc_to_dict(db, rev, current_user.login)
 

@@ -1,4 +1,12 @@
-"""产品实例文件端点（ProductInstanceBinaryResource）。"""
+"""产品实例文件端点（ProductInstanceBinaryResource）。
+
+P2-10: vault 路径与 URL 前缀对齐 Java：
+  Java URL:  /files/{ws}/product-instances/{ciId}/{sn}/iterations/{it}[/{fn}]
+  Java vault: {ws}/product-instances/{sn}/iterations/{it}/{fn}
+  （ciId 仅用于 URL 路由 & 鉴权，不写入 vault 路径）
+旧格式 products/{ci_id}/instances/ 已废弃，存量无 DB 记录（prdinstiteration_binres=0行），
+唯一旧文件 vault/GD50/products/ceshi/instances/SMOKE-SN-B4/iterations/1/smoke.txt 为孤立文件。
+"""
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import Response
 from sqlalchemy import text
@@ -12,8 +20,8 @@ from datetime import datetime, timezone
 router = APIRouter()
 
 
-@router.post("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}", status_code=201)
-@router.post("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/", status_code=201, include_in_schema=False)
+@router.post("/files/{ws}/product-instances/{ci_id}/{sn}/iterations/{it}", status_code=201)
+@router.post("/files/{ws}/product-instances/{ci_id}/{sn}/iterations/{it}/", status_code=201, include_in_schema=False)
 def upload(ws: str, ci_id: str, sn: str, it: int,
            upload: UploadFile = File(...),
            current_user: Account = Depends(get_current_user),
@@ -23,14 +31,13 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
     now = datetime.now(timezone.utc)
     content_length = len(data)
 
-    # 写物理文件（保持与 download 一致）
-    path = vault_svc._vault_root() / ws / "products" / ci_id / "instances" / sn / "iterations" / str(it) / filename
+    # vault 路径对齐 Java: {ws}/product-instances/{sn}/iterations/{it}/{filename}
+    # ci_id 仅参与 URL 路由，不写入 vault/DB 路径
+    path = vault_svc._vault_root() / ws / "product-instances" / sn / "iterations" / str(it) / filename
     vault_svc.write_file(path, data)
 
-    # 构建 fullname（对齐物理路径，保证后续查询一致）
-    fullname = f"{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{filename}"
+    fullname = f"{ws}/product-instances/{sn}/iterations/{it}/{filename}"
 
-    # 创建或更新 BinaryResource 行
     existing = db.execute(text(
         "SELECT fullname FROM binaryresource WHERE fullname=:fn"
     ), {"fn": fullname}).first()
@@ -45,7 +52,6 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
             "VALUES (:fn, :len, :now)"
         ), {"fn": fullname, "len": content_length, "now": now})
 
-    # 插入关联表（先查重避免重复）
     dup = db.execute(text(
         "SELECT 1 FROM prdinstiteration_binres "
         "WHERE prdinstancemaster_serialnumber=:sn "
@@ -65,12 +71,12 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
     return {"fullName": fullname, "name": filename}
 
 
-@router.get("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{fn}")
-@router.get("/files/{ws}/products/{ci_id}/instances/{sn}/iterations/{it}/{fn}/", include_in_schema=False)
+@router.get("/files/{ws}/product-instances/{ci_id}/{sn}/iterations/{it}/{fn}")
+@router.get("/files/{ws}/product-instances/{ci_id}/{sn}/iterations/{it}/{fn}/", include_in_schema=False)
 def download(ws: str, ci_id: str, sn: str, it: int, fn: str,
              current_user: Account = Depends(get_current_user)):
     try:
-        path = vault_svc._vault_root() / ws / "products" / ci_id / "instances" / sn / "iterations" / str(it) / fn
+        path = vault_svc._vault_root() / ws / "product-instances" / sn / "iterations" / str(it) / fn
         data = vault_svc.read_file(path)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")

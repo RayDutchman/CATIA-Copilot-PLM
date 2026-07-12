@@ -154,9 +154,13 @@ class ProductStructureService:
 
         若提供 config_spec（字符串或 ProductStructureFilter/ProductConfigSpec 对象），
         则解析后使用 PSFilterVisitor 按配置规格遍历；否则走旧版全量遍历。
-        link_type 非空时按 P2P linkType 过滤结构（当前未实现，退化为普通遍历）。
+        link_type 非空时按 P2P linkType 过滤结构（P2-08）。
         """
-        # linkType 过滤未实现，退化为普通遍历（无 P2P-linkType 过滤能力）
+        # P2-08: linkType 过滤分支
+        if link_type is not None:
+            return self._filter_on_link_type(db, ws, ci_id, config_spec, path,
+                                              link_type, user_login, is_admin)
+
         # 若传入的是字符串，先解析为 filter 对象
         if isinstance(config_spec, str):
             config_spec = self.parse_config_spec_str(config_spec, db=db, user_login=user_login, diverge=diverge)
@@ -493,7 +497,10 @@ class ProductStructureService:
         ]
 
     def decode_path(self, db: Session, ws: str, ci_id: str, path_str: str):
-        """u1-u4-u7 → LightPartLinkDTO[{number, name, referenceDescription, fullId}]"""
+        """u1-u4-u7 → LightPartLinkDTO[{number, name, referenceDescription, fullId}]
+
+        P2-09 已对齐 Java LightPartLinkDTO 四字段。
+        """
         ci = self.get_ci(db, ws, ci_id)
         root_pn = ci.partmaster_partnumber
         master = db.query(PartMaster).filter(
@@ -818,6 +825,167 @@ class ProductStructureService:
         if ci_id:
             q = q.filter(ProductInstanceMaster.configurationitem_id == ci_id)
         return q.all()
+
+    def _filter_on_link_type(self, db: Session, ws: str, ci_id: str,
+                             config_spec, path: str | None,
+                             link_type: str, user_login: str,
+                             is_admin: bool) -> list:
+        """P2-08: 按 P2P linkType 过滤产品结构（最小实现）。
+
+        对齐 Java filterProductStructureOnLinkType 三步骤：
+        1. BFS 遍历产品结构，收集所有路径（discoveredPaths）
+        2. 查询 CI 的 PathToPathLink（type=linkType），提取 source/target 路径
+        3. 仅保留双方路径均在 discoveredPaths 中的链接 → 构建虚拟组件树
+
+        已知限制（MED 最小实现）：
+        - 未区分 root/<path> 入口选择（Java 有 path==null/path!=null 两条分支）
+        - 路径集合通过全量 BFS 收集（未使用 configSpec PSFilterVisitor 过滤）
+        - 返回虚拟根节点（非 Java 的节点替代/补全逻辑）
+        """
+        # 解析 configSpec 字符串（暂用于路径收集，未在 BFS 中深度使用）
+        if isinstance(config_spec, str):
+            config_spec = self.parse_config_spec_str(config_spec, db=db,
+                                                       user_login=user_login)
+
+        ci = self.get_ci(db, ws, ci_id)
+
+        # 步骤 1: BFS 遍历产品结构，收集所有路径
+        discovered_paths = set()
+        root_master = db.query(PartMaster).filter(
+            PartMaster.workspace_id == ws,
+            PartMaster.number == ci.partmaster_partnumber,
+        ).first()
+        if root_master:
+            queue = [(root_master, "-1")]
+            while queue:
+                pm, pm_path = queue.pop(0)
+                rev = pm.last_revision
+                if rev is None:
+                    continue
+                last_it = rev.last_iteration
+                if last_it is None:
+                    continue
+                for link in (last_it.components or []):
+                    link_id = link.id
+                    from app.models.part import PartSubstituteLink
+                    prefix = "s" if isinstance(link, PartSubstituteLink) else "u"
+                    child_path = f"{pm_path}-{prefix}{link_id}"
+                    discovered_paths.add(child_path)
+                    child_master = db.query(PartMaster).filter(
+                        PartMaster.workspace_id == link.component_workspace_id,
+                        PartMaster.number == link.component_partnumber,
+                    ).first()
+                    if child_master:
+                        queue.append((child_master, child_path))
+
+        if not discovered_paths:
+            return []
+
+        # 步骤 2: 查询 CI 的 P2P links（type=linkType）
+        p2p_rows = db.execute(text(
+            "SELECT ppl.id, ppl.type, ppl.description, ppl.sourcepath, ppl.targetpath "
+            "FROM pathtopathlink ppl "
+            "JOIN configurationitem_p2plink cp ON cp.pathtopathlink_id = ppl.id "
+            "WHERE cp.workspace_id = :ws AND cp.configurationitem_id = :ci "
+            "AND ppl.type = :lt"
+        ), {"ws": ws, "ci": ci_id, "lt": link_type}).fetchall()
+
+        # 步骤 3: 仅保留双方路径均在 discoveredPaths 中的链接
+        valid_links = []
+        for r in p2p_rows:
+            source_path = r[3]  # sourcepath
+            target_path = r[4]  # targetpath
+            if source_path in discovered_paths and target_path in discovered_paths:
+                valid_links.append(r)
+
+        if not valid_links:
+            return []
+
+        # 步骤 4: 构建子组件列表，每个匹配的 P2P target 路径 → 一个组件
+        components = []
+        for r in valid_links:
+            target_path = r[4]
+            try:
+                decoded = self.decode_path(db, ws, ci_id, target_path)
+            except Exception:
+                decoded = []
+            if not decoded:
+                continue
+            last_seg = decoded[-1]
+            pn = last_seg.get("number", "")
+            pm = db.query(PartMaster).filter(
+                PartMaster.workspace_id == ws,
+                PartMaster.number == pn,
+            ).first()
+            rev = pm.last_revision if pm and pm.revisions else None
+            last_it = rev.last_iteration if rev else None
+            components.append({
+                "number": pn,
+                "name": last_seg.get("name", pn),
+                "version": rev.version if rev else "A",
+                "iteration": last_it.iteration if last_it else 0,
+                "path": target_path,
+                "amount": 1.0,
+                "unit": None,
+                "optional": False,
+                "partUsageLinkId": "-1",
+                "description": rev.description if rev else "",
+                "standardPart": pm.standard_part if pm else False,
+                "assembly": bool(last_it and last_it.components) if last_it else False,
+                "released": rev.status == 1 if rev else False,
+                "obsolete": rev.status == 2 if rev else False,
+                "author": self._resolve_user_name(db, pm.author_login) if pm else "",
+                "authorLogin": pm.author_login if pm else "",
+                "checkOutUser": None,
+                "checkOutDate": None,
+                "lastIterationNumber": rev.last_iteration_number if rev else 0,
+                "virtual": False,
+                "substitute": False,
+                "partUsageLinkReferenceDescription": None,
+                "hasPathData": self._check_has_path_data(db, ws, target_path),
+                "accessDeny": False,
+                "attributes": [],
+                "components": [],
+                "substituteIds": [],
+                "notifications": self._modification_notifications(db, ws, pn) if pm else [],
+            })
+
+        # 虚拟根节点（对齐 Java createVirtualComponent，link_type 非空必有虚拟根）
+        root_number = ci.partmaster_partnumber
+        root_master = db.query(PartMaster).filter(
+            PartMaster.workspace_id == ws,
+            PartMaster.number == root_number,
+        ).first()
+        return [{
+            "number": root_number,
+            "name": root_master.name if root_master and root_master.name else root_number,
+            "version": root_master.last_revision.version if root_master and root_master.revisions else "A",
+            "iteration": 0,
+            "path": ci_id,
+            "amount": 1.0,
+            "unit": None,
+            "optional": False,
+            "partUsageLinkId": "-1",
+            "description": "",
+            "standardPart": False,
+            "assembly": True,
+            "released": False,
+            "obsolete": False,
+            "author": "",
+            "authorLogin": "",
+            "checkOutUser": None,
+            "checkOutDate": None,
+            "lastIterationNumber": 0,
+            "virtual": True,
+            "substitute": False,
+            "partUsageLinkReferenceDescription": None,
+            "hasPathData": False,
+            "accessDeny": False,
+            "attributes": [],
+            "components": components,
+            "substituteIds": [],
+            "notifications": [],
+        }]
 
     def delete_instance(self, db: Session, ws: str, ci_id: str, serial: str):
         inst = db.query(ProductInstanceMaster).filter(

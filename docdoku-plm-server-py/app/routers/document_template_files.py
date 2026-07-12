@@ -99,8 +99,9 @@ def upload_document_template_files(
                 "VALUES (:ws, :tid, :fn)"
             ), {"ws": ws, "tid": template_id, "fn": full_name})
 
-        db.commit()
         saved.append(fn)
+
+    db.commit()
 
     if not saved:
         raise HTTPException(400, "No valid files uploaded")

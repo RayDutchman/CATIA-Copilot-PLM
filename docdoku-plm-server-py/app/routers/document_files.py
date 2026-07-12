@@ -53,6 +53,7 @@ def upload(ws: str, doc_id: str, version: str, iteration: int,
         data = upload.file.read()
         svc.save_file(db, ws, doc_id, version, iteration, upload.filename, data,
                       user_login=current_user.login)
+    db.commit()
     return {"status": "uploaded"}
 
 

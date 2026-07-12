@@ -676,7 +676,12 @@ class DocumentService:
         if not check_write_access(db, pr.acl_id, user_login, False, workspace_id=ws):
             raise AccessRightException("AccessRightException", user_login)
         if pr.checkout_user_login != user_login:
-            raise NotAllowedException("NotAllowedException19")
+            # admin 可强制撤销他人签出（对齐 Java admin 可代操作）
+            is_admin = db.scalar(sql_text(
+                "SELECT COUNT(*) FROM usergroupmapping WHERE login=:l AND groupname='admin'"
+            ), {"l": user_login}) or 0
+            if not is_admin:
+                raise NotAllowedException("NotAllowedException19")
         if len(pr.iterations) <= 1:
             raise NotAllowedException("NotAllowedException27")
         last = pr.last_iteration
@@ -1124,7 +1129,7 @@ class DocumentService:
 
     def create_template(self, db, ws, template_id, document_type, mask,
                         id_generated, user_login, workflow_model_id=None,
-                        attribute_templates=None):
+                        attribute_templates=None, attributes_locked=False):
         existing = db.query(DocumentMasterTemplate).filter(
             DocumentMasterTemplate.workspace_id == ws,
             DocumentMasterTemplate.id == template_id).first()
@@ -1137,7 +1142,8 @@ class DocumentService:
             document_type=document_type, mask=mask,
             id_generated=id_generated, creation_date=now,
             author_workspace_id=ws, author_login=user_login,
-            workflowmodel_id=workflow_model_id)
+            workflowmodel_id=workflow_model_id,
+            attributes_locked=attributes_locked)
         db.add(t); db.commit(); db.refresh(t)
         return t
 
@@ -1233,7 +1239,7 @@ class DocumentService:
                 workspace_id=ws, documentmaster_id=doc_id,
                 documentrevision_version=ver, iteration=iteration,
                 attachedfile_fullname=full_name))
-        db.commit()
+        db.flush()  # caller 统一 commit，避免循环内逐文件提交
         return br
 
     def get_file_bytes(self, ws, doc_id, ver, iteration, filename):

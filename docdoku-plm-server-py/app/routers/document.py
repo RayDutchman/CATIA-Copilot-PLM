@@ -205,7 +205,7 @@ def _doc_to_dict(db, rev, current_user_login=None):
         "documentIterations": iterations,
         "tags": [],
         "path": rev.location_completepath,
-        "routePath": _compute_route_path(db, rev.workspace_id, rev.location_completepath) if db else [],
+        "routePath": rev.location_completepath,
         "acl": acl_data or {},
         "publicShared": bool(getattr(rev, "public_shared", False)), "attributesLocked": False,
         "commentLink": None, "iterationSubscription": iter_sub is not None,
