@@ -13,7 +13,6 @@ from app.schemas.document import DocumentRevisionDTO
 
 router = APIRouter()
 svc = DocumentService()
-_doc_svc = DocumentService()
 
 
 @router.get("/workspaces/{ws}/documents/count")
@@ -86,7 +85,7 @@ def search_documents(
                 ).filter(or_(*conditions)).all()
                 rev_map = {(dr.documentmaster_id, dr.version): dr for dr in revisions}
                 ordered = [rev_map[k] for k in rev_keys if k in rev_map]
-                return [_doc_svc.build_revision_dto(db, dr, current_user.login) for dr in ordered]
+                return [svc.build_revision_dto(db, dr, current_user.login) for dr in ordered]
     except Exception:
         pass  # ES 失败 → fallback
 
@@ -158,7 +157,7 @@ def search_documents(
         else:
             query = query.filter(DocumentRevision.documentmaster_id == None)
     docs = query.order_by(DocumentMaster.id).offset(start).limit(size).all()
-    return [_doc_svc.build_revision_dto(db, d, current_user.login) for d in docs]
+    return [svc.build_revision_dto(db, d, current_user.login) for d in docs]
 
 
 @router.get("/workspaces/{ws}/documents", response_model=List[DocumentRevisionDTO])
@@ -169,7 +168,7 @@ def list_docs(ws: str, start: int = Query(0, ge=0),
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     limit = length or max
-    return [_doc_svc.build_revision_dto(db, r, current_user.login) for r in svc.list_revisions(db, ws, start, limit)]
+    return [svc.build_revision_dto(db, r, current_user.login) for r in svc.list_revisions(db, ws, start, limit)]
 
 
 @router.get("/workspaces/{ws}/documents/checkedout", response_model=List[DocumentRevisionDTO])
@@ -177,7 +176,7 @@ def list_docs(ws: str, start: int = Query(0, ge=0),
 def list_checked_out(ws: str,
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    return [_doc_svc.build_revision_dto(db, r, current_user.login) for r in svc.list_checked_out(db, ws)]
+    return [svc.build_revision_dto(db, r, current_user.login) for r in svc.list_checked_out(db, ws)]
 
 
 @router.get("/workspaces/{ws}/documents/countCheckedOut")
@@ -193,7 +192,7 @@ def count_checked_out(ws: str,
 def search_doc_revs(ws: str, q: str = Query(""),
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
-    return [_doc_svc.build_revision_dto(db, r, current_user.login)
+    return [svc.build_revision_dto(db, r, current_user.login)
             for r in svc.search(db, ws, doc_id=q)]
 
 
@@ -225,4 +224,4 @@ def create(ws: str, body: dict,
         if getattr(rev, "acl_id", None) != new_acl_id:
             rev.acl_id = new_acl_id
     db.commit()
-    return _doc_svc.build_revision_dto(db, rev, current_user.login)
+    return svc.build_revision_dto(db, rev, current_user.login)
