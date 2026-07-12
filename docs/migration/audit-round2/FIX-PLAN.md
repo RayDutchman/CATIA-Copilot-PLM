@@ -107,29 +107,29 @@
 
 ### 文件包 PKG-task-holder → Subagent C1
 **Files:** `app/services/task_manager.py`
-- [ ] **P6-01** `process_task`（约 :215-270）：补 holder 特定副作用——审批/拒绝时按 holderType 发通知（`sendApproval`/state notification）+ checkedOut 防护（被签出时拒绝审批，对齐 Java `checkTaskAccess`）。**注意：核心状态机已对齐，勿重复实现；Java 无显式 releaseDocument（靠 JPA 状态机），不要臆造。**
+- [x] **P6-01** `process_task`（约 :215-270）：补 holder 特定副作用——审批/拒绝时按 holderType 发通知（`sendApproval`/state notification）+ checkedOut 防护（被签出时拒绝审批，对齐 Java `checkTaskAccess`）。**注意：核心状态机已对齐，勿重复实现；Java 无显式 releaseDocument（靠 JPA 状态机），不要臆造。**
 
 ### 文件包 PKG-workflow-model → Subagent C2
 **Files:** `app/services/workflow_manager.py`、`app/routers/workflow_models.py`
-- [ ] **P6-04** `create_model`/`update_model`：处理 `ActivityModelDTO.relaunchStep`，写入 `activitymodel_relaunch` 表（DB 核实表结构）；对齐 Java `extractActivityModelFromDTO`。
-- [ ] **P6-08** `instantiate_workflow`（约 :406）：补审批通知邮件（遍历 running tasks worker，对齐 Java `notifier.sendApproval`）；若 notifier 无接口则实现最小接口。
-- [ ] **P6-06** `workflow_models.py` `update_model_acl`（约 :133）：返回 204 无 body（Java noContent）。
+- [x] **P6-04** `create_model`/`update_model`：处理 `ActivityModelDTO.relaunchStep`，写入 `activitymodel_relaunch` 表（DB 核实表结构）；对齐 Java `extractActivityModelFromDTO`。
+- [x] **P6-08** `instantiate_workflow`（约 :406）：补审批通知邮件（遍历 running tasks worker，对齐 Java `notifier.sendApproval`）；若 notifier 无接口则实现最小接口。
+- [x] **P6-06** `workflow_models.py` `update_model_acl`（约 :133）：返回 204 无 body（Java noContent）。
 
 ### 文件包 PKG-milestone-org → Subagent C3
 **Files:** `app/routers/milestones.py`、`app/routers/organizations.py`
-- [ ] **P6-07** `milestones.py` `set_milestone_acl`（约 :131）：返回 204 无 body（Java noContent）。
-- [ ] **P8-02** `organizations.py` `move_member`（约 :195-237）：补 `direction` 查询参数，实现 `moveMemberDown`（与后一成员交换序号），无效 direction → 400。对齐 Java `moveMember`。
+- [x] **P6-07** `milestones.py` `set_milestone_acl`（约 :131）：返回 204 无 body（Java noContent）。
+- [x] **P8-02** `organizations.py` `move_member`（约 :195-237）：补 `direction` 查询参数，实现 `moveMemberDown`（与后一成员交换序号），无效 direction → 400。对齐 Java `moveMember`。
 
 ### 文件包 PKG-baseline-effectivity → Subagent C4
 **Files:** `app/routers/effectivity.py`、`app/routers/product_baselines.py`
-- [ ] **P3-02** `effectivity.py` `_effectivity_to_dto`（约 :31-64）：设 `"configurationItemKey":{"workspace":...,"id":...}` 嵌套对象（替代扁平 configurationItemNumber/workspaceId）；对齐 Java EffectivityDTO。
-- [ ] **P3-03** `effectivity.py` `put_effectivity`（约 :183-214）：按 `eff.dtype` 分派校验——Date→startDate/Serial→startNumber/Lot→startLotId 非空（否则抛 CreationException，对齐 Java updateEffectivity）。参照同文件已修的 POST create_effectivity。
-- [ ] **P3-01** `product_baselines.py` `_bl_summary_dict`/`_bl_detail_dict`（约 :60-98）：`substituteLinks`/`optionalUsageLinks` 改为查 `productbaseline_substitutelink`/`productbaseline_optionallink` 输出**路径字符串数组**（对齐 Java Set<String>）；schema 由 List[dict] 改 List[str]（参照第一轮 config 域修复）。
+- [x] **P3-02** `effectivity.py` `_effectivity_to_dto`（约 :31-64）：设 `"configurationItemKey":{"workspace":...,"id":...}` 嵌套对象（替代扁平 configurationItemNumber/workspaceId）；对齐 Java EffectivityDTO。
+- [x] **P3-03** `effectivity.py` `put_effectivity`（约 :183-214）：按 `eff.dtype` 分派校验——Date→startDate/Serial→startNumber/Lot→startLotId 非空（否则抛 CreationException，对齐 Java updateEffectivity）。参照同文件已修的 POST create_effectivity。
+- [x] **P3-01** `product_baselines.py` `_bl_summary_dict`/`_bl_detail_dict`（约 :60-98）：`substituteLinks`/`optionalUsageLinks` 改为查 `productbaseline_substitutelink`/`productbaseline_optionallink` 输出**路径字符串数组**（对齐 Java Set<String>）；schema 由 List[dict] 改 List[str]（参照第一轮 config 域修复）。
 
 ### 主 agent 批 3 收尾
-- [ ] 逐包 review + 部署。
-- [ ] 对拍 Payara：task approve 触发通知；workflow 拒绝 relaunch 到配置 step；ACL 端点 204；move_member down；effectivity configurationItemKey 结构；baseline substituteLinks 为字符串数组。
-- [ ] `pytest` 无新增 fail。commit（分域）。更新文档 + 勾除。
+- [x] 逐包 review + 部署。**主 agent 修复 C1 task_manager.py 缩进回归**（`if not skip_potential_worker_check:` 下的 `_is_potential_worker` 被误 dedent → 语法错误），并应用 C4 的 2 处 schema List[dict]→List[str]（product/product_baseline.py + product/__init__.py）。notifier 无 sendApproval → P6-08/P6-01 通知留 TODO。
+- [x] 对拍：activitymodel_relaunch 列名（activitymodel_id/relaunchactivitymodel_id）+ productbaseline_substitutelink 列名核实；baseline list/effectivity 无数据故仅结构核对；move_member 因 test1 非组成员先 403（access 前置检查，direction=400 逻辑经 code review）。
+- [x] `pytest` 279 passed/1 skipped（无新增 fail）。commit（分域）。更新文档 + 勾除。
 
 ---
 

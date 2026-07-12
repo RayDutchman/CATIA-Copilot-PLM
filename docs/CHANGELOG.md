@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-12 — fix: audit-round2 批次 3 修复（9 workflow/change/baseline/effectivity HIGH）
+
+> FIX-PLAN 批次 3，4 并行 subagent + 主 agent 纠错。pytest 279 passed/1 skipped。**主 agent 修复 C1 引入的 task_manager.py 缩进回归**（语法错误）+ 应用 C4 的 2 处 schema 调整。
+
+- **fix(task): P6-01** process_task 补 checkedOut 防护（持有者被签出时拒绝审批，NotAllowedException16/17）；审批通知因 notifier 无 sendApproval 接口留 TODO。
+- **fix(workflow): P6-04** create/update_model 写 `activitymodel_relaunch`（relaunchStep 两步解析，update 先清旧行）；**P6-08** instantiate_workflow 补详细通知 TODO；**P6-06** update_model_acl 返回 204。
+- **fix(milestone): P6-07** set_milestone_acl 返回 204。
+- **fix(org): P8-02** move_member 支持 direction up/down，无效值 400。
+- **fix(effectivity): P3-02** _effectivity_to_dto 补 configurationItemKey 嵌套对象；**P3-03** put_effectivity 按 dtype 分派下限字段非空校验（CreationException）。
+- **fix(baseline): P3-01** product_baselines substituteLinks/optionalUsageLinks 改路径字符串数组（复用 _baseline_*_paths），schema product_baseline.py/product/__init__.py List[dict]→List[str]。
+
+---
+
 ## 2026-07-12 — fix: audit-round2 批次 2 修复（12 权限/安全 HIGH）
 
 > FIX-PLAN 批次 2，4 并行 subagent（文件不相交）+ 主 agent 接线/纠错。pytest 279 passed/1 skipped（无新增 fail）。
