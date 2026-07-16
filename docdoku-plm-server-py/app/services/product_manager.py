@@ -2131,6 +2131,7 @@ class ProductService:
     def remove_template_file(self, db: Session, workspace_id: str,
                               template_id: str, file_name: str) -> None:
         """删除零件模板附件。对齐 Java ProductManagerBean.removeFileFromTemplate + BinaryResourceDAO.removeBinaryResource。"""
+        from sqlalchemy import text
         from app.services.vault import template_attached_path, template_attached_fullname
         full_name = template_attached_fullname(workspace_id, template_id, file_name)
         db.execute(text(
@@ -2153,6 +2154,7 @@ class ProductService:
                               template_id: str, old_name: str,
                               new_name: str) -> None:
         """重命名零件模板附件。对齐 Java ProductManagerBean.renameFileInTemplate。"""
+        from sqlalchemy import text
         from app.services.vault import template_attached_path, template_attached_fullname
         old_full = template_attached_fullname(workspace_id, template_id, old_name)
         new_full = template_attached_fullname(workspace_id, template_id, new_name)
@@ -2180,6 +2182,7 @@ class ProductService:
         """上传零件模板附件。对齐 Java PartTemplateBinaryResource.saveFileInTemplate。"""
         import unicodedata
         from datetime import datetime
+        from sqlalchemy import text
         from app.services.vault import template_attached_path, template_attached_fullname, write_file
         file_name = unicodedata.normalize("NFC", file_name)
         full_name = template_attached_fullname(workspace_id, template_id, file_name)

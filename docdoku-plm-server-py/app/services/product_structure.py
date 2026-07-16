@@ -1043,7 +1043,9 @@ class ProductStructureService:
 
     def delete_baseline(self, db: Session, ws: str, bl_id: int):
         bl = db.query(ProductBaseline).filter(
-            ProductBaseline.id == bl_id).first()
+            ProductBaseline.id == bl_id,
+            ProductBaseline.configurationitem_workspace_id == ws,
+        ).first()
         if bl is None:
             raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
         ref = db.execute(
