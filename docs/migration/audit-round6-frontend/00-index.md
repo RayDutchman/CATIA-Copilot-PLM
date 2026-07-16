@@ -12,9 +12,9 @@
 
 | 编号 | 严重级 | 标题 | 根因层 | 状态 |
 |------|--------|------|--------|------|
-| FE-01 | HIGH | 新建工作区 `POST /api/workspaces` 返回 500，但工作区实际已创建 | 后端响应序列化（ResponseValidationError） | 已定位根因 |
+| FE-01 | HIGH | 新建工作区 `POST /api/workspaces` 返回 500，但工作区实际已创建 | 后端响应序列化（ResponseValidationError） | ✅ 已修复（2026-07-16） |
 | FE-02 | 非 bug（数据残留） | :8000 parts 列表比 :8005 缺很多列 | GD50 残留列自定义数据 + Payara L2 缓存陈旧 | 已定位根因 |
-| FE-03 | HIGH | 自定义零件表格列：可选属性列显示 "undefined"（应显示 Source/设计状态/材料） | 后端双路由遮蔽：List[str] 版本覆盖了对象数组版本 | 已定位根因+修法 |
+| FE-03 | HIGH | 自定义零件表格列：可选属性列显示 "undefined"（应显示 Source/设计状态/材料） | 后端双路由遮蔽：List[str] 版本覆盖了对象数组版本 | ✅ 已修复（2026-07-16） |
 
 ## 发现编号规则
 - `FE-XX`：前端触发、经根因定位的问题
@@ -116,3 +116,17 @@ fastapi.exceptions.ResponseValidationError: 1 validation errors:
 1. 删除 `workspaces.py:197-208` 的两个 List[str] 路由（`attributes_part_iterations`/`attributes_path_data`），连带删除 `workspace_manager.py:317-331` 两个只查 name 的 service 方法（确认无他处引用后）
 2. 让 `attributes.py` 路由生效，并把 `_filter_attributes`（`attributes.py:39-43`）输出 key 从 `attributeType` 改为 `type`，补上 `locked: False`、`mandatory: False` 字段，完全对齐 Java `InstanceAttributeDTO`（dtype→type 枚举映射 `_DTYPE_TO_ATTR_TYPE` 已存在且正确）
 3. 验证点：:8000 与 :8005 两接口响应逐字段一致；customizations 页可选项显示属性名并可保存；查询构建器属性条件可用；UDF NUMBER 属性可选
+
+
+---
+
+## 修复记录（2026-07-16）
+
+**FE-01**：删除 `workspace_manager.py` create_workspace() 返回 dict 中的 `"admin"` 键（WorkspaceDTO `extra='forbid'` 只允许 4 字段）。
+实测：`POST /api/workspaces` → **201** `{"id":"FE01TEST","description":"fe01 verify","enabled":true,"folderLocked":false}`（测试工作区已删除）。
+
+**FE-03**：
+1. 删除 `app/routers/workspaces.py` 中遮蔽正式实现的两个 List[str] 路由（`attributes_part_iterations`/`attributes_path_data`）及 `workspace_manager.py` 中对应的两个只查 name 的 service 方法
+2. `app/routers/attributes.py` `_filter_attributes` 输出 key `attributeType`→`type`，删除 `lovName: None`，补 `locked: False`/`mandatory: False`，对齐 Java `InstanceAttributeDTO`
+实测：`GET /workspaces/GD50/attributes/part-iterations` → `[{"name":"Source","type":"TEXT","locked":false,"mandatory":false}, ...]`，与 :8005 Java 基准逐字段一致；`path-data` → `[]`。
+验证：pytest 282 passed / 1 skipped 零回归；back-py 镜像已 rebuild + 容器重建。

@@ -6,6 +6,13 @@
 
 ---
 
+## 2026-07-16 — fix: 第6轮前端审计 FE-01/FE-03 修复（back-py）
+
+> 见 `docs/migration/audit-round6-frontend/00-index.md`。pytest 282 passed 零回归，镜像已 rebuild，实测验证通过。
+
+- **fix(workspace_manager): FE-01 新建工作区 500** — create_workspace() 返回 dict 删除 `"admin"` 键；WorkspaceDTO `extra='forbid'` 只有 4 字段，多余键触发 ResponseValidationError → 500（业务已落库，属纯序列化失败）。现 `POST /api/workspaces` → 201。
+- **fix(routers): FE-03 属性列显示 undefined（双路由遮蔽）** — 删除 `workspaces.py` 中遮蔽 `attributes.py` 正式实现的两个 List[str] 路由（part-iterations/path-data）及 workspace_manager 对应 service 方法；`attributes.py` `_filter_attributes` 输出对齐 Java InstanceAttributeDTO（`attributeType`→`type`，补 `locked`/`mandatory`，删 `lovName`）。修复波及面：列自定义下拉、零件高级查询构建器属性条件、UDF NUMBER 属性列表。
+
 ## 2026-07-16 — fix: P1-06/16/20 三合一修复（back-py）
 
 - **fix(part_mapper): P1-06 status NULL→null** — `STATUS_MAP.get(pr.status, "WIP")` → `None`，对齐 Java PartRevisionDTO nillable enum；schema 默认值同步改为 None。

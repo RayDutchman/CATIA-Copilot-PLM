@@ -4,6 +4,10 @@
 
 ---
 
+### 🟢 第6轮前端审计（按需模式，2026-07-16，见 docs/migration/audit-round6-frontend/00-index.md）
+
+> 模式变更：用户手动操作前端报 bug，agent 只做根因定位记录。**FE-01（建工作区 500）与 FE-03（属性列 undefined 双路由遮蔽）已修复并验证**（pytest 282 passed，镜像已 rebuild）。FE-02 为数据残留+Payara 缓存假象非 bug（GD50 `workspace_parttablecolumn` 残留 `pr.name` 行未清理，待用户确认是否删除恢复默认 10 列）。
+
 ### 🔴 第五轮全量审计（逐端点/逐SQL/逐DTO，2026-07-16, 见 audit-round5/00-index）
 
 > **只审不修**。3C/5H/12M/23L。新CRITICAL: P6-19(ChangeRequest删除列名错→500) + P5-NEW-01(method体丢失→500)。第4轮2处回归。
