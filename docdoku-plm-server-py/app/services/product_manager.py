@@ -1434,8 +1434,6 @@ class ProductService:
                                from_iter: int, to_iter: int) -> None:
         """将旧迭代的全部分类数据复制到新迭代（含 BinaryResource 深拷贝）。"""
         import shutil
-        from pathlib import Path
-        from app.core.config import settings
         from app.models.part import (
             BinaryResource,
             part_iteration_binres, part_iteration_geometry,
@@ -1708,8 +1706,6 @@ class ProductService:
         """从 PartMasterTemplate 复制 nativecad 文件到新零件的 vault。
         对齐 Java createPartMaster 第352-367行。"""
         import shutil
-        from pathlib import Path
-        from app.core.config import settings
         from sqlalchemy import text as sql_text
 
         tpl = db.execute(sql_text(
@@ -2016,15 +2012,23 @@ class ProductService:
                                      number: str, version: str, iteration: int,
                                      sub_type: str, file_name: str,
                                      user_login: str) -> None:
-        from pathlib import Path
-        from app.core.config import settings
         from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
+        from app.services import vault as vault_svc
 
         pr = self.get_revision(db, workspace_id, number, version)
         if not pr or pr.checkout_user_login != user_login \
                 or pr.last_iteration_number != iteration:
             raise NotAllowedException("NotAllowedException4")
-        full_name = f"{workspace_id}/parts/{number}/{version}/{iteration}/{sub_type}/{file_name}"
+        
+        if sub_type == "nativecad":
+            full_name = vault_svc.part_nativecad_fullname(workspace_id, number, version, iteration, file_name)
+        elif sub_type == "attachedfiles":
+            full_name = vault_svc.part_attached_fullname(workspace_id, number, version, iteration, file_name)
+        elif sub_type == "geometry":
+            quality_str = file_name.replace(".glb", "")
+            full_name = vault_svc.part_geometry_fullname(workspace_id, number, version, iteration, quality_str)
+        else:
+            full_name = f"{workspace_id}/parts/{number}/{version}/{iteration}/{sub_type}/{file_name}"
 
         if sub_type == "nativecad":
             it = db.query(PartIteration).filter(

@@ -123,6 +123,11 @@ def part_attached_fullname(
     return f"{workspace_id}/parts/{part_number}/{version}/{iteration}/attachedfiles/{filename}"
 
 
+def resolve(full_name: str) -> Path:
+    """将给定的 full_name 转换为绝对路径对象。替代原本外部的 vault_svc._vault_root() / full_name 拼接行为。"""
+    return _vault_root() / full_name
+
+
 def _template_base(workspace_id: str, template_id: str) -> Path:
     return _vault_root() / workspace_id / "part-templates" / template_id
 
