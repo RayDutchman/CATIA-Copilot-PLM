@@ -153,7 +153,6 @@ def conversion_callback(
 ):
     number, version = _split_part_key(part_key)
     converter.handle_callback(db, workspace_id, number, version, body)
-    db.commit()
     return {"status": "ok"}
 
 
@@ -371,9 +370,8 @@ def get_latest_revision(
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    is_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    from app.services.user_manager import user_mgmt_service
+    is_admin = user_mgmt_service.is_account_admin(db, current_user.login)
     pr = svc.get_latest_revision(db, workspace_id, part_number,
                                  current_user_login=current_user.login,
                                  is_admin=is_admin)

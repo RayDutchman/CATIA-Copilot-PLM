@@ -33,10 +33,10 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
 
     # vault 路径对齐 Java: {ws}/product-instances/{sn}/iterations/{it}/{filename}
     # ci_id 仅参与 URL 路由，不写入 vault/DB 路径
-    path = vault_svc._vault_root() / ws / "product-instances" / sn / "iterations" / str(it) / filename
+    path = vault_svc.product_instance_iteration_path(ws, sn, it, filename)
     vault_svc.write_file(path, data)
 
-    fullname = f"{ws}/product-instances/{sn}/iterations/{it}/{filename}"
+    fullname = vault_svc.product_instance_iteration_fullname(ws, sn, it, filename)
 
     existing = db.execute(text(
         "SELECT fullname FROM binaryresource WHERE fullname=:fn"
@@ -76,7 +76,7 @@ def upload(ws: str, ci_id: str, sn: str, it: int,
 def download(ws: str, ci_id: str, sn: str, it: int, fn: str,
              current_user: Account = Depends(get_current_user)):
     try:
-        path = vault_svc._vault_root() / ws / "product-instances" / sn / "iterations" / str(it) / fn
+        path = vault_svc.product_instance_iteration_path(ws, sn, it, fn)
         data = vault_svc.read_file(path)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")

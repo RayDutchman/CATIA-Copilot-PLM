@@ -80,9 +80,6 @@ def add_user(ws: str, body: dict, db: Session = Depends(get_db),
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
-    acc = db.query(Account).filter(Account.login == login).first()
-    if not acc:
-        raise UserNotFoundException("UserNotFoundException", login)
     user_mgmt_service.add_user(db, ws, login, group)
     return Response(status_code=204)
 
@@ -122,9 +119,6 @@ def set_admin(ws: str, body: dict, db: Session = Depends(get_db),
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)
-    acc = db.query(Account).filter(Account.login == login).first()
-    if not acc:
-        raise UserNotFoundException("UserNotFoundException", login)
     workspace_service.get_workspace_admin(db, ws)  # 存在性校验
     user_mgmt_service.set_workspace_admin(db, ws, login)
     r = workspace_service.get_workspace_admin(db, ws)
@@ -178,21 +172,4 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
 
     read_only = (membership == "READ_ONLY")
 
-    user_mgmt_service.set_user_access(db, ws, login, read_only)
-
-    mem_row = db.execute(text(
-        "SELECT readonly FROM workspaceusermembership "
-        "WHERE workspace_id = :ws AND member_login = :l AND member_workspace_id = :ws"
-    ), {"ws": ws, "l": login}).fetchone()
-    if not mem_row:
-        raise NotAllowedException("NotAllowedException9", login)
-
-    acc = db.query(Account).filter(Account.login == login).first()
-    return {
-        "login": login,
-        "name": acc.name or "" if acc else "",
-        "email": acc.email or "" if acc else "",
-        "language": acc.language or "" if acc else "",
-        "workspaceId": ws,
-        "membership": "READ_ONLY" if mem_row[0] else "FULL_ACCESS",
-    }
+    return user_mgmt_service.set_user_access(db, ws, login, read_only)

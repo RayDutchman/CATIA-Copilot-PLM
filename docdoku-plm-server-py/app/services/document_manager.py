@@ -36,6 +36,13 @@ class DocumentService:
                 return False
         return True
 
+    def set_public_shared(self, db, ws, doc_id, ver, is_shared, user_login):
+        from app.services.factory.acl_factory import check_write_access
+        dr = self.get_revision(db, ws, doc_id, ver)
+        check_write_access(db, dr.acl_id, user_login, False, workspace_id=ws)
+        dr.public_shared = is_shared
+        db.commit()
+
     def get_revision(self, db, ws, doc_id, ver):
         pr = db.query(DocumentRevision).filter(
             DocumentRevision.workspace_id == ws,
@@ -240,10 +247,9 @@ class DocumentService:
         # 清理 vault 物理文件（对齐 product_manager.delete_revision）
         try:
             import shutil
-            from pathlib import Path
-            from app.core.config import settings
+            from app.services import vault as vault_svc
             for it in pr.iterations:
-                vault_dir = Path(settings.VAULT_PATH) / ws / "documents" / doc_id / ver / str(it.iteration)
+                vault_dir = vault_svc.document_iteration_dir(ws, doc_id, ver, it.iteration)
                 if vault_dir.exists():
                     shutil.rmtree(vault_dir)
         except Exception:
@@ -442,8 +448,6 @@ class DocumentService:
     def _copy_attached_files(self, db, ws, doc_id, ver, src_iter, dst_iter):
         """将 src_iter 的 attached_files 深拷贝到 dst_iter（含 BinaryResource + vault）。"""
         import shutil
-        from pathlib import Path
-        from app.core.config import settings
         from app.models.part import BinaryResource
         from sqlalchemy import text
 
@@ -454,14 +458,10 @@ class DocumentService:
             {"ws": ws, "did": doc_id, "ver": ver, "iter": src_iter},
         ).fetchall()
 
-        vault_root = Path(settings.VAULT_PATH)
-
         for row in rows:
             old_full = row[0]
-            parts = old_full.split("/")
-            if len(parts) >= 5:
-                parts[4] = str(dst_iter)
-            new_full = "/".join(parts)
+            filename = old_full.split("/")[-1]
+            new_full = vault_svc.document_attached_fullname(ws, doc_id, ver, dst_iter, filename)
 
             old_br = db.query(BinaryResource).filter(
                 BinaryResource.full_name == old_full).first()
@@ -478,8 +478,8 @@ class DocumentService:
                     ))
                     db.flush()
                 try:
-                    old_path = vault_root / old_full
-                    new_path = vault_root / new_full
+                    old_path = vault_svc._vault_root() / old_full
+                    new_path = vault_svc._vault_root() / new_full
                     if old_path.exists() and not new_path.exists():
                         new_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(str(old_path), str(new_path))
@@ -529,18 +529,15 @@ class DocumentService:
 
     def _copy_template_files(self, db, ws, template_id, doc_id):
         import shutil
-        from pathlib import Path
-        from app.core.config import settings
         from app.models.part import BinaryResource
         rows = db.execute(sql_text(
             "SELECT attachedfile_fullname FROM documentmastertemplate_binres "
             "WHERE workspace_id=:ws AND documentmastertemplate_id=:tid"
         ), {"ws": ws, "tid": template_id}).fetchall()
-        vault_root = Path(settings.VAULT_PATH)
         for row in rows:
             old_full = row[0]
-            filename = old_full.rsplit("/", 1)[-1] if "/" in old_full else old_full
-            new_full = f"{ws}/documents/{doc_id}/A/1/{filename}"
+            filename = old_full.split("/")[-1]
+            new_full = vault_svc.document_attached_fullname(ws, doc_id, "A", 1, filename)
             old_br = db.query(BinaryResource).filter(
                 BinaryResource.full_name == old_full).first()
             if old_br:
@@ -555,8 +552,8 @@ class DocumentService:
                     ))
                     db.flush()
                 try:
-                    old_path = vault_root / old_full
-                    new_path = vault_root / new_full
+                    old_path = vault_svc._vault_root() / old_full
+                    new_path = vault_svc._vault_root() / new_full
                     if old_path.exists() and not new_path.exists():
                         new_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(str(old_path), str(new_path))
@@ -765,9 +762,7 @@ class DocumentService:
         # 清理 vault 物理文件
         try:
             import shutil
-            from pathlib import Path
-            from app.core.config import settings
-            vault_dir = Path(settings.VAULT_PATH) / ws / "documents" / doc_id / ver / str(last_iter_num)
+            vault_dir = vault_svc.document_iteration_dir(ws, doc_id, ver, last_iter_num)
             if vault_dir.exists():
                 shutil.rmtree(vault_dir)
         except Exception:
@@ -993,6 +988,16 @@ class DocumentService:
         db.commit(); db.refresh(pr)
         indexer_manager.index_document_revision(pr)  # 对标 saveTags:1007
         return pr
+
+    def add_tags(self, db, ws, doc_id, ver, labels, user_login):
+        existing_rows = db.execute(sql_text(
+            "SELECT tag_label FROM documentrevision_tag "
+            "WHERE documentmaster_workspace_id=:ws AND documentmaster_id=:did "
+            "AND documentrevision_version=:ver"
+        ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
+        existing_labels = [r[0] for r in existing_rows]
+        merged = list(dict.fromkeys(existing_labels + labels))
+        self.set_tags(db, ws, doc_id, ver, merged, user_login)
 
     def add_tag(self, db, ws, doc_id, ver, label, user_login):
         pr = self.get_revision(db, ws, doc_id, ver)
@@ -1276,8 +1281,6 @@ class DocumentService:
         return t
 
     def delete_template(self, db, ws, template_id):
-        from pathlib import Path
-        from app.core.config import settings
 
         t = self.get_template(db, ws, template_id)
 
@@ -1288,7 +1291,7 @@ class DocumentService:
         for (fullname,) in br_rows:
             db.execute(sql_text("DELETE FROM binaryresource WHERE fullname=:fn"),
                        {"fn": fullname})
-            file_path = Path(settings.VAULT_PATH) / fullname
+            file_path = vault_svc._vault_root() / fullname
             if file_path.exists():
                 try:
                     file_path.unlink()
@@ -1342,10 +1345,9 @@ class DocumentService:
                 raise NotAllowedException("NotAllowedException4")
         from app.services import vault as vault_svc
         from app.models.part import BinaryResource
-        path = (vault_svc._vault_root() / ws / "documents" / doc_id
-                / ver / str(iteration) / filename)
+        path = vault_svc.document_attached_path(ws, doc_id, ver, iteration, filename)
         vault_svc.write_file(path, data)
-        full_name = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{filename}"
+        full_name = vault_svc.document_attached_fullname(ws, doc_id, ver, iteration, filename)
         br = db.query(BinaryResource).filter(
             BinaryResource.full_name == full_name).first()
         now = datetime.utcnow()
@@ -1372,13 +1374,26 @@ class DocumentService:
 
     def get_file_bytes(self, ws, doc_id, ver, iteration, filename):
         from app.services import vault as vault_svc
-        full_name = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{filename}"
-        path = (vault_svc._vault_root() / ws / "documents" / doc_id
-                / ver / str(iteration) / filename)
+        full_name = vault_svc.document_attached_fullname(ws, doc_id, ver, iteration, filename)
+        path = vault_svc.document_attached_path(ws, doc_id, ver, iteration, filename)
         try:
             return vault_svc.read_file(path)
         except FileNotFoundError:
             raise FileNotFoundException("FileNotFoundException", full_name)
+
+    def update_revision_metadata(self, db, rev, description: str, acl_id: int):
+        if description:
+            rev.description = description
+        if acl_id is not None and getattr(rev, "acl_id", None) != acl_id:
+            rev.acl_id = acl_id
+        db.commit()
+
+    def get_document_ids_by_pattern(self, db, ws, like_pattern: str) -> list[str]:
+        from sqlalchemy import text as sql_text
+        rows = db.execute(sql_text(
+            "SELECT id FROM documentmaster WHERE workspace_id=:ws AND id LIKE :pat"
+        ), {"ws": ws, "pat": like_pattern}).fetchall()
+        return [r[0] for r in rows]
 
     def _next_version(self, current):
         if not current: return "A"
@@ -2000,11 +2015,9 @@ class DocumentService:
     def delete_document_file(self, db, ws, doc_id, ver, iteration, filename, user_login):
         """删除文档迭代中的文件（含 vault 文件系统操作）。"""
         from app.models.part import BinaryResource
-        from app.core.config import settings
-        from pathlib import Path
 
         self._check_doc_file_writable(db, ws, doc_id, ver, iteration, user_login)
-        full_name = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{filename}"
+        full_name = vault_svc.document_attached_fullname(ws, doc_id, ver, iteration, filename)
 
         db.execute(document_iteration_binres.delete().where(
             document_iteration_binres.c.workspace_id == ws,
@@ -2017,7 +2030,7 @@ class DocumentService:
         if br:
             db.delete(br)
         try:
-            vault_path = Path(settings.VAULT_PATH) / full_name
+            vault_path = vault_svc._vault_root() / full_name
             if vault_path.exists():
                 vault_path.unlink()
         except Exception:
@@ -2027,12 +2040,10 @@ class DocumentService:
     def rename_document_file(self, db, ws, doc_id, ver, iteration, old_name, new_name, user_login):
         """重命名文档迭代中的文件（含 vault rename）。"""
         from app.models.part import BinaryResource
-        from app.core.config import settings
-        from pathlib import Path
 
         self._check_doc_file_writable(db, ws, doc_id, ver, iteration, user_login)
-        old_full = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{old_name}"
-        new_full = f"{ws}/documents/{doc_id}/{ver}/{iteration}/{new_name}"
+        old_full = vault_svc.document_attached_fullname(ws, doc_id, ver, iteration, old_name)
+        new_full = vault_svc.document_attached_fullname(ws, doc_id, ver, iteration, new_name)
 
         br = db.query(BinaryResource).filter(BinaryResource.full_name == old_full).first()
         if br:
@@ -2045,8 +2056,8 @@ class DocumentService:
             document_iteration_binres.c.attachedfile_fullname == old_full,
         ).values(attachedfile_fullname=new_full))
         try:
-            old_path = Path(settings.VAULT_PATH) / old_full
-            new_path = Path(settings.VAULT_PATH) / new_full
+            old_path = vault_svc._vault_root() / old_full
+            new_path = vault_svc._vault_root() / new_full
             if old_path.exists():
                 new_path.parent.mkdir(parents=True, exist_ok=True)
                 old_path.rename(new_path)

@@ -370,6 +370,9 @@ class UserMgmtService:
         return {"id": group.id, "workspaceId": group.workspace_id}
 
     def set_workspace_admin(self, db: Session, ws: str, login: str) -> dict:
+        acc = db.query(Account).filter(Account.login == login).first()
+        if not acc:
+            raise EntityNotFoundException("UserNotFoundException", login)
         db.execute(text(
             "UPDATE workspace SET admin_login = :login WHERE id = :id"
         ), {"login": login, "id": ws})
@@ -394,6 +397,7 @@ class UserMgmtService:
             "email": acc.email or "" if acc else "",
             "language": acc.language or "" if acc else "",
             "workspaceId": ws,
+            "membership": "READ_ONLY" if read_only else "FULL_ACCESS",
         }
 
     # ============================================================

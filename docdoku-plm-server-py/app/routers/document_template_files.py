@@ -22,7 +22,7 @@ router = APIRouter()
 
 def _template_file_path(ws: str, template_id: str, filename: str) -> Path:
     """返回文档模板附件的 vault 路径。"""
-    return vault_svc._vault_root() / ws / "document-templates" / template_id / filename
+    return vault_svc.document_template_attached_path(ws, template_id, filename)
 
 
 def _full_name(ws: str, template_id: str, filename: str) -> str:

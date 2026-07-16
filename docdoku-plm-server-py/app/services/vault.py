@@ -7,6 +7,62 @@ def _vault_root() -> Path:
     return Path(settings.VAULT_PATH)
 
 
+def workspace_vault_dir(workspace_id: str) -> Path:
+    """Workspace 的 vault 根目录。"""
+    return _vault_root() / workspace_id
+
+
+def export_zip_base() -> Path:
+    """导出的 zip 文件在 vault 中的存放根目录。"""
+    return _vault_root()
+
+
+def document_iteration_dir(
+    workspace_id: str, document_id: str, version: str, iteration: int
+) -> Path:
+    """文档 Iteration 的 vault 物理目录。"""
+    return (
+        _vault_root() / workspace_id / "documents"
+        / document_id / version / str(iteration)
+    )
+
+
+def document_template_attached_path(
+    workspace_id: str, template_id: str, filename: str
+) -> Path:
+    """文档模板附件文件路径。"""
+    return _vault_root() / workspace_id / "document-templates" / template_id / filename
+
+
+def document_attached_path(
+    workspace_id: str, document_id: str, version: str,
+    iteration: int, filename: str
+) -> Path:
+    """文档附件文件路径。"""
+    return (
+        _vault_root() / workspace_id / "documents"
+        / document_id / version / str(iteration) / filename
+    )
+
+
+def document_attached_fullname(
+    workspace_id: str, document_id: str, version: str,
+    iteration: int, filename: str
+) -> str:
+    """文档附件文件的 full_name。"""
+    return f"{workspace_id}/documents/{document_id}/{version}/{iteration}/{filename}"
+
+
+def part_iteration_dir(
+    workspace_id: str, part_number: str, version: str, iteration: int
+) -> Path:
+    """零件 Iteration 的 vault 物理目录。"""
+    return (
+        _vault_root() / workspace_id / "parts"
+        / part_number / version / str(iteration)
+    )
+
+
 def part_nativecad_path(
     workspace_id: str, part_number: str, version: str,
     iteration: int, filename: str
@@ -19,16 +75,32 @@ def part_nativecad_path(
     )
 
 
+def part_nativecad_fullname(
+    workspace_id: str, part_number: str, version: str,
+    iteration: int, filename: str
+) -> str:
+    """原生 CAD 文件的 full_name。"""
+    return f"{workspace_id}/parts/{part_number}/{version}/{iteration}/nativecad/{filename}"
+
+
 def part_geometry_path(
     workspace_id: str, part_number: str, version: str,
     iteration: int, quality: str
 ) -> Path:
-    """几何体 GLB 文件路径。quality 为 LOD 等级名（如 "LOW"/"HIGH"/数字等），自动加 .glb 后缀与 geometry/ 子目录。"""
+    """几何体 GLB 文件路径。对齐 Java：无 geometry 子目录。"""
     return (
         _vault_root() / workspace_id / "parts"
         / part_number / version / str(iteration)
-        / "geometry" / f"{quality}.glb"
+        / f"{quality}.glb"
     )
+
+
+def part_geometry_fullname(
+    workspace_id: str, part_number: str, version: str,
+    iteration: int, quality: str
+) -> str:
+    """几何体 GLB 文件的 full_name。"""
+    return f"{workspace_id}/parts/{part_number}/{version}/{iteration}/{quality}.glb"
 
 
 def part_attached_path(
@@ -41,6 +113,14 @@ def part_attached_path(
         / part_number / version / str(iteration)
         / "attachedfiles" / filename
     )
+
+
+def part_attached_fullname(
+    workspace_id: str, part_number: str, version: str,
+    iteration: int, filename: str
+) -> str:
+    """零件附件文件的 full_name。"""
+    return f"{workspace_id}/parts/{part_number}/{version}/{iteration}/attachedfiles/{filename}"
 
 
 def _template_base(workspace_id: str, template_id: str) -> Path:
@@ -57,6 +137,44 @@ def template_attached_fullname(workspace_id: str, template_id: str,
                                 filename: str) -> str:
     """零件模板附件的 full_name（对齐 BinaryResource.full_name 格式）。"""
     return f"{workspace_id}/part-templates/{template_id}/{filename}"
+
+
+def product_instance_iteration_path(
+    workspace_id: str, serial_number: str,
+    iteration: int, filename: str
+) -> Path:
+    """产品实例 Iteration 文件路径。"""
+    return (
+        _vault_root() / workspace_id / "product-instances" / serial_number
+        / "iterations" / str(iteration) / filename
+    )
+
+
+def product_instance_iteration_fullname(
+    workspace_id: str, serial_number: str,
+    iteration: int, filename: str
+) -> str:
+    """产品实例 Iteration 文件的 full_name。"""
+    return f"{workspace_id}/product-instances/{serial_number}/iterations/{iteration}/{filename}"
+
+
+def product_instance_path(
+    workspace_id: str, serial_number: str, path_data_id: str,
+    iteration: int, filename: str
+) -> Path:
+    """产品实例 PathData 文件路径。"""
+    return (
+        _vault_root() / workspace_id / "product-instances" / serial_number
+        / "pathdata" / path_data_id / "iterations" / str(iteration) / filename
+    )
+
+
+def product_instance_fullname(
+    workspace_id: str, serial_number: str, path_data_id: str,
+    iteration: int, filename: str
+) -> str:
+    """产品实例 PathData 文件的 full_name。"""
+    return f"{workspace_id}/product-instances/{serial_number}/pathdata/{path_data_id}/iterations/{iteration}/{filename}"
 
 
 def read_file(path: Path) -> bytes:

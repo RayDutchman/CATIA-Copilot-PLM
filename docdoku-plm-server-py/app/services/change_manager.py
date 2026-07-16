@@ -55,6 +55,21 @@ class ChangeService:
                      or check_read_access(db, i.acl_id, user_login, is_admin)]
         return items
 
+    def search_items(self, db: Session, ws: str, cls, q: str, limit: int = 8):
+        q_esc = q.replace('%', '\\%').replace('_', '\\_')
+        return db.query(cls).filter(
+            cls.workspace_id == ws,
+            cls.name.ilike(f'%{q_esc}%', escape='\\')
+        ).limit(limit).all()
+
+    def update_acl(self, db: Session, cls, ws: str, item_id: int, user_entries: dict, group_entries: dict):
+        from app.services.factory.acl_factory import apply_acl
+        item = self.get_by_id(db, cls, ws, item_id)
+        new_acl_id = apply_acl(db, item.acl_id, user_entries, group_entries, workspace_id=ws)
+        item.acl_id = new_acl_id
+        db.commit()
+        return item
+
     def get_by_id(self, db: Session, cls, ws: str, item_id: int):
         item = db.query(cls).filter(
             cls.workspace_id == ws, cls.id == item_id).first()

@@ -122,8 +122,7 @@ def generate_instance_stream(
 
     db = db_session
     if db is None:
-        from app.core.database import SessionLocal
-        db = SessionLocal()
+        raise ValueError("db_session is required")
 
     try:
         comps = product_structure_service.filter_product_structure(

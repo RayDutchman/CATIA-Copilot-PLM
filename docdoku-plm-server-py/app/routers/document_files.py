@@ -67,8 +67,8 @@ def download(ws: str, doc_id: str, version: str, iteration: int, file_name: str,
         data = svc.get_file_bytes(ws, doc_id, version, iteration, file_name)
     except FileNotFoundException:
         raise HTTPException(404, "File not found")
-    from app.core.config import settings
-    file_path = Path(settings.VAULT_PATH) / ws / "documents" / doc_id / version / str(iteration) / file_name
+    from app.services import vault
+    file_path = vault.document_attached_path(ws, doc_id, version, iteration, file_name)
     stat = file_path.stat()
     mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
     headers = {

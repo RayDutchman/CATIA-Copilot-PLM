@@ -9,11 +9,6 @@ from app.models.part import (
 )
 
 
-def _vault_root() -> Path:
-    from app.core.config import settings
-    return Path(settings.VAULT_PATH)
-
-
 def _upsert_binaryresource(db: Session, full_name: str, size: int,
                            dtype: str = "BinaryResource") -> BinaryResource:
     br = db.query(BinaryResource).filter(
@@ -61,7 +56,7 @@ def save_nativecad(db: Session, ws: str, pn: str, ver: str, iteration: int,
     """写 nativecad 到 vault + upsert BinaryResource + 设 PartIteration.native_cad_file_fullname。
     对齐 Java saveNativeCADInPartIteration：先删除旧几何体再保存新 CAD。"""
     _delete_old_geometries(db, ws, pn, ver, iteration)
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
+    full_name = vault.part_nativecad_fullname(ws, pn, ver, iteration, filename)
     existing = db.query(BinaryResource).filter(
         BinaryResource.full_name == full_name).first()
     if existing is not None:
@@ -84,7 +79,7 @@ def save_nativecad(db: Session, ws: str, pn: str, ver: str, iteration: int,
 def save_attached(db: Session, ws: str, pn: str, ver: str, iteration: int,
                   filename: str, data: bytes) -> BinaryResource:
     """写附件到 vault + upsert BinaryResource + insert part_iteration_binres 关联。"""
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/{filename}"
+    full_name = vault.part_attached_fullname(ws, pn, ver, iteration, filename)
     existing = db.query(BinaryResource).filter(
         BinaryResource.full_name == full_name).first()
     if existing is not None:
@@ -117,13 +112,13 @@ def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
     if sub_type is None:
         full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{filename}"
     elif sub_type == "nativecad":
-        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/nativecad/{filename}"
+        full_name = vault.part_nativecad_fullname(ws, pn, ver, iteration, filename)
     else:
-        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/attachedfiles/{filename}"
+        full_name = vault.part_attached_fullname(ws, pn, ver, iteration, filename)
     for iter_num in range(iteration, 0, -1):
         try:
             if sub_type is None:
-                path = (_vault_root() / ws / "parts" / pn / ver
+                path = (vault._vault_root() / ws / "parts" / pn / ver
                         / str(iter_num) / filename)
             elif sub_type == "nativecad":
                 path = vault.part_nativecad_path(ws, pn, ver, iter_num, filename)
@@ -142,10 +137,18 @@ def delete_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
                      user_login: str) -> None:
     """删除零件文件（含关联表清理 + vault 物理删除）。"""
     from app.core.exceptions import NotAllowedException
-    from app.core.config import settings
     from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
 
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
+    if sub_type == "nativecad":
+        full_name = vault.part_nativecad_fullname(ws, pn, ver, iteration, file_name)
+    elif sub_type == "attachedfiles":
+        full_name = vault.part_attached_fullname(ws, pn, ver, iteration, file_name)
+    elif sub_type == "geometry":
+        # Usually quality is passed, but here file_name is quality.glb or similar
+        # For simplicity, fallback to string format since it's generic deletion.
+        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
+    else:
+        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
 
     if sub_type == "nativecad":
         it = db.query(PartIteration).filter(
@@ -174,7 +177,7 @@ def delete_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
         ))
 
     try:
-        vault_path = Path(settings.VAULT_PATH) / full_name
+        vault_path = vault._vault_root() / full_name
         if vault_path.exists():
             vault_path.unlink()
     except Exception:
@@ -188,11 +191,17 @@ def rename_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
                      user_login: str) -> dict:
     """重命名零件文件（含关联表 + vault 物理重命名）。"""
     from fastapi import HTTPException
-    from app.core.config import settings
     from app.models.part import BinaryResource, part_iteration_binres, part_iteration_geometry
 
-    old_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{old_name}"
-    new_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{new_name}"
+    if sub_type == "nativecad":
+        old_full = vault.part_nativecad_fullname(ws, pn, ver, iteration, old_name)
+        new_full = vault.part_nativecad_fullname(ws, pn, ver, iteration, new_name)
+    elif sub_type == "attachedfiles":
+        old_full = vault.part_attached_fullname(ws, pn, ver, iteration, old_name)
+        new_full = vault.part_attached_fullname(ws, pn, ver, iteration, new_name)
+    else:
+        old_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{old_name}"
+        new_full = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{new_name}"
 
     br = db.query(BinaryResource).filter(
         BinaryResource.full_name == old_full).first()
@@ -226,8 +235,8 @@ def rename_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
         ).values(geometry_fullname=new_full))
 
     try:
-        old_path = Path(settings.VAULT_PATH) / old_full
-        new_path = Path(settings.VAULT_PATH) / new_full
+        old_path = vault._vault_root() / old_full
+        new_path = vault._vault_root() / new_full
         if old_path.exists():
             new_path.parent.mkdir(parents=True, exist_ok=True)
             old_path.rename(new_path)

@@ -76,13 +76,9 @@ def generate_id(ws: str, template_id: str,
         like_pattern = re.escape(prefix) + '%'
     else:
         like_pattern = f"{template_id}-%"
-    from sqlalchemy import text as sql_text
-    rows = db.execute(sql_text(
-        "SELECT id FROM documentmaster WHERE workspace_id=:ws AND id LIKE :pat"
-    ), {"ws": ws, "pat": like_pattern}).fetchall()
+    existing_ids = svc.get_document_ids_by_pattern(db, ws, like_pattern)
     max_seq = 0
-    for r in rows:
-        existing_id = r[0]
+    for existing_id in existing_ids:
         if mask and prefix:
             seq_str = existing_id[len(prefix):]
         else:

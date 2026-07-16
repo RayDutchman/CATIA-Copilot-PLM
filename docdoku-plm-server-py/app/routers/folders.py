@@ -128,12 +128,8 @@ def create_in_folder(ws: str, folder_id: str, body: dict,
                                template_id=template_id,
                                workflow_model_id=workflow_model_id,
                                role_mapping=role_mapping)
-    if description:
-        rev.description = description
+    new_acl_id = getattr(rev, "acl_id", None)
     if user_entries or user_group_entries:
-        acl_id = getattr(rev, "acl_id", None)
-        new_acl_id = apply_acl(db, acl_id, user_entries, user_group_entries, workspace_id=ws)
-        if getattr(rev, "acl_id", None) != new_acl_id:
-            rev.acl_id = new_acl_id
-    db.commit()
+        new_acl_id = apply_acl(db, new_acl_id, user_entries, user_group_entries, workspace_id=ws)
+    svc.update_revision_metadata(db, rev, description, new_acl_id)
     return svc.build_revision_dto(db, rev, current_user.login)

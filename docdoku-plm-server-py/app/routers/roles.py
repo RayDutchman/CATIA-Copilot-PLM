@@ -15,24 +15,7 @@ PREFIX = "/workspaces/{ws}"
 
 
 def _role_to_dict(r, db: Session) -> dict:
-    from sqlalchemy import text
-    users = db.execute(text(
-        "SELECT user_login FROM role_user WHERE role_name=:n AND role_workspace_id=:w"
-    ), {"n": r.name, "w": r.workspace_id}).fetchall()
-    groups = db.execute(text(
-        "SELECT usergroup_id FROM role_usergroup WHERE role_name=:n AND role_workspace_id=:w"
-    ), {"n": r.name, "w": r.workspace_id}).fetchall()
-    user_logins = [u[0] for u in users]
-    accounts = {a.login: a.name for a in db.query(Account).filter(
-        Account.login.in_(user_logins)).all()} if user_logins else {}
-    return {
-        "id": f"{r.workspace_id}:{r.name}",
-        "name": r.name,
-        "workspaceId": r.workspace_id,
-        "defaultAssignedUsers": [{"login": login, "name": accounts.get(login, login)}
-                                  for login in user_logins],
-        "defaultAssignedGroups": [{"id": g[0]} for g in groups],
-    }
+    return security_service.role_to_dict(r, db)
 
 
 @router.get(f"{PREFIX}/roles", response_model=List[RoleDTO])

@@ -429,10 +429,10 @@ def rename_path_data_file(ws: str, ci_id: str, sn: str, master_id: int,
                            db: Session = Depends(get_db)):
     """重命名 PathDataIteration 附件（文件名变更）。"""
     import os
-    from app.services.binary_storage import _vault_root
+    from app.services import vault
     body = body or {}
     new_name = body.get("name", file_name)
-    vault_dir = _vault_root() / ws / "product-instances" / sn / "pathdata" / str(master_id) / "iterations" / str(iteration)
+    vault_dir = vault.product_instance_path(ws, sn, str(master_id), iteration, "").parent
     old_path = vault_dir / file_name
     new_path = vault_dir / new_name
     try:
@@ -451,8 +451,8 @@ def delete_path_data_file(ws: str, ci_id: str, sn: str, master_id: int,
     """删除 PathDataIteration 附件。"""
     import os
     from fastapi.responses import Response
-    from app.services.binary_storage import _vault_root
-    vault_path = _vault_root() / ws / "product-instances" / sn / "pathdata" / str(master_id) / "iterations" / str(iteration) / file_name
+    from app.services import vault
+    vault_path = vault.product_instance_path(ws, sn, str(master_id), iteration, file_name)
     try:
         if vault_path.exists():
             vault_path.unlink()

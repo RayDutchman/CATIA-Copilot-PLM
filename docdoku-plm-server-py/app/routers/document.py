@@ -209,14 +209,7 @@ def add_tag(ws: str, doc_key: str, body: dict,
         new_labels = raw_tags
     if not new_labels:
         return svc.build_revision_dto(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
-    existing_rows = db.execute(sql_text(
-        "SELECT tag_label FROM documentrevision_tag "
-        "WHERE documentmaster_workspace_id=:ws AND documentmaster_id=:did "
-        "AND documentrevision_version=:ver"
-    ), {"ws": ws, "did": doc_id, "ver": ver}).fetchall()
-    existing_labels = [r[0] for r in existing_rows]
-    merged = list(dict.fromkeys(existing_labels + new_labels))
-    svc.set_tags(db, ws, doc_id, ver, merged, current_user.login)
+    svc.add_tags(db, ws, doc_id, ver, new_labels, current_user.login)
     return svc.build_revision_dto(db, svc.get_revision(db, ws, doc_id, ver), current_user.login)
 
 
@@ -271,23 +264,10 @@ def share_document(ws: str, doc_key: str,
     shared_uuid = str(uuid.uuid4())
     password = body.get("password")
     expire_date_str = body.get("expireDate")
-    password_hash = hashlib.md5(password.encode()).hexdigest() if password else None
-    expire_date = datetime.fromisoformat(expire_date_str) if expire_date_str else None
-    entity = SharedEntity(
-        uuid=shared_uuid,
-        dtype="SharedDocument",
-        creation_date=datetime.utcnow(),
-        expire_date=expire_date,
-        password=password_hash,
-        author_workspace_id=ws,
-        author_login=current_user.login,
-        workspace_id=ws,
-        entity_workspace_id=ws,
-        documentmaster_id=doc_id,
-        documentrevision_version=ver,
+    from app.services.share_manager import share_manager
+    shared_uuid = share_manager.create_shared_document(
+        db, ws, doc_id, ver, current_user.login, password, expire_date_str
     )
-    db.add(entity)
-    db.commit()
     return {"uuid": shared_uuid, "workspaceId": ws}
 
 
@@ -297,11 +277,7 @@ def publish(ws: str, doc_key: str,
             current_user: Account = Depends(get_current_user),
             db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    dr = svc.get_revision(db, ws, doc_id, ver)
-    acl_id = getattr(dr, "acl_id", None)
-    check_write_access(db, acl_id, current_user.login, False, workspace_id=ws)
-    dr.public_shared = True
-    db.commit()
+    svc.set_public_shared(db, ws, doc_id, ver, True, current_user.login)
     return Response(status_code=204)
 
 
@@ -311,11 +287,7 @@ def unpublish(ws: str, doc_key: str,
               current_user: Account = Depends(get_current_user),
               db: Session = Depends(get_db)):
     doc_id, ver = _split_doc_key(doc_key)
-    dr = svc.get_revision(db, ws, doc_id, ver)
-    acl_id = getattr(dr, "acl_id", None)
-    check_write_access(db, acl_id, current_user.login, False, workspace_id=ws)
-    dr.public_shared = False
-    db.commit()
+    svc.set_public_shared(db, ws, doc_id, ver, False, current_user.login)
     return Response(status_code=204)
 
 

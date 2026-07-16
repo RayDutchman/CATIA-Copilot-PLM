@@ -80,12 +80,13 @@ def stats_overview(ws: str, db: Session = Depends(get_db),
 @router.get("/workspaces/{ws}/disk-usage-stats/", include_in_schema=False)
 def disk_usage_stats(ws: str, db: Session = Depends(get_db),
                      current_user: Account = Depends(get_current_user)):
-    vault = Path(settings.VAULT_PATH) / ws
+    from app.services import vault as vault_svc
+    vault_dir = vault_svc.workspace_vault_dir(ws)
     total = 0
     parts_size = 0
     docs_size = 0
-    if vault.exists():
-        for p in vault.rglob("*"):
+    if vault_dir.exists():
+        for p in vault_dir.rglob("*"):
             if p.is_file():
                 size = p.stat().st_size
                 total += size

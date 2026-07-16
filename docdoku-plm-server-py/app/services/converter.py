@@ -40,10 +40,11 @@ def _save_geometry_file(db: Session, ws: str, pn: str, ver: str,
     """保存单个 LOD 几何体文件到 vault + BinaryResource + 关联。"""
     src = Path(settings.CONVERSIONS_PATH) / temp_dir / glb_name
     data = src.read_bytes()
-    from app.services.vault import _vault_root
-    dst = _vault_root() / ws / "parts" / pn / ver / str(iteration) / glb_name
+    from app.services import vault
+    quality_str = glb_name.replace(".glb", "")
+    dst = vault.part_geometry_path(ws, pn, ver, iteration, quality_str)
     vault.write_file(dst, data)
-    full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{glb_name}"
+    full_name = vault.part_geometry_fullname(ws, pn, ver, iteration, quality_str)
     bbox = box or [0, 0, 0, 0, 0, 0]
     br = db.query(BinaryResource).filter(
         BinaryResource.full_name == full_name).first()
@@ -204,6 +205,7 @@ def handle_callback(db: Session, ws: str, pn: str, ver: str,
     err = (result.errorOutput or "")
     if "no geometry generated" in err.lower():
         end_conversion(db, conv, True)
+        db.commit()
         return
     if err:
         end_conversion(db, conv, False)

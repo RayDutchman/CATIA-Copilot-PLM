@@ -166,7 +166,7 @@ def download_with_subtype(
     request: Request,
     current_user: Account = Depends(get_current_user),
 ):
-    from app.services.vault import _vault_root, part_nativecad_path, part_attached_path
+    from app.services.vault import part_nativecad_path, part_attached_path
     if sub_type == "nativecad":
         file_path = part_nativecad_path(ws, pn, ver, iteration, file_name)
     else:
@@ -202,8 +202,8 @@ def download_direct(
     current_user: Account = Depends(get_current_user),
 ):
     """几何体 GLB 直下（fullname 无 subType 段）。"""
-    from app.services.vault import _vault_root
-    file_path = _vault_root() / ws / "parts" / pn / ver / str(iteration) / file_name
+    from app.services.vault import part_iteration_dir
+    file_path = part_iteration_dir(ws, pn, ver, iteration) / file_name
     try:
         data = binary_storage.get_file_bytes(ws, pn, ver, iteration, None, file_name)
     except FileNotFoundError:

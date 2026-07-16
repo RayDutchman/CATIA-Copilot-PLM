@@ -235,7 +235,7 @@ def export_files(ws: str, pid: str,
 
     对齐 Java ProductFileExportMessageBodyWriter。
     """
-    from app.routers.export.product_file_export import build_product_export_zip
+    from app.services.file_export.product_file_export import build_product_export_zip
     from fastapi.responses import StreamingResponse
 
     zip_data = build_product_export_zip(db, ws, pid)

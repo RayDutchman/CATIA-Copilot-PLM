@@ -417,9 +417,8 @@ class ProductService:
             # 清理 vault 物理文件（对齐 Payara removeCADFile/removeAttachedFiles）
             try:
                 import shutil
-                from pathlib import Path
-                from app.core.config import settings
-                vault_dir = Path(settings.VAULT_PATH) / workspace_id / "parts" / number / version / str(it.iteration)
+                from app.services import vault as vault_svc
+                vault_dir = vault_svc.part_iteration_dir(workspace_id, number, version, it.iteration)
                 if vault_dir.exists():
                     shutil.rmtree(vault_dir)
             except Exception:
@@ -601,9 +600,7 @@ class ProductService:
             # 清理 vault 物理文件
             try:
                 import shutil
-                from pathlib import Path
-                from app.core.config import settings
-                vault_dir = Path(settings.VAULT_PATH) / workspace_id / "parts" / number / version / str(last_iter_num)
+                vault_dir = vault_svc.part_iteration_dir(workspace_id, number, version, last_iter_num)
                 if vault_dir.exists():
                     shutil.rmtree(vault_dir)
             except Exception:
@@ -1446,8 +1443,6 @@ class ProductService:
             part_iteration_attribute,
         )
 
-        vault_root = Path(settings.VAULT_PATH)
-
         def _new_full(old_full: str) -> str:
             """将 full_name 中的 old_iter 替换为 to_iter。"""
             parts = old_full.split("/")
@@ -1476,8 +1471,9 @@ class ProductService:
                     ))
                     db.flush()
                 try:
-                    old_path = vault_root / old_full
-                    new_path = vault_root / new_full
+                    from app.services import vault as vault_svc
+                    old_path = vault_svc._vault_root() / old_full
+                    new_path = vault_svc._vault_root() / new_full
                     if old_path.exists() and not new_path.exists():
                         new_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(str(old_path), str(new_path))
@@ -1723,11 +1719,11 @@ class ProductService:
         file_rows = [(tpl[0],)] if tpl and tpl[0] else []
         if not file_rows:
             return
-        vault_root = Path(settings.VAULT_PATH)
+        from app.services import vault as vault_svc
         for frow in file_rows:
             old_full = frow[0]
-            filename = old_full.rsplit("/", 1)[-1] if "/" in old_full else old_full
-            new_full = f"{workspace_id}/parts/{part_number}/A/1/nativecad/{filename}"
+            filename = old_full.split("/")[-1]
+            new_full = vault_svc.part_nativecad_fullname(workspace_id, part_number, "A", 1, filename)
             old_br = db.query(BinaryResource).filter(
                 BinaryResource.full_name == old_full).first()
             if old_br:
@@ -1745,8 +1741,8 @@ class ProductService:
                     ))
                     db.flush()
                 try:
-                    old_path = vault_root / old_full
-                    new_path = vault_root / new_full
+                    old_path = vault_svc._vault_root() / old_full
+                    new_path = vault_svc._vault_root() / new_full
                     if old_path.exists() and not new_path.exists():
                         new_path.parent.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(str(old_path), str(new_path))
@@ -2057,7 +2053,7 @@ class ProductService:
             ))
 
         try:
-            vault_path = Path(settings.VAULT_PATH) / full_name
+            vault_path = vault_svc._vault_root() / full_name
             if vault_path.exists():
                 vault_path.unlink()
         except OSError:

@@ -10,9 +10,9 @@ def test_nativecad_path_structure():
     assert str(p).endswith("WS1/parts/PART-001/A/1/nativecad/model.stp")
 
 def test_geometry_path_structure():
-    """geometry 路径规则：vault/{ws}/parts/{num}/{ver}/{iter}/geometry/{quality}.glb"""
+    """geometry 路径规则：vault/{ws}/parts/{num}/{ver}/{iter}/{quality}.glb"""
     p = part_geometry_path("WS1", "PART-001", "A", 1, "LOW")
-    assert str(p).endswith("WS1/parts/PART-001/A/1/geometry/LOW.glb")
+    assert str(p).endswith("WS1/parts/PART-001/A/1/LOW.glb")
 
 def test_attached_path_structure():
     """attached 路径规则：vault/{ws}/parts/{num}/{ver}/{iter}/attachedfiles/{filename}"""

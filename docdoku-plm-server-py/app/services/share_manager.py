@@ -10,6 +10,32 @@ from sqlalchemy import text
 class ShareService:
     """共享链接管理服务。"""
 
+    def create_shared_document(self, db: Session, ws: str, doc_id: str, ver: str, author_login: str, password: str | None, expire_date_str: str | None) -> str:
+        import hashlib
+        from datetime import datetime
+        import uuid
+        from app.models.misc import SharedEntity
+
+        shared_uuid = str(uuid.uuid4())
+        password_hash = hashlib.md5(password.encode()).hexdigest() if password else None
+        expire_date = datetime.fromisoformat(expire_date_str) if expire_date_str else None
+        entity = SharedEntity(
+            uuid=shared_uuid,
+            dtype="SharedDocument",
+            creation_date=datetime.utcnow(),
+            expire_date=expire_date,
+            password=password_hash,
+            author_workspace_id=ws,
+            author_login=author_login,
+            workspace_id=ws,
+            entity_workspace_id=ws,
+            documentmaster_id=doc_id,
+            documentrevision_version=ver,
+        )
+        db.add(entity)
+        db.commit()
+        return shared_uuid
+
     def find_shared_entity(self, db: Session, uuid: str) -> dict:
         """通过 UUID 查找共享实体（返回 dict，保持向后兼容）。"""
         row = db.execute(text(

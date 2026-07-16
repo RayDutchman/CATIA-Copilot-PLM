@@ -293,7 +293,8 @@ def cascade_delete_workspace(db: Session, ws: str) -> None:
 
     # ── 18. vault 磁盘文件夹 ──
     try:
-        vault_dir = Path(settings.VAULT_PATH) / ws
+        from app.services import vault
+        vault_dir = vault.workspace_vault_dir(ws)
         if vault_dir.exists():
             shutil.rmtree(vault_dir, ignore_errors=True)
     except Exception as e:
