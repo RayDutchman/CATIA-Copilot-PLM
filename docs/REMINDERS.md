@@ -121,6 +121,12 @@
 
 ## 已解决（近期）
 
+- [x] **2026-07-16 第五轮全量审计（Service 封装绕过修复）**：
+  - 核心架构清理：禁止在 `app/routers/` 和除 `vault.py` 以外的地方出现任何对文件存储 `Path(settings.VAULT_PATH)` 的直接访问和字符串构造。
+  - DB 事务封装：消除 Router 层的零散 `db.query`、`db.execute` 和 `db.commit()`（影响 roles/workspace_memberships/part/document/change_issues/change_orders/change_requests 等），统一由相应 Service 管理。
+  - P2 `SessionLocal` 清理：`export` 工具中移除了直接实例化 SQLAlchemy `SessionLocal` 的降级路径，严格经依赖注入 `get_db` 分发。
+  - `test_vault.py` 测试修正：审计中发现并对齐了 Java 中没有 `geometry` 子目录直接存储 glb 的设定（`/{quality}.glb`）。pytest 282 passed，测试零回归。
+
 - [x] **2026-07-13 第4轮审计后续：路由层 JSON 字段契约修复 + 防回归脚本**：
   - **账号注册/更新字段契约修复**：对齐 Java `AccountDTO`/前端 JSON，注册读取 `newPassword` 而非 `password`；`create_account` 调用链补齐 `timeZone`；服务层参数 `lang` 改为 `language`，更新账号读取 `timeZone`（驼峰）。已修复 `chenweibo` 既有数据：密码重置为 `password`，timezone=`Asia/Shanghai`。
   - **ChangeRequest/ChangeOrder milestoneId 修复**：输入层读取 Java/前端标准 `milestoneId`，再写 ORM `milestone_id` 列，修复关联 milestone 失效。

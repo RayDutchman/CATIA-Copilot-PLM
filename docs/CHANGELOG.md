@@ -1105,6 +1105,15 @@
 - fix(exceptions): 新增 `UserNotFoundException`、`WorkspaceNotFoundException`、`SharedEntityNotFoundException`、`PlatformHealthException` 异常类
 - fix(exception_handlers): `PlatformHealthException` 映射 HTTP 503
 
+## 2026-07-16 — Service Encapsulation 绕过全量修复 (Round 6)
+
+- fix(vault): 集中所有 vault 路径生成逻辑至 `app/services/vault.py`，增加 `document_attached_path`、`part_nativecad_fullname`、`product_instance_path` 等专用函数
+- fix(router): 将 `roles.py`, `workspace_memberships.py`, `part.py`, `document.py`, `document_templates.py`, `folders.py`, `change_*.py` 等 Router 层的内联直接 DB 操作（`db.execute/query/commit`）全部下沉至 Service 层对应方法
+- fix(services): 重构 `binary_storage.py` / `document_manager.py` / `product_manager.py` 中的 `Path(settings.VAULT_PATH)` 零散用法，改用集中的 vault 服务进行访问和操作
+- fix(export): 将 `export/*.py` 路由中涉及的业务 DB 查询和文件路径操作抽取到 `app/services/file_export/` 下相应的逻辑方法，解耦 HTTP 路由与数据/文件检索
+- test(vault): 修正 `test_vault.py` 中的 `test_geometry_path_structure` 测试断言，发现并严格对齐了 Java `geometry` 文件没有子目录的路径格式（`/{quality}.glb`）
+- chore: Pytest 282 passed (无回归失败)，完整清除了 `db.` 直查与文件绕过
+
 ## 2026-07-06 — 6维审计方法论确立 + 全量76项修复 + 路线图反思
 
 ### 方法论
