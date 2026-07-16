@@ -8,9 +8,9 @@ class PartCreationDTO(BaseModel):
     """POST /workspaces/{ws}/parts 请求体。
 
     对齐 Payara PartCreationDTO：前端发送 camelCase，用 alias 接收。
-    extra='ignore' 防止未知字段报 422（如 workspaceId 由路由参数提供，body 中忽略即可）。
+    extra='forbid' 对齐 Java 严格校验，前端错拼字段会暴露为 422。
     """
-    model_config = ConfigDict(populate_by_name=True, extra='ignore')
+    model_config = ConfigDict(populate_by_name=True, extra='forbid')
 
     number: str = Field(..., alias="partNumber")
     name: str = Field("", alias="partName")
@@ -21,3 +21,5 @@ class PartCreationDTO(BaseModel):
     template_id: Optional[str] = Field(None, alias="templateId")
     acl: Optional[dict] = None
     role_mapping: Optional[List[dict]] = Field(None, alias="roleMapping")
+    # 前端 part_creation_view 在 body 中携带 workspaceId（路由已有，但保留兼容）
+    workspace_id: Optional[str] = Field(None, alias="workspaceId")

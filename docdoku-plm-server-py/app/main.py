@@ -69,7 +69,7 @@ class UserLanguageMiddleware(BaseHTTPMiddleware):
         if auth.startswith("Bearer "):
             try:
                 payload = verify_token(auth[7:])
-                db = SessionLocal()
+                db = SessionLocal()  # 已知限制：每请求额外建独立 Session，高并发耗双倍连接，暂不改动
                 try:
                     acct = db.query(Account).filter(
                         Account.login == payload["login"]).first()

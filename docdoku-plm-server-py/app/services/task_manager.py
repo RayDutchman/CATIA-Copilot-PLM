@@ -68,28 +68,35 @@ class TaskService:
         ), {"l": login}).first() is not None
 
     def _task_row_to_dict(self, row, db: Session = None) -> dict:
-        """将 SELECT t.* 的行转为字典（列序: num,closurecomment,closuredate,duration,
-           instructions,signature,startdate,status,targetiteration,title,
-           activity_step,workflow_id,worker_workspace_id,worker_login）"""
-        worker_login = row[13] if len(row) > 13 else None
+        """将 SELECT t.* 的行转为字典。
+
+        依赖 task 表列序映射（SELECT t.* 返回的 SQLAlchemy Row 结果）：
+          (0) num, (1) closurecomment, (2) closuredate, (3) duration,
+          (4) instructions, (5) signature, (6) startdate, (7) status,
+          (8) targetiteration, (9) title, (10) activity_step,
+          (11) workflow_id, (12) worker_workspace_id, (13) worker_login
+        使用 row._mapping 按列名访问，避免数字索引随 schema 变更静默读取错误。
+        """
+        rm = row._mapping
+        worker_login = rm.get("worker_login")
         worker = None
         if worker_login and db:
             acc = db.query(Account).filter(Account.login == worker_login).first()
             if acc:
                 worker = {"login": acc.login, "name": acc.name,
                           "email": acc.email,
-                          "workspaceId": row[12] if len(row) > 12 else None}
+                          "workspaceId": rm.get("worker_workspace_id")}
             else:
                 worker = {"login": worker_login, "name": worker_login}
         return {
-            "num": row[0],
-            "title": row[9] if len(row) > 9 and row[9] else "",
-            "instructions": row[4] if len(row) > 4 and row[4] else "",
-            "status": STATUS_MAP.get(row[7]) if len(row) > 7 else None,
+            "num": rm["num"],
+            "title": rm.get("title") or "",
+            "instructions": rm.get("instructions") or "",
+            "status": STATUS_MAP.get(rm.get("status")),
             "worker": worker or {},
-            "closureComment": row[1] if len(row) > 1 else None,
-            "closureDate": str(row[2]) if len(row) > 2 and row[2] else None,
-            "signature": row[5] if len(row) > 5 else None,
+            "closureComment": rm.get("closurecomment"),
+            "closureDate": str(rm["closuredate"]) if rm.get("closuredate") else None,
+            "signature": rm.get("signature"),
         }
 
     def get_task(self, db: Session, ws: str, workflow_id: int = None,

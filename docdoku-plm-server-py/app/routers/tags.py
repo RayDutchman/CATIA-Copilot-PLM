@@ -29,8 +29,8 @@ def get_tags(
     return doc_svc.get_all_tags(db, workspace_id)
 
 
-@router.post("/workspaces/{workspace_id}/tags", status_code=201)
-@router.post("/workspaces/{workspace_id}/tags/", status_code=201, include_in_schema=False)
+@router.post("/workspaces/{workspace_id}/tags", status_code=200)
+@router.post("/workspaces/{workspace_id}/tags/", status_code=200, include_in_schema=False)
 def create_tag(
     workspace_id: str,
     body: dict = Body(...),

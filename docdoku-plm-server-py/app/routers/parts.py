@@ -223,8 +223,9 @@ def parts_last_iter(workspace_id: str, q: str = Query(""),
         .filter(PartRevision.workspace_id == workspace_id)
     )
     if q:
+        safe_q = q.replace('%', '\\%').replace('_', '\\_')
         rows = rows.filter(
-            PartRevision.partmaster_partnumber.ilike(f"%{q}%")
+            PartRevision.partmaster_partnumber.ilike(f"%{safe_q}%", escape='\\')
         )
     result = []
     for pr, max_iter in rows.all():
@@ -568,6 +569,8 @@ def query_export(request: Request,
         rows = [{"partRevision": map_revision(pr, db)} for pr in parts]
     result_rows = build_query_result_rows(rows, body, db)
 
+    # 注意：Java 端导出 .xls（旧格式），Python 端导出 .xlsx（OpenXML），
+    # 后缀不一致但主流工具均可打开 .xlsx，风险低，保留现状。
     if export_type == "xls":
         xlsx_data = _generate_xlsx(result_rows)
         return Response(

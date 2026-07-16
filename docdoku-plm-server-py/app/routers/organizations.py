@@ -31,10 +31,10 @@ def list_organizations(
     db: Session = Depends(get_db),
     current_user: Account = Depends(get_current_user),
 ):
-    """返回当前用户的组织（Java 为 'my organization' 模型）。无组织时返回 204。"""
+    """返回当前用户的组织（Java 为 'my organization' 模型）。无组织时返回 200+null body（对齐 Java TagResource）。"""
     org = organization_service.list_user_organizations(db, current_user.login)
     if not org:
-        response.status_code = 204
+        response.status_code = 200
         return None
     return _org_to_dict(org)
 

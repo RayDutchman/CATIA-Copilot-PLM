@@ -16,6 +16,8 @@ from app.models.change import (
     change_issue_tags, change_request_tags, change_order_tags,
 )
 
+# 注意：_NAME_CACHE 无 TTL 和容量上限，长期运行可能持续增长。
+# 考虑到此服务部署在 Docker 容器内、用户数据量有限，当前风险可控。
 _NAME_CACHE: dict = {}
 _PRIORITY_NAMES = {0: "LOW", 1: "MEDIUM", 2: "HIGH", 3: "EMERGENCY"}
 _CATEGORY_NAMES = {0: "ADAPTIVE", 1: "CORRECTIVE", 2: "PERFECTIVE", 3: "PREVENTIVE", 4: "OTHER"}

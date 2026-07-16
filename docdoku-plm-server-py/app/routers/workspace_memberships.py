@@ -181,7 +181,7 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
     user_mgmt_service.set_user_access(db, ws, login, read_only)
 
     mem_row = db.execute(text(
-        "SELECT 1 FROM workspaceusermembership "
+        "SELECT readonly FROM workspaceusermembership "
         "WHERE workspace_id = :ws AND member_login = :l AND member_workspace_id = :ws"
     ), {"ws": ws, "l": login}).fetchone()
     if not mem_row:
@@ -194,4 +194,5 @@ def set_user_access(ws: str, body: dict, db: Session = Depends(get_db),
         "email": acc.email or "" if acc else "",
         "language": acc.language or "" if acc else "",
         "workspaceId": ws,
+        "membership": "READ_ONLY" if mem_row[0] else "FULL_ACCESS",
     }

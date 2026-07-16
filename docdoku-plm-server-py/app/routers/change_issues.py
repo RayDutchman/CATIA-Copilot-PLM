@@ -48,9 +48,10 @@ def search_issues(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
+    q_esc = q.replace('%', '\\%').replace('_', '\\_')
     items = db.query(ChangeIssue).filter(
         ChangeIssue.workspace_id == ws,
-        ChangeIssue.name.ilike(f'%{q}%')
+        ChangeIssue.name.ilike(f'%{q_esc}%', escape='\\')
     ).limit(8).all()
     return [_item_to_dict(i, db, current_user) for i in items]
 

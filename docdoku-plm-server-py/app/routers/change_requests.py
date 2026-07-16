@@ -48,9 +48,10 @@ def search_requests(ws: str, q: str = "",
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
+    q_esc = q.replace('%', '\\%').replace('_', '\\_')
     items = db.query(ChangeRequest).filter(
         ChangeRequest.workspace_id == ws,
-        ChangeRequest.name.ilike(f'%{q}%')
+        ChangeRequest.name.ilike(f'%{q_esc}%', escape='\\')
     ).limit(8).all()
     return [_item_to_dict(r, db, current_user) for r in items]
 

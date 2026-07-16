@@ -189,13 +189,17 @@ def admin_parts_stats(db: Session = Depends(get_db),
 
 # ============ Index ============
 
+# 注意：ES 服务未部署，以下为桩实现，不执行实际的 Elasticsearch 索引操作。
+# 如需启用 ES，需部署 elasticsearch 服务并在容器内安装 elasticsearch Python 包。
+
 @router.put("/admin/index/{ws}", status_code=202)
 @router.put("/admin/index/{ws}/", status_code=202, include_in_schema=False)
 def put_index(ws: str, db: Session = Depends(get_db),
               current_user: Account = Depends(get_current_user),
               _admin: Account = Depends(require_global_admin)):
+    # 桩：ES 未部署，仅返回 accepted，不执行实际索引操作
     try:
-        import elasticsearch
+        import elasticsearch  # noqa: F401 — 桩引用，预留给 ES 集成时使用
         return {"status": "accepted"}
     except ImportError:
         return {"status": "accepted", "note": "ES not configured"}

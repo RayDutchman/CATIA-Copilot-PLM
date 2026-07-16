@@ -48,9 +48,10 @@ def search_orders(ws: str, q: str = "",
                   current_user: Account = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     _check_workspace_access(db, ws, current_user.login)
+    q_esc = q.replace('%', '\\%').replace('_', '\\_')
     items = db.query(ChangeOrder).filter(
         ChangeOrder.workspace_id == ws,
-        ChangeOrder.name.ilike(f'%{q}%')
+        ChangeOrder.name.ilike(f'%{q_esc}%', escape='\\')
     ).limit(8).all()
     return [_item_to_dict(o, db, current_user) for o in items]
 
