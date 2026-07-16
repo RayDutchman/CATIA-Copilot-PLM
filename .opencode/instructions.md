@@ -171,7 +171,7 @@ docker compose up -d --force-recreate --no-deps back-py
 → 前端显示 3D 预览
 ```
 
-- GLB 文件路径：`vault/Workspace_X/parts/{partNumber}/{version}/{iteration}/geometry/`
+- GLB 文件路径：`vault/Workspace_X/parts/{partNumber}/{version}/{iteration}/`
 - Decimation（减面）一直失败（`code=1 read error`），这是已知问题，**不影响 GLB 生成**，无需处理
 
 ---

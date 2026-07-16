@@ -110,7 +110,8 @@ def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
                    sub_type: str | None, filename: str) -> bytes:
     """从 vault 读文件，若当前 iteration 不存在则回退到更早 iteration。"""
     if sub_type is None:
-        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{filename}"
+        quality_str = filename.replace(".glb", "")
+        full_name = vault.part_geometry_fullname(ws, pn, ver, iteration, quality_str)
     elif sub_type == "nativecad":
         full_name = vault.part_nativecad_fullname(ws, pn, ver, iteration, filename)
     else:
@@ -118,8 +119,8 @@ def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
     for iter_num in range(iteration, 0, -1):
         try:
             if sub_type is None:
-                path = (vault._vault_root() / ws / "parts" / pn / ver
-                        / str(iter_num) / filename)
+                quality_str = filename.replace(".glb", "")
+                path = vault.part_geometry_path(ws, pn, ver, iter_num, quality_str)
             elif sub_type == "nativecad":
                 path = vault.part_nativecad_path(ws, pn, ver, iter_num, filename)
             else:
