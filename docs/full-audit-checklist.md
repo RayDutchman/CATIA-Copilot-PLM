@@ -142,6 +142,15 @@ Java `*Resource.java` 有但 Python 缺（pathdata / path-to-path / import / que
 空表时 SQL/序列化都不报错，有真实数据才 500（GD50 有基线数据才暴露）。**审计必须在有真实数据的工作区（如 GD50）跑，不能只看空库。**
 - **写入路径在 pytest 中通常无覆盖**——创建 PathData、创建基线等 POST/PUT 端点没有对应的集成测试，空库时也不报错。审计时应**对 information_schema 核实写入表的结构完整性**（列名/约束/FK），并在有数据环境中构造请求实际执行写入（不仅限于 GET 对拍）。
 
+### 18-bis. Service 封装绕过（数据/路径/DB/配置直接访问）
+Java 的封装链完整（REST→Bean→StorageManager→FileStorageProvider），Python 多处绕过 service 层直接访问底层资源。审计时 grep 以下模式：
+
+- **vault 路径直接构造**：`Path(settings.VAULT_PATH)`、`_vault_root()`（绕过 `vault.py` 的公开路径函数）。Java `FileStorageProvider` 是所有 vault 操作的唯一入口；Python 有 40 处直接拼路径。应改为 `vault.part_attached_path` / `vault.part_nativecad_path` / `vault.template_attached_path` 等封装函数。缺失的类型需补加（文档、产品实例、workspace、导出 ZIP 等）。
+- **Router 层直接 DB 操作**：`routers/*.py` 中的 `db.execute` / `db.query` / `db.add` / `db.delete` / `db.commit`。第 3 轮大重构已消除主路由的内联 DB，但 `change_orders.py`、`roles.py`、`export/*.py`、`workspace_memberships.py`、`part.py`、`document_templates.py`、`folders.py`、`document.py` 等仍有残留。应迁入对应 service 方法。
+- **绕过 Depends(get_db)**：直接 `SessionLocal()`（`main.py:72` UserLanguageMiddleware、`services/file_export/instance_body_writer_tools.py:126`）。Java JPA EntityManager 通过 `@PersistenceContext` 注入，Python 应通过 `Depends(get_db)` 获取 session。
+- **绕过 vault/binary_storage**：`services/binary_storage.py` 自己重定义了 `_vault_root()`（与 `vault.py` 重复）。应统一使用 `vault.py` 的函数。
+- **绕过 config**：`from app.core.config import settings` 在 `routers/` 和 `services/` 中多处出现，仅为了读 `VAULT_PATH` 字符串（可随 vault 封装消除）。Java 配置通过 `@Resource` 注入，Python 应通过封装后的 service 函数间接获取。
+
 ### 19. tracker.csv 状态列不可信
 tracker.csv 是**文件级映射**，只标 Python 对应文件是否存在。多处标"已完成"实为空壳/桩（`workspace_manager` stub、importer stub、query POST）。**审计要实际核对代码，不信 CSV 的"已完成"。**
 
