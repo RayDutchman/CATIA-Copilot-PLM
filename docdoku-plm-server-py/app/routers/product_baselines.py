@@ -200,11 +200,14 @@ def _query_baselined_parts(db: Session, partcollection_id: int | None) -> list:
     if partcollection_id is None:
         return []
     rows = db.execute(sql_text(
-        "SELECT bp.target_partmaster_partnumber, bp.target_partrevision_version, bp.target_iteration "
-        "FROM baselinedpart bp WHERE bp.partcollection_id = :pc_id"
+        "SELECT bp.target_partmaster_partnumber, bp.target_partrevision_version, bp.target_iteration, pm.name "
+        "FROM baselinedpart bp "
+        "JOIN partmaster pm ON bp.target_workspace_id = pm.workspace_id "
+        "AND bp.target_partmaster_partnumber = pm.partnumber "
+        "WHERE bp.partcollection_id = :pc_id"
     ), {"pc_id": partcollection_id}).fetchall()
     return [
-        {"partNumber": r[0], "version": r[1], "iteration": r[2]}
+        {"number": r[0], "version": r[1], "iteration": r[2], "name": r[3] or r[0]}
         for r in rows
     ]
 
@@ -481,6 +484,6 @@ def baseline_parts(ws: str, ci_id: str, bl_id: int,
     base_sql += " ORDER BY bp.target_partmaster_partnumber LIMIT 8"
     rows = db.execute(sql_text(base_sql), params).fetchall()
     return [
-        {"partNumber": r[0], "version": r[1], "iteration": r[2], "name": r[3] or r[0]}
+        {"number": r[0], "version": r[1], "iteration": r[2], "name": r[3] or r[0]}
         for r in rows
     ]

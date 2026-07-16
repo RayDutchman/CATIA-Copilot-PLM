@@ -6,7 +6,8 @@ from typing import Optional, List
 
 class BaselinedPartDTO(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    partNumber: Optional[str] = None
+    number: Optional[str] = None
+    name: Optional[str] = None
     version: Optional[str] = None
     iteration: Optional[int] = None
 
