@@ -39,9 +39,12 @@ def update_account(body: dict, db: Session = Depends(get_db),
 @router.post("/accounts/create", status_code=201, response_model=UserDTOExtended)
 @router.post("/accounts/create/", status_code=201, include_in_schema=False)
 def create_account(body: dict, db: Session = Depends(get_db)):
+    # Java AccountDTO.getNewPassword() — 前端注册表单发送 newPassword 字段
+    password = body.get("newPassword") or body.get("password", "")
     acc = user_mgmt_service.create_account(
-        db, body.get("login", ""), body.get("password", ""),
-        body.get("email", ""), body.get("name", ""), body.get("language", "en"))
+        db, body.get("login", ""), password,
+        body.get("email", ""), body.get("name", ""), body.get("language", "en"),
+        timezone=body.get("timeZone", ""))
     return _account_to_dict(acc, db)
 
 

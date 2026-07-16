@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-07-13 — fix: 第4轮审计后续字段契约修复 + 路由 body 字段检查脚本
+
+> 分支 `fix/audit-remediation`。本轮由用户在线注册/登录问题触发，按 Java `AccountResource` / `AccountDTO` 和前端实际 JSON 对照定位。pytest **282 passed / 1 skipped**，back-py 已热更新验证，`chenweibo/password` 登录返回 `timeZone=Asia/Shanghai`。
+
+- **fix(accounts): 修复注册/更新账号字段契约偏移**
+  - 注册接口改为优先读取 `newPassword`（Java `AccountDTO.getNewPassword()`），修复原先读取 `password` 导致新账号密码写成 `md5("")` 的问题。
+  - `create_account` 调用链补齐 `timeZone` 透传并落库，修复注册时前端传 `Asia/Shanghai` 但响应/DB 为空的问题。
+  - 服务层参数名 `lang` 统一为 `language`，`update_account` 改为读取 `timeZone`（驼峰）而非 `timezone`。
+  - 已将既有账号 `chenweibo` 的密码重置为 `password`，timezone 修正为 `Asia/Shanghai`。
+
+- **fix(changes): 修复 ChangeRequest/ChangeOrder 的 milestoneId 输入字段**
+  - `change_manager` 创建/更新流程从前端/Java 标准字段 `milestoneId` 读取，赋值给 ORM `milestone_id` 列，修复原先读 `milestone_id` 导致关联 milestone 失效的问题。
+
+- **chore(audit): 新增路由层 body 字段契约检查脚本**
+  - 新增 `docdoku-plm-server-py/scripts/check_body_field_names.py`：提取 Java DTO private 字段全集，并扫描 Python 路由/服务层 `body.get()` / `body[...]` 字段，发现非 Java 字段名或已知命名偏移（`timeZone`/`language`/`milestoneId`）。
+  - 当前运行结果：已知命名差异 0，Java DTO 差集候选 0。
+
+- **docs(audit): 补充 full-audit-checklist.md 第4轮后续新增审计规则**
+  - 新增路由层 `dict body.get()` 字段名与语义对齐、字段端到端穿透、ACL JSON 契约、Pydantic forward-ref/OpenAPI 验证、nginx/systemd 接线审计规则。
+
+---
+
 ## 2026-07-12 — fix: P1-12 遗留 TODO 补完 + apply_acl 根本修复 + Pydantic WorkflowDTO 修复
 
 > 分支 `fix/audit-remediation`。pytest **282 passed / 1 skipped 零回归**；GD50 在线冒烟：ACL 纯 newVersion 204 + workflow+ACL newVersion 204，DB 核实 `principal_workspace_id=GD50` + `workflow_id` 正确写入。

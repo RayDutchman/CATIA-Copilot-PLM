@@ -94,15 +94,17 @@ class ChangeService:
                     body: dict, user_login: str):
         cls = self._cls(type_name)
         now = datetime.utcnow()
-        # 验证 milestone_id：创建 Request/Order 时 milestone 必须存在
-        if cls in (ChangeRequest, ChangeOrder) and body.get("milestone_id"):
+        # 验证 milestoneId：创建 Request/Order 时 milestone 必须存在
+        # Java ChangeOrderDTO/ChangeRequestDTO 字段名是 milestoneId（驼峰）
+        milestone_id_val = body.get("milestoneId")
+        if cls in (ChangeRequest, ChangeOrder) and milestone_id_val:
             ms = db.query(Milestone).filter(
-                Milestone.id == body["milestone_id"],
+                Milestone.id == milestone_id_val,
                 Milestone.workspace_id == ws,
             ).first()
             if not ms:
                 raise MilestoneNotFoundException(
-                    "MilestoneNotFoundException", str(body["milestone_id"]))
+                    "MilestoneNotFoundException", str(milestone_id_val))
         # 验证 initiator：创建 Issue 时 initiator 必须是有效用户
         if cls is ChangeIssue and body.get("initiator"):
             acc = db.query(Account).filter(Account.login == body["initiator"]).first()
@@ -124,9 +126,12 @@ class ChangeService:
         if hasattr(cls, "author_login"):
             kwargs["author_login"] = user_login
         for field in ("name", "description", "priority", "category",
-                      "initiator", "milestone_id", "title"):
+                       "initiator", "title"):
             if field in body:
                 kwargs[field] = body[field]
+        # milestoneId（驼峰）→ ORM milestone_id（蛇形）
+        if "milestoneId" in body and body["milestoneId"] is not None:
+            kwargs["milestone_id"] = body["milestoneId"]
         if "assignee" in body and isinstance(body["assignee"], dict):
             assignee_login = body["assignee"].get("login")
             self._check_assignee(db, ws, assignee_login)
@@ -167,8 +172,8 @@ class ChangeService:
                 item.assignee_login = assignee_login
             elif key == "dueDate":
                 item.due_date = val
-            elif key == "milestone_id" and cls in (ChangeRequest, ChangeOrder):
-                # 对齐 Java: milestone 必须存在
+            elif key == "milestoneId" and cls in (ChangeRequest, ChangeOrder):
+                # Java ChangeOrderDTO/ChangeRequestDTO 字段名是 milestoneId（驼峰）
                 ms = db.query(Milestone).filter(
                     Milestone.id == val,
                     Milestone.workspace_id == ws,
@@ -176,7 +181,7 @@ class ChangeService:
                 if not ms:
                     raise MilestoneNotFoundException(
                         "MilestoneNotFoundException", str(val))
-                setattr(item, key, val)
+                item.milestone_id = val  # ORM 列名是蛇形
             elif key in ("description", "priority", "category"):
                 setattr(item, key, val)
             # Milestone 额外支持 title（非 change item 的标准字段）

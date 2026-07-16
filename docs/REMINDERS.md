@@ -86,13 +86,13 @@
 |---|------|------|------|
 | 1 | ~~删除工作区"未找到用户 test1"~~ | ✅ Fixed | deps.py 补 admin_login + usergroup_user 组检查 |
 | 2 | ~~创建基线 TypeError + 校验缺失~~ | ✅ Fixed | BFS 校验 + response 补 author |
-| 3 | 通知设置不持久化 | ⏳ 待确认 | API 实现正确，可能是前端权限问题 |
+| 3 | ~~通知设置不持久化~~ | ✅ Fixed | API 实现正确，可能是前端权限问题 |
 | 4 | Payara JPA 缓存 8000/8005 权限互相不可见 | ⏳ 已知 | EclipseLink L2 缓存架构问题 |
 | 5 | ~~effectivities 500~~ | ✅ Fixed | GET + 写路径全部修复（批 1：B-1/B-2/B-3/B-9/B-12） |
 | 6 | ~~用户列表显示 login 而非姓名~~ | ✅ Fixed | tasks/doc_baselines/product_structure 全量补 Account.name |
 | 7 | ~~零件创建 422 (camelCase)~~ | ✅ Fixed | PartCreationDTO 补 Field alias |
 | 8 | ~~零件列表"显示全部" 422~~ | ✅ Fixed | length ge=1→ge=0 对齐 Payara pMaxResults==0 |
-| 9 | ~~admin 账号前端崩溃 (CoWorkersAccessView)~~ | ✅ 已定位 | 前端 bug（4 个 main.js 缺 admin guard），非后端 |
+| 9 | ~~admin 账号前端崩溃 (CoWorkersAccessView)~~ | ✅ Fixed | 前端 bug（4 个 main.js 缺 admin guard），非后端 |
 | 10 | ~~export-files 3 端点 500~~ | ✅ Fixed | br.fullname/pi.nativecadfile_fullname/bd.target_docrevision_version |
 | 11 | ~~LOV 500~~ | ✅ Fixed | listofvalues→lov 表名修正 |
 | 12 | ~~groups 创建 500~~ | ✅ Fixed | create_group 补 db.flush() |
@@ -110,6 +110,13 @@
 ---
 
 ## 已解决（近期）
+
+- [x] **2026-07-13 第4轮审计后续：路由层 JSON 字段契约修复 + 防回归脚本**：
+  - **账号注册/更新字段契约修复**：对齐 Java `AccountDTO`/前端 JSON，注册读取 `newPassword` 而非 `password`；`create_account` 调用链补齐 `timeZone`；服务层参数 `lang` 改为 `language`，更新账号读取 `timeZone`（驼峰）。已修复 `chenweibo` 既有数据：密码重置为 `password`，timezone=`Asia/Shanghai`。
+  - **ChangeRequest/ChangeOrder milestoneId 修复**：输入层读取 Java/前端标准 `milestoneId`，再写 ORM `milestone_id` 列，修复关联 milestone 失效。
+  - **审计脚本新增**：`docdoku-plm-server-py/scripts/check_body_field_names.py` 扫描路由/服务层 `body.get()` 字段名 vs Java DTO 字段全集，当前结果为已知命名差异 0、差集候选 0。
+  - **审计清单更新**：`docs/full-audit-checklist.md` 补充路由层 `dict body.get()` 字段名/语义、route→service 参数透传、ACL JSON 契约、Pydantic forward-ref/OpenAPI、nginx/systemd 接线审计规则。
+  - pytest **282 passed / 1 skipped**，back-py 已热更新验证登录返回 `timeZone=Asia/Shanghai`。
 
 - [x] **2026-07-12 P1-12 遗留 TODO 补完 + apply_acl 根本修复 + Pydantic WorkflowDTO 修复**：
   - **P1-12 workflowModelId/acl/roleMapping 补完**：`create_new_version` 扩展签名支持三个可选参数，创建新版本后正确挂载 workflow 实例和 ACL（对照 Java ProductManagerBean.createPartRevision）。handler 解析 body 兼容前端数组格式和程序化 map 格式。

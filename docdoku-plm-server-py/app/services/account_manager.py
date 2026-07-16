@@ -25,11 +25,14 @@ class AccountService:
         }
 
     def create_account(self, db: Session, login: str, password: str,
-                       email: str, name: str, lang: str) -> Account:
+                       email: str, name: str, language: str,
+                       timezone: str = "") -> Account:
         existing = db.query(Account).filter(Account.login == login).first()
         if existing:
             raise EntityAlreadyExistsException("AccountAlreadyExistsException", login)
-        acc = Account(login=login, email=email, name=name, language=lang)
+        # Java AccountManagerBean.createAccount：写入 login/name/email/language/timeZone
+        acc = Account(login=login, email=email, name=name, language=language,
+                      timezone=timezone)
         db.add(acc)
         # MD5 哈希必须保持不变：与 Payara credential 表格式一致，
         # 更换算法会导致已存密码验证失败。
@@ -49,13 +52,17 @@ class AccountService:
             acc.name = fields["name"]
         if "language" in fields:
             acc.language = fields["language"]
-        if "timezone" in fields:
-            acc.timezone = fields["timezone"]
-        if "password" in fields:
+        # Java AccountDTO.timeZone（驼峰），与前端一致
+        if "timeZone" in fields:
+            acc.timezone = fields["timeZone"]
+        # Java AccountResource.updateAccount: accountDTO.getNewPassword() 写入新密码
+        # "password" 字段是旧密码（身份验证用），"newPassword" 才是要写入的新密码
+        new_password = fields.get("newPassword") or fields.get("password")
+        if new_password:
             cred = db.query(Credential).filter(Credential.login == login).first()
             if cred:
                 # MD5 哈希必须保持不变：与 Payara credential 表格式一致
-                cred.password = hashlib.md5(fields["password"].encode()).hexdigest()
+                cred.password = hashlib.md5(new_password.encode()).hexdigest()
         db.commit()
         db.refresh(acc)
         return acc

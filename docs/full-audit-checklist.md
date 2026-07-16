@@ -15,6 +15,7 @@
 - **连接表名错**：`partiteration_attr` → `partiteration_attribute`；`usage_link_cadinstances` → `partusagelink_cadinstance`。
 - **实例表 vs 模板表混淆**：`attributetype`/`lov_name` 只在 `instanceattributetemplate`；`instanceattribute` 只有 `dtype`。
 - **列本身不存在**：`pathtopathlink` 无 `name`/`workspace_id`。
+- **写入/查询的表存在但业务语义错**：列名/表名拼写都对，但在错误的上下文使用（如把基线路径存储写到零件替代链接实体表 `partsubstitutelink` 而非 `@ElementCollection` 子表 `productbaseline_substitutelink`；把 `ackauthor_login`（确认人）当收件人过滤未读通知）。仅凭 `\d` 验证列存在性不够，还要**确认该列/表在此业务场景中是否就是 Java JPA 映射的目标**。
 
 ### 2. DTO 字段对齐
 每个 Pydantic schema 与对应 Java DTO 逐字段对齐：
@@ -25,6 +26,15 @@
 - **getter 派生字段也会被 JSON-B 序列化**：如 `ACLDTO` 的 `userEntries`/`groupEntries` 数组。对齐时别只看 private 字段，还要看 public getter。
 - **DTO 字段推导逻辑**：如 `attributeType` 由 `dtype` 判别符经 instanceof 映射、`lovName` 被 filter 清空、`matrix` 数组 vs `m00-m22` 独立字段的桥接——Java 的 Dozer converter / 手工映射逻辑要在 Python 复现，不能直接读不存在的列。
 - **验证脚本会把请求 CreationDTO 误映射到响应 DTO**，产生假 CRITICAL，需人工甄别。
+
+### 2A. 路由层 `dict body.get()` 字段名与语义对齐
+凡路由或服务直接接收 `body: dict`，必须以 **Java DTO 字段名 + 前端实际 JSON** 为输入真值源，逐字段核查 `body.get("...")` / `body["..."]`。不要只检查 Pydantic schema，因为很多端点绕过了 schema。
+
+- **禁止自创输入字段名**：不得把 Java/前端的 `timeZone` 改成 `timezone`，不得把 `milestoneId` 改成 `milestone_id`，不得把 `language` 缩写成 `lang`。ORM/SQL 列名可继续用 snake_case，但 JSON 边界必须保持 Java DTO/前端字段名。
+- **同名字段需按场景区分语义**：账号场景中 `password` 是旧密码（验证用），`newPassword` 才是要写入的新密码；共享链接场景中 `password` 又是正确字段。不能用全局字符串替换代替对照 Java 方法语义。
+- **字段必须端到端穿透**：前端 JSON → FastAPI route → service 签名 → ORM/SQL 写入 → response。任何一层读到但未透传，或 service 签名未接收，都算 bug（本轮 `timeZone` 注册丢失即属此类）。
+- **ACL 格式以 Java/前端为准**：ACL 输入输出为 `userEntries` / `groupEntries` 数组；`userEntriesMap` / `userGroupEntriesMap` 这类 Python 自创派生字段不得作为 JSON 契约。`ACLFactory` 语义中 workspaceId 是独立上下文参数，不得编码进 login key（如 `login:workspace_id`）。
+- **辅助脚本**：`python3 scripts/check_body_field_names.py` 可检查路由层 `body.get()` 字段是否偏离 Java DTO 全量字段，并对 `timeZone`/`language`/`milestoneId` 等已知命名差异做防回归扫描。
 
 ### 3. 硬编码桩 / 假成功（最易漏）
 搜 `return []`、`return {}`、`return {"id": 0}`、`return None`、`return 0`、`= False`、`pass`、`TODO`、`"stub"`、`succeed: True`（但无实际写库）。
@@ -56,6 +66,7 @@ Java 的 `hasWorkspaceWriteAccess`/`checkWorkspaceReadAccess`/`check_write_acces
 - 403 bug 常因漏了第一步短路判断。
 - **null-ACL 分支**：`check_write_access(acl_id=None)` 类调用方漏传可选参数（如 `workspace_id`）→ 权限绕过。搜所有调用点核参数完整性（历史 BUG-46 同类）。
 - **签出隐藏**：被他人 checkout 的末迭代应对其他用户隐藏，查询结果路径易漏。审计所有返回零件/文档迭代的端点。
+- **大规模代码迁移后的权限回归**：当 router 内联逻辑被批量迁入 service 时（如 ~350 处迁移），核心 CRUD 端点的权限一般跟着迁入，但标签管理、obsolete、用户组管理等"非核心"端点的权限检查可能被系统性遗漏。审计重构后代码时，**不仅逐端点查，还要按端点类别（CRUD / 标签 / 权限管理 / 统计）分组对照**——同一类操作是否都保留了权限检查。
 
 ### 7. 异常抛出一致性
 Java 抛什么异常，Python 应抛等价异常：
@@ -63,11 +74,25 @@ Java 抛什么异常，Python 应抛等价异常：
 - service 层应抛领域异常（`FileNotFoundException`）而非硬编码 `raise HTTPException(404,...)`。对拍：`check_hardcoded_exceptions.py`。
 - 异常类型对齐（`NotAllowedException` vs `AccessRightException`）、i18n key 的 `{0}` 参数不多不少。
 - 对齐参照 `docs/superpowers/archive/migration-process/throw-matrix.md`。
+- **`check_hardcoded_exceptions.py` 对位置参数版 `HTTPException(404,"...")` 有检测盲区**（只匹配关键字参数形式 `HTTPException(status_code=404,...)`）。人工补充：`grep -rn "HTTPException([34]" app/routers/`。
 
 ### 8. 数据格式与 NULL 容忍度
 - **返回结构字段级对齐**：数组元素是 plain string 还是 `{key:value}` 对象（P2P types `["x"]` vs `[{"type":"x"}]`）；多值字段是逗号拼接还是数组。
 - **NULL 容忍度差异**：Java 多处无 null 检查直接 NPE（`userGroupMapping.getGroupName()`、`getRotationMatrix().getValues()`）。逐个确认 Python 写入的 DB 字段是否可能为 NULL、Java 读取时是否会炸。重点：`rotationType=MATRIX` + `m00-m22` NULL、`usergroupmapping` 缺行、`partUsageLinkId` 为 None。
 - **字段来源贯穿**：追踪每个 DTO 字段在 Python 中的构造逻辑，注意"schema 定义了但构造代码未赋值"。
+
+### 8-bis. 内部常量/枚举字符串对齐
+除 DTO 序列化字段外，service 层返回的**运行时字符串常量**也要对齐 Java：
+- **holderType** 等路由决策字符串（`"part"` vs `"parts"`、`"workspace-workflow"` vs `"workspace-workflows"`）会被前端 JS 用作条件分支，单复数不一致导致页面组件/导航错误，但不会触发 schema validation 或 500。
+- workflow status、effectivity type、baseline type 等枚举映射的字符串值同理。
+- 审计方法：在 Java 端找到常量定义位置（如 `TaskManagerBean.setHolderType`），grep Python 侧全量引用点确认字符串值一致。
+
+### 8A. Pydantic v2 forward-reference / OpenAPI 生成验证
+拆分 schema 文件或给 schema 加 `from __future__ import annotations` 后，必须验证所有跨文件类型引用已 `model_rebuild()`。
+
+- **触发方式**：`GET /docdoku-plm-server-rest/api/openapi.json` 会遍历所有 `response_model` 并生成 JSON Schema，能暴露 import 冒烟抓不到的 forward-ref 问题。
+- **高风险模式**：`WorkflowDTO.activities: List[WorkflowActivityDTO]`、`WorkflowActivityDTO.tasks: List["TaskDTO"]`、`ActivityModelDTO.taskModels: List[TaskModelDTO]` 这类跨文件/字符串注解，若未在 `__init__.py` 中 rebuild，会导致 `/openapi.json` 500。
+- **验证命令**：`curl -f http://localhost:8009/docdoku-plm-server-rest/api/openapi.json` 或 FastAPI TestClient 拉取 openapi。
 
 ### 9. 深拷贝 vs 浅拷贝（clone 语义）
 所有"从上一版本创建新迭代/新版本"的复制逻辑（checkout、新 revision、模板→实例），核对 Java 是否 `clone()+persist`（新行新 id）。本会话 `instanceattribute` 浅拷贝导致跨迭代共享 → 更新时 FK 冲突。
@@ -99,6 +124,14 @@ Java 多处 `@Asynchronous`（如 `deleteWorkspace`）。Python 一般做成同�
 - **函数归属**：路由层不应混入服务层逻辑。用 tracker.csv 交叉检查每个 Java class 方法映射到正确的 Python 文件，避免文件行数失衡（`part.py` 700 行 vs `instance_body_writer_tools.py` 200 行）。
 - **dead code / service 未接线**：tracker.csv 映射的 service（如 `workspace_manager`）可能根本没被 router 调用，router 自己内联了逻辑。确认"映射的 service 是否真被调用"+"是否与 router 逻辑重复/不一致"。
 
+### 15A. 前端 nginx / 部署接线审计
+前端容器和反向代理也是接线的一部分，不能只审 FastAPI 路由。
+
+- **nginx upstream 解析时机**：若某个上游容器可选启动（如 Payara `back` 已停用、`restart: "no"`），`proxy_pass http://back:8080` 这类静态 upstream 会在 nginx 启动时预解析，容器不存在会导致 front 启动失败。应使用 `resolver 127.0.0.11` + 变量 upstream（如 `set $back "back:8080"; proxy_pass http://$back;`）。
+- **运行配置与镜像配置同步**：`docdoku-plm-docker/front/nginx.conf`（bind mount 运行配置）和 `docdoku-plm-front/docker/nginx.conf`（镜像内置配置）需要同时更新，否则 rebuild/去挂载后会回退。
+- **location 兜底策略**：FastAPI 已接管全部 REST 端点时，未知路径应交给 FastAPI 返回标准 404，而不是 nginx `return 502` 掩盖真实路由状态。
+- **systemd/启动脚本链路**：WSL/systemd 服务需检查 `ExecStart` 可执行性；脚本缺 `+x` 或未显式 `/bin/bash` 调用会导致重启后服务未拉起。
+
 ### 16. SQL 注入面
 `query_executor` 曾把用户可控字段名 f-string 拼进 SQL。审计所有 `text()`：**列名/表名走白名单，值走绑定参数**。
 
@@ -107,6 +140,7 @@ Java `*Resource.java` 有但 Python 缺（pathdata / path-to-path / import / que
 
 ### 18. 只有数据存在才暴露的 bug
 空表时 SQL/序列化都不报错，有真实数据才 500（GD50 有基线数据才暴露）。**审计必须在有真实数据的工作区（如 GD50）跑，不能只看空库。**
+- **写入路径在 pytest 中通常无覆盖**——创建 PathData、创建基线等 POST/PUT 端点没有对应的集成测试，空库时也不报错。审计时应**对 information_schema 核实写入表的结构完整性**（列名/约束/FK），并在有数据环境中构造请求实际执行写入（不仅限于 GET 对拍）。
 
 ### 19. tracker.csv 状态列不可信
 tracker.csv 是**文件级映射**，只标 Python 对应文件是否存在。多处标"已完成"实为空壳/桩（`workspace_manager` stub、importer stub、query POST）。**审计要实际核对代码，不信 CSV 的"已完成"。**
@@ -131,6 +165,7 @@ conversion 回调用用户 JWT，长转换后可能过期。审计 service-to-se
 | `check_hardcoded_exceptions.py` | service 层 HTTPException 违规 | 一键 |
 | `validate_dto_fields.py` | Java/Python DTO 字段差异（CRITICAL=extra=forbid 缺字段→422 / WARNING）| 已知缺陷：把请求 CreationDTO 误映射到响应 DTO → 假 CRITICAL |
 | `validate_sql_columns.py` | 全部 `text()` 的列名/表名 + INSERT NOT-NULL 完整性 + 表存在性 | 已知误报：`ON CONFLICT DO UPDATE SET` 被当表名、自增 `id` NOT-NULL 误报 |
+| `check_body_field_names.py` | 路由/服务层 `body.get()` 字段名 vs Java DTO 字段全集，防 `timeZone`/`language`/`milestoneId` 等命名偏移 | 只检查字段名，不能替代 Java 方法语义审查和 route→service 参数透传检查 |
 | `audit_write_stubs.py` | POST/PUT/DELETE 写操作持久性 | 测不到 GET 空返回桩 |
 | `compare_all_endpoints.py` | 158 端点状态码 + 错误文本 + 行为对比 | 需 Payara(back) 在线，back 已停用需先 `docker start docdoku-plm-docker-back-1` |
 | `compare_with_payara.py` | 单路径 Python vs Payara 逐条 diff | `--login/--password`，默认 test1/password |

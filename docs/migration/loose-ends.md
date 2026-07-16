@@ -122,36 +122,6 @@
 
 ---
 
-## 八、🟠 邮件通知族全量迁移（planned — 对齐 Payara `NotifierBean`）
-
-> **背景**：审计第二轮（audit-round2）P6-08/P6-01 发现 workflow 审批邮件未发。深查确认这是**系统性缺口**：Payara `NotifierBean`（`docdoku-plm-server-ejb/.../NotifierBean.java`）通过 JNDI `mail/docdokuSMTP`（`Transport.send`）真实发信；本部署有 `smtp`/MailHog 容器（:8003），故 Payara **实际会投递**这些邮件。Python 侧 `app/services/notifier.py` **已具备可用发信基础设施**（`_send_email` → `smtplib` → `smtp:1025` MailHog），但**只实现了 `send_bulk_indexation_success/failure`**，其余全部缺失。
->
-> **决策（2026-07-12，用户选 B）**：**补全整个邮件通知族，彻底对齐 Payara**（非仅审批）。基础设施已在，逐个补方法 + 接线触发点即可。
-
-### 待实现方法（对照 `NotifierBean` public API）
-
-| Java 方法 | 触发点（Payara） | Python 现状 |
-|-----------|------------------|-------------|
-| `sendApproval`（doc / part / workspaceWorkflow 三重载） | `WorkflowManagerBean.instantiateWorkflow`（P6-08）；`Document/PartWorkflowManagerBean.approve/rejectTaskOnX`（P6-01） | ❌ 缺（`task_manager.process_task`、`workflow_manager.instantiate_workflow` 已留 TODO 锚点） |
-| `sendStateNotification` | 文档审批推进且 step 变化时（发订阅者） | ❌ 缺 |
-| `sendIterationNotification` | 新迭代 checkin（发订阅者） | ❌ 缺 |
-| `sendTaggedNotification` / `sendUntaggedNotification`（doc + part） | 打/去标签（发订阅者） | ❌ 缺 |
-| `sendPasswordRecovery` | `AuthResource` 密码恢复 | ⚠️ 半：P8-04 已写 `passwordrecoveryrequest`（UUID token），**未发邮件** |
-| `sendWorkspaceDeletionNotification` / `sendWorkspaceDeletionErrorNotification` | 工作区删除（异步）成功/失败 | ❌ 缺 |
-| `sendPartRevisionWorkflowRelaunchedNotification` / `sendDocumentRevision...` / `sendWorkspaceWorkflow...` | 拒绝 + relaunch 后 | ❌ 缺 |
-| `sendWorkspaceIndexationSuccess` / `Failure` | 单工作区重建索引 | ❌ 缺（仅 bulk 版已迁移） |
-| `sendCredential` | 新建账户下发凭据 | ❌ 缺 |
-| `sendBulkIndexationSuccess` / `Failure` | bulk 重建索引 | ✅ 已迁移（`notifier.send_bulk_indexation_*`） |
-
-### 实现要点
-- 复用 `notifier._send_email`（MailHog）；收件人：审批取 running task 的 worker email，状态/迭代/标签取订阅者（`documentrevision`/`partrevision` 订阅表 + `tagusersubscription`/`tagusergroupsubscription`），密码恢复取 account email。
-- 正文对齐 Java 各 `sendXxxToUser` 的模板 + i18n（复用 `notifier._I18N` 模式 / `core/i18n`）。
-- 所有发信 **best-effort**（`try/except` + log，不阻断主流程），与 Payara `@Asynchronous`/吞异常语义一致。
-- 触发点接线：workflow_manager / task_manager / document_manager(checkin/tag) / product_manager(checkin/tag) / auth(recovery) / workspace_deletion。
-- 单用户 + MailHog 环境下多为休眠态，但功能需与 Payara 对齐；验证方式：触发后查 MailHog（:8003）收件箱。
-
----
-
 ## 六、剩余工作优先级
 
 | 优先级 | 项 | 计划/状态 | 工作量 |
@@ -180,3 +150,33 @@
 | **邮件通知族（NotifierBean 全量）** | ⏳ 已排期（见第八节） |
 
 > 核心业务完整。剩余：**WebSocket 修复**、**种子脚本修复**（解阻 10 个 pytest 失败）、**邮件通知族全量迁移**（第八节）。
+
+---
+
+## 八、🟠 邮件通知族全量迁移（planned — 对齐 Payara `NotifierBean`）
+
+> **背景**：审计第二轮（audit-round2）P6-08/P6-01 发现 workflow 审批邮件未发。深查确认这是**系统性缺口**：Payara `NotifierBean`（`docdoku-plm-server-ejb/.../NotifierBean.java`）通过 JNDI `mail/docdokuSMTP`（`Transport.send`）真实发信；本部署有 `smtp`/MailHog 容器（:8003），故 Payara **实际会投递**这些邮件。Python 侧 `app/services/notifier.py` **已具备可用发信基础设施**（`_send_email` → `smtplib` → `smtp:1025` MailHog），但**只实现了 `send_bulk_indexation_success/failure`**，其余全部缺失。
+>
+> **决策（2026-07-12，用户选 B）**：**补全整个邮件通知族，彻底对齐 Payara**（非仅审批）。基础设施已在，逐个补方法 + 接线触发点即可。
+
+### 待实现方法（对照 `NotifierBean` public API）
+
+| Java 方法 | 触发点（Payara） | Python 现状 |
+|-----------|------------------|-------------|
+| `sendApproval`（doc / part / workspaceWorkflow 三重载） | `WorkflowManagerBean.instantiateWorkflow`（P6-08）；`Document/PartWorkflowManagerBean.approve/rejectTaskOnX`（P6-01） | ❌ 缺（`task_manager.process_task`、`workflow_manager.instantiate_workflow` 已留 TODO 锚点） |
+| `sendStateNotification` | 文档审批推进且 step 变化时（发订阅者） | ❌ 缺 |
+| `sendIterationNotification` | 新迭代 checkin（发订阅者） | ❌ 缺 |
+| `sendTaggedNotification` / `sendUntaggedNotification`（doc + part） | 打/去标签（发订阅者） | ❌ 缺 |
+| `sendPasswordRecovery` | `AuthResource` 密码恢复 | ⚠️ 半：P8-04 已写 `passwordrecoveryrequest`（UUID token），**未发邮件** |
+| `sendWorkspaceDeletionNotification` / `sendWorkspaceDeletionErrorNotification` | 工作区删除（异步）成功/失败 | ❌ 缺 |
+| `sendPartRevisionWorkflowRelaunchedNotification` / `sendDocumentRevision...` / `sendWorkspaceWorkflow...` | 拒绝 + relaunch 后 | ❌ 缺 |
+| `sendWorkspaceIndexationSuccess` / `Failure` | 单工作区重建索引 | ❌ 缺（仅 bulk 版已迁移） |
+| `sendCredential` | 新建账户下发凭据 | ❌ 缺 |
+| `sendBulkIndexationSuccess` / `Failure` | bulk 重建索引 | ✅ 已迁移（`notifier.send_bulk_indexation_*`） |
+
+### 实现要点
+- 复用 `notifier._send_email`（MailHog）；收件人：审批取 running task 的 worker email，状态/迭代/标签取订阅者（`documentrevision`/`partrevision` 订阅表 + `tagusersubscription`/`tagusergroupsubscription`），密码恢复取 account email。
+- 正文对齐 Java 各 `sendXxxToUser` 的模板 + i18n（复用 `notifier._I18N` 模式 / `core/i18n`）。
+- 所有发信 **best-effort**（`try/except` + log，不阻断主流程），与 Payara `@Asynchronous`/吞异常语义一致。
+- 触发点接线：workflow_manager / task_manager / document_manager(checkin/tag) / product_manager(checkin/tag) / auth(recovery) / workspace_deletion。
+- 单用户 + MailHog 环境下多为休眠态，但功能需与 Payara 对齐；验证方式：触发后查 MailHog（:8003）收件箱。

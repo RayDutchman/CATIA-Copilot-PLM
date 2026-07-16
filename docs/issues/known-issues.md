@@ -11,6 +11,29 @@
 
 ---
 
+## 最新修复（FastAPI 迁移字段契约）
+
+### [BUG-50] 账号注册/更新字段契约偏移：`password`/`newPassword`、`timeZone`/`timezone` 混用
+- **文件：**
+  - `docdoku-plm-server-py/app/routers/accounts.py`
+  - `docdoku-plm-server-py/app/services/account_manager.py`
+  - `docdoku-plm-server-py/app/services/user_manager.py`
+- **根本原因：** Python 迁移代码未严格对齐 Java `AccountDTO`/前端 JSON 字段名：注册读取 `password` 而非 `newPassword`，`create_account` 调用链未透传 `timeZone`，服务层使用自创缩写 `lang` 和小写 `timezone`。
+- **影响：** 新注册账号密码被写为 `md5("")`，用户无法用输入密码登录；注册/更新账号时 `timeZone` 丢失。
+- **修复状态：** `已修复`
+- **修复方案：** 注册接口优先读取 `newPassword`；`create_account` 调用链补齐 `timeZone`；服务层参数统一为 `language`，更新账号读取 `timeZone`；新增 `scripts/check_body_field_names.py` 防回归。
+
+---
+
+### [BUG-51] ChangeRequest/ChangeOrder 关联 milestone 使用蛇形 `milestone_id`，前端标准 `milestoneId` 被忽略
+- **文件：** `docdoku-plm-server-py/app/services/change_manager.py`
+- **根本原因：** ORM 列名 `milestone_id` 被错误当作 JSON 输入字段名使用；Java `ChangeRequestDTO`/`ChangeOrderDTO` 和前端契约均为 `milestoneId`。
+- **影响：** 创建或更新 ChangeRequest/ChangeOrder 时传入 `milestoneId` 不会写入，关联 milestone 功能失效。
+- **修复状态：** `已修复`
+- **修复方案：** 输入层读取 `milestoneId`，验证 milestone 存在后赋值给 ORM `milestone_id`。
+
+---
+
 ## 一、高危 NPE（空指针异常）修复记录
 
 ### [BUG-01] JWT 鉴权模块未检查 Authorization 头为 null

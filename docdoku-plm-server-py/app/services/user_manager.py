@@ -179,9 +179,11 @@ class UserMgmtService:
         return result
 
     def create_account(self, db: Session, login: str, password: str,
-                       email: str, name: str, lang: str) -> Account:
+                       email: str, name: str, language: str,
+                       timezone: str = "") -> Account:
         from app.services.account_manager import account_service
-        return account_service.create_account(db, login, password, email, name, lang)
+        return account_service.create_account(db, login, password, email, name, language,
+                                              timezone=timezone)
 
     def update_account(self, db: Session, login: str, fields: dict) -> Account:
         from app.services.account_manager import account_service
