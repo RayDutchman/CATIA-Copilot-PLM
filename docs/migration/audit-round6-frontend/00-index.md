@@ -15,6 +15,7 @@
 | FE-01 | HIGH | 新建工作区 `POST /api/workspaces` 返回 500，但工作区实际已创建 | 后端响应序列化（ResponseValidationError） | ✅ 已修复（2026-07-16） |
 | FE-02 | 非 bug（数据残留） | :8000 parts 列表比 :8005 缺很多列 | GD50 残留列自定义数据 + Payara L2 缓存陈旧 | 已定位根因 |
 | FE-03 | HIGH | 自定义零件表格列：可选属性列显示 "undefined"（应显示 Source/设计状态/材料） | 后端双路由遮蔽：List[str] 版本覆盖了对象数组版本 | ✅ 已修复（2026-07-16） |
+| FE-05 | HIGH | :8000 注册成功后跳转 `?denied=true`，提示"请先登录"（:8005 正常自动登录） | 后端注册端点未返回 jwt 响应头 + 漏插 usergroupmapping | ✅ 已修复（2026-07-16） |
 | FE-04 | HIGH | CATIA-Copilot 查 GD50_Frame latest-revision 报 403（:8005 返回 200） | 双重缺陷：ACL 检查用平台 admin 而非工作区 admin + 空 ACL 残留数据 | ✅ 已修复（2026-07-16） |
 
 ## 发现编号规则
@@ -189,3 +190,39 @@ subagent 全面 review 结论：**Ready to merge**，无 Critical。`_ACL_REFERE
 2. `product_structure.py:669`、`change_manager.py:55/463/480` 补传 workspace_id，ws-admin 读旁路现全覆盖 6 处调用点
 
 未处理（reviewer Minor/建议）：空 ACL 删除与 ws-admin 旁路的专项回归测试待补；`_perm_to_int(None)` 静默降级 FORBIDDEN；apply_acl 内部 commit 事务模式（既有设计，改动需动 15 处调用点）。
+
+
+---
+
+## FE-05 — 注册成功后未自动登录，跳转 denied=true（FastAPI 迁移回归）
+
+**严重级**：HIGH（所有新注册用户受影响；且缺 usergroupmapping 行有跨后端连锁影响）
+**报告人**：用户（TEST-PLAN T1-1 执行中）
+**现象**：:8000 注册完成 → 跳转 `index.html?denied=true&originURL=%2Fworkspace-management%2Findex.html`，显示"请先登录"；console：`GET /api/accounts/me 401`。:8005 注册后正常自动登录进 workspace-management。
+
+**故障链**：
+1. 前端注册成功回调 `account-creation-form.js:131-134`：`localStorage.jwt = xhr.getResponseHeader('jwt')` → 跳转 workspace-management
+2. back-py `POST /api/accounts/create`（`app/routers/accounts.py:39-48`）只建账号返回 DTO，**响应头没有 jwt** → `localStorage.jwt = null`
+3. workspace-management 加载 → `GET /api/accounts/me` 无 token → 401 → 前端重定向 `?denied=true`
+
+**Java 基准**（`AccountResource.java:145-198`）：注册成功且 `account.isEnabled()` 时 `responseBuilder.header("jwt", tokenManager.createAuthToken(...))` —— 注册即登录。
+
+**伴生缺陷（数据完整性）**：Java `AccountDAO.createAccount:55` 会同时 `em.persist(new UserGroupMapping(login))`（默认组 `users`）。back-py `account_manager.py:27-44` create_account 只写 account+credential，**漏插 usergroupmapping**。DB 实查：test1/tom/admin 有组行（种子/Java 建），而 alice、bob、chenweibo、e、SEED-* 等 back-py 建的账号全部缺行。影响：① Java 侧 `getRole()` 返回 null，这些账号在 :8005 无法通过容器认证登录（跨后端不一致）；② back-py login（auth.py:39-40）mapping 缺失时 fallback 字面量 `"REGULAR_USER_ROLE_ID"`（应为 `"users"`，Java 常量值 UserGroupMapping.java:50）写进 JWT，组名错误。
+
+**修法（记录待执行）**：
+1. `app/services/account_manager.py` create_account：`db.commit()` 前补 `db.execute(text("INSERT INTO usergroupmapping (login, groupname) VALUES (:l, 'users')"), {"l": login})`（对齐 AccountDAO:55）
+2. `app/routers/accounts.py` create_account：签名加 `response: Response`；创建成功且 enabled 后 `response.headers["jwt"] = create_token(acc.login, "users")`（需 `from app.core.security import create_token`），对齐 AccountResource 注册即登录
+3. `app/routers/auth.py:40` fallback 字面量 `"REGULAR_USER_ROLE_ID"` 改为 `"users"`
+4. **存量数据修复**：`INSERT INTO usergroupmapping (login, groupname) SELECT a.login, 'users' FROM account a LEFT JOIN usergroupmapping m ON m.login=a.login WHERE m.login IS NULL;`（给所有缺行账号补 users 组）
+5. 验证点：:8000 注册新账号响应头含 jwt，自动进 workspace-management；该账号能在 :8005 登录；usergroupmapping 无缺行账号
+
+
+### FE-05 修复记录（2026-07-16）
+
+用户补充确认同根因现象：bob（back-py 注册）在 :8005 登录直接 500（Java getRole() 返回 null）。四点全修：
+1. `account_manager.py` create_account 补插 `usergroupmapping(login,'users')`（对齐 AccountDAO:55）
+2. `accounts.py` create_account 加 `response: Response`，enabled 账号响应头返回 `jwt`（create_token(login,'users')，对齐 AccountResource:187 注册即登录）
+3. `auth.py` login fallback 组名 `"REGULAR_USER_ROLE_ID"` → `"users"`
+4. 存量补数据：7 个缺行账号（alice/bob/chenweibo/e/SEED-20260712-*×3）已 INSERT users 组行
+
+实测：:8000 注册 fe05test → 201 + jwt 头（groupName=users）；usergroupmapping 落库；bob 与 fe05test 在 :8005 登录均 200（原 500）；登录 token 访问 /accounts/me 200。pytest 282 passed 零回归，镜像已 rebuild。遗留：测试账号 fe05test 保留在库（delete_account 级联不全 P5-21，不冒险删）。

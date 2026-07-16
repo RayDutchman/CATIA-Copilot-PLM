@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_global_admin
 from app.core.exceptions import NotAllowedException
+from app.core.security import create_token
 from app.models.auth import Account
 from app.services.user_manager import user_mgmt_service
 from app.schemas.user_mgmt import (
@@ -38,13 +39,18 @@ def update_account(body: dict, db: Session = Depends(get_db),
 
 @router.post("/accounts/create", status_code=201, response_model=UserDTOExtended)
 @router.post("/accounts/create/", status_code=201, include_in_schema=False)
-def create_account(body: dict, db: Session = Depends(get_db)):
+def create_account(body: dict, response: Response, db: Session = Depends(get_db)):
     # Java AccountDTO.getNewPassword() — 前端注册表单发送 newPassword 字段
     password = body.get("newPassword") or body.get("password", "")
     acc = user_mgmt_service.create_account(
         db, body.get("login", ""), password,
         body.get("email", ""), body.get("name", ""), body.get("language", "en"),
         timezone=body.get("timeZone", ""))
+    # 对齐 Java AccountResource.createAccount:187 —— 注册即登录：
+    # enabled 账号在响应头返回 jwt，前端存入 localStorage 后跳转 workspace-management
+    enabled = bool(acc.enabled) if acc.enabled is not None else True
+    if enabled:
+        response.headers["jwt"] = create_token(acc.login, "users")
     return _account_to_dict(acc, db)
 
 

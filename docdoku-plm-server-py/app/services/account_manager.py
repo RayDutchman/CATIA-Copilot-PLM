@@ -38,6 +38,10 @@ class AccountService:
         # 更换算法会导致已存密码验证失败。
         cred = Credential(login=login, password=hashlib.md5(password.encode()).hexdigest())
         db.add(cred)
+        # 对齐 Java AccountDAO.createAccount:55 —— 同步写入默认角色组 users
+        db.execute(text(
+            "INSERT INTO usergroupmapping (login, groupname) VALUES (:l, 'users')"
+        ), {"l": login})
         db.commit()
         db.refresh(acc)
         return acc

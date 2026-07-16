@@ -6,7 +6,7 @@
 
 ### 🟢 第6轮前端审计（按需模式，2026-07-16，见 docs/migration/audit-round6-frontend/00-index.md）
 
-> 模式变更：用户手动操作前端报 bug，agent 只做根因定位记录。**FE-01（建工作区 500）与 FE-03（属性列 undefined 双路由遮蔽）已修复并验证**（pytest 282 passed，镜像已 rebuild）。FE-02 为数据残留+Payara 缓存假象非 bug（GD50 `workspace_parttablecolumn` 残留 `pr.name` 行未清理，待用户确认是否删除恢复默认 10 列）。 **FE-04（GD50_Frame latest-revision 403）已修复并验证**：① check_read/write_access 增加 ws-admin 旁路；② apply_acl 空 entries → 删 ACL 返回 None（FK 安全）；③ 附带修复 PUT 零件 ACL 数组格式 500 潜伏 bug（_normalize_entries）；④ 存量空 ACL（63/154）已清理。详见 audit-round6-frontend/00-index.md FE-04 修复记录。
+> 模式变更：用户手动操作前端报 bug，agent 只做根因定位记录。**FE-01（建工作区 500）、FE-03（属性列 undefined 双路由遮蔽）、FE-04（零件 ACL 403+空 ACL 语义）、FE-05（注册未自动登录+usergroupmapping 漏插）已修复并验证**（pytest 282 passed，镜像已 rebuild）。FE-02 为数据残留+Payara 缓存假象非 bug（GD50 `workspace_parttablecolumn` 残留 `pr.name` 行未清理，待用户确认是否删除恢复默认 10 列）。 **FE-04（GD50_Frame latest-revision 403）已修复并验证**：① check_read/write_access 增加 ws-admin 旁路；② apply_acl 空 entries → 删 ACL 返回 None（FK 安全）；③ 附带修复 PUT 零件 ACL 数组格式 500 潜伏 bug（_normalize_entries）；④ 存量空 ACL（63/154）已清理。详见 audit-round6-frontend/00-index.md FE-04 修复记录。
 
 ### 🔴 第五轮全量审计（逐端点/逐SQL/逐DTO，2026-07-16, 见 audit-round5/00-index）
 

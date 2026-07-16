@@ -15,6 +15,15 @@
 - **fix(acl_factory): 零件 ACL 数组格式 500（潜伏 bug）** — `PUT /parts/{key}/acl` 的 ACLDTO 数组格式 `[{key,value}]` 直达 `apply_acl.items()` 崩溃；新增 `_normalize_entries()` 兼容数组/dict 两种格式。迁移以来零件 ACL 设置在 :8000 从未可用。
 - **chore(db): 清理存量空 ACL** — acl 63/154（round-5 审计脚本残留）按 11 张表清引用后删除。
 
+## 2026-07-16 — fix: FE-05 注册未自动登录 + usergroupmapping 漏插（back-py）
+
+> 见 audit-round6-frontend/00-index.md FE-05。pytest 282 passed，镜像 rebuild，:8000/:8005 双端实测通过。
+
+- **fix(accounts): 注册即登录** — `POST /accounts/create` 响应头补 `jwt`（enabled 账号，对齐 Java AccountResource:187）；前端 `localStorage.jwt` 不再为 null。
+- **fix(account_manager): 建账号补插 usergroupmapping** — 对齐 Java AccountDAO.createAccount:55 默认组 `users`；否则该账号在 Payara 侧登录 500（getRole null）。
+- **fix(auth): login fallback 组名修正** — `"REGULAR_USER_ROLE_ID"` → `"users"`（Java 常量实际值）。
+- **chore(db): 存量补数据** — 7 个缺 usergroupmapping 的账号补 `users` 行（alice/bob/chenweibo/e/SEED-*×3），bob 在 :8005 登录 500→200。
+
 ## 2026-07-16 — docs: 前端全量手动测试计划 + 信息源修正
 
 - **docs(audit-round6): 新增 TEST-PLAN.md** — 基于 DocDokuPLM 2.5 用户手册制定前端全量手动测试计划（9 阶段 170 步，P1=95/P2=75），用户手动执行、agent 定位根因。含账号矩阵、双工作区策略（TESTR7 新建 + GD50 种子）、bug 反馈模板、已知问题白名单（邮件族/office PDF/视频通话）。

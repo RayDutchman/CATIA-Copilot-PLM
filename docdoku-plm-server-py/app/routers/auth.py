@@ -37,7 +37,7 @@ def login(body: LoginRequestDTO, response: Response, db: Session = Depends(get_d
 
     # 从 usergroupmapping 表查询角色组（与 Payara UserGroupMapping 一致）
     mapping = db.query(UserGroupMapping).filter(UserGroupMapping.login == account.login).first()
-    group_name = mapping.groupname if mapping else "REGULAR_USER_ROLE_ID"
+    group_name = mapping.groupname if mapping else "users"
     token = create_token(account.login, group_name)
     is_admin = db.query(UserGroupMapping).filter(
         UserGroupMapping.login == account.login,
