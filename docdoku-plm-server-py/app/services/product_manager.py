@@ -1,5 +1,6 @@
 """零件业务逻辑服务：CRUD、签出签入、装配同步。"""
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.core.exceptions import (
@@ -2130,11 +2131,8 @@ class ProductService:
     def remove_template_file(self, db: Session, workspace_id: str,
                               template_id: str, file_name: str) -> None:
         """删除零件模板附件。对齐 Java ProductManagerBean.removeFileFromTemplate + BinaryResourceDAO.removeBinaryResource。"""
-        from pathlib import Path
-        from app.core.config import settings
-        vault_base = Path(settings.VAULT_PATH)
-        full_name = f"{workspace_id}/part-templates/{template_id}/attachedfiles/{file_name}"
-        file_path = vault_base / full_name
+        from app.services.vault import template_attached_path, template_attached_fullname
+        full_name = template_attached_fullname(workspace_id, template_id, file_name)
         db.execute(text(
             "UPDATE partmastertemplate SET attachedfile_fullname = NULL "
             "WHERE workspace_id = :ws AND id = :tid AND attachedfile_fullname = :fn"
@@ -2144,6 +2142,7 @@ class ProductService:
         if br:
             db.delete(br)
         try:
+            file_path = template_attached_path(workspace_id, template_id, file_name)
             if file_path.exists():
                 file_path.unlink()
         except Exception:
@@ -2154,11 +2153,9 @@ class ProductService:
                               template_id: str, old_name: str,
                               new_name: str) -> None:
         """重命名零件模板附件。对齐 Java ProductManagerBean.renameFileInTemplate。"""
-        from pathlib import Path
-        from app.core.config import settings
-        vault_base = Path(settings.VAULT_PATH)
-        old_full = f"{workspace_id}/part-templates/{template_id}/attachedfiles/{old_name}"
-        new_full = f"{workspace_id}/part-templates/{template_id}/attachedfiles/{new_name}"
+        from app.services.vault import template_attached_path, template_attached_fullname
+        old_full = template_attached_fullname(workspace_id, template_id, old_name)
+        new_full = template_attached_fullname(workspace_id, template_id, new_name)
         br = db.query(BinaryResource).filter(
             BinaryResource.full_name == old_full).first()
         if br:
@@ -2168,14 +2165,48 @@ class ProductService:
             "WHERE workspace_id = :ws AND id = :tid AND attachedfile_fullname = :old_fn"
         ), {"ws": workspace_id, "tid": template_id, "old_fn": old_full, "new_fn": new_full})
         try:
-            old_path = vault_base / old_full
-            new_path = vault_base / new_full
+            old_path = template_attached_path(workspace_id, template_id, old_name)
+            new_path = template_attached_path(workspace_id, template_id, new_name)
             if old_path.exists():
                 new_path.parent.mkdir(parents=True, exist_ok=True)
                 old_path.rename(new_path)
         except Exception:
             pass
         db.commit()
+
+    def upload_template_file(self, db: Session, workspace_id: str,
+                              template_id: str, file_name: str,
+                              data: bytes) -> str:
+        """上传零件模板附件。对齐 Java PartTemplateBinaryResource.saveFileInTemplate。"""
+        import unicodedata
+        from datetime import datetime
+        from app.services.vault import template_attached_path, template_attached_fullname, write_file
+        file_name = unicodedata.normalize("NFC", file_name)
+        full_name = template_attached_fullname(workspace_id, template_id, file_name)
+        file_path = template_attached_path(workspace_id, template_id, file_name)
+        write_file(file_path, data)
+        br = db.query(BinaryResource).filter(
+            BinaryResource.full_name == full_name).first()
+        now = datetime.utcnow()
+        if br is None:
+            br = BinaryResource(full_name=full_name, content_length=len(data),
+                                last_modified=now, dtype="BinaryResource")
+            db.add(br)
+            db.flush()
+        db.execute(text(
+            "UPDATE partmastertemplate SET attachedfile_fullname = :fn "
+            "WHERE workspace_id = :ws AND id = :tid"
+        ), {"fn": full_name, "ws": workspace_id, "tid": template_id})
+        db.commit()
+        return file_name
+
+    def read_template_file(self, db: Session, workspace_id: str,
+                            template_id: str, file_name: str) -> tuple[bytes, Path]:
+        """读取零件模板附件（返回 (数据, 磁盘路径)）。对齐 Java PartTemplateBinaryResource.getPartTemplateFile。"""
+        from app.services.vault import template_attached_path, read_file
+        file_path = template_attached_path(workspace_id, template_id, file_name)
+        data = read_file(file_path)
+        return data, file_path
 
     def _build_template_attrs(self, db: Session, workspace_id: str,
                                template_id: str) -> list[dict]:

@@ -43,6 +43,22 @@ def part_attached_path(
     )
 
 
+def _template_base(workspace_id: str, template_id: str) -> Path:
+    return _vault_root() / workspace_id / "part-templates" / template_id
+
+
+def template_attached_path(workspace_id: str, template_id: str,
+                            filename: str) -> Path:
+    """零件模板附件磁盘路径。"""
+    return _template_base(workspace_id, template_id) / filename
+
+
+def template_attached_fullname(workspace_id: str, template_id: str,
+                                filename: str) -> str:
+    """零件模板附件的 full_name（对齐 BinaryResource.full_name 格式）。"""
+    return f"{workspace_id}/part-templates/{template_id}/{filename}"
+
+
 def read_file(path: Path) -> bytes:
     """读取 vault 文件内容。文件不存在时抛出 FileNotFoundError。"""
     return path.read_bytes()

@@ -9,23 +9,12 @@ from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, Request, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.auth import Account
-from app.models.part import BinaryResource
 from app.services import vault as vault_svc
 
 router = APIRouter()
-
-
-def _template_file_path(ws: str, template_id: str, filename: str) -> Path:
-    """返回零件模板附件的 vault 路径。"""
-    return vault_svc._vault_root() / ws / "part-templates" / template_id / filename
-
-
-def _full_name(ws: str, template_id: str, filename: str) -> str:
-    return f"{ws}/part-templates/{template_id}/{filename}"
 
 
 def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
@@ -45,6 +34,18 @@ def _file_headers(data: bytes, file_path: Path, file_name: str) -> dict:
     }
 
 
+def _parse_range(range_header: str, file_size: int) -> tuple[int, int] | None:
+    import re
+    m = re.match(r'^bytes=(\d+)-(\d*)$', range_header.strip())
+    if not m:
+        return None
+    start = int(m.group(1))
+    end = int(m.group(2)) if m.group(2) else file_size - 1
+    if start > end or start >= file_size:
+        return None
+    return (start, min(end, file_size - 1))
+
+
 @router.post("/files/{ws}/part-templates/{template_id}", status_code=201)
 @router.post("/files/{ws}/part-templates/{template_id}/", status_code=201, include_in_schema=False)
 def upload_part_template_files(
@@ -54,46 +55,16 @@ def upload_part_template_files(
     current_user: Account = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """上传零件模板附件（multipart/form-data）。
-
-    对标 Java PartTemplateBinaryResource.uploadPartTemplateFiles()。
-    """
+    """上传零件模板附件。对标 Java PartTemplateBinaryResource.uploadPartTemplateFiles()。"""
+    from app.services.product_manager import product_service
     saved = []
     for upload in uploads:
         fn = upload.filename
         if not fn:
             continue
-        # NFC 规范化文件名
-        import unicodedata
-        fn = unicodedata.normalize("NFC", fn)
-
         data = upload.file.read()
-        file_path = _template_file_path(ws, template_id, fn)
-        vault_svc.write_file(file_path, data)
-
-        full_name = _full_name(ws, template_id, fn)
-        br = db.query(BinaryResource).filter(
-            BinaryResource.full_name == full_name).first()
-        now = datetime.utcnow()
-        if br is None:
-            br = BinaryResource(
-                full_name=full_name,
-                content_length=len(data),
-                last_modified=now,
-                dtype="BinaryResource",
-            )
-            db.add(br)
-            db.flush()
-
-        # Payara 对齐: @OneToOne BinaryResource → 更新 partmastertemplate.attachedfile_fullname
-        db.execute(text(
-            "UPDATE partmastertemplate SET attachedfile_fullname = :fn "
-            "WHERE workspace_id = :ws AND id = :tid"
-        ), {"fn": full_name, "ws": ws, "tid": template_id})
-
-        db.commit()
+        product_service.upload_template_file(db, ws, template_id, fn, data)
         saved.append(fn)
-
     if not saved:
         raise HTTPException(400, "No valid files uploaded")
     if len(saved) == 1:
@@ -109,20 +80,16 @@ def download_part_template_file(
     file_name: str,
     request: Request,
     current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """下载零件模板附件。
-
-    对标 Java PartTemplateBinaryResource.downloadPartTemplateFile()。
-    支持 HTTP Range 断点续传。（零件模板不支持格式转换）
-    """
-    file_path = _template_file_path(ws, template_id, file_name)
+    """下载零件模板附件。对标 Java PartTemplateBinaryResource.downloadPartTemplateFile()。"""
+    from app.services.product_manager import product_service
     try:
-        data = vault_svc.read_file(file_path)
+        data, file_path = product_service.read_template_file(db, ws, template_id, file_name)
     except FileNotFoundError:
         raise HTTPException(404, "File not found")
 
     headers = _file_headers(data, file_path, file_name)
-
     range_header = request.headers.get("range", "")
     if range_header:
         file_size = len(data)
@@ -135,20 +102,7 @@ def download_part_template_file(
             return Response(content=chunk, status_code=206,
                             media_type="application/octet-stream", headers=headers)
         raise HTTPException(416, "Requested Range Not Satisfiable")
-
     return Response(content=data, media_type="application/octet-stream", headers=headers)
-
-
-def _parse_range(range_header: str, file_size: int) -> tuple[int, int] | None:
-    import re
-    m = re.match(r'^bytes=(\d+)-(\d*)$', range_header.strip())
-    if not m:
-        return None
-    start = int(m.group(1))
-    end = int(m.group(2)) if m.group(2) else file_size - 1
-    if start > end or start >= file_size:
-        return None
-    return (start, min(end, file_size - 1))
 
 
 @router.delete("/files/{ws}/part-templates/{template_id}/{file_name}", status_code=204)
