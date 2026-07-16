@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-07-16 — fix: FE-04 零件 ACL 权限判定 + 空 ACL 语义修复（back-py）
+
+> 用户报 CATIA-Copilot 查 GD50_Frame latest-revision 403（:8005 为 200）。修改集中在 `acl_factory.py`，pytest 282 passed，实测 :8000/:8005 对拍一致。详见 `docs/migration/audit-round6-frontend/00-index.md` FE-04。
+
+- **fix(acl_factory): 工作区管理员 ACL 旁路** — `check_read_access`/`check_write_access` 新增 `_is_workspace_admin()` 旁路，对齐 Java `User.isAdministrator()`（= workspace.admin_login）；此前误用平台全局 admin 判定，ws-admin 被自己工作区的 ACL 锁死。
+- **fix(acl_factory): 空 ACL 删除语义** — `apply_acl` 两组条目均为空时删除 ACL（先清 11 张业务表 acl_id 引用避免 FK violation）并返回 None，对齐 Java `removeACLFromPartRevision` 语义；此前保留空 enabled ACL 行导致全员 403。
+- **fix(acl_factory): 零件 ACL 数组格式 500（潜伏 bug）** — `PUT /parts/{key}/acl` 的 ACLDTO 数组格式 `[{key,value}]` 直达 `apply_acl.items()` 崩溃；新增 `_normalize_entries()` 兼容数组/dict 两种格式。迁移以来零件 ACL 设置在 :8000 从未可用。
+- **chore(db): 清理存量空 ACL** — acl 63/154（round-5 审计脚本残留）按 11 张表清引用后删除。
+
+## 2026-07-16 — docs: 前端全量手动测试计划 + 信息源修正
+
+- **docs(audit-round6): 新增 TEST-PLAN.md** — 基于 DocDokuPLM 2.5 用户手册制定前端全量手动测试计划（9 阶段 170 步，P1=95/P2=75），用户手动执行、agent 定位根因。含账号矩阵、双工作区策略（TESTR7 新建 + GD50 种子）、bug 反馈模板、已知问题白名单（邮件族/office PDF/视频通话）。
+- **docs(known-issues): BUG-10 改判"已绕开/不视为 bug"** — CATIA 端导出 STP 再上传是既定方案。
+- **docs(known-issues): BUG-14 改判"已修复"** — :8000 主路径走 back-py kafka_producer.py（kafka-python 默认 acks=1 + flush()），无静默丢失；Java acks=0 仅影响 :8005。
+- **docs(REMINDERS): P5-12 划掉** — put_index 已是真实现（reindex_all 删建索引+bulk），ES 实查 GD50 parts 339 条/documents 38 条。
+
+## 2026-07-16 — fix: FE-04 code review 跟进修复（back-py）
+
+> subagent code review 结论 Ready to merge，另指出 2 项旧有遗留缺口，已按用户指示修复。pytest 282 passed 零回归，镜像 rebuild + 实测验证。
+
+- **fix(document_manager): update_acl 空 ACL 分支统一调 apply_acl** — 原 else 分支只删 entries、留孤儿 acl 行；现替换为 `apply_acl(db, acl_id, {}, {}, workspace_id=ws)` + `db.refresh(dr)`，与零件空 ACL 删除语义统一（删 entries + 清引用 + 删 acl 行）。实测：PUT 空 ACL → 204，acl_id=NULL、acl 行删除。
+- **fix(services): check_read_access 4 处调用点补传 workspace_id** — `product_structure.py:669`、`change_manager.py:55/463/480` 原未传 workspace_id，ws-admin 读权限旁路在这些路径不生效；现 6 处调用点全部传参，旁路全覆盖。
+
 ## 2026-07-16 — fix: 第6轮前端审计 FE-01/FE-03 修复（back-py）
 
 > 见 `docs/migration/audit-round6-frontend/00-index.md`。pytest 282 passed 零回归，镜像已 rebuild，实测验证通过。

@@ -666,7 +666,8 @@ class ProductStructureService:
         access_deny = False
         if user_login and rev.acl_id:
             from app.services.factory.acl_factory import check_read_access
-            access_deny = not check_read_access(db, rev.acl_id, user_login, is_admin)
+            access_deny = not check_read_access(db, rev.acl_id, user_login, is_admin,
+                                                workspace_id=rev.workspace_id)
         # notifications: 查询影响该零件主记录的修改通知
         notifications = self._modification_notifications(
             db, rev.workspace_id, rev.partmaster_partnumber)

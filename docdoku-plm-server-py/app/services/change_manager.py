@@ -52,7 +52,8 @@ class ChangeService:
             from app.services.factory.acl_factory import check_read_access
             items = [i for i in items
                      if i.acl_id is None
-                     or check_read_access(db, i.acl_id, user_login, is_admin)]
+                     or check_read_access(db, i.acl_id, user_login, is_admin,
+                                          workspace_id=ws)]
         return items
 
     def search_items(self, db: Session, ws: str, cls, q: str, limit: int = 8):
@@ -459,7 +460,8 @@ class ChangeService:
                     if current_user:
                         issues = [i for i in issues
                                   if i.acl_id is None
-                                  or check_read_access(db, i.acl_id, current_user.login, is_admin)]
+                                  or check_read_access(db, i.acl_id, current_user.login, is_admin,
+                                                       workspace_id=item.workspace_id)]
                     data["addressedChangeIssues"] = [self.build_item_dto(i, db, current_user) for i in issues]
                 else:
                     data["addressedChangeIssues"] = []
@@ -475,7 +477,8 @@ class ChangeService:
                     if current_user:
                         requests = [r for r in requests
                                     if r.acl_id is None
-                                    or check_read_access(db, r.acl_id, current_user.login, is_admin)]
+                                    or check_read_access(db, r.acl_id, current_user.login, is_admin,
+                                                         workspace_id=item.workspace_id)]
                     data["addressedChangeRequests"] = [self.build_item_dto(r, db, current_user) for r in requests]
                 else:
                     data["addressedChangeRequests"] = []

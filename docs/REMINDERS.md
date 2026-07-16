@@ -6,7 +6,7 @@
 
 ### 🟢 第6轮前端审计（按需模式，2026-07-16，见 docs/migration/audit-round6-frontend/00-index.md）
 
-> 模式变更：用户手动操作前端报 bug，agent 只做根因定位记录。**FE-01（建工作区 500）与 FE-03（属性列 undefined 双路由遮蔽）已修复并验证**（pytest 282 passed，镜像已 rebuild）。FE-02 为数据残留+Payara 缓存假象非 bug（GD50 `workspace_parttablecolumn` 残留 `pr.name` 行未清理，待用户确认是否删除恢复默认 10 列）。
+> 模式变更：用户手动操作前端报 bug，agent 只做根因定位记录。**FE-01（建工作区 500）与 FE-03（属性列 undefined 双路由遮蔽）已修复并验证**（pytest 282 passed，镜像已 rebuild）。FE-02 为数据残留+Payara 缓存假象非 bug（GD50 `workspace_parttablecolumn` 残留 `pr.name` 行未清理，待用户确认是否删除恢复默认 10 列）。 **FE-04（GD50_Frame latest-revision 403）已修复并验证**：① check_read/write_access 增加 ws-admin 旁路；② apply_acl 空 entries → 删 ACL 返回 None（FK 安全）；③ 附带修复 PUT 零件 ACL 数组格式 500 潜伏 bug（_normalize_entries）；④ 存量空 ACL（63/154）已清理。详见 audit-round6-frontend/00-index.md FE-04 修复记录。
 
 ### 🔴 第五轮全量审计（逐端点/逐SQL/逐DTO，2026-07-16, 见 audit-round5/00-index）
 
@@ -15,13 +15,16 @@
 
 ## 待办
 
+- [ ] FE-04 ACL 修复的专项回归测试待补（空 ACL 删除路径、ws-admin 旁路、ACLDTO 数组格式归一化）——code review Important #3，见 audit-round6-frontend/00-index.md
+
+
 > 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限修复合集，并**新增 Query 自定义查询执行引擎 + Importer 属性导入域（分支 feat/py-query-execution-engine）**。**剩余功能域**：① WebSocket /ws 403 修复；② 种子脚本修复（解阻 10 个 pytest 失败）。本文件只保留**跨领域非迁移**待办。
 
 ### 🔴 第四轮全量审计（代码对比 + 回归复核，2026-07-12，见 docs/migration/audit-round4/00-index.md）
 
 > **✅ 修复全部完成（2026-07-12）**：2 CRITICAL + 13 HIGH + 16 MED 分 4 批闭环，commit `0d087a1`/`84d9229`/`c69d251`/`d46e7ea`。pytest 282 passed / 1 skipped 零回归，CRITICAL 经 GD50 造数据复测，权限项经 non-admin/admin smoke 对拍，镜像已 rebuild 持久化。详见 `audit-round4/FIX-PLAN.md` 执行结果表。
 >
-> **未修（保留，用户确认"修到 MED"）**：P2-08（linkType PSFilterVisitor 重构，风险高）；P8-03（acknowledge 204，LOW+测试依赖）；**22 LOW**；已知计划外项：P6-01/P6-08 审批邮件（邮件族排期见 loose-ends 第八节）、P5-12 put_index ES 桩、P5-21 delete_account 级联不全。
+> **未修（保留，用户确认"修到 MED"）**：P2-08（linkType PSFilterVisitor 重构，风险高）；P8-03（acknowledge 204，LOW+测试依赖）；**22 LOW**；已知计划外项：P6-01/P6-08 审批邮件（邮件族排期见 loose-ends 第八节）、~~P5-12 put_index ES 桩~~（2026-07-16 核实已是真实现：admin.py put_index → indexer_manager.reindex_all 删建索引+bulk 写入，ES 实查 GD50 parts 339 条/documents 38 条）、P5-21 delete_account 级联不全。
 >
 > **2026-07-16 新增修复**（见 CHANGELOG）：
 > - **P1-06 status NULL→null**（part_mapper schema 均改为 None，对齐 Java nillable enum）

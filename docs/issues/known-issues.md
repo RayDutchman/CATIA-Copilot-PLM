@@ -131,9 +131,9 @@
 ### [BUG-10] CATIA 原生格式完全不支持转换
 - **涉及格式：** `.CATPart`、`.CATProduct`、`.3dxml`
 - **根本原因：** 转换服务中 5 个 `CADConverter` 实现类均不支持 CATIA 专有格式，系统中无任何 CATIA 转换器实现
-- **影响：** 项目定位为 CATIA 协同 PLM 系统，但无法直接处理 CATIA 原生文件，必须在 CATIA 中手动预先导出为 STEP/STL
-- **修复状态：** `未修复`
-- **当前可用 Workaround：** 在 CATIA 中将文件导出为 `.step` 或 `.stl` 后上传
+- **影响：** 无法直接处理 CATIA 原生文件
+- **修复状态：** `已绕开/不视为 bug`（2026-07-16 确认：CATIA Copilot 工作流已固化"CATIA 端导出 STP 再上传"，此为既定方案而非缺陷）
+- **Workaround（已固化）：** 在 CATIA 中将文件导出为 `.step` 或 `.stl` 后上传
 - **长期修复方向：** 实现 `CatiaFileConverterImpl`，集成第三方 CAD 转换库（如 HOOPS Exchange、CADExchanger、Aspose CAD）
 
 ---
@@ -176,8 +176,7 @@
 - **文件：** `docdoku-plm-server-ejb/.../ConverterBean.java`（Producer 配置第 88–100 行）
 - **根本原因：** `acks=0`（fire and forget），Kafka broker 未就绪时消息不重试即丢弃
 - **影响：** 在 Kafka 刚启动或短暂不可用时，上传 CAD 文件后转换任务可能丢失，3D 预览永远不出现
-- **修复状态：** `未修复`
-- **建议修复方案：** 将 `acks` 改为 `1` 或 `all`，增加合理的 `retries` 和 `retry.backoff.ms`
+- **修复状态：** `已修复`（2026-07-16 核实：:8000 主路径已由 back-py `app/services/kafka_producer.py` 接管，kafka-python 默认 `acks=1` 且每次发送后 `flush()`，无静默丢失。Java `ConverterBean.java:93` 的 `acks=0` 仅影响 :8005 Payara 对比端口，遗留不修）
 
 ---
 

@@ -9,16 +9,62 @@ FORBIDDEN = 0
 READ_ONLY = 1
 FULL_ACCESS = 2
 
+# 所有含 acl_id 外键列的业务表（删除 acl 行前需先清引用）
+_ACL_REFERENCING_TABLES = (
+    "partrevision", "documentrevision", "partmastertemplate",
+    "documentmastertemplate", "changeissue", "changerequest", "changeorder",
+    "milestone", "productconfiguration", "productinstancemaster", "workflowmodel",
+)
+
+
+def _is_workspace_admin(db: Session, workspace_id: str | None, user_login: str) -> bool:
+    """工作区管理员判定，对齐 Java User.isAdministrator()（login == workspace.admin_login）。"""
+    if not workspace_id:
+        return False
+    return db.execute(text(
+        "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
+    ), {"w": workspace_id, "l": user_login}).first() is not None
+
+
+def _normalize_entries(entries) -> dict:
+    """归一化 ACL 条目为 {login/group_id: perm_int} dict。
+
+    兼容两种输入格式：
+    - 前端 ACLDTO 数组格式 [{key, value}, ...]（Java ACLDTO 序列化格式）
+    - dict 格式 {login: perm}（perm 支持 int 或 "FULL_ACCESS" 等字符串）
+    """
+    if not entries:
+        return {}
+    if isinstance(entries, list):
+        return parse_acl_entries(entries)
+    return {k: _perm_to_int(v) for k, v in entries.items()}
+
 
 def apply_acl(db: Session, acl_id: int | None,
               user_entries: dict, group_entries: dict,
-              workspace_id: str = "") -> int:
+              workspace_id: str = "") -> int | None:
     """upsert ACL entries，返回 acl_id。None 则新建 ACL。
 
     对齐 Java ACLFactory.createACL(pWorkspaceId, userEntries, groupEntries)：
     - user_entries / group_entries 的 key 是纯 login / group_id（无 workspace 前缀）
     - workspace_id 由调用方显式传入，写入 principal_workspace_id
+    - 两组条目均为空时对齐 Java removeACL* 语义（PartResource.updatePartRevisionACL:440-443）：
+      删除现有 ACL 及其条目并返回 None，实体回退为工作区级权限
     """
+    user_entries = _normalize_entries(user_entries)
+    group_entries = _normalize_entries(group_entries)
+    if not user_entries and not group_entries:
+        if acl_id is not None:
+            db.query(AclUserEntry).filter(AclUserEntry.acl_id == acl_id).delete()
+            db.query(AclUserGroupEntry).filter(AclUserGroupEntry.acl_id == acl_id).delete()
+            # ACL 与实体一一对应：先清所有引用列（避免外键约束）再删 acl 行
+            for table in _ACL_REFERENCING_TABLES:
+                db.execute(text(f"UPDATE {table} SET acl_id=NULL WHERE acl_id=:a"),
+                           {"a": acl_id})
+            db.query(ACL).filter(ACL.id == acl_id).delete()
+            db.commit()
+        return None
+
     if acl_id is None:
         acl = ACL(enabled=True)
         db.add(acl)
@@ -90,6 +136,9 @@ def check_read_access(db: Session, acl_id: int | None,
         return True
     if acl_id is None:
         return True
+    # 工作区管理员绕过 ACL（对齐 Java hasPartRevisionReadAccess: user.isAdministrator()）
+    if _is_workspace_admin(db, workspace_id, user_login):
+        return True
     acl = db.query(ACL).filter(ACL.id == acl_id).first()
     if not acl or not acl.enabled:
         return True
@@ -114,13 +163,11 @@ def check_write_access(db: Session, acl_id: int | None,
                        workspace_id: str | None = None) -> bool:
     if is_admin:
         return True
+    # 工作区管理员绕过 ACL（对齐 Java hasPartOrDocumentRevisionWriteAccess: user.isAdministrator()）
+    if _is_workspace_admin(db, workspace_id, user_login):
+        return True
     if acl_id is None:
         if workspace_id:
-            ws_admin = db.execute(text(
-                "SELECT 1 FROM workspace WHERE id=:w AND admin_login=:l"
-            ), {"w": workspace_id, "l": user_login}).first()
-            if ws_admin:
-                return True
             has = db.execute(text(
                 "SELECT 1 FROM workspaceusermembership "
                 "WHERE workspace_id=:ws AND member_login=:l AND readonly=false"

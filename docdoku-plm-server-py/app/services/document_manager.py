@@ -1991,12 +1991,11 @@ class DocumentService:
                 dr.acl_id = new_acl_id
                 db.commit()
         else:
+            # 空 entries → 删除 ACL（对齐 Java removeACLFromDocumentRevision，与零件同语义）
             acl_id = getattr(dr, "acl_id", None)
             if acl_id:
-                db.execute(sql_text("DELETE FROM acluserentry WHERE acl_id=:aid"), {"aid": acl_id})
-                db.execute(sql_text("DELETE FROM aclusergroupentry WHERE acl_id=:aid"), {"aid": acl_id})
-                dr.acl_id = None
-                db.commit()
+                apply_acl(db, acl_id, {}, {}, workspace_id=ws)
+                db.refresh(dr)
 
     def _check_doc_file_writable(self, db, ws, doc_id, ver, iteration, user_login):
         """检查用户是否对文档迭代文件有写权限（已签出且是最新迭代）。"""

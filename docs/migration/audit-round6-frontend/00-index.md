@@ -15,6 +15,7 @@
 | FE-01 | HIGH | 新建工作区 `POST /api/workspaces` 返回 500，但工作区实际已创建 | 后端响应序列化（ResponseValidationError） | ✅ 已修复（2026-07-16） |
 | FE-02 | 非 bug（数据残留） | :8000 parts 列表比 :8005 缺很多列 | GD50 残留列自定义数据 + Payara L2 缓存陈旧 | 已定位根因 |
 | FE-03 | HIGH | 自定义零件表格列：可选属性列显示 "undefined"（应显示 Source/设计状态/材料） | 后端双路由遮蔽：List[str] 版本覆盖了对象数组版本 | ✅ 已修复（2026-07-16） |
+| FE-04 | HIGH | CATIA-Copilot 查 GD50_Frame latest-revision 报 403（:8005 返回 200） | 双重缺陷：ACL 检查用平台 admin 而非工作区 admin + 空 ACL 残留数据 | ✅ 已修复（2026-07-16） |
 
 ## 发现编号规则
 - `FE-XX`：前端触发、经根因定位的问题
@@ -130,3 +131,61 @@ fastapi.exceptions.ResponseValidationError: 1 validation errors:
 2. `app/routers/attributes.py` `_filter_attributes` 输出 key `attributeType`→`type`，删除 `lovName: None`，补 `locked: False`/`mandatory: False`，对齐 Java `InstanceAttributeDTO`
 实测：`GET /workspaces/GD50/attributes/part-iterations` → `[{"name":"Source","type":"TEXT","locked":false,"mandatory":false}, ...]`，与 :8005 Java 基准逐字段一致；`path-data` → `[]`。
 验证：pytest 282 passed / 1 skipped 零回归；back-py 镜像已 rebuild + 容器重建。
+
+
+---
+
+## FE-04 — GET /parts/GD50_Frame/latest-revision 403（工作区管理员被 ACL 锁死）
+
+**严重级**：HIGH
+**报告人**：用户（CATIA-Copilot 客户端，报错文案由客户端生成）
+**现象**：test1 查 `GET /workspaces/GD50/parts/GD50_Frame/latest-revision` → :8000 返回 403「您，test1，没有执行此操作的足够权限」；:8005（Payara）同请求返回 **200**。零件存在（partrevision GD50_Frame/A）。
+
+**触发链（两个独立缺陷叠加）**：
+
+**缺陷 A（主因）——ACL 旁路判定用错管理员语义**：
+- Java 基准：`ProductManagerBean.hasPartRevisionReadAccess:3554-3556` = `user.isAdministrator() || isACLGrantReadAccess`，其中 `User.isAdministrator()`（User.java:84-86）= `login == workspace.admin_login`（**工作区管理员**）。test1 是 GD50 的 admin_login → Java 直接放行
+- back-py：`app/routers/part.py:374` `is_admin = user_mgmt_service.is_account_admin(...)`（user_manager.py:442-445，查 `usergroupmapping groupname='admin'` = **平台全局管理员**）→ test1 非平台 admin → is_admin=False → 进入 ACL 检查
+- `acl_factory.check_read_access:86-109` 已接收 `workspace_id` 参数但**从未使用**——本应在此做工作区管理员旁路
+
+**缺陷 B（伴生）——空 ACL 残留锁死所有人**：
+- DB 实况：GD50_Frame/A 的 `acl_id=63`，`acl` 行 enabled=true，但 `acluserentry`/`aclusergroupentry` 均 **0 条**（同期残留还有 ACLCFG-1977AE 的 acl 154 也是 0/0；来源为 round-5 审计脚本 PUT ACL）
+- Java 基准：`PartResource.updatePartRevisionACL:440-443`——`acl.hasEntries()` 为空时调 `removeACLFromPartRevision`（**删除 ACL，回退为工作区级权限**）；DocumentResource.java:705-708 同语义
+- back-py：`product_manager.update_part_acl:1771-1788` 无此分支，空 entries 时 `apply_acl`（acl_factory.py:13-50）清空旧条目、不写新条目、保留 enabled ACL 行 → 产生「谁都不在名单上」的锁死 ACL
+- `check_read_access:96-109`：ACL 存在且 enabled、无 user entry、无 group entry → False → 除平台 admin 外全员 403
+- **系统性**：`apply_acl` 共 15 处调用（parts/documents/folders/product_instances/workflow_models/milestones/change/templates/product_structure），全部缺「空 entries → 删 ACL」分支
+
+**修法（记录待 FIX-PLAN，未执行）**：
+1. **缺陷 A**：在 `acl_factory.check_read_access`/`check_write_access` 内用已有的 `workspace_id` 参数加工作区管理员旁路（`SELECT 1 FROM workspace WHERE id=:ws AND admin_login=:l`），对齐 Java `User.isAdministrator()`；所有调用点无需改动
+2. **缺陷 B**：在 `apply_acl` 集中处理——user_entries 和 group_entries 均为空时：删除两表旧条目 + 删 acl 行 + 返回 None（调用点 `xx.acl_id = new_acl_id` 自然置 NULL），对齐 Java removeACL* 语义
+3. **数据修复**：清理存量空 ACL——`UPDATE partrevision SET acl_id=NULL WHERE acl_id IN (SELECT a.id FROM acl a WHERE NOT EXISTS(SELECT 1 FROM acluserentry u WHERE u.acl_id=a.id) AND NOT EXISTS(SELECT 1 FROM aclusergroupentry g WHERE g.acl_id=a.id))` + 对 documentrevision 等含 acl_id 的表同理 + 删孤儿 acl 行（GD50 现查实至少 acl 63/154 两条空 ACL）
+4. 验证点：test1 查 GD50_Frame latest-revision :8000 与 :8005 均 200；PUT 空 ACL 后 acl_id 置 NULL；非成员用户仍被 `_check_workspace_member` 拦截
+
+
+---
+
+## FE-04 修复记录（2026-07-16）
+
+全部修改集中在 `app/services/factory/acl_factory.py`（调用点零改动）+ 存量数据清理：
+
+1. **缺陷 A（ws-admin 旁路）**：新增 `_is_workspace_admin()` helper；`check_read_access` 和 `check_write_access` 在 `is_admin` 之后增加工作区管理员旁路（对齐 Java `User.isAdministrator()`）。`check_write_access` 原先仅在 `acl_id is None` 分支内做的 ws-admin 检查提升到函数顶部（消除重复）。
+2. **缺陷 B（空 ACL 删除语义）**：`apply_acl` 开头判断两组条目均为空 → 删条目 + 清全部 11 张业务表的 acl_id 引用（`_ACL_REFERENCING_TABLES`，避免 FK violation）+ 删 acl 行 + 返回 None，对齐 Java `removeACL*`。返回类型改为 `int | None`，15 处调用点 `x.acl_id = new_acl_id` 自然置 NULL。
+3. **附带发现并修复（原 500 潜伏 bug）**：`PUT /parts/{key}/acl` 走 `update_part_acl` 时 body 的 `userEntries` 是 ACLDTO 数组格式 `[{key,value}]`，直接传入 `apply_acl` 后 `.items()` 崩溃 → `AttributeError: 'list' object has no attribute 'items'` → 500（迁移以来一直存在，意味着零件 ACL 设置在 :8000 从未可用）。修复：`apply_acl` 入口新增 `_normalize_entries()`，同时兼容数组格式（走 `parse_acl_entries`）和 dict 格式（值支持 int / "FULL_ACCESS" 字符串）。
+4. **数据清理**：存量空 ACL（acl 63/154）已按 11 张表清引用后删除。
+
+**验证**（:8000，test1=GD50 ws-admin）：
+- `GET parts/GD50_Frame/latest-revision` → **200**（原 403），与 :8005 对拍一致
+- `PUT parts/GD50_Frame-A/acl` 带条目 → 204，acl 行 + 1 条 user entry 落库（原 500）
+- `PUT parts/GD50_Frame-A/acl` 空条目 → 204，acl_id 置 NULL、acl 行删除、全库零空 ACL 残留
+- pytest 282 passed / 1 skipped 零回归；镜像 rebuild + 容器重建
+
+
+---
+
+## FE-04 code review 跟进（2026-07-16）
+
+subagent 全面 review 结论：**Ready to merge**，无 Critical。`_ACL_REFERENCING_TABLES` 11 表与 models 核对一致；15 处 apply_acl 调用点兼容。两项旧有遗留缺口已按用户指示修复：
+1. `document_manager.py` update_acl 空 ACL 分支改为统一调 `apply_acl`（原先只删 entries 留孤儿 acl 行）；实测 PUT 空 ACL → 204 + acl 行删除（种子文档 ACLDOC-5514DF/A 的测试 ACL 在验证中被删，属用户已接受的 GD50 写操作）
+2. `product_structure.py:669`、`change_manager.py:55/463/480` 补传 workspace_id，ws-admin 读旁路现全覆盖 6 处调用点
+
+未处理（reviewer Minor/建议）：空 ACL 删除与 ws-admin 旁路的专项回归测试待补；`_perm_to_int(None)` 静默降级 FORBIDDEN；apply_acl 内部 commit 事务模式（既有设计，改动需动 15 处调用点）。
