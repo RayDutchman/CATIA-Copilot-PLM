@@ -2127,6 +2127,56 @@ class ProductService:
             return Path(row[0]).name
         return None
 
+    def remove_template_file(self, db: Session, workspace_id: str,
+                              template_id: str, file_name: str) -> None:
+        """删除零件模板附件。对齐 Java ProductManagerBean.removeFileFromTemplate + BinaryResourceDAO.removeBinaryResource。"""
+        from pathlib import Path
+        from app.core.config import settings
+        vault_base = Path(settings.VAULT_PATH)
+        full_name = f"{workspace_id}/part-templates/{template_id}/attachedfiles/{file_name}"
+        file_path = vault_base / full_name
+        db.execute(text(
+            "UPDATE partmastertemplate SET attachedfile_fullname = NULL "
+            "WHERE workspace_id = :ws AND id = :tid AND attachedfile_fullname = :fn"
+        ), {"ws": workspace_id, "tid": template_id, "fn": full_name})
+        br = db.query(BinaryResource).filter(
+            BinaryResource.full_name == full_name).first()
+        if br:
+            db.delete(br)
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except Exception:
+            pass
+        db.commit()
+
+    def rename_template_file(self, db: Session, workspace_id: str,
+                              template_id: str, old_name: str,
+                              new_name: str) -> None:
+        """重命名零件模板附件。对齐 Java ProductManagerBean.renameFileInTemplate。"""
+        from pathlib import Path
+        from app.core.config import settings
+        vault_base = Path(settings.VAULT_PATH)
+        old_full = f"{workspace_id}/part-templates/{template_id}/attachedfiles/{old_name}"
+        new_full = f"{workspace_id}/part-templates/{template_id}/attachedfiles/{new_name}"
+        br = db.query(BinaryResource).filter(
+            BinaryResource.full_name == old_full).first()
+        if br:
+            br.full_name = new_full
+        db.execute(text(
+            "UPDATE partmastertemplate SET attachedfile_fullname = :new_fn "
+            "WHERE workspace_id = :ws AND id = :tid AND attachedfile_fullname = :old_fn"
+        ), {"ws": workspace_id, "tid": template_id, "old_fn": old_full, "new_fn": new_full})
+        try:
+            old_path = vault_base / old_full
+            new_path = vault_base / new_full
+            if old_path.exists():
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                old_path.rename(new_path)
+        except Exception:
+            pass
+        db.commit()
+
     def _build_template_attrs(self, db: Session, workspace_id: str,
                                template_id: str) -> list[dict]:
         from sqlalchemy import text
