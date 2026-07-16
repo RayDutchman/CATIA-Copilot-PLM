@@ -92,7 +92,7 @@ class WorkspaceService:
             pass
 
         return {"id": ws_id, "description": description, "enabled": enabled,
-                "folderLocked": folder_locked, "admin": admin_login}
+                "folderLocked": folder_locked}
 
     def delete_workspace(self, db: Session, ws: str) -> None:
         """完整级联删除工作区（对齐 WorkspaceDAO.removeWorkspace）。"""
@@ -313,22 +313,6 @@ class WorkspaceService:
                 result[login] = []
             result[login].append({"date": ts})
         return result
-
-    def get_workspace_attributes_part_iterations(self, db: Session, ws: str) -> list:
-        rows = db.execute(text(
-            "SELECT DISTINCT ia.name FROM partiteration_attribute pia "
-            "JOIN instanceattribute ia ON ia.id = pia.instanceattribute_id "
-            "WHERE pia.workspace_id = :ws ORDER BY ia.name"
-        ), {"ws": ws}).fetchall()
-        return [r[0] for r in rows]
-
-    def get_workspace_attributes_path_data(self, db: Session, ws: str) -> list:
-        rows = db.execute(text(
-            "SELECT DISTINCT iat.name FROM partiteration_pathdata_attr ppa "
-            "JOIN instanceattributetemplate iat ON iat.id = ppa.instanceattribute_template_id "
-            "WHERE ppa.workspace_id = :ws ORDER BY iat.name"
-        ), {"ws": ws}).fetchall()
-        return [r[0] for r in rows]
 
     # ============================================================
     # Front / Back options

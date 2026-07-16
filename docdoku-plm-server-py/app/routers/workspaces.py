@@ -194,20 +194,6 @@ def delete_lov(ws: str, name: str, db: Session = Depends(get_db),
     lov_service.delete_lov(db, ws, name)
 
 
-@router.get("/workspaces/{ws}/attributes/part-iterations", response_model=List[str])
-@router.get("/workspaces/{ws}/attributes/part-iterations/", include_in_schema=False)
-def attributes_part_iterations(ws: str, db: Session = Depends(get_db),
-                               current_user: Account = Depends(get_current_user)):
-    return workspace_service.get_workspace_attributes_part_iterations(db, ws)
-
-
-@router.get("/workspaces/{ws}/attributes/path-data", response_model=List[str])
-@router.get("/workspaces/{ws}/attributes/path-data/", include_in_schema=False)
-def attributes_path_data(ws: str, db: Session = Depends(get_db),
-                         current_user: Account = Depends(get_current_user)):
-    return workspace_service.get_workspace_attributes_path_data(db, ws)
-
-
 @router.get("/workspaces/{ws}", response_model=WorkspaceDTO)
 @router.get("/workspaces/{ws}/", include_in_schema=False)
 def get_workspace(ws: str, db: Session = Depends(get_db),

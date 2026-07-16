@@ -27,7 +27,7 @@ _DTYPE_TO_ATTR_TYPE = {
 
 
 def _filter_attributes(rows) -> list[dict]:
-    """按 (attributeType, name) 去重，只返回属性定义（对齐 Java filterAttributes 清空 value/mandatory/locked/lovName）。"""
+    """按 (type, name) 去重，只返回属性定义（对齐 Java filterAttributes 清空 value/mandatory/locked/lovName）。"""
     seen: set[str] = set()
     result = []
     for row in rows:
@@ -38,8 +38,9 @@ def _filter_attributes(rows) -> list[dict]:
         seen.add(key)
         result.append({
             "name": row.name,
-            "attributeType": attribute_type,
-            "lovName": None,
+            "type": attribute_type,
+            "locked": False,
+            "mandatory": False,
         })
     return result
 

@@ -38,6 +38,12 @@ def _delete_old_geometries(db: Session, ws: str, pn: str, ver: str, iteration: i
         )
     ).fetchall()
     for row in old_geo_rows:
+        try:
+            vault_path = vault.resolve(row.geometry_fullname)
+            if vault_path.exists():
+                vault_path.unlink()
+        except Exception:
+            pass
         db.query(BinaryResource).filter(
             BinaryResource.full_name == row.geometry_fullname,
         ).delete(synchronize_session=False)
@@ -132,7 +138,6 @@ def get_file_bytes(ws: str, pn: str, ver: str, iteration: int,
             continue
     raise FileNotFoundException("FileNotFoundException", full_name)
 
-
 def delete_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
                      sub_type: str, file_name: str,
                      user_login: str) -> None:
@@ -145,9 +150,8 @@ def delete_part_file(db: Session, ws: str, pn: str, ver: str, iteration: int,
     elif sub_type == "attachedfiles":
         full_name = vault.part_attached_fullname(ws, pn, ver, iteration, file_name)
     elif sub_type == "geometry":
-        # Usually quality is passed, but here file_name is quality.glb or similar
-        # For simplicity, fallback to string format since it's generic deletion.
-        full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
+        quality_str = file_name.replace(".glb", "")
+        full_name = vault.part_geometry_fullname(ws, pn, ver, iteration, quality_str)
     else:
         full_name = f"{ws}/parts/{pn}/{ver}/{iteration}/{sub_type}/{file_name}"
 
