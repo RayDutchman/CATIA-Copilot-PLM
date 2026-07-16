@@ -1351,13 +1351,27 @@ class ProductService:
         if created_before:
             q = q.filter(PartMaster.creation_date <= created_before)
         if modified_after or modified_before:
+            from sqlalchemy import func, select as sa_select
             q = q.join(PartRevision,
                        (PartMaster.workspace_id == PartRevision.workspace_id)
                        & (PartMaster.number == PartRevision.partmaster_partnumber))
+            latest = (
+                sa_select(func.max(PartIteration.iteration))
+                .where(
+                    (PartIteration.workspace_id == PartRevision.workspace_id)
+                    & (PartIteration.partmaster_partnumber == PartRevision.partmaster_partnumber)
+                    & (PartIteration.partrevision_version == PartRevision.version)
+                ).correlate(PartRevision).scalar_subquery()
+            )
+            q = q.join(PartIteration,
+                       (PartRevision.workspace_id == PartIteration.workspace_id)
+                       & (PartRevision.partmaster_partnumber == PartIteration.partmaster_partnumber)
+                       & (PartRevision.version == PartIteration.partrevision_version)
+                       & (PartIteration.iteration == latest))
             if modified_after:
-                q = q.filter(PartRevision.check_out_date >= modified_after)
+                q = q.filter(PartIteration.modification_date >= modified_after)
             if modified_before:
-                q = q.filter(PartRevision.check_out_date <= modified_before)
+                q = q.filter(PartIteration.modification_date <= modified_before)
             q = q.distinct()
         if tags:
             from app.models.part import part_revision_tags

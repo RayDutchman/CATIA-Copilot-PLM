@@ -76,8 +76,8 @@ class DocumentBaselineService:
         row = db.execute(text(
             "SELECT db.id, db.name, db.description, db.type, "
             "db.creationdate, db.author_login, db.author_workspace_id "
-            "FROM documentbaseline db WHERE db.id = :bid"
-        ), {"bid": baseline_id}).fetchone()
+            "FROM documentbaseline db WHERE db.id = :bid AND db.author_workspace_id = :ws"
+        ), {"bid": baseline_id, "ws": ws}).fetchone()
         if not row:
             return None
         return {"id": row[0], "name": row[1] or "", "description": row[2] or "",
@@ -100,8 +100,8 @@ class DocumentBaselineService:
     def delete_baseline(self, db: Session, ws: str, baseline_id: int) -> None:
         """删除文档基线（级联清理 baselineddocument 和 documentcollection）。"""
         row = db.execute(text(
-            "SELECT documentcollection_id FROM documentbaseline WHERE id = :bid"
-        ), {"bid": baseline_id}).fetchone()
+            "SELECT documentcollection_id FROM documentbaseline WHERE id = :bid AND author_workspace_id = :ws"
+        ), {"bid": baseline_id, "ws": ws}).fetchone()
         if not row:
             from app.core.exceptions import BaselineNotFoundException
             raise BaselineNotFoundException("BaselineNotFoundException", str(baseline_id))

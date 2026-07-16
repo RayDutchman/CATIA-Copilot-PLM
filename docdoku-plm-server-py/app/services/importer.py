@@ -458,6 +458,7 @@ class ImporterService:
                     pds.add_new_path_data_iteration(
                         db, ws, ci_id, sn, existing_master_id,
                         attr_dicts, note,
+                        auto_commit=False,
                     )
                     if auto_freeze:
                         _freeze_path_data(pds, db, ws, ci_id, sn, existing_master_id)
@@ -466,6 +467,7 @@ class ImporterService:
                     pds.create_path_data_master(
                         db, ws, ci_id, sn, pd_path,
                         attr_dicts, note,
+                        auto_commit=False,
                     )
                     if auto_freeze:
                         new_master = pds.get_path_data_by_path(db, ws, ci_id, sn, pd_path)
@@ -477,6 +479,11 @@ class ImporterService:
                     warnings.append(msg)
                 else:
                     errors.append(msg)
+
+        if errors:
+            db.rollback()
+        else:
+            db.commit()
 
         return {
             "succeed": len(errors) == 0,

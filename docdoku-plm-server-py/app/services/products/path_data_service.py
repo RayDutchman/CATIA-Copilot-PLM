@@ -107,7 +107,8 @@ class PathDataService:
 
     def create_path_data_master(self, db: Session, ws: str, ci_id: str,
                                  sn: str, path: str,
-                                 attrs: list, note: str) -> dict:
+                                 attrs: list, note: str,
+                                 auto_commit: bool = True) -> dict:
         """创建 PathDataMaster（首迭代）。
         
         若同路径 master 已存在 → 追加新迭代（对齐 Java createPathDataMaster 逻辑）。
@@ -131,7 +132,8 @@ class PathDataService:
             # 已存在 → 追加新迭代
             master_id = existing["id"]
             self._append_iteration(db, master_id, attrs, note)
-            db.commit()
+            if auto_commit:
+                db.commit()
             return self._build_master_dict(db, ws, ci_id, sn, master_id)
 
         # 新建 master
@@ -145,13 +147,15 @@ class PathDataService:
 
         # 创建首迭代
         self._append_iteration(db, master_id, attrs, note, iteration=1)
-        db.commit()
+        if auto_commit:
+            db.commit()
         return self._build_master_dict(db, ws, ci_id, sn, master_id)
 
     def add_new_path_data_iteration(self, db: Session, ws: str, ci_id: str,
                                      sn: str, master_id: int,
                                      attrs: list, note: str,
-                                     linked_docs: list = None) -> dict:
+                                     linked_docs: list = None,
+                                     auto_commit: bool = True) -> dict:
         """追加一个新 PathDataIteration（对齐 Java addNewPathDataIteration）。"""
         master = self.get_path_data_master_by_id(db, master_id)
         if not master:
@@ -162,8 +166,9 @@ class PathDataService:
         self._verify_master_belongs_to_instance(db, ws, ci_id, sn, master_id)
 
         self._append_iteration(db, master_id, attrs, note,
-                               linked_docs=linked_docs or [])
-        db.commit()
+                                linked_docs=linked_docs or [])
+        if auto_commit:
+            db.commit()
         return self._build_master_dict(db, ws, ci_id, sn, master_id)
 
     # ─────────────────────────────────────────

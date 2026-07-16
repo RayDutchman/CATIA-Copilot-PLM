@@ -297,7 +297,11 @@ def _baseline_optional_paths(db: Session, baseline_id: int) -> list:
 def get_ci_baseline_detail(ws: str, ci_id: str, bl_id: int,
                            current_user: Account = Depends(get_current_user),
                            db: Session = Depends(get_db)):
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    bl = db.query(ProductBaseline).filter(
+        ProductBaseline.id == bl_id,
+        ProductBaseline.configurationitem_workspace_id == ws,
+        ProductBaseline.configurationitem_id == ci_id,
+    ).first()
     if not bl:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))
@@ -410,7 +414,10 @@ def get_baseline_by_id(ws: str, bl_id: int,
                        light: bool = Query(False),
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
-    bl = db.query(ProductBaseline).filter(ProductBaseline.id == bl_id).first()
+    bl = db.query(ProductBaseline).filter(
+        ProductBaseline.id == bl_id,
+        ProductBaseline.configurationitem_workspace_id == ws,
+    ).first()
     if not bl:
         from app.core.exceptions import EntityNotFoundException
         raise EntityNotFoundException("BaselineNotFoundException", str(bl_id))

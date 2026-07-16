@@ -24,7 +24,11 @@ class EffectivityService:
                             version: str, body: dict) -> Effectivity:
         """创建有效性记录（D/S/L 自动按 typeEffectivity 分派）。"""
         type_eff = body.get("typeEffectivity", "DATEBASEDEFFECTIVITY")
-        ci_id = body.get("configurationItemNumber")
+        ci_key = body.get("configurationItemKey")
+        if ci_key and isinstance(ci_key, dict):
+            ci_id = ci_key.get("id")
+        else:
+            ci_id = body.get("configurationItemNumber")
         name = body.get("name", "")
         description = body.get("description", "")
         if type_eff == "SERIALNUMBERBASEDEFFECTIVITY":
