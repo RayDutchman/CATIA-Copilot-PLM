@@ -333,6 +333,7 @@ class WorkspaceService:
     # ============================================================
     # Front / Back options
     # ============================================================
+    def get_workspace_front_options(self, db: Session, ws: str) -> dict:
         """读取 workspacefrontoptions + 列配置（对齐 Payara getWorkspaceFrontOptions）。"""
         part_cols = db.execute(text(
             "SELECT tablecolumn FROM workspace_parttablecolumn "

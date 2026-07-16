@@ -249,16 +249,17 @@ class ChangeService:
                 raise EntityConstraintException("EntityConstraintException10")
         # 清理受影响关联（通过原始 SQL 写入的关联，ORM 不感知）
         prefix_map = {
-            ChangeIssue: "changeissue",
-            ChangeOrder: "changeorder",
-            ChangeRequest: "changereq",
+            ChangeIssue: ("changeissue", "changeissue_id"),
+            ChangeOrder: ("changeorder", "changeorder_id"),
+            ChangeRequest: ("changereq", "changerequest_id"),
         }
-        prefix = prefix_map.get(cls, "")
-        if prefix:
+        prefix_id = prefix_map.get(cls, None)
+        if prefix_id:
+            prefix, id_col = prefix_id
             for suffix in ("_affected_part", "_affected_document"):
                 db.execute(sql_text(
                     f"DELETE FROM {prefix}{suffix} "
-                    f"WHERE {prefix}_id=:iid"
+                    f"WHERE {id_col}=:iid"
                 ), {"iid": item_id})
         # 清理 tags 关联（FK 约束需要先清关联再删记录）
         tag_tbl = TAG_TABLES.get(cls)
