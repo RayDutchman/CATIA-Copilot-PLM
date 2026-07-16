@@ -4,6 +4,11 @@
 
 ---
 
+### 🔴 第五轮全量审计（逐端点/逐SQL/逐DTO，2026-07-16, 见 audit-round5/00-index）
+
+> **只审不修**。3C/5H/12M/23L。新CRITICAL: P6-19(ChangeRequest删除列名错→500) + P5-NEW-01(method体丢失→500)。第4轮2处回归。
+> LOW不修、邮件族不迁移、路由①②③未做（阶段2跳过）。
+
 ## 待办
 
 > 📋 **后端迁移剩余缺口不在此列**——完整台账见 `docs/migration/loose-ends.md`。2026-07-10 已完成 PathData/P2P 域 + 全量对比修复 + 用户姓名/权限修复合集，并**新增 Query 自定义查询执行引擎 + Importer 属性导入域（分支 feat/py-query-execution-engine）**。**剩余功能域**：① WebSocket /ws 403 修复；② 种子脚本修复（解阻 10 个 pytest 失败）。本文件只保留**跨领域非迁移**待办。

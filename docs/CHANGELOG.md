@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-07-16 — fix: 第5轮 Domain 4 (Documents) 审计修复 (P5-4-1~P5-4-4)
+
+> Round 5 全量审计 Domain 4 完成后，修复 2 HIGH + 2 MED 共 4 项。文件 3 个，编译通过。
+
+- **fix(document_manager): create_new_version 补写权限检查 (P5-4-1, HIGH)**
+  - 对齐 Java `DocumentManagerBean.createDocumentRevision:1431` 的 `checkWorkspaceWriteAccess`。
+  - 在 `get_revision` 之后、checkout 判断之前新增 `check_write_access` + `AccessRightException`，防止无写权限用户创建新版本。
+
+- **fix(folders): rename_put 补工作区写权限检查 (P5-4-2, HIGH)**
+  - 对齐 Java `DocumentManagerBean.moveFolder:1153` 的 `checkWorkspaceWriteAccess`。
+  - `PUT /folders/{path}` (rename) 端点原先无任何写权限检查，现已补 `_check_workspace_write_access`。
+  - 与同文件其他写端点（create_root/create_sub/move_folder/delete）权限检查风格一致。
+
+- **fix(schemas): DocumentTemplateDTO 补 workflowModelId + build_template_dto 补全字段 (P5-4-3, MED)**
+  - `DocumentTemplateDTO` schema 新增 `workflowModelId: Optional[str] = None`，防止 `extra='forbid'` 下响应 500。
+  - `build_template_dto` 新增 `modificationDate`、`workflowModelId` 输出。
+  - `build_template_dto` 新增 `attributeTemplates` 真实查询（SQL JOIN `documentmastertemplate_attr` + `instanceattributetemplate`），替代原先硬编码空列表。
+
+- **fix(document_manager): create_template 处理 attribute_templates 参数 (P5-4-4, MED)**
+  - 原先 `create_template` 接收 `attribute_templates` 参数但未处理，现已补全插入逻辑（INSERT `instanceattributetemplate` + `documentmastertemplate_attr`），与 `update_template_with_attrs` 风格一致。
+
+- **docs(audit): P5-4-5 (create_in_folder folder-level write check) 延迟**
+  - LOW 优先级，`create_document` 已有 workspace 级写权限检查，folder 级 ACL 检查需新增函数，另行排期。
+
+---
+
 ## 2026-07-13 — fix: 第4轮审计后续字段契约修复 + 路由 body 字段检查脚本
 
 > 分支 `fix/audit-remediation`。本轮由用户在线注册/登录问题触发，按 Java `AccountResource` / `AccountDTO` 和前端实际 JSON 对照定位。pytest **282 passed / 1 skipped**，back-py 已热更新验证，`chenweibo/password` 登录返回 `timeZone=Asia/Shanghai`。
@@ -76,6 +102,16 @@
 - **回归/副作用**：P5-18（P5-04 修 membership 引入 UPSERT→FK 500）、P2-15/P1-14（迁 service 带入硬编码 HTTPException）、P6-17（holderType 单复数 vs Java 复数）、P8-11（notification 用 ackauthor_login 过滤未读恒空）。
 - **闭环确认**：第2轮 6 CRITICAL + 29 HIGH 绝大多数已被第3轮修复（域4 全 14 项、域6 P6-02/03、域2 P2-01~10、域3 P3-01/02/03、域5 P5-01/02 等）。
 - 机器脚本线索：`check_hardcoded_exceptions` 命中 2 真问题（product_manager.py:1895/2007）；SQL/DTO 脚本告警均为已知误报（id 自增 / ON CONFLICT DO UPDATE SET / CreationDTO 误映射）。
+
+---
+
+## 2026-07-16 — docs: 第5轮全量审计完成（逐端点/逐SQL/逐DTO全覆盖，只审不修）
+
+> 8域explore subagent逐条SQL对information_schema+逐DTO对照Java。pytest 282/1。产出 audit-round5/00-index。
+
+- 总计 3C/5H/12M/23L。新CRITICAL: P6-19(ChangeRequest删除列名错→500) + P5-NEW-01(method体丢失→500)
+- 第4轮修复全部复验，发现2处回归(P5-NEW-02/P7-15-REG)
+- 机器脚本+Payara对拍（80MATCH/45PARTIAL/33MISMATCH）
 
 ---
 
