@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -225,24 +226,36 @@ def _has_obsolete_parts(db: Session, partcollection_id: int | None) -> bool:
     return row is not None
 
 
-def _query_path_to_path_links(db: Session, ws: str, ci_id: str, baseline_id: int = None) -> list:
+def _query_path_to_path_links(db: Session, ws: str, ci_id: str,
+                               baseline_id: int = None,
+                               source_filter: str = None,
+                               target_filter: str = None) -> list:
     """查询 PathToPathLink 列表。
 
     对齐 Java ProductBaselinesResource.getPathToPathLinkInProductBaseline：
     对每条 P2P link 分别 decode sourcePath/targetPath → LightPartLinkDTO 列表，
-    填充 sourceComponents/targetComponents。
+    填充 sourceComponents/targetComponents。Java DTO 不含 sourcePath/targetPath。
 
     若提供 baseline_id → 通过 productbaseline_p2plink 关联表查该基线的 links。
-    否则返回空（工作区维度无直接关联，只有 CI 和 baseline 维度有关联）。
+    否则返回空（工作区维度无直接关联）。
+    source_filter/target_filter 可选，用于按路径筛选时直接在 SQL 层过滤。
     """
     if baseline_id is None:
         return []
-    rows = db.execute(sql_text(
+    sql = (
         "SELECT ppl.id, ppl.type, ppl.sourcepath, ppl.targetpath, ppl.description "
         "FROM pathtopathlink ppl "
         "JOIN productbaseline_p2plink pbp ON pbp.pathtopathlink_id = ppl.id "
         "WHERE pbp.productbaseline_id = :bid"
-    ), {"bid": baseline_id}).fetchall()
+    )
+    params = {"bid": baseline_id}
+    if source_filter is not None:
+        sql += " AND ppl.sourcepath = :src"
+        params["src"] = source_filter
+    if target_filter is not None:
+        sql += " AND ppl.targetpath = :tgt"
+        params["tgt"] = target_filter
+    rows = db.execute(sql_text(sql), params).fetchall()
     result = []
     for r in rows:
         try:
@@ -254,8 +267,7 @@ def _query_path_to_path_links(db: Session, ws: str, ci_id: str, baseline_id: int
         except Exception:
             target_components = []
         result.append({
-            "id": r[0], "type": r[1], "sourcePath": r[2],
-            "targetPath": r[3], "description": r[4],
+            "id": r[0], "type": r[1], "description": r[4],
             "sourceComponents": source_components,
             "targetComponents": target_components,
         })
@@ -314,7 +326,7 @@ def delete_ci_baseline(ws: str, ci_id: str, bl_id: int,
                        current_user: Account = Depends(get_current_user),
                        db: Session = Depends(get_db)):
     svc.delete_baseline(db, ws, bl_id)
-    return {"status": "deleted"}
+    return Response(status_code=204)
 
 
 # ── products/{ci_id}/baselines ──
@@ -374,7 +386,7 @@ def delete_baseline(ws: str, ci_id: str, bl_id: int,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     svc.delete_baseline(db, ws, bl_id)
-    return {"status": "deleted"}
+    return Response(status_code=204)
 
 
 # ── baseline path-to-path-links ──
@@ -397,11 +409,8 @@ def baseline_path_to_path_links_detail(ws: str, pid: str, bid: int,
                                         current_user: Account = Depends(get_current_user),
                                         db: Session = Depends(get_db)):
     """获取产品基线的 PathToPathLink（按 source/target 筛选）。"""
-    links = _query_path_to_path_links(db, ws, pid, bid)
-    return [
-        lk for lk in links
-        if lk.get("sourcePath") == source and lk.get("targetPath") == target
-    ]
+    return _query_path_to_path_links(db, ws, pid, bid,
+                                      source_filter=source, target_filter=target)
 
 
 # ── product-baselines/{id} direct endpoints ──

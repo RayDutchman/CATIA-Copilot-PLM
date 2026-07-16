@@ -17,7 +17,12 @@
 
 > **✅ 修复全部完成（2026-07-12）**：2 CRITICAL + 13 HIGH + 16 MED 分 4 批闭环，commit `0d087a1`/`84d9229`/`c69d251`/`d46e7ea`。pytest 282 passed / 1 skipped 零回归，CRITICAL 经 GD50 造数据复测，权限项经 non-admin/admin smoke 对拍，镜像已 rebuild 持久化。详见 `audit-round4/FIX-PLAN.md` 执行结果表。
 >
-> **未修（保留，用户确认"修到 MED"）**：P2-08（linkType PSFilterVisitor 重构，风险高）；P1-06（status NULL→"WIP"，需 Payara 对拍 null 序列化后再定，当前 DB 无 NULL status 记录）；P8-03（acknowledge 204，LOW+测试依赖）；**22 LOW**；已知计划外项：P6-01/P6-08 审批邮件（邮件族排期见 loose-ends 第八节）、P5-12 put_index ES 桩、P5-21 delete_account 级联不全。
+> **未修（保留，用户确认"修到 MED"）**：P2-08（linkType PSFilterVisitor 重构，风险高）；P8-03（acknowledge 204，LOW+测试依赖）；**22 LOW**；已知计划外项：P6-01/P6-08 审批邮件（邮件族排期见 loose-ends 第八节）、P5-12 put_index ES 桩、P5-21 delete_account 级联不全。
+>
+> **2026-07-16 新增修复**（见 CHANGELOG）：
+> - **P1-06 status NULL→null**（part_mapper schema 均改为 None，对齐 Java nillable enum）
+> - **P1-16 workflow 字段填充**（part_mapper `_build_workflow()` 查询 workflow/activity/task 三表）
+> - **P1-20 _next_version 进位跳步**（AZ→BA, ZZ→AAA 标准进位）
 
 ### 🆕 Checklist #15 路由/服务接线审计 (audit-round3, 2026-07-12)
 

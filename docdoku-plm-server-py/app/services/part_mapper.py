@@ -169,6 +169,62 @@ def map_iteration(it: PartIteration, db: Session | None = None) -> PartIteration
     )
 
 
+def _build_workflow(db: Session | None, workflow_id: int | None) -> dict | None:
+    if db is None or workflow_id is None:
+        return None
+    from sqlalchemy import text
+    wf = db.execute(text(
+        "SELECT id, aborteddate, finallifecyclestate FROM workflow WHERE id = :id"
+    ), {"id": workflow_id}).first()
+    if not wf:
+        return None
+    activities = db.execute(text(
+        "SELECT * FROM activity WHERE workflow_id = :id ORDER BY step"
+    ), {"id": workflow_id}).fetchall()
+    activity_dicts = []
+    for a in activities:
+        tasks = db.execute(text(
+            "SELECT t.* FROM task t "
+            "WHERE t.workflow_id = :wf_id AND t.activity_step = :step "
+            "ORDER BY t.num"
+        ), {"wf_id": workflow_id, "step": a[0]}).fetchall()
+        task_dicts = []
+        for t in tasks:
+            td = dict(t._mapping)
+            worker_login = td.get("worker_login")
+            worker = None
+            if worker_login and db:
+                acc = db.query(Account).filter(Account.login == worker_login).first()
+                if acc:
+                    worker = {"login": acc.login, "name": acc.name,
+                              "email": acc.email, "workspaceId": td.get("worker_workspace_id")}
+                else:
+                    worker = {"login": worker_login, "name": worker_login}
+            task_dicts.append({
+                "num": td.get("num"),
+                "title": td.get("title") or "",
+                "instructions": td.get("instructions") or "",
+                "status": STATUS_MAP.get(td.get("status")),
+                "worker": worker or {},
+                "closureComment": td.get("closurecomment"),
+                "closureDate": str(td.get("closuredate")) if td.get("closuredate") else None,
+                "signature": td.get("signature"),
+            })
+        activity_dicts.append({
+            "step": a[0],
+            "type": a[1],
+            "lifeCycleState": a[2],
+            "tasksToComplete": a[4],
+            "tasks": task_dicts,
+        })
+    return {
+        "id": wf[0],
+        "abortedDate": str(wf[1]) if wf[1] else None,
+        "finalLifecycleState": wf[2],
+        "activities": activity_dicts,
+    }
+
+
 def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO:
     master = pr.part_master
     iterations = sorted(pr.iterations or [], key=lambda x: x.iteration)
@@ -251,15 +307,15 @@ def map_revision(pr: PartRevision, db: Session | None = None) -> PartRevisionDTO
         partIterations=[map_iteration(it, db) for it in iterations],
         checkOutUser=_user_dto(pr.checkout_user_workspace_id, pr.checkout_user_login, db),
         checkOutDate=_to_utc(pr.check_out_date),
-        status=STATUS_MAP.get(pr.status, "WIP"),
-        lifeCycleState=STATUS_MAP.get(pr.status, "WIP"),
+        status=STATUS_MAP.get(pr.status, None),
+        lifeCycleState=STATUS_MAP.get(pr.status, None),
         publicShared=pr.public_shared or False,
         releaseDate=_to_utc(pr.release_date),
         releaseAuthor=_user_dto(pr.release_user_workspace, pr.release_user_login, db),
         obsoleteDate=_to_utc(pr.obsolete_date),
         obsoleteAuthor=_user_dto(pr.obsolete_user_workspace, pr.obsolete_user_login, db),
         tags=[t.label for t in (pr.tags or [])],
-        workflow=None,
+        workflow=_build_workflow(db, pr.workflow_id),
         acl=_build_acl(db, pr.acl_id) or {},
         notifications=notification_list,
     )

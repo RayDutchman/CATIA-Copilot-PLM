@@ -149,3 +149,68 @@ def _parse_range(range_header: str, file_size: int) -> tuple[int, int] | None:
     if start > end or start >= file_size:
         return None
     return (start, min(end, file_size - 1))
+
+
+@router.delete("/files/{ws}/part-templates/{template_id}/{file_name}", status_code=204)
+@router.delete("/files/{ws}/part-templates/{template_id}/{file_name}/", status_code=204, include_in_schema=False)
+def remove_part_template_file(
+    ws: str,
+    template_id: str,
+    file_name: str,
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """删除零件模板附件（对标 Java PartTemplateBinaryResource.removeAttachedFileFromPartTemplate）。"""
+    full_name = _full_name(ws, template_id, file_name)
+    db.execute(text(
+        "UPDATE partmastertemplate SET attachedfile_fullname = NULL "
+        "WHERE workspace_id = :ws AND id = :tid AND attachedfile_fullname = :fn"
+    ), {"ws": ws, "tid": template_id, "fn": full_name})
+    br = db.query(BinaryResource).filter(
+        BinaryResource.full_name == full_name).first()
+    if br:
+        db.delete(br)
+    try:
+        file_path = _template_file_path(ws, template_id, file_name)
+        if file_path.exists():
+            file_path.unlink()
+    except Exception:
+        pass
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.put("/files/{ws}/part-templates/{template_id}/{file_name}")
+@router.put("/files/{ws}/part-templates/{template_id}/{file_name}/", include_in_schema=False)
+def rename_part_template_file(
+    ws: str,
+    template_id: str,
+    file_name: str,
+    body: dict,
+    current_user: Account = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """重命名零件模板附件（对标 Java PartTemplateBinaryResource.renameAttachedFileInPartTemplate）。"""
+    new_file_name = body.get("fileName")
+    if not new_file_name:
+        raise HTTPException(400, "fileName is required")
+    old_full = _full_name(ws, template_id, file_name)
+    new_full = _full_name(ws, template_id, new_file_name)
+    br = db.query(BinaryResource).filter(
+        BinaryResource.full_name == old_full).first()
+    if br:
+        br.full_name = new_full
+    db.execute(text(
+        "UPDATE partmastertemplate SET attachedfile_fullname = :new_fn "
+        "WHERE workspace_id = :ws AND id = :tid AND attachedfile_fullname = :old_fn"
+    ), {"ws": ws, "tid": template_id, "old_fn": old_full, "new_fn": new_full})
+    try:
+        old_path = _template_file_path(ws, template_id, file_name)
+        new_path = _template_file_path(ws, template_id, new_file_name)
+        if old_path.exists():
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            old_path.rename(new_path)
+    except Exception:
+        pass
+    db.commit()
+    return {"name": new_file_name, "fullName": new_full}

@@ -136,20 +136,6 @@ class ProductInstanceService:
         db.add(new_iteration)
         db.commit()
 
-    def get_instance_iterations(self, db: Session, ws: str, ci_id: str,
-                                 serial: str) -> list:
-        """获取产品实例的所有迭代。"""
-        rows = db.execute(text(
-            "SELECT * FROM productinstanceiteration "
-            "WHERE workspace_id=:ws AND configurationitem_id=:ci "
-            "AND prdinstancemaster_serialnumber=:sn ORDER BY iteration"
-        ), {"ws": ws, "ci": ci_id, "sn": serial}).fetchall()
-        return [{"iteration": r[0], "note": r[1] if len(r) > 1 else "",
-                 "author": r[2] if len(r) > 2 else "",
-                 "creationDate": str(r[3]) if len(r) > 3 else "",
-                 "baselineId": r[4] if len(r) > 4 else None}
-                for r in rows]
-
     def get_path_data_masters(self, db: Session, ws: str, ci_id: str,
                                serial: str) -> list:
         """获取产品实例的所有 PathDataMaster。"""
@@ -311,6 +297,7 @@ class ProductInstanceService:
         # ── iterations ──
         iterations = db.query(ProductInstanceIteration).filter(
             ProductInstanceIteration.workspace_id == ws,
+            ProductInstanceIteration.configurationitem_id == ci_id,
             ProductInstanceIteration.prdinstancemaster_serialnumber == sn,
         ).order_by(ProductInstanceIteration.iteration).all()
 

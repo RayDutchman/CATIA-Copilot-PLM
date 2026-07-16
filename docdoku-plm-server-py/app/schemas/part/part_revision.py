@@ -24,7 +24,7 @@ class PartRevisionDTO(BaseModel):
     partIterations: List[PartIterationDTO] = []
     checkOutUser: Optional[UserDTO] = None
     checkOutDate: Optional[datetime] = None
-    status: Optional[str] = "WIP"
+    status: Optional[str] = None
     tags: List[str] = []
     workflow: Optional[dict] = None
     lifeCycleState: Optional[str] = None

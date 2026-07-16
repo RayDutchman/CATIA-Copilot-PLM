@@ -204,10 +204,14 @@ class ProductService:
     def _next_version(self, current: str) -> str:
         if not current:
             return "A"
-        last_char = current[-1]
-        if last_char == "Z":
-            return current + "A"
-        return current[:-1] + chr(ord(last_char) + 1)
+        chars = list(current)
+        for i in range(len(chars) - 1, -1, -1):
+            if chars[i] == 'Z':
+                chars[i] = 'A'
+            else:
+                chars[i] = chr(ord(chars[i]) + 1)
+                return ''.join(chars)
+        return 'A' + ''.join(chars)
 
     # ── 写操作 ────────────────────────────────────────────────
 

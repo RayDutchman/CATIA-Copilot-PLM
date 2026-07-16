@@ -5,6 +5,7 @@ GET /products/{ci_id}/instances            → 产品实例序列号列表（对
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -281,12 +282,12 @@ def get_instance_iteration(ws: str, ci_id: str, sn: str, it: int,
     }
 
 
-@router.delete("/workspaces/{ws}/products/{ci_id}/instances/{sn}")
+@router.delete("/workspaces/{ws}/products/{ci_id}/instances/{sn}", status_code=204)
 def delete_instance(ws: str, ci_id: str, sn: str,
                     current_user: Account = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     product_instance_service.delete_instance(db, ws, ci_id, sn)
-    return {"status": "deleted"}
+    return Response(status_code=204)
 
 
 @router.put("/workspaces/{ws}/products/{ci_id}/instances/{sn}/acl")

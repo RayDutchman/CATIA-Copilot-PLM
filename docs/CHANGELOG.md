@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-07-16 — fix: P1-06/16/20 三合一修复（back-py）
+
+- **fix(part_mapper): P1-06 status NULL→null** — `STATUS_MAP.get(pr.status, "WIP")` → `None`，对齐 Java PartRevisionDTO nillable enum；schema 默认值同步改为 None。
+- **fix(part_mapper): P1-16 workflow 字段填充** — `map_revision` 新增 `_build_workflow()` 函数，当 `pr.workflow_id` 非空时查询 `workflow`/`activity`/`task` 三表，构造完整嵌套 workflow dict（含 activities→tasks 子结构），替代原有 `workflow=None`。
+- **fix(product_manager): P1-20 _next_version 进位跳步** — 重新实现为标准进位逻辑（AZ→BA, ZZ→AAA），替代原有 `"AZ"→"AZA"` 的错误跳步实现。
+
 ## 2026-07-16 — fix: 第5轮 Domain 4 (Documents) 审计修复 (P5-4-1~P5-4-4)
 
 > Round 5 全量审计 Domain 4 完成后，修复 2 HIGH + 2 MED 共 4 项。文件 3 个，编译通过。

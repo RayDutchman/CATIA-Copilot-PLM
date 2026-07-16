@@ -125,6 +125,40 @@ class AccountService:
         if not existing:
             raise EntityNotFoundException("AccountNotFoundException", login)
 
+        # P5-21: 在 replica 模式前，于正常 FK 约束下置空所有引用 login 的列，
+        # 避免删除 account 后残留 dangling FK 引用。
+        author_tables = [
+            "changeissue", "changeorder", "changerequest",
+            "configurationitem", "documentbaseline", "documentcollection",
+            "documentiteration", "documentmaster", "documentmastertemplate",
+            "documentrevision", "layer", "marker",
+            "partcollection", "partiteration", "partmaster", "partmastertemplate",
+            "partrevision", "productbaseline", "productconfiguration",
+            "productinstanceiteration", "query", "sharedentity", "workflowmodel",
+        ]
+        for t in author_tables:
+            db.execute(text(f"UPDATE {t} SET author_login = NULL WHERE author_login = :login"), {"login": login})
+
+        for t in ["changeissue", "changeorder", "changerequest"]:
+            db.execute(text(f"UPDATE {t} SET assignee_login = NULL WHERE assignee_login = :login"), {"login": login})
+
+        for t in ["documentrevision", "partrevision"]:
+            db.execute(text(f"UPDATE {t} SET checkoutuser_login = NULL WHERE checkoutuser_login = :login"), {"login": login})
+            db.execute(text(f"UPDATE {t} SET obsolete_user_login = NULL WHERE obsolete_user_login = :login"), {"login": login})
+            db.execute(text(f"UPDATE {t} SET release_user_login = NULL WHERE release_user_login = :login"), {"login": login})
+
+        db.execute(text("UPDATE import SET user_login = NULL WHERE user_login = :login"), {"login": login})
+        db.execute(text("UPDATE modificationnotification SET ackauthor_login = NULL WHERE ackauthor_login = :login"), {"login": login})
+        db.execute(text("UPDATE organization SET owner_login = NULL WHERE owner_login = :login"), {"login": login})
+        db.execute(text("UPDATE task SET worker_login = NULL WHERE worker_login = :login"), {"login": login})
+
+        for t in ["documentlog", "partlog", "workspacelog"]:
+            db.execute(text(f"UPDATE {t} SET userlogin = NULL WHERE userlogin = :login"), {"login": login})
+
+        # NOT NULL 外键列 → 必须先删记录（引用 userdata，userdata 随后被删）
+        db.execute(text("DELETE FROM acluserentry WHERE principal_login = :login"), {"login": login})
+        db.execute(text("DELETE FROM task_user WHERE user_login = :login"), {"login": login})
+
         # 关 FK 触发器，安全清理所有引用 account.login 的关联表
         db.execute(text("SET LOCAL session_replication_role='replica'"))
 

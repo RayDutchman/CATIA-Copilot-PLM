@@ -12,8 +12,6 @@ class ProductInstanceIterationDTO(BaseModel):
     iteration: Optional[int] = None
     iterationNote: Optional[str] = None
     configurationItemId: Optional[str] = None
-    updateAuthor: Optional[str] = None
-    updateAuthorName: Optional[str] = None
     modificationDate: Optional[datetime] = None
     baselinedParts: List["BaselinedPartDTO"] = []
     substituteLinks: List[str] = []
