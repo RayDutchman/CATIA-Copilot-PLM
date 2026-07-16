@@ -35,7 +35,6 @@ def _workspace_to_dict(r) -> dict:
         "description": r[1] or "",
         "enabled": bool(r[2]) if r[2] is not None else True,
         "folderLocked": bool(r[3]) if r[3] is not None else False,
-        "admin": r[4] or "",
     }
 
 
@@ -107,6 +106,7 @@ def remove_from_group(ws: str, gid: str, body: dict,
                        db: Session = Depends(get_db),
                        current_user: Account = Depends(get_current_user)):
     """从工作组移除用户。对齐 Java WorkspaceResource.removeUserFromGroup → 返回被操作 UserGroupDTO"""
+    _check_workspace_admin(db, ws, current_user)
     login = body.get("login", "")
     if not login:
         raise NotAllowedException("NotAllowedException9", login)

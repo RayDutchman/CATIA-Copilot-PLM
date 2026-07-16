@@ -11,7 +11,7 @@ from app.services.workflow_manager import workflow_service
 from app.schemas.workflow import (
     WorkflowDTO, WorkflowAbortedDTO, WorkspaceWorkflowMinimalDTO,
 )
-from app.schemas.misc import WorkspaceWorkflowDTO
+from app.schemas.workspace_workflow import WorkspaceWorkflowDTO
 
 router = APIRouter(prefix="/docdoku-plm-server-rest/api")
 PREFIX = "/workspaces/{ws}"
