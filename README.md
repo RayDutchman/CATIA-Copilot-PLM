@@ -11,105 +11,62 @@
 | 工具 | 版本要求 | 说明 |
 |------|---------|------|
 | Docker Engine | 24+ | 含 `docker compose`（Compose v2 插件） |
-| JDK | 11 | 后端构建（推荐 Eclipse Temurin 11） |
-| Maven | 3.6+ | 后端构建 |
-| Node.js | 14.x | 前端构建（v16+ 与 grunt 插件不兼容） |
+| Node.js | 14.x | 前端构建（推荐通过 [nvm](https://github.com/nvm-sh/nvm) 安装：`nvm install 14`） |
 
-> 在任意 Linux 发行版或 Windows WSL2 下均可部署。如果是 Windows 环境，请参考 [docs/setup/deployment-wsl2-docker.md](docs/setup/deployment-wsl2-docker.md) 完成 WSL2 和 Docker 的初始配置。
+> 在任意 Linux 发行版或 Windows WSL2 下均可部署。WSL2 配置参考 [docs/setup/deployment-wsl2-docker.md](docs/setup/deployment-wsl2-docker.md)。
 
 ---
 
-## 首次部署流程
-
-### 1. 克隆仓库
+## 首次部署
 
 ```bash
+# 1. 克隆仓库
 git clone https://github.com/RayDutchman/CATIA-Copilot-PLM.git
 cd CATIA-Copilot-PLM
+
+# 2. 构建所有镜像（约 5-10 分钟）
+./setup.sh build
+
+# 3. 启动服务
+./setup.sh up
 ```
 
-### 2. 构建后端基础镜像（仅首次，或清除 Docker 缓存后）
+服务就绪后访问 `http://localhost:8000`，注册账号后执行提权命令即可：
 
 ```bash
-bash scripts/build-base-image.sh
+# 将 <your-login> 替换为你注册的登录名
+docker exec docdoku-plm-docker-db-1 psql -U changeit -d docdokuplm \
+  -c "INSERT INTO usergroupmapping (login, groupname) VALUES ('<your-login>', 'admin') ON CONFLICT DO NOTHING;"
 ```
 
-这一步构建私有的 Payara 基础镜像（`docdoku/docdoku-plm-server-base:2.6.2`），包含 LibreOffice 等依赖，首次约需 10-20 分钟（取决于网速）。后续有缓存后可跳过。
+---
 
-### 3. 构建后端镜像
+## 日常命令
+
+| 命令 | 说明 |
+|------|------|
+| `./setup.sh up` | 启动服务 |
+| `./setup.sh down` | 停止服务 |
+| `./setup.sh status` | 查看容器状态 |
+| `./setup.sh logs [服务名]` | 查看日志（默认 back-py） |
+| `./setup.sh build` | 修改源码后重建所有镜像 |
+
+**单独重建某个服务**（日常开发用）：
+
+| 脚本 | 用途 |
+|------|------|
+| `scripts/rebuild-front.sh` | 只重建前端镜像 |
+| `scripts/build-i18n.sh` | 只重建国际化模块 |
+
+**数据迁移（跨机器）**：
 
 ```bash
-cd docdoku-plm-server
-mvn clean install -DskipTests
-docker build --build-arg VERSION=2.6.2 -f docker/Dockerfile -t docdoku/docdoku-plm-server:2.6.2 .
-cd ..
+# 旧机器导出
+cd docdoku-plm-docker && bash migrate.sh export
+
+# 新机器（git clone + ./setup.sh build 之后）
+cd docdoku-plm-docker && bash migrate.sh import
 ```
-
-首次 Maven 构建约需 5-15 分钟。
-
-### 4. 构建前端镜像
-
-需要 Node.js 14（推荐用 [nvm](https://github.com/nvm-sh/nvm) 管理版本）：
-
-```bash
-cd docdoku-plm-front
-nvm use 14   # 或 node 14 的其他切换方式
-npm install
-npm run build
-docker build -f docker/Dockerfile -t docdoku/docdoku-plm-front:2.6.2 .
-cd ..
-```
-
-### 5. 构建转换服务镜像
-
-转换服务将 STEP 文件转换为 GLB 格式供 3D 预览使用。仓库内已预置所有 Python wheels（离线安装，无需网络访问 PyPI）。
-
-转换服务依赖 `docdoku-plm-api-java`，需先单独构建该模块：
-
-```bash
-# 先构建 API 模块（约 3-5 分钟）
-cd docdoku-plm-api
-mvn install -DskipTests -pl docdoku-plm-api-base,docdoku-plm-api-java --also-make
-cd ..
-
-# 再构建转换服务
-cd docdoku-plm-conversion-service
-mvn package -DskipTests
-docker build -f Dockerfile.jvm -t docdoku/docdoku-plm-conversion-service:2.6.2 .
-cd ..
-```
-
-### 6. 启动所有服务
-
-```bash
-cd docdoku-plm-docker
-bash start.sh
-```
-
-`start.sh` 会自动创建数据目录、生成密钥库，然后启动全部容器。后端冷启动约需 1-3 分钟。
-
-### 7. 创建第一个管理员账号
-
-全新部署的数据库没有任何账号。需要先通过前端注册，再手动提权：
-
-**第一步：注册账号**
-
-访问 `http://localhost:8000`，点击"注册"创建一个账号（登录名自定，例如 `admin`）。
-
-**第二步：通过数据库提权为平台管理员**
-
-注册后该账号只是普通用户。执行以下命令将其提升为平台管理员：
-
-```bash
-# 将 <your-login> 替换为你在第一步注册的登录名
-docker exec -it docdoku-plm-docker-db-1 psql -U changeit -d docdokuplm -c \
-  "INSERT INTO usergroupmapping (login, groupname) VALUES ('<your-login>', 'admin')
-   ON CONFLICT (login) DO UPDATE SET groupname = 'admin';"
-```
-
-**第三步：验证**
-
-用该账号登录 `http://localhost:8000`，进入 **Workspace Management** 后台即可确认管理员权限生效。
 
 ---
 
@@ -117,39 +74,10 @@ docker exec -it docdoku-plm-docker-db-1 psql -U changeit -d docdokuplm -c \
 
 | 端口 | 服务 |
 |------|------|
-| 8000 | 前端 Web 界面（主入口） |
-| 8001 | 后端 REST API |
-| 8002 | Kibana（Elasticsearch 可视化） |
+| 8000 | 前端 Web 界面（主入口，nginx → back-py） |
+| 8005 | 对比端口（nginx → Payara，仅本地开发用） |
 | 8003 | MailHog（邮件调试） |
 | 8004 | Adminer（数据库管理） |
-| 9000 | HTTPS 反向代理 |
-
----
-
-## 日常运维命令
-
-```bash
-# 查看容器状态
-docker ps
-
-# 后续启动（不需要重新初始化）
-cd docdoku-plm-docker && docker compose up -d
-
-# 查看后端日志
-cd docdoku-plm-docker && docker compose logs -f back
-
-# 重启所有服务
-cd docdoku-plm-docker && docker compose restart
-```
-
-构建脚本在 `scripts/` 目录下，修改源码后使用对应脚本重建：
-
-| 脚本 | 用途 |
-|------|------|
-| `scripts/build-base-image.sh` | 构建 Payara 基础镜像（仅首次） |
-| `scripts/build-backend-full.sh` | 完整重建后端 |
-| `scripts/rebuild-front.sh` | 完整重建前端 |
-| `scripts/rebuild-conversion-service.sh` | 重建转换服务 |
 
 ---
 

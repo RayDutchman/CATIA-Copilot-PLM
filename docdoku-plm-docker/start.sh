@@ -26,12 +26,11 @@
 # 出错即退出
 set -e
 
-# ── 前置检查：确认三个私有镜像已构建 ────────────────────────
+# ── 前置检查：确认私有镜像已构建 ────────────────────────
 MISSING=""
 for img in \
-    "docdoku/docdoku-plm-server:2.6.2" \
     "docdoku/docdoku-plm-front:2.6.2" \
-    "docdoku/docdoku-plm-conversion-service:2.6.2"; do
+    "docdoku-plm-docker-back-py:latest"; do
     if ! docker image inspect "$img" > /dev/null 2>&1; then
         MISSING="$MISSING\n  - $img"
     fi
@@ -41,22 +40,7 @@ if [ -n "$MISSING" ]; then
     echo ""
     echo "❌ 以下镜像尚未构建，无法启动：$MISSING"
     echo ""
-    echo "请按 README.md「首次部署流程」中的步骤构建缺失的镜像："
-    echo ""
-    echo "  # 步骤 2：构建后端基础镜像（仅首次）"
-    echo "  bash ../scripts/build-base-image.sh"
-    echo ""
-    echo "  # 步骤 3：构建后端镜像"
-    echo "  cd ../docdoku-plm-server && mvn clean install -DskipTests"
-    echo "  docker build --build-arg VERSION=2.6.2 -f docker/Dockerfile -t docdoku/docdoku-plm-server:2.6.2 ."
-    echo ""
-    echo "  # 步骤 4：构建前端镜像（需要 Node.js 14）"
-    echo "  cd ../docdoku-plm-front && npm install && npm run build"
-    echo "  docker build -f docker/Dockerfile -t docdoku/docdoku-plm-front:2.6.2 ."
-    echo ""
-    echo "  # 步骤 5：构建转换服务镜像"
-    echo "  cd ../docdoku-plm-conversion-service && mvn package -DskipTests"
-    echo "  docker build -f Dockerfile.jvm -t docdoku/docdoku-plm-conversion-service:2.6.2 ."
+    echo "请在仓库根目录执行：  ./setup.sh build"
     echo ""
     exit 1
 fi

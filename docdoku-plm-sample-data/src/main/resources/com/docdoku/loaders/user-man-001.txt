@@ -1,4 +1,0 @@
-# Success !
-
-This file has been uploaded with DocDokuPLM sample Loader
-
