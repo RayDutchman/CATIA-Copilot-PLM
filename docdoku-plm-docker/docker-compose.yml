@@ -133,7 +133,7 @@ services:
     networks:
       - network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U changeit"]
+      test: ["CMD-SHELL", "pg_isready -U changeit -d docdokuplm"]
       interval: 5s
       timeout: 5s
       retries: 10

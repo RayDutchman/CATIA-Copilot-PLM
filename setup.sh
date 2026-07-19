@@ -28,7 +28,7 @@ case "$cmd" in
 
     up)
         echo "=== CATIA-Copilot-PLM: 启动服务 ==="
-        for img in "docdoku/docdoku-plm-front:2.6.2" "docdoku-plm-docker-back-py:latest"; do
+        for img in "docdoku/docdoku-plm-front:2.6.2" "docdoku-plm-docker-back-py:latest" "docdoku/docdoku-plm-conversion-service:2.7.0-py"; do
             if ! docker image inspect "$img" > /dev/null 2>&1; then
                 echo "❌ 镜像 $img 不存在，请先运行：./setup.sh build" >&2
                 exit 1
@@ -73,7 +73,7 @@ case "$cmd" in
         ;;
 
     help|--help|-h|"")
-        grep "^#" "${BASH_SOURCE[0]}" | head -12 | sed 's/^# //' | sed 's/^#//'
+        grep "^# " "${BASH_SOURCE[0]}" | head -12 | sed 's/^# //'
         ;;
 
     *)
