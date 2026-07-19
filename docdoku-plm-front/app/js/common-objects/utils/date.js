@@ -89,7 +89,7 @@ define([
                 //var dateUTCWithOffset = moment.utc(_date, App.config.i18n._DATE_FORMAT).toDate().getTime();
                 //moment(dateUTCWithOffset).utc();
 
-                var utcDate = moment(_date, App.config.i18n._DATE_FORMAT).utc();
+                var utcDate = moment.tz(_date, App.config.i18n._DATE_FORMAT, timeZone).utc();
                 var fromNow = utcDate.fromNow();
 
                 $(this).popover({

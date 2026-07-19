@@ -118,14 +118,19 @@ define([
         ContextResolver.prototype.resolveServerProperties = function (relativeLocation) {
             return $.getJSON(relativeLocation + '/webapp.properties.json?__BUST_CACHE__').then(function (properties) {
 
-                var isSSL = properties.server.ssl;
-                var base = '://' + properties.server.domain + ':' + properties.server.port + addTrailingSlash(properties.server.contextPath);
-                var wsBase = properties.server.wsDomain ? '://' + properties.server.wsDomain + ':' + properties.server.port + addTrailingSlash(properties.server.contextPath) : base;
-                App.config.serverBasePath = (isSSL ? 'https' : 'http') + base;
-                App.config.apiEndPoint = (isSSL ? 'https' : 'http') + base + 'api';
-                App.config.webSocketEndPoint = (isSSL ? 'wss' : 'ws') + wsBase + 'ws';
-                App.config.contextPath = addTrailingSlash(properties.contextPath);
-                App.config.preferLoginWith = properties.preferLoginWith;
+                // 直接从浏览器当前 URL 推导 domain/port/ssl，
+                // 不再依赖 nginx sub_filter 注入的字段（domain/port/ssl/wsDomain）。
+                // 无论通过 localhost:8000、内网 IP、还是任何公网域名+端口访问，均自动正确。
+                var isSSL = window.location.protocol === 'https:';
+                var hostname = window.location.hostname;
+                var port = window.location.port || (isSSL ? '443' : '80');
+                var base = '://' + hostname + ':' + port + addTrailingSlash(properties.server.contextPath);
+
+                App.config.serverBasePath    = (isSSL ? 'https' : 'http') + base;
+                App.config.apiEndPoint       = (isSSL ? 'https' : 'http') + base + 'api';
+                App.config.webSocketEndPoint = (isSSL ? 'wss'  : 'ws')   + base + 'ws';
+                App.config.contextPath       = addTrailingSlash(properties.contextPath);
+                App.config.preferLoginWith   = properties.preferLoginWith;
 
                 if(typeof properties.debug !== 'undefined'){
                     App.setDebug(properties.debug);
