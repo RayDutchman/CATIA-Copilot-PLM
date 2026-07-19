@@ -15,6 +15,9 @@
 | FE-01 | HIGH | 新建工作区 `POST /api/workspaces` 返回 500，但工作区实际已创建 | 后端响应序列化（ResponseValidationError） | ✅ 已修复（2026-07-16） |
 | FE-02 | 非 bug（数据残留） | :8000 parts 列表比 :8005 缺很多列 | GD50 残留列自定义数据 + Payara L2 缓存陈旧 | 已定位根因 |
 | FE-03 | HIGH | 自定义零件表格列：可选属性列显示 "undefined"（应显示 Source/设计状态/材料） | 后端双路由遮蔽：List[str] 版本覆盖了对象数组版本 | ✅ 已修复（2026-07-16） |
+| FE-08 | HIGH | test1 无法创建零件（save iteration 422），签入也 422 | PartIterationUpdateDTO `extra='forbid'` 拒绝 Backbone save() 合并的 model 属性 | ✅ 已修复（2026-07-16） |
+| FE-07 | HIGH | 协作者菜单：图标全灰（不绿/红）、消息发不出去 | WebSocket USER_STATUS/CHAT_MESSAGE 模块协议全写错（与前端 + Java 不一致） | ✅ 已修复（2026-07-16） |
+| FE-06 | MED | 日期悬浮框：用户时区 ≠ 浏览器时区时，UTC 参考时间与相对时间（"X 小时前"）错误偏移 | 前端 date.js 用浏览器本地时区解析已按用户时区格式化的字符串（双重偏移） | ✅ 已修复（2026-07-16，前端已重建） |
 | FE-05 | HIGH | :8000 注册成功后跳转 `?denied=true`，提示"请先登录"（:8005 正常自动登录） | 后端注册端点未返回 jwt 响应头 + 漏插 usergroupmapping | ✅ 已修复（2026-07-16） |
 | FE-04 | HIGH | CATIA-Copilot 查 GD50_Frame latest-revision 报 403（:8005 返回 200） | 双重缺陷：ACL 检查用平台 admin 而非工作区 admin + 空 ACL 残留数据 | ✅ 已修复（2026-07-16） |
 
@@ -226,3 +229,94 @@ subagent 全面 review 结论：**Ready to merge**，无 Critical。`_ACL_REFERE
 4. 存量补数据：7 个缺行账号（alice/bob/chenweibo/e/SEED-20260712-*×3）已 INSERT users 组行
 
 实测：:8000 注册 fe05test → 201 + jwt 头（groupName=users）；usergroupmapping 落库；bob 与 fe05test 在 :8005 登录均 200（原 500）；登录 token 访问 /accounts/me 200。pytest 282 passed 零回归，镜像已 rebuild。遗留：测试账号 fe05test 保留在库（delete_account 级联不全 P5-21，不冒险删）。
+
+
+---
+
+## FE-06 — 日期悬浮框 UTC/相对时间双重偏移（前端遗留 bug，两端口同病）
+
+**严重级**：MED（仅显示错误，不影响数据；用户时区 = 浏览器时区时被掩盖）
+**现象**（用户报告，同一时刻）：
+- 用户时区 Asia/Shanghai（= 浏览器时区）：显示 `2026-07-16 18:37:30`，悬浮框「1小时前」+ UTC `2026-07-16 10:37:30` —— 全部正确
+- 用户时区改为 UTC 后：显示 `2026-07-16 10:37:30`（正确），但悬浮框「9小时前」+ UTC `2026-07-16 02:37:30` —— 双双多减 8 小时
+
+**根因**：`app/js/common-objects/utils/date.js:93` `dateHelperWithPlacement()`：
+```js
+var _date = $(this).text();  // 已按【用户时区】格式化的字符串（formatTimestamp 输出）
+var utcDate = moment(_date, App.config.i18n._DATE_FORMAT).utc();  // ★ moment() 按【浏览器本地时区】解析
+var fromNow = utcDate.fromNow();
+```
+悬浮框把「按用户时区格式化后的字符串」按**浏览器时区**重新解析回 epoch：
+- 用户时区 == 浏览器时区时两次转换抵消，偶然正确（多数用户长期未察觉）
+- 用户时区 ≠ 浏览器时区时产生 `browserOffset - userOffset` 的偏移（本例 UTC 用户 + Shanghai 浏览器 = -8h），UTC 参考和 fromNow 同错
+
+**判定**：纯前端 bug，`date.js` 为 12 个 SPA 共享（26 处 dateHelper 调用点全部受影响），与后端无关，:8000/:8005 行为一致 → 上游 DocDoku 遗留 bug，非迁移回归。
+
+**修法（未执行）**：`date.js` `dateHelperWithPlacement` 中改用用户时区解析（momentTimeZone 已加载，文件顶部已有 `timeZone` 变量）：
+```js
+var utcDate = moment.tz(_date, App.config.i18n._DATE_FORMAT, timeZone).utc();
+```
+一行改动。**已实施（2026-07-16）**：date.js 已改 + npm run build + 镜像重建 + front 容器重建（:8000/:8005 均 200）。
+验证点：用户时区切 UTC 后，悬浮框 UTC 参考时间应与主显示一致、fromNow 恢复真实差值；再切回 Asia/Shanghai 验证不回归。
+
+
+---
+
+## FE-07 — 协作者菜单图标全灰 + 消息不送达（WebSocket 协议错写，FastAPI 迁移事故）
+
+**严重级**：HIGH（协作者在线状态 + 聊天 = WebSocket 核心功能全坏）
+**现象**（test1 登录 :8000）：
+- 协作者菜单所有用户图标全灰（:8005 在线=绿色，离线=红色）
+- 给在线用户发消息对方收不到，发送者无 ACK
+- :8005 全部正常
+
+**根因**：WebSocket 两个关键模块协议与前端完全不同：
+
+1. **status_module.py（旧代码）**：`can_decode` 只认 `STATUS_SUBSCRIBE/STATUS_UNSUBSCRIBE/STATUS_UPDATE`
+   - 前端实际发送的是 **`USER_STATUS`**（channelMessagesType.js → `'USER_STATUS'`）
+   - Java `StatusWebSocketModuleImpl.java:258-286` 处理 `USER_STATUS`，查 `hasSessions(remoteUser)` → 回复 `USER_STATUS_ONLINE/OFFLINE`
+   - 旧模块→不匹配→无回复→前端 `UserStatusRequestDone` 回调永不来→图标保持默认灰色
+
+2. **chat_module.py（旧代码）**：`can_decode` 认 `CHAT_JOIN/CHAT_LEAVE/CHAT_MESSAGE/CHAT_USER_LIST`
+   - 前端从不发 CHAT_JOIN（chat_session_view.js 直接发 CHAT_MESSAGE），旧代码进不了 room → 消息丢弃
+   - Java `ChatWebSocketModuleImpl.java:326-390` 处理 `CHAT_MESSAGE` → 查 `hasSessions(remoteUser)` → 在线则 `broadcast` ACK+转发，不在线则回复 `UNREACHABLE`
+   - 旧模块→消息丢失→前端收到无响应
+
+**修复（app/ws/ 三个文件重写）**：
+1. `status_module.py`：完整对齐 Java StatusWebSocketModuleImpl
+   - `can_decode` → `msg.type == "USER_STATUS"`
+   - `process` → `is_allowed_to_reach_user` 校验 + `has_sessions` 查在线 → 回复 `USER_STATUS_ONLINE/OFFLINE`
+2. `chat_module.py`：完整对齐 Java ChatWebSocketModuleImpl
+   - `can_decode` → `msg.type == "CHAT_MESSAGE"`
+   - `process` → `has_sessions` 判断在线/离线 → 在线 `broadcast` CHAT_MESSAGE_ACK(发送者) + CHAT_MESSAGE(接收者)；离线回复 UNREACHABLE
+3. `sessions_manager.py`：新增 `is_allowed_to_reach_user(sender, remote_user)` 方法
+   - SQL：`SELECT 1 FROM userdata u1 JOIN userdata u2 ON u1.workspace_id=u2.workspace_id` 检查共享工作区
+   - `broadcast` 改为 `asyncio.gather` 并发发送（`asyncio` import 已补）
+
+**验证**：pytest 282 passed；WebSocket :8000 经 nginx 实测：AUTH OK、USER_STATUS 正确返回 alice=OFFLINE、CHAT_MESSAGE 正确返回 UNREACHABLE。
+
+**补充修复（跨后端会话隔离）**：nginx 端口 85（:8005）的 WebSocket location 原  到 (Payara)→改为 (FastAPI)，使 :8000/:8005 两端共享同一 back-py WebSocket 会话池。无论从哪个端口访问，在线状态与聊天互通。
+
+
+---
+
+## FE-08 — 零件 iteration 更新 422（PartIterationUpdateDTO extra=forbid，FastAPI 迁移回归）
+
+**严重级**：HIGH（阻断零件创建 + 签入流程，TESTR7 + GD50 全部受影响；test1 无法完成任何零件操作）
+**现象**：test1 在 TESTR7 新建零件 → 前端 `getLastIteration().save()` → `PUT .../iterations/1` → 422 Unprocessable Entity。签入迭代时同样 422。
+:8005 Payara 同操作正常。
+
+**根因**：Backbone `Model.save()` 会把**显式传入的 attributes 与 model 上已有的全部 attributes 合并**再发 PUT。例如迭代 model 已有 `number/version/iteration/workspaceId/name/attachedFiles/nativeCADFile` 等字段，前端只传 `{instanceAttributes, instanceAttributeTemplates}`，实际 HTTP body 包含全部 model 属性。
+
+`PartIterationUpdateDTO` 使用 `extra='forbid'` → 所有 model 自带字段被 FastAPI 验证拒绝 → 422：
+```
+{"type":"extra_forbidden","loc":["body","number"],"msg":"Extra inputs are not permitted"}
+{"type":"extra_forbidden","loc":["body","version"],"msg":"Extra inputs are not permitted"}
+...共 7 个字段
+```
+
+Java `PartResource.java:224-231` 接收 `PartIterationDTO`（JAX-RS 自动 JSON→DTO，无 schema 验证）→ 不拒绝多余字段 → :8005 正常。
+
+**修复**：`PartIterationUpdateDTO.model_config` `extra='forbid'` → `extra='ignore'`。pytest 282 passed；镜像 rebuild。实测：带 number/version/iteration/workspaceId/name/attachedFiles 等完整 Backbone extras 的 PUT → 200；签入同样 200（checkOutUser=null、checkInDate 正确）。
+
+**附带影响排查**：其余 `extra='forbid'` 的 schema（change_item、milestone、workflow、layer、marker、configuration_item 等约 20 个）暂未在此修复中处理——这些不一定是 Backbone save() 的 DTO，后续实测到同类问题再逐个处理。

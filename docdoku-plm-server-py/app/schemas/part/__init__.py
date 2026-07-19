@@ -25,7 +25,7 @@ class GeneratedIdDTO(BaseModel):
 
 
 class PartIterationUpdateDTO(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')  # Backbone save() 合并全 model attributes（含 number/version/name 等），ignore 而非 forbid
     iterationNote: Optional[str] = None
     instanceAttributes: Optional[List[dict]] = None
     instanceAttributeTemplates: Optional[List[dict]] = None

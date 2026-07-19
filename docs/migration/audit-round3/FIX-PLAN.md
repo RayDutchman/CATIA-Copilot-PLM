@@ -55,6 +55,28 @@
 
 **累计**：routers/ 目录内联 DB 操作 ~350 → **~0**。3 大胖路由平均缩小 55%。所有 service 文件从空壳/绕过状态变为真实现。
 
+## 残余复核与收口（2026-07-16）
+
+> **分层原则修订（用户确认）**：service 层已有对应方法的，router 不得内联 DB（绕过即问题）；service 层**没有**对应服务的简单 DB 操作（琐碎查询/权限检查/DTO 拼装/EXISTS 校验），**允许保留在 router 层**，不再强制迁移。
+
+全量复核 21 个仍含 `db.execute`/`db.query` 的 router 文件（共 109 处），逐处分类：
+
+| 分类 | 处数 | 处置 |
+|------|------|------|
+| A 类：绕过已有 service | 5 | ✅ 已迁移（见下） |
+| B 类：service 无对应服务 | 100 | 按修订原则允许保留 |
+| C 类：非业务 DB（健康检查/EXISTS） | 4 | 允许保留 |
+
+A 类迁移明细（2026-07-16，pytest 282 passed，GD50 烟测 filter/bom/path-choices/instances 全 200、缺失 CI 语义不变）：
+- `products.py` filter_structure / bom：内联 admin SQL → `user_mgmt_service.is_account_admin`
+- `products.py` path_choices：内联 CI EXISTS SQL → `svc.get_ci`（同样 404）
+- `product_instances.py` list_instances / instances_for_multiple_paths：内联 ConfigurationItem 查询 → `svc.get_ci` + EntityNotFoundException→[]（语义不变）
+- 顺带清理 `products.py` 失效的 `from sqlalchemy import text` import
+
+主要 B 类聚集地（记录备查，无需行动）：parts.py(36，全部是 query/queryrule 自定义查询 CRUD 子系统，无 service)、product_baselines.py(13，service 返回 dict 而 router DTO 拼装需 ORM)、auth.py(10，Java AuthResource 同样在 Resource 层直接操作)、layers.py(9，Java LayerResource 亦直接操作 EntityManager，Batch 6 既定决策保留 thin 实现)。
+
+**本 FIX-PLAN 就此关闭，无遗留。**
+
 ---
 
 ## Batch 1：消除跨文件重复（P0~P2 优先级）

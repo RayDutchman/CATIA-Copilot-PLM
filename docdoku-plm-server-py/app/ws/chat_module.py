@@ -1,19 +1,21 @@
-"""聊天 WebSocket 模块（对标 ChatWebSocketModule + ChatWebSocketModuleImpl）。
+"""聊天 WebSocket 模块（对标 ChatWebSocketModule + Impl）。
 
-消息类型: CHAT_JOIN / CHAT_LEAVE / CHAT_MESSAGE
-房间管理委托给 room.py。
+消息类型: CHAT_MESSAGE（前端直接发送点对点消息，不需要先 JOIN room）。
+对齐 Java ChatWebSocketModuleImpl:325-393
+
+前端期望：CHAT_MESSAGE 含 remoteUser/context/message/sender
+→ 后端回复 CHAT_MESSAGE_ACK 给发送者，转发 CHAT_MESSAGE 给接收者
+→ 接收者离线 → 回复 CHAT_MESSAGE UNREACHABLE
 """
-import json
 import logging
 from fastapi import WebSocket
 from app.ws.module import WebSocketModule
 from app.ws.message import WSMessage
 from app.ws.sessions_manager import ws_sessions
-from app.ws.room import room_manager
 
 _logger = logging.getLogger(__name__)
 
-CHAT_TYPES = {"CHAT_JOIN", "CHAT_LEAVE", "CHAT_MESSAGE", "CHAT_USER_LIST"}
+CHAT_TYPES = {"CHAT_MESSAGE"}
 
 
 class ChatModule(WebSocketModule):
@@ -22,45 +24,45 @@ class ChatModule(WebSocketModule):
         return msg.type in CHAT_TYPES
 
     async def process(self, user_login: str, websocket: WebSocket, msg: WSMessage):
-        msg_type = msg.type
+        remote_user = msg.get_string("remoteUser")
+        context = msg.get_string("context") or ""
+        message = msg.get("message", "")
+        sender = msg.get_string("sender") or user_login
 
-        if msg_type == "CHAT_JOIN":
-            ctx = msg.get_string("context")
-            room = room_manager.get_or_create(ctx)
-            room.add_session(user_login, websocket)
-            # 广播加入事件
-            for other in room.get_users():
-                if other != user_login:
-                    await ws_sessions.broadcast(other, {
-                        "type": "CHAT_JOIN", "user": user_login, "context": ctx,
-                    })
+        if not remote_user:
+            return
+        if not ws_sessions.is_allowed_to_reach_user(user_login, remote_user):
+            return
+
+        if not ws_sessions.has_sessions(remote_user):
             await ws_sessions.send(websocket, {
-                "type": "CHAT_USER_LIST",
-                "users": list(room.get_users()),
+                "type": "CHAT_MESSAGE",
+                "remoteUser": remote_user,
+                "sender": "",
+                "message": "",
+                "context": context,
+                "error": "UNREACHABLE",
             })
+            return
 
-        elif msg_type == "CHAT_LEAVE":
-            ctx = msg.get_string("context")
-            room = room_manager.get_or_create(ctx)
-            room.remove_session(user_login, websocket)
-            for other in room.get_users():
-                if other != user_login:
-                    await ws_sessions.broadcast(other, {
-                        "type": "CHAT_LEAVE", "user": user_login, "context": ctx,
-                    })
-
-        elif msg_type == "CHAT_MESSAGE":
-            ctx = msg.get_string("context")
-            body = msg.get("message", "")
-            room = room_manager.get_or_create(ctx)
-            for other in room.get_users():
-                if other != user_login:
-                    await ws_sessions.broadcast(other, {
-                        "type": "CHAT_MESSAGE",
-                        "user": user_login,
-                        "context": ctx,
-                        "message": body,
-                    })
+        ack = {
+            "type": "CHAT_MESSAGE_ACK",
+            "remoteUser": remote_user,
+            "sender": sender,
+            "message": message,
+            "context": context,
+            "error": "",
+        }
+        forwarded = {
+            "type": "CHAT_MESSAGE",
+            "remoteUser": sender,
+            "sender": sender,
+            "message": message,
+            "context": context,
+            "error": "",
+        }
+        await ws_sessions.broadcast(user_login, ack)
+        await ws_sessions.broadcast(remote_user, forwarded)
 
 
 chat_module = ChatModule()

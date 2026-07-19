@@ -2,6 +2,7 @@
 
 维护 user_login → List[WebSocket] 映射，管理会话生命周期、广播发送。
 """
+import asyncio
 import logging
 from typing import Optional
 from fastapi import WebSocket
@@ -61,8 +62,31 @@ class WSSessionsManager:
 
     async def broadcast(self, user_login: str, data: dict):
         """向某用户的所有 WebSocket 连接广播消息。"""
-        for ws in self.get_sessions(user_login):
-            await self.send(ws, data)
+        tasks = [self.send(ws, data) for ws in self.get_sessions(user_login)]
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    def is_allowed_to_reach_user(self, sender: str, remote_user: str) -> bool:
+        """检查两个用户是否共享至少一个工作区（对齐 Java UserManagerBean.hasCommonWorkspace）。"""
+        import threading
+        # WebSocket 模块不在 FastAPI 请求上下文中，需手动创建 DB session
+        try:
+            from app.core.database import SessionLocal
+            db = SessionLocal()
+            try:
+                row = db.execute(
+                    __import__('sqlalchemy').text(
+                        "SELECT 1 FROM userdata u1 "
+                        "JOIN userdata u2 ON u1.workspace_id = u2.workspace_id "
+                        "WHERE u1.login = :s AND u2.login = :r LIMIT 1"
+                    ), {"s": sender, "r": remote_user}
+                ).first()
+                return row is not None
+            finally:
+                db.close()
+        except Exception:
+            _logger.exception("is_allowed_to_reach_user 查询失败")
+            return False
 
 
 ws_sessions = WSSessionsManager()

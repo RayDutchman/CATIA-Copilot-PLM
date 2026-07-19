@@ -57,13 +57,13 @@ def list_instances(ws: str, ci_id: str,
         return product_instance_service.list_instances(db, ws, ci_id)
 
     # 3D 实例模式：对齐 Java ProductResource.getFilteredInstances
-    from app.models.product.configuration_item import ConfigurationItem
     from app.models.part import PartMaster
-    ci = db.query(ConfigurationItem).filter(
-        ConfigurationItem.workspace_id == ws,
-        ConfigurationItem.id == ci_id,
-    ).first()
-    if not ci or not ci.partmaster_partnumber:
+    from app.core.exceptions import EntityNotFoundException
+    try:
+        ci = svc.get_ci(db, ws, ci_id)
+    except EntityNotFoundException:
+        return []
+    if not ci.partmaster_partnumber:
         return []
 
     # 解析 configSpec → PS filter
@@ -145,18 +145,18 @@ def instances_for_multiple_paths(ws: str, ci_id: str, body: dict,
                                   current_user: Account = Depends(get_current_user),
                                   db: Session = Depends(get_db)):
     """按多路径批量收集 3D 实例数据（对齐 Java getInstancesForMultiplePath）。"""
-    from app.models.product.configuration_item import ConfigurationItem
     from app.models.part import PartMaster, PartUsageLink
+    from app.core.exceptions import EntityNotFoundException
 
     config_spec = body.get("configSpec", "")
     paths = body.get("paths", [])
     body_diverge = body.get("diverge", False)
 
-    ci = db.query(ConfigurationItem).filter(
-        ConfigurationItem.workspace_id == ws,
-        ConfigurationItem.id == ci_id,
-    ).first()
-    if not ci or not ci.partmaster_partnumber:
+    try:
+        ci = svc.get_ci(db, ws, ci_id)
+    except EntityNotFoundException:
+        return []
+    if not ci.partmaster_partnumber:
         return []
 
     ps_filter = None

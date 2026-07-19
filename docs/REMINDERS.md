@@ -39,7 +39,7 @@
 > - 统一 `_fmt_date`(5个重复) → `format_iso_date()`（date_utils.py）
 > - **Payara 对齐修正**：user_groups/users 删除 admin 检查（Java 无此限制）；roles 改为 service 层 write-access 检查
 > - ⚠️ 子要点 ①(参数注解) ②(路径一致性) ③(response_model) 未覆盖，需独立审计
-> - FIX-PLAN: `docs/migration/audit-round3/FIX-PLAN.md`（Batch 2~7 待执行）
+> - FIX-PLAN: `docs/migration/audit-round3/FIX-PLAN.md` — **✅ 全部关闭（2026-07-16 复核收口）**：Batch 1~7 已于 2026-07-12 完成（见 FIX-PLAN 进展表）；2026-07-16 残余复核 109 处 router 内联 DB → 5 处 A 类（绕过已有 service）已迁移，其余 104 处按修订原则（service 无对应服务的简单 DB 允许留 router）合规保留，无遗留
 > - pytest 基线无新增失败
 
 ### 🟠 第二轮全量审计 + 独立复核（2026-07-12，见 docs/migration/audit-round2/00-index.md + FIX-PLAN.md）
@@ -81,6 +81,10 @@
 > HIGH(30)/MEDIUM(47)/LOW(16) 详见各域报告。需用户决策项：状态码 204 vs 200+body 是否强制对齐、CH-3/TASK-3 功能增强是否保留、SNS/OAuth 是否本期实现。
 
 ### 高优先级
+
+- [ ] **远程访问固化** — Lucky 反向代理16666端口已通，需注意：① nft 手动规则重启后丢失（已用 UCI 持久化）；② Lucky 重启会自动更新 `lucky666.cn_auto` 链；③ 端口8080从外网不通（ASUS 路由器/ISP 封锁），只能用高端口
+- [ ] ~~ASUS XD4 Pro 端口封锁排查~~ — 已确认 AP 模式无影响，**端口封锁来自 ISP（电信 CGNAT 上游）**，8080/8888/9090 等常见端口被封，高端口16666正常
+- [ ] **Lucky + OpenClash IPv6 共存** — OpenClash `ipv6_mode=0` 会阻断 IPv6 入站，需配置旁路规则（待开 OpenClash 后处理）
 
 - [x] **Workflow role_mapping 结构性修复 (2026-07-07)** — 多对多表已接入
 - [ ] **3D 预览不显示** — Three.js r90 交互差异，需升级或抓包

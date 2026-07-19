@@ -6,6 +6,19 @@
 
 ---
 
+## 2026-07-18 — feat: Lucky 反向代理 + IPv6 远程访问链路打通
+
+> 通过 Dynv6 DDNS + Lucky 反向代理实现从公网（手机5G）访问 PLM 系统。发现端口8080被上游设备拦截，改用16666端口解决。
+
+- **feat(iStoreOS): Lucky 反向代理端口16666** — Lucky 监听 `:::16666`，反向代理 `plm.loree.dynv6.net:16666` → `10.0.0.101:8000`（Windows PLM 后端）
+- **feat(iStoreOS): nftables 防火墙 DNAT** — WAN TCP 80 DNAT 到16666（IPv4+IPv6），input_wan 放行16666
+- **feat(iStoreOS): UCI 持久化** — `Allow-Lucky-Proxy`(16666)、`Allow-Lucky-Admin`(16601)、`Lucky-Port80-DNAT`(80→16666) 三条规则通过 UCI 固化
+- **fix(Lucky): DDNS 绑定 br-lan IPv6** — DDNS 检测改为 `br-lan` 网卡（`2408:8256:ab5:a3a0::1`），不再用 PPPoE 链路地址
+- **发现: 端口8080/8888/9090 从外网不可达** — ISP（中国电信 CGNAT 上游）封锁常见端口，仅高端口（16601/16666）放行。ASUS XD4 Pro 为 AP 模式不参与路由
+- **访问地址**: `http://plm.loree.dynv6.net:16666` (手机5G已验证)
+- **域名**: `loree.dynv6.net`（Dynv6 免费DDNS，无需实名验证）
+- **防火墙放行端口**: 80(DNAT→16666)、16601(Lucky管理)、16666(反向代理)
+
 ## 2026-07-16 — fix: FE-04 零件 ACL 权限判定 + 空 ACL 语义修复（back-py）
 
 > 用户报 CATIA-Copilot 查 GD50_Frame latest-revision 403（:8005 为 200）。修改集中在 `acl_factory.py`，pytest 282 passed，实测 :8000/:8005 对拍一致。详见 `docs/migration/audit-round6-frontend/00-index.md` FE-04。
@@ -14,6 +27,36 @@
 - **fix(acl_factory): 空 ACL 删除语义** — `apply_acl` 两组条目均为空时删除 ACL（先清 11 张业务表 acl_id 引用避免 FK violation）并返回 None，对齐 Java `removeACLFromPartRevision` 语义；此前保留空 enabled ACL 行导致全员 403。
 - **fix(acl_factory): 零件 ACL 数组格式 500（潜伏 bug）** — `PUT /parts/{key}/acl` 的 ACLDTO 数组格式 `[{key,value}]` 直达 `apply_acl.items()` 崩溃；新增 `_normalize_entries()` 兼容数组/dict 两种格式。迁移以来零件 ACL 设置在 :8000 从未可用。
 - **chore(db): 清理存量空 ACL** — acl 63/154（round-5 审计脚本残留）按 11 张表清引用后删除。
+
+## 2026-07-19 — refactor: 抛弃 webapp.properties.json domain/port/ssl 注入机制（前端+nginx）
+
+> 根治公网访问 ERR_CERT_AUTHORITY_INVALID 问题：nginx sub_filter 把 port 硬编码注入 443，公网走 lucky 反代端口 16666 时拼出错误 API URL。现改为前端直接读 window.location，与访问域名/端口永远一致。
+
+- **refactor(front/contextResolver.js): 用 window.location 替代 JSON 注入的 domain/port/ssl** — resolveServerProperties() 改为 `window.location.protocol/hostname/port`，只从 JSON 读 server.contextPath（API 路由前缀，与 URL 无关）。无论 localhost/内网/公网/任何端口，API URL 自动正确。
+- **refactor(front/webapp.properties.json + env/front.json): 删除 ssl/domain/port/wsDomain 四字段** — JSON 精简为只含 server.contextPath / contextPath / preferLoginWith。
+- **refactor(nginx.conf): 删除两个 server block 中的 sub_filter 块及 \$plm_port/\$plm_ssl 变量** — nginx.conf 大幅简化，不再需要感知外部端口。nginx reload 生效（bind mount，无需重建镜像）。
+- 前端 npm build + docker build --no-cache + compose up front（contextResolver.js 改动需要重建）。
+
+## 2026-07-16 — fix: FE-07 协作者菜单 WebSocket 协议全错（back-py）
+
+> 含跨后端会话隔离修复（nginx :8005 ws→back-py 统一会话池）。WebSocket 两个关键模块（status/chat）与前端 + Java 协议完全不一致，协作者菜单图标全灰、消息永不送达。pytest 282 passed，:8000 ws 实测 USER_STATUS + CHAT_MESSAGE 正确响应。CHANGELOG 前序更比详见 audit-round6-frontend/00-index.md。
+
+- **fix(ws/status_module): 完整对齐 Java StatusWebSocketModuleImpl** — 旧代码 can_decode 只认 STATUS_SUBSCRIBE/UNSUBSCRIBE/UPDATE（未使用过的假协议），前端实际发 USER_STATUS。重写为 `msg.type=="USER_STATUS"` → has_sessions 查在线 → 回复 USER_STATUS_ONLINE/OFFLINE。
+- **fix(ws/chat_module): 完整对齐 Java ChatWebSocketModuleImpl** — 旧代码要求前台先发 CHAT_JOIN（前端从不发），消息全部丢弃。重写为直接处理 CHAT_MESSAGE：has_sessions 判断在线/离线 → 在线 broadcast ACK+转发，离线回复 UNREACHABLE。
+- **fix(ws/sessions_manager): 新增 is_allowed_to_reach_user** — 对齐 Java UserManagerBean.hasCommonWorkspace（JOIN userdata 检查共享工作区）；broadcast 改为 asyncio.gather 并发。
+
+## 2026-07-16 — fix: FE-06 日期悬浮框时区双重偏移（前端）+ 8005 防火墙
+
+- **fix(front): FE-06 日期悬浮框 UTC/相对时间双重偏移** — `common-objects/utils/date.js` dateHelperWithPlacement 把已按用户时区格式化的字符串误用浏览器本地时区解析（用户时区≠浏览器时区时 UTC 参考与 fromNow 双双偏移）；改为 `moment.tz(_date, format, timeZone).utc()`。上游 DocDoku 遗留 bug（两端口同病）。前端已重建（npm build + 镜像 + 容器）。
+- **chore(win): 新增防火墙入站规则 `cwb-DocDokuPLM-8005`**（TCP 8005, Allow, Any profile），供局域网其他机器对比 :8005 Payara。既有规则 cwb-DocDokuPLM-8000-8004 不含 8005。
+
+## 2026-07-16 — refactor: audit-round3 FIX-PLAN 残余复核收口（back-py）
+
+> 分层原则修订（用户确认）：service 无对应服务的简单 DB 操作允许留在 router 层。全量复核 21 文件 109 处残余内联 DB：5 A 类迁移 + 104 B/C 类合规保留，FIX-PLAN 关闭无遗留。
+
+- **refactor(products): admin 检查与 CI 存在性检查迁 service** — filter_structure/bom 内联 admin SQL → `user_mgmt_service.is_account_admin`；path_choices 内联 EXISTS → `svc.get_ci`；清理失效 text import。
+- **refactor(product_instances): CI 查询迁 service** — list_instances/instances_for_multiple_paths 内联 ConfigurationItem 查询 → `svc.get_ci`（EntityNotFoundException→[] 语义不变）。
+- 验证：pytest 282 passed；GD50 烟测 filter/bom/path-choices/instances 全 200，缺失 CI 分别 404/[] 与原语义一致；镜像 rebuild。
 
 ## 2026-07-16 — fix: FE-05 注册未自动登录 + usergroupmapping 漏插（back-py）
 

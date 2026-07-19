@@ -2,7 +2,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -14,6 +13,7 @@ from app.core.exceptions import (
 from app.models.product import ProductInstanceMaster
 from app.services.product_structure import ProductStructureService
 from app.services.product_manager import ProductService
+from app.services.user_manager import user_mgmt_service
 from app.services.cascade_action_manager import cascade_action_service
 from app.schemas.product import ConfigurationItemDTO, ProductInstanceDTO
 
@@ -105,9 +105,7 @@ def filter_structure(ws: str, ci_id: str,
                      diverge: bool = Query(False),
                      current_user: Account = Depends(get_current_user),
                      db: Session = Depends(get_db)):
-    is_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = user_mgmt_service.is_account_admin(db, current_user.login)
     result = svc.filter_product_structure(db, ws, ci_id, configSpec, path, depth,
                                             user_login=current_user.login,
                                             is_admin=is_admin,
@@ -138,9 +136,7 @@ def bom(ws: str, ci_id: str,
         current_user: Account = Depends(get_current_user),
         db: Session = Depends(get_db)):
     """BOM 端点，返回过滤后的 PartRevisionDTO 列表。"""
-    is_admin = db.execute(text(
-        "SELECT 1 FROM usergroupmapping WHERE login=:l AND groupname='admin'"
-    ), {"l": current_user.login}).first() is not None
+    is_admin = user_mgmt_service.is_account_admin(db, current_user.login)
     result = svc.filter_product_structure(db, ws, ci_id, configSpec, path,
                                             user_login=current_user.login,
                                             is_admin=is_admin)
@@ -209,11 +205,7 @@ def path_choices(ws: str, ci_id: str,
                  current_user: Account = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     """返回 CI 下已存在的路径数据列表。CI 不存在则返回 404（对齐 Java getConfigurationItem）。"""
-    exists = db.execute(text(
-        "SELECT 1 FROM configurationitem WHERE workspace_id=:ws AND id=:ci"
-    ), {"ws": ws, "ci": ci_id}).first()
-    if not exists:
-        raise ConfigurationItemNotFoundException("ConfigurationItemNotFoundException", ci_id)
+    svc.get_ci(db, ws, ci_id)
     return svc.get_path_choices(db, ws, ci_id)
 
 
