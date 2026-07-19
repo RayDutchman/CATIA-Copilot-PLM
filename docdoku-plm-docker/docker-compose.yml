@@ -129,10 +129,11 @@ services:
       - "5432:5432"
     volumes:
       - db-volume:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
     networks:
       - network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docdokuplm"]
+      test: ["CMD-SHELL", "pg_isready -U changeit"]
       interval: 5s
       timeout: 5s
       retries: 10
